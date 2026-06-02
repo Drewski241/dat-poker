@@ -1,0 +1,19 @@
+{
+  "name": "dat-poker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DAT POKER — global-scale poker on Chia with DAT Governance Token funding",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "dev:api": "pnpm --filter @dat-poker/api dev",
+    "dev:gateway": "pnpm --filter @dat-poker/gateway dev",
+    "typecheck": "pnpm -r run typecheck"
+  }
+}
