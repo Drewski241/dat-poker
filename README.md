@@ -19,6 +19,9 @@ pnpm dev:api
 
 # Terminal 2 — WebSocket gateway
 pnpm dev:gateway
+
+# Terminal 3 — Web client (Vite)
+pnpm dev:web
 ```
 
 Copy `.env.example` to `.env` and set your DAT Governance Token `asset_id`.
@@ -32,6 +35,7 @@ Copy `.env.example` to `.env` and set your DAT Governance Token `asset_id`.
 | `packages/shared` | Types, variant catalog, events |
 | `services/api` | REST API |
 | `services/gateway` | WebSocket realtime |
+| `apps/web` | Web client (Vite + React) |
 | `docs/` | Architecture, DAT token, Chia integration, roadmap |
 
 ## Create this repo on GitHub
