@@ -58,3 +58,6 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
   });
 }
+export function getTableEngine(tableId: string): NlheTableEngine | undefined {
+  return tables.get(tableId);
+}

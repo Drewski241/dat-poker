@@ -4,6 +4,8 @@ import { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import { POKER_VARIANTS } from "@dat-poker/shared";
 import { registerTableRoutes } from "./routes/tables.js";
 import { registerHealthRoutes } from "./routes/health.js";
+import { serializeForJson } from "./serialize.js";
+import { registerHandRoutes } from "./routes/hands.js";
 
 const port = Number(process.env.API_PORT ?? 4000);
 const host = process.env.API_HOST ?? "0.0.0.0";
@@ -25,8 +27,14 @@ async function main(): Promise<void> {
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
 
+  app.addHook("preSerialization", async (_request, _reply, payload) => {
+    if (payload === undefined || payload === null) return payload;
+    return serializeForJson(payload);
+  });
+
   registerHealthRoutes(app, chiaClient);
   registerTableRoutes(app);
+  registerHandRoutes(app);
 
   app.get("/v1/variants", async () => ({
     variants: POKER_VARIANTS,
