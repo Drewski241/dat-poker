@@ -31,11 +31,12 @@ Copy `.env.example` to `.env` and set your DAT Governance Token `asset_id`.
 | Path | Purpose |
 |------|---------|
 | `packages/game-engine` | NLHE engine, commit-reveal shuffle, hand evaluation |
-| `packages/chia-bridge` | chia-gaming adapter, settlement proofs |
-| `packages/shared` | Types, variant catalog, events |
-| `services/api` | REST API |
+| `packages/chia-bridge` | chia-gaming adapter, CAT payout offers, settlement proofs |
+| `packages/shared` | Types, variant catalog, DAT units, bet sizing |
+| `services/api` | REST API (tables, hands, wallet, withdraw) |
+| `services/treasury-payout` | Treasury offer builder for on-chain DAT payouts |
 | `services/gateway` | WebSocket realtime |
-| `apps/web` | Web client (Vite + React) |
+| `apps/web` | Web client — Sage WalletConnect, NLHE vs house |
 | `docs/` | Architecture, DAT token, Chia integration, roadmap |
 
 ## Create this repo on GitHub
