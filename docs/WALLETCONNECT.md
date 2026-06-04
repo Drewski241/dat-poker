@@ -51,12 +51,29 @@ When `WALLETCONNECT_PROJECT_ID` is unset, `/v1/wallet/config` returns `"walletCo
 
 ## Client integration (web)
 
-1. Fetch `/v1/wallet/config` on app load.
-2. If `walletConnect` is present, initialize the WalletConnect Sign Client with `projectId` and `chainId`.
-3. Request a session from the user's Chia wallet; approved accounts become the active player address.
-4. For DAT buy-ins, use `/v1/wallet/dat-token` to confirm `buyInReady` before calling `POST /v1/tables/:id/seat`.
+The Vite web client (`apps/web`) implements Sage WalletConnect:
 
-Head-to-head flows delegate channel open/close to chia-gaming UI after the wallet session is established.
+1. Fetch `/v1/wallet/config` on app load.
+2. **Connect Sage** — scan QR with Sage mobile (or paste URI on desktop).
+3. **Load DAT balance** — finds your CAT wallet matching `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
+4. **Buy in & join table** — signs a buy-in intent via `chia_signMessageByAddress`, seats you vs house.
+5. **Start hand** — commit-reveal deal; you act when prompted (house auto-plays).
+
+### Mainnet test checklist
+
+```bash
+# .env (API)
+WALLETCONNECT_PROJECT_ID=your_project_id
+DAT_GOVERNANCE_TOKEN_ASSET_ID=your_64_char_asset_id
+CHIA_CHAIN_ID=chia:mainnet
+CHIA_NETWORK=mainnet
+DAT_ALLOW_DEV_BUYIN=false
+
+pnpm dev:api   # terminal 1
+pnpm dev:web   # terminal 2 — open http://localhost:5173
+```
+
+> **Note:** Buy-in is **signed authorization + balance check** (Phase 2 alpha). On-chain CAT escrow/spend is planned next; no DAT leaves your wallet until spendCAT is wired.
 
 ## Development vs production
 

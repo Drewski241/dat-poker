@@ -141,3 +141,65 @@ footer {
 code {
   font-size: 0.85em;
 }
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+button.secondary {
+  background: #2d3a4f;
+  color: var(--text);
+}
+
+.ok-text {
+  color: var(--accent);
+  margin: 0 0 0.5rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.modal {
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 1.25rem;
+  max-width: 22rem;
+  width: 100%;
+}
+
+.modal h3 {
+  margin: 0 0 0.5rem;
+}
+
+.qr-canvas {
+  display: block;
+  margin: 1rem auto;
+  border-radius: 8px;
+}
+
+.wc-uri {
+  font-size: 0.65rem;
+  max-height: 4rem;
+  overflow: auto;
+  word-break: break-all;
+}

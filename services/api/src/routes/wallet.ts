@@ -1,17 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { ChiaGamingClient } from "@dat-poker/chia-bridge";
-
-function readDatTokenConfig() {
-  const assetId = process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID?.trim() || undefined;
-  const devBuyInEnabled = process.env.DAT_ALLOW_DEV_BUYIN === "true";
-  return {
-    assetId: assetId ?? null,
-    ticker: process.env.DAT_GOVERNANCE_TOKEN_TICKER ?? "DAT",
-    minBuyInMojos: process.env.DAT_MIN_BUY_IN_MOJOS ?? "2000000000000",
-    devBuyInEnabled,
-    buyInReady: Boolean(assetId) || devBuyInEnabled,
-  };
-}
+import { buildBuyInMessage, readDatTokenConfig } from "../wallet-config.js";
 
 export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClient): void {
   app.get("/v1/wallet/config", async () => {
@@ -45,5 +34,21 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       walletConnectConfigured: Boolean(process.env.WALLETCONNECT_PROJECT_ID?.trim()),
       chiaGamingLobby: lobbyOk ? "up" : "down",
     };
+  });
+
+  app.get<{
+    Querystring: { tableId?: string; seatIndex?: string; buyInMojos?: string; address?: string };
+  }>("/v1/wallet/buy-in/message", async (req, reply) => {
+    const { tableId, seatIndex, buyInMojos, address } = req.query;
+    if (!tableId || seatIndex === undefined || !buyInMojos || !address) {
+      return reply.status(400).send({ error: "tableId, seatIndex, buyInMojos, and address required" });
+    }
+    const message = buildBuyInMessage({
+      tableId,
+      seatIndex: Number(seatIndex),
+      buyInMojos,
+      address,
+    });
+    return { message };
   });
 }

@@ -31,8 +31,53 @@ export interface HandState {
   players: HandPlayer[];
 }
 
+export interface WalletConnectConfig {
+  projectId: string;
+  chainId: string;
+}
+
+export interface DatTokenInfo {
+  assetId: string | null;
+  ticker: string;
+  minBuyInMojos: string;
+  devBuyInEnabled: boolean;
+  buyInReady: boolean;
+}
+
+export interface BuyInProof {
+  address: string;
+  message: string;
+  signature: string;
+  pubkey: string;
+  datBalanceMojos?: string;
+}
+
 export const api = {
   health: () => request<{ status: string }>("/health"),
+
+  walletConfig: () =>
+    request<{
+      chiaNetwork: string;
+      chainId: string;
+      walletConnect: WalletConnectConfig | null;
+    }>("/v1/wallet/config"),
+
+  datToken: () => request<DatTokenInfo>("/v1/wallet/dat-token"),
+
+  buyInMessage: (params: {
+    tableId: string;
+    seatIndex: number;
+    buyInMojos: string;
+    address: string;
+  }) => {
+    const q = new URLSearchParams({
+      tableId: params.tableId,
+      seatIndex: String(params.seatIndex),
+      buyInMojos: params.buyInMojos,
+      address: params.address,
+    });
+    return request<{ message: string }>(`/v1/wallet/buy-in/message?${q}`);
+  },
 
   createTable: () =>
     request<{ tableId: string }>("/v1/tables", { method: "POST", body: "{}" }),
@@ -42,10 +87,27 @@ export const api = {
       `/v1/tables/${tableId}`,
     ),
 
-  seatPlayer: (tableId: string, playerId: string, seatIndex: number, buyInMojos: string) =>
+  seatPlayer: (
+    tableId: string,
+    playerId: string,
+    seatIndex: number,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
     request<{ ok: boolean }>(`/v1/tables/${tableId}/seat`, {
       method: "POST",
-      body: JSON.stringify({ playerId, seatIndex, buyInMojos }),
+      body: JSON.stringify({
+        playerId,
+        seatIndex,
+        buyInMojos,
+        ...options,
+      }),
+    }),
+
+  seatHouse: (tableId: string, buyInMojos: string) =>
+    request<{ ok: boolean; playerId: string }>(`/v1/tables/${tableId}/seat-house`, {
+      method: "POST",
+      body: JSON.stringify({ buyInMojos }),
     }),
 
   startHand: (tableId: string) =>
