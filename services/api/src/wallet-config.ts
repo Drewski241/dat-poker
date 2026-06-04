@@ -12,7 +12,7 @@ export function readDatTokenConfig(): DatTokenConfig {
   return {
     assetId: assetId ?? null,
     ticker: process.env.DAT_GOVERNANCE_TOKEN_TICKER ?? "DAT",
-    minBuyInMojos: process.env.DAT_MIN_BUY_IN_MOJOS ?? "2000000000000",
+    minBuyInMojos: process.env.DAT_MIN_BUY_IN_MOJOS ?? "1000000",
     devBuyInEnabled,
     buyInReady: Boolean(assetId) || devBuyInEnabled,
   };

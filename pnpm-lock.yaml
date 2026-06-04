@@ -10,6 +10,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@dat-poker/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@walletconnect/sign-client':
         specifier: ^2.21.0
         version: 2.23.9(typescript@5.9.3)

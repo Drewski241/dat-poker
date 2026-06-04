@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { formatDatMojos } from "@dat-poker/shared";
 import { api, type BuyInProof, type DatTokenInfo, type HandState, type PlayerAction } from "./api.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
@@ -10,20 +11,11 @@ import {
   type WcSession,
 } from "./wallet/chia-wallet.js";
 
-const DEFAULT_BUY_IN = "5000000000000";
 const HOUSE_PLAYER_ID = "dat-poker:house";
 
 function cardLabel(card: { rank: string; suit: string }): string {
   const suit = { c: "♣", d: "♦", h: "♥", s: "♠" }[card.suit] ?? card.suit;
   return `${card.rank}${suit}`;
-}
-
-function formatMojos(mojos: string): string {
-  const n = BigInt(mojos);
-  const whole = n / 1_000_000_000_000n;
-  const frac = n % 1_000_000_000_000n;
-  if (frac === 0n) return `${whole} DAT`;
-  return `${whole}.${frac.toString().padStart(12, "0").replace(/0+$/, "")} DAT`;
 }
 
 function shortAddress(addr: string): string {
@@ -160,9 +152,10 @@ export function App() {
   const joinTable = () =>
     run("Creating table & buy-in…", async () => {
       if (!playerId) throw new Error("Connect Sage and load DAT balance first");
-      const buyIn = DEFAULT_BUY_IN;
+      const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      const ticker = datToken?.ticker ?? "DAT";
       if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
-        throw new Error(`Need at least ${formatMojos(buyIn)} in wallet`);
+        throw new Error(`Need at least ${formatDatMojos(buyIn, ticker)} in wallet`);
       }
 
       const { tableId: id } = await api.createTable();
@@ -265,7 +258,7 @@ export function App() {
                 {datBalance != null && (
                   <>
                     {" "}
-                    · {datToken?.ticker ?? "DAT"}: {formatMojos(datBalance)}
+                    · {datToken?.ticker ?? "DAT"}: {formatDatMojos(datBalance, datToken?.ticker)}
                   </>
                 )}
               </p>
@@ -289,7 +282,7 @@ export function App() {
             disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
             onClick={joinTable}
           >
-            Buy in &amp; join table ({formatMojos(DEFAULT_BUY_IN)})
+            Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
           </button>
         ) : (
           <p className="mono">Table ID: {tableId}</p>
@@ -306,7 +299,8 @@ export function App() {
           ) : (
             <>
               <p>
-                Street: <strong>{hand.street}</strong> · Pot: <strong>{formatMojos(hand.potMojos)}</strong>
+                Street: <strong>{hand.street}</strong> · Pot:{" "}
+                <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
               </p>
               {hand.board.length > 0 && <p>Board: {hand.board.map(cardLabel).join(" ")}</p>}
               <ul className="players">
@@ -317,7 +311,7 @@ export function App() {
                       <span className="cards"> {p.holeCards.map(cardLabel).join(" ")}</span>
                     )}
                     {p.folded ? " — folded" : ""}
-                    <span className="stack"> stack {formatMojos(p.stackMojos)}</span>
+                    <span className="stack"> stack {formatDatMojos(p.stackMojos, datToken?.ticker)}</span>
                   </li>
                 ))}
               </ul>

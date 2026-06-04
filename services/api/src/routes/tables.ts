@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { TableConfig } from "@dat-poker/shared";
+import { DAT_TABLE_DEFAULTS } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
 import { recordBuyIn } from "../buy-in-store.js";
 import {
@@ -22,15 +23,26 @@ export function registerTableRoutes(app: FastifyInstance): void {
     };
   }>("/v1/tables", async (req) => {
     const id = randomUUID();
+    const dat = readDatTokenConfig();
+    const useDatStakes = Boolean(dat.assetId);
+    const minBuyIn = useDatStakes
+      ? BigInt(dat.minBuyInMojos)
+      : 2_000_000_000_000n;
     const config: TableConfig = {
       id,
       variant: "nlhe",
       format: "cash",
       maxSeats: req.body.maxSeats ?? 6,
-      smallBlindMojos: BigInt(req.body.smallBlindMojos ?? "50000000000"),
-      bigBlindMojos: BigInt(req.body.bigBlindMojos ?? "100000000000"),
-      minBuyInMojos: 2_000_000_000_000n,
-      maxBuyInMojos: 20_000_000_000_000n,
+      smallBlindMojos: BigInt(
+        req.body.smallBlindMojos ??
+          (useDatStakes ? DAT_TABLE_DEFAULTS.smallBlindMojos : 50_000_000_000n),
+      ),
+      bigBlindMojos: BigInt(
+        req.body.bigBlindMojos ??
+          (useDatStakes ? DAT_TABLE_DEFAULTS.bigBlindMojos : 100_000_000_000n),
+      ),
+      minBuyInMojos: minBuyIn,
+      maxBuyInMojos: useDatStakes ? DAT_TABLE_DEFAULTS.maxBuyInMojos : 20_000_000_000_000n,
       rakeBps: 500,
     };
     tables.set(id, new NlheTableEngine(config));
