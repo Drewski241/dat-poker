@@ -56,3 +56,29 @@ describe("validateBuyInProof", () => {
     ).toContain("signature");
   });
 });
+
+describe("validateWithdrawProof", () => {
+  it("requires a Sage signature for withdraw", () => {
+    const params = {
+      tableId: "table-1",
+      stackMojos: "1050000",
+      playerId: "xch1abc",
+    };
+    const message = buildWithdrawMessage({
+      tableId: params.tableId,
+      stackMojos: params.stackMojos,
+      address: params.playerId,
+    });
+    expect(
+      validateWithdrawProof(
+        {
+          address: params.playerId,
+          message,
+          signature: "",
+          pubkey: "",
+        },
+        params,
+      ),
+    ).toContain("signature");
+  });
+});
