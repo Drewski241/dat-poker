@@ -27,6 +27,14 @@ export function buildBuyInMessage(params: {
   return `dat-poker:v1:buy-in:${params.tableId}:${params.seatIndex}:${params.buyInMojos}:${params.address}`;
 }
 
+export function buildWithdrawMessage(params: {
+  tableId: string;
+  stackMojos: string;
+  address: string;
+}): string {
+  return `dat-poker:v1:withdraw:${params.tableId}:${params.stackMojos}:${params.address}`;
+}
+
 export interface BuyInProof {
   address: string;
   message: string;
@@ -34,6 +42,8 @@ export interface BuyInProof {
   pubkey: string;
   datBalanceMojos?: string;
 }
+
+export type WithdrawProof = BuyInProof;
 
 export function validateBuyInProof(
   proof: BuyInProof,
@@ -56,6 +66,30 @@ export function validateBuyInProof(
       return null;
     }
     return "Buy-in signature required (approve in Sage) or provide balance attestation";
+  }
+  if (params.playerId !== proof.address) {
+    return "Player id must be wallet address";
+  }
+  return null;
+}
+
+export function validateWithdrawProof(
+  proof: WithdrawProof,
+  params: { tableId: string; stackMojos: string; playerId: string },
+): string | null {
+  if (proof.address !== params.playerId) {
+    return "Withdraw address must match playerId";
+  }
+  const expected = buildWithdrawMessage({
+    tableId: params.tableId,
+    stackMojos: params.stackMojos,
+    address: proof.address,
+  });
+  if (proof.message !== expected) {
+    return "Invalid withdraw message";
+  }
+  if (!proof.signature || !proof.pubkey) {
+    return "Withdraw signature required (approve in Sage)";
   }
   if (params.playerId !== proof.address) {
     return "Player id must be wallet address";

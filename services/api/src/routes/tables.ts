@@ -57,6 +57,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
     return {
       tableId: req.params.tableId,
       players: table.getActivePlayerCount(),
+      handInProgress: table.isHandInProgress(),
+      seats: table.getSeatedPlayers(),
       hand: table.getHandState(),
       lastHandResult: table.getLastHandResult(),
     };
@@ -107,10 +109,25 @@ export function registerTableRoutes(app: FastifyInstance): void {
           return reply.status(400).send({ error: "Insufficient DAT balance for buy-in" });
         }
       }
-      recordBuyIn(req.params.tableId, req.body.playerId, req.body.buyInProof);
     } else if (!req.body.devAck && dat.assetId && req.body.buyInProof) {
-      recordBuyIn(req.params.tableId, req.body.playerId, req.body.buyInProof);
+      const proofError = validateBuyInProof(req.body.buyInProof, {
+        tableId: req.params.tableId,
+        seatIndex: req.body.seatIndex,
+        buyInMojos: req.body.buyInMojos,
+        playerId: req.body.playerId,
+      });
+      if (proofError) {
+        return reply.status(400).send({ error: proofError });
+      }
     }
+
+    const buyInProof = req.body.buyInProof ?? {
+      address: req.body.playerId,
+      message: "",
+      signature: "",
+      pubkey: "",
+    };
+    recordBuyIn(req.params.tableId, req.body.playerId, buyInProof, req.body.buyInMojos);
 
     try {
       table.seatPlayer(req.body.playerId, req.body.seatIndex, buyInMojos);

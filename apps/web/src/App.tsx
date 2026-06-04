@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction } from "./api.js";
+import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
   beginWalletConnect,
@@ -8,6 +8,8 @@ import {
   findDatCatWallet,
   restoreSession,
   signBuyInMessage,
+  signWithdrawMessage,
+  takeOffer,
   type WcSession,
 } from "./wallet/chia-wallet.js";
 
@@ -41,6 +43,9 @@ export function App() {
   const [datBalance, setDatBalance] = useState<string | null>(null);
 
   const [tableId, setTableId] = useState<string | null>(null);
+  const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
+  const [handInProgress, setHandInProgress] = useState(false);
+  const [withdrawResult, setWithdrawResult] = useState<WithdrawResult | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [hand, setHand] = useState<HandState | null>(null);
   const [handResult, setHandResult] = useState<HandResult | null>(null);
@@ -85,6 +90,8 @@ export function App() {
   const refreshTable = useCallback(async (id: string) => {
     const t = await api.getTable(id);
     setHand(t.hand);
+    setTableSeats(t.seats);
+    setHandInProgress(t.handInProgress);
     if (t.lastHandResult) setHandResult(t.lastHandResult);
   }, []);
 
@@ -260,6 +267,71 @@ export function App() {
     });
   };
 
+  const myTableSeat = tableSeats.find((s) => s.playerId === playerId);
+  const tableStackMojos = myTableSeat?.stackMojos ?? null;
+
+  const withdrawToSage = () => {
+    if (!tableId || !playerId || !walletAddress) return;
+    run("Withdrawing to Sage…", async () => {
+      await refreshTable(tableId);
+      const seat = (await api.getTable(tableId)).seats.find((s) => s.playerId === playerId);
+      if (!seat) {
+        throw new Error("You are no longer seated at this table");
+      }
+      const stackMojos = seat.stackMojos;
+
+      let withdrawProof: BuyInProof | undefined;
+      if (!datToken?.devBuyInEnabled && session && wcConfig) {
+        const { message } = await api.withdrawMessage({
+          tableId,
+          address: walletAddress,
+          stackMojos,
+        });
+        setStatus("Approve withdraw in Sage (check your phone)…");
+        const signed = await signWithdrawMessage(
+          session,
+          wcConfig.projectId,
+          wcConfig.chainId,
+          message,
+          walletAddress,
+        );
+        withdrawProof = {
+          address: walletAddress,
+          message,
+          signature: signed.signature,
+          pubkey: signed.pubkey,
+        };
+      }
+
+      setStatus("Cashing out table stack…");
+      const result = await api.withdraw(tableId, playerId, {
+        withdrawProof,
+        devAck: datToken?.devBuyInEnabled,
+      });
+
+      if (result.mode === "offer" && result.offer && session && wcConfig) {
+        setStatus("Accept treasury payout in Sage…");
+        await takeOffer(session, wcConfig.projectId, wcConfig.chainId, result.offer, BigInt(result.feeMojos));
+      }
+
+      setWithdrawResult(result);
+      setTableId(null);
+      setTableSeats([]);
+      setHand(null);
+      setHandResult(null);
+
+      if (session && wcConfig && datToken?.assetId) {
+        const { balance } = await findDatCatWallet(
+          session,
+          wcConfig.projectId,
+          wcConfig.chainId,
+          datToken.assetId,
+        );
+        setDatBalance(balance.spendable);
+      }
+    });
+  };
+
   const me = hand?.players.find((p) => p.playerId === playerId);
   const currentBet = BigInt(hand?.currentBetMojos ?? 0);
   const myBet = BigInt(me?.betThisStreetMojos ?? 0);
@@ -283,7 +355,7 @@ export function App() {
     <div className="app">
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house</p>
+        <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -344,7 +416,35 @@ export function App() {
             Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
           </button>
         ) : (
-          <p className="mono">Table ID: {tableId}</p>
+          <>
+            <p className="mono">Table ID: {tableId}</p>
+            {tableStackMojos && (
+              <p>
+                Your table stack:{" "}
+                <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
+              </p>
+            )}
+            {tableId && !hand && !handInProgress && tableStackMojos && (
+              <div className="row">
+                <button type="button" disabled={busy} onClick={withdrawToSage}>
+                  Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {withdrawResult && (
+          <div className="banner win">
+            Withdrew {formatDatMojos(withdrawResult.stackMojos, datToken?.ticker)} from table
+            {BigInt(withdrawResult.payoutMojos) > 0n && (
+              <>
+                {" "}
+                · payout {formatDatMojos(withdrawResult.payoutMojos, datToken?.ticker)}
+                {withdrawResult.mode === "offer" ? " (on-chain via offer)" : " (ledger)"}
+              </>
+            )}
+            . {withdrawResult.note}
+          </div>
         )}
       </section>
 

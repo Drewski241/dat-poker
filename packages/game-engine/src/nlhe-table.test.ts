@@ -60,4 +60,33 @@ describe("NlheTableEngine", () => {
     expect(flop?.street).toBe("flop");
     expect(flop?.board).toHaveLength(3);
   });
+
+  it("cashes out player stack when no hand is active", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+
+    table.startHand("hand-3");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+    table.applyAction("alice", "fold");
+
+    expect(table.isHandInProgress()).toBe(false);
+    expect(table.getPlayerStack("bob")).toBeGreaterThan(5_000_000_000_000n);
+
+    const cashOut = table.cashOutPlayer("bob");
+    expect(cashOut.seatIndex).toBe(1);
+    expect(cashOut.stackMojos).toBeGreaterThan(5_000_000_000_000n);
+    expect(table.getPlayerStack("bob")).toBeNull();
+    expect(table.getActivePlayerCount()).toBe(1);
+  });
+
+  it("rejects cash out during active hand", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.startHand("hand-4");
+    expect(() => table.cashOutPlayer("alice")).toThrow(/active hand/i);
+  });
 });

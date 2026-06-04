@@ -170,6 +170,21 @@ export async function signBuyInMessage(
   }
 }
 
+export async function takeOffer(
+  session: WcSession,
+  projectId: string,
+  chainId: string,
+  offer: string,
+  feeMojos = 0n,
+): Promise<{ success: boolean }> {
+  return wcRequest<{ success: boolean }>(session, projectId, chainId, "chia_takeOffer", {
+    offer,
+    fee: Number(feeMojos),
+  });
+}
+
+export const signWithdrawMessage = signBuyInMessage;
+
 export async function findDatCatWallet(
   session: WcSession,
   projectId: string,

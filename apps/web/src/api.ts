@@ -61,6 +61,27 @@ export interface BuyInProof {
   datBalanceMojos?: string;
 }
 
+export type WithdrawProof = BuyInProof;
+
+export interface WithdrawResult {
+  ok: boolean;
+  withdrawalId: string;
+  stackMojos: string;
+  originalBuyInMojos: string;
+  payoutMojos: string;
+  payoutMode: "net" | "full";
+  mode: "ledger" | "offer";
+  offer?: string;
+  feeMojos: string;
+  note: string;
+}
+
+export interface TableSeat {
+  playerId: string;
+  seatIndex: number;
+  stackMojos: string;
+}
+
 export const api = {
   health: () => request<{ status: string }>("/health"),
 
@@ -69,6 +90,11 @@ export const api = {
       chiaNetwork: string;
       chainId: string;
       walletConnect: WalletConnectConfig | null;
+      withdraw?: {
+        payoutMode: "net" | "full";
+        treasuryConfigured: boolean;
+        feeMojos: string;
+      };
     }>("/v1/wallet/config"),
 
   datToken: () => request<DatTokenInfo>("/v1/wallet/dat-token"),
@@ -88,6 +114,29 @@ export const api = {
     return request<{ message: string }>(`/v1/wallet/buy-in/message?${q}`);
   },
 
+  withdrawMessage: (params: { tableId: string; address: string; stackMojos: string }) => {
+    const q = new URLSearchParams({
+      tableId: params.tableId,
+      address: params.address,
+      stackMojos: params.stackMojos,
+    });
+    return request<{ message: string; stackMojos: string }>(`/v1/wallet/withdraw/message?${q}`);
+  },
+
+  withdraw: (
+    tableId: string,
+    playerId: string,
+    options?: { withdrawProof?: WithdrawProof; devAck?: boolean },
+  ) =>
+    request<WithdrawResult>("/v1/wallet/withdraw", {
+      method: "POST",
+      body: JSON.stringify({
+        tableId,
+        playerId,
+        ...options,
+      }),
+    }),
+
   createTable: () =>
     request<{ tableId: string }>("/v1/tables", { method: "POST", body: "{}" }),
 
@@ -95,6 +144,8 @@ export const api = {
     request<{
       tableId: string;
       players: number;
+      handInProgress: boolean;
+      seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;
     }>(`/v1/tables/${tableId}`),

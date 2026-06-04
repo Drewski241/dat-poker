@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildBuyInMessage, validateBuyInProof } from "./wallet-config.js";
+import {
+  buildBuyInMessage,
+  buildWithdrawMessage,
+  validateBuyInProof,
+  validateWithdrawProof,
+} from "./wallet-config.js";
 
 describe("validateBuyInProof", () => {
   const params = {

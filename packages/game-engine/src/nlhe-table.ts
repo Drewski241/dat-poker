@@ -76,6 +76,56 @@ export class NlheTableEngine {
     return this.seats.size;
   }
 
+  isHandInProgress(): boolean {
+    return this.hand !== null;
+  }
+
+  getPlayerStack(playerId: PlayerId): bigint | null {
+    if (!this.stacks.has(playerId)) {
+      return null;
+    }
+    if (this.hand) {
+      const inHand = this.hand.players.find((p) => p.playerId === playerId);
+      if (inHand) {
+        return inHand.stackMojos;
+      }
+    }
+    return this.stacks.get(playerId) ?? null;
+  }
+
+  getSeatedPlayers(): { playerId: PlayerId; seatIndex: number; stackMojos: bigint }[] {
+    return [...this.seats.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([seatIndex, playerId]) => ({
+        playerId,
+        seatIndex,
+        stackMojos: this.getPlayerStack(playerId) ?? 0n,
+      }));
+  }
+
+  cashOutPlayer(playerId: PlayerId): { stackMojos: bigint; seatIndex: number } {
+    if (this.hand) {
+      throw new Error("Cannot cash out during an active hand");
+    }
+    const stackMojos = this.stacks.get(playerId);
+    if (stackMojos === undefined) {
+      throw new Error("Player not seated");
+    }
+    let seatIndex: number | null = null;
+    for (const [idx, seatedId] of this.seats) {
+      if (seatedId === playerId) {
+        seatIndex = idx;
+        break;
+      }
+    }
+    if (seatIndex === null) {
+      throw new Error("Player not seated");
+    }
+    this.seats.delete(seatIndex);
+    this.stacks.delete(playerId);
+    return { stackMojos, seatIndex };
+  }
+
   startHand(handId: HandId): { commitHash: string } {
     if (this.seats.size < 2) {
       throw new Error("Need at least 2 players");
