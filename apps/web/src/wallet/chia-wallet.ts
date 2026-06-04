@@ -47,13 +47,82 @@ async function wcRequest<T>(
   chainId: string,
   method: string,
   params: Record<string, unknown>,
+  timeoutMs = 90_000,
 ): Promise<T> {
   const client = await getSignClient(projectId);
-  return client.request<T>({
+  const request = client.request<T>({
     topic: session.topic,
     chainId,
     request: { method, params },
   });
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `Timed out waiting for Sage (${method}). Open the Sage app and approve the request.`,
+          ),
+        ),
+      timeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([request, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+function utf8ToHex(message: string): string {
+  return [...new TextEncoder().encode(message)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function signWithChip0002(
+  session: WcSession,
+  projectId: string,
+  chainId: string,
+  message: string,
+): Promise<SignMessageResult> {
+  const publicKeys = await wcRequest<string[]>(
+    session,
+    projectId,
+    chainId,
+    "chip0002_getPublicKeys",
+    {},
+  );
+  const publicKey = publicKeys[0];
+  if (!publicKey) {
+    throw new Error("Sage did not return a public key");
+  }
+  const signature = await wcRequest<string>(session, projectId, chainId, "chip0002_signMessage", {
+    message: utf8ToHex(message),
+    publicKey,
+  });
+  return { pubkey: publicKey, signature };
+}
+
+async function signWithAddress(
+  session: WcSession,
+  projectId: string,
+  chainId: string,
+  message: string,
+  address: string,
+): Promise<SignMessageResult> {
+  const result = await wcRequest<{ publicKey?: string; pubkey?: string; signature: string }>(
+    session,
+    projectId,
+    chainId,
+    "chia_signMessageByAddress",
+    { message, address },
+  );
+  const pubkey = result.publicKey ?? result.pubkey;
+  if (!pubkey) {
+    throw new Error("Wallet did not return a public key for signed message");
+  }
+  return { pubkey, signature: result.signature };
 }
 
 export async function getWalletAddress(
@@ -90,18 +159,15 @@ export async function signBuyInMessage(
   message: string,
   address: string,
 ): Promise<SignMessageResult> {
-  const result = await wcRequest<{ publicKey?: string; pubkey?: string; signature: string }>(
-    session,
-    projectId,
-    chainId,
-    "chia_signMessageByAddress",
-    { message, address },
-  );
-  const pubkey = result.publicKey ?? result.pubkey;
-  if (!pubkey) {
-    throw new Error("Wallet did not return a public key for signed message");
+  try {
+    return await signWithAddress(session, projectId, chainId, message, address);
+  } catch (addressErr) {
+    try {
+      return await signWithChip0002(session, projectId, chainId, message);
+    } catch {
+      throw addressErr;
+    }
   }
-  return { pubkey, signature: result.signature };
 }
 
 export async function findDatCatWallet(

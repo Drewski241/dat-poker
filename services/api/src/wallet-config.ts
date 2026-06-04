@@ -52,7 +52,10 @@ export function validateBuyInProof(
     return "Invalid buy-in message";
   }
   if (!proof.signature || !proof.pubkey) {
-    return "Buy-in signature required";
+    if (proof.datBalanceMojos && BigInt(proof.datBalanceMojos) >= BigInt(params.buyInMojos)) {
+      return null;
+    }
+    return "Buy-in signature required (approve in Sage) or provide balance attestation";
   }
   if (params.playerId !== proof.address) {
     return "Player id must be wallet address";

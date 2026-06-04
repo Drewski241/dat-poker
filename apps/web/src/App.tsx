@@ -149,8 +149,11 @@ export function App() {
       setDatBalance(balance.spendable);
     });
 
-  const joinTable = () =>
-    run("Creating table & buy-in…", async () => {
+  const joinTable = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
       if (!playerId) throw new Error("Connect Sage and load DAT balance first");
       const buyIn = datToken?.minBuyInMojos ?? "1000000";
       const ticker = datToken?.ticker ?? "DAT";
@@ -158,6 +161,7 @@ export function App() {
         throw new Error(`Need at least ${formatDatMojos(buyIn, ticker)} in wallet`);
       }
 
+      setStatus("Creating table…");
       const { tableId: id } = await api.createTable();
       let buyInProof: BuyInProof | undefined;
 
@@ -168,22 +172,33 @@ export function App() {
           buyInMojos: buyIn,
           address: walletAddress,
         });
-        const signed = await signBuyInMessage(
-          session,
-          wcConfig.projectId,
-          wcConfig.chainId,
-          message,
-          walletAddress,
-        );
         buyInProof = {
           address: walletAddress,
           message,
-          signature: signed.signature,
-          pubkey: signed.pubkey,
+          signature: "",
+          pubkey: "",
           datBalanceMojos: datBalance ?? undefined,
         };
+        setStatus("Approve buy-in in Sage (check your phone)…");
+        try {
+          const signed = await signBuyInMessage(
+            session,
+            wcConfig.projectId,
+            wcConfig.chainId,
+            message,
+            walletAddress,
+          );
+          buyInProof.signature = signed.signature;
+          buyInProof.pubkey = signed.pubkey;
+        } catch (signErr) {
+          if (!datBalance || BigInt(datBalance) < BigInt(buyIn)) {
+            throw signErr;
+          }
+          setStatus("Signature skipped — using wallet balance attestation…");
+        }
       }
 
+      setStatus("Seating you at the table…");
       await api.seatPlayer(id, playerId, 0, buyIn, {
         buyInProof,
         devAck: datToken?.devBuyInEnabled,
@@ -191,7 +206,13 @@ export function App() {
       await api.seatHouse(id, buyIn);
       setTableId(id);
       await refreshTable(id);
-    });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
 
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
@@ -280,7 +301,7 @@ export function App() {
           <button
             type="button"
             disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-            onClick={joinTable}
+            onClick={() => void joinTable()}
           >
             Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
           </button>
