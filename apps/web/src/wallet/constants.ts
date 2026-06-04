@@ -1,22 +1,24 @@
 import type { CoreTypes, ProposalTypes, SessionTypes } from "@walletconnect/types";
 
-export const CHIA_METHODS = [
-  "chia_logIn",
-  "chia_getWallets",
-  "chia_getWalletBalance",
-  "chia_getWalletBalances",
-  "chia_getCurrentAddress",
-  "chia_signMessageByAddress",
-  "chia_verifySignature",
-  "chia_getSyncStatus",
+/** Methods supported by Sage WalletConnect (see xch-dev/sage src/walletconnect/commands.ts) */
+export const SAGE_WC_METHODS = [
+  "chip0002_connect",
+  "chip0002_chainId",
   "chip0002_getPublicKeys",
+  "chip0002_getAssetBalance",
+  "chip0002_getAssetCoins",
   "chip0002_signMessage",
+  "chia_getAddress",
+  "chia_signMessageByAddress",
+  "chia_send",
+  "chia_createOffer",
+  "chia_takeOffer",
 ] as const;
 
 export function requiredNamespaces(chainId: string): ProposalTypes.RequiredNamespaces {
   return {
     chia: {
-      methods: [...CHIA_METHODS],
+      methods: [...SAGE_WC_METHODS],
       chains: [chainId],
       events: [],
     },
@@ -30,29 +32,15 @@ export const DAPP_METADATA: CoreTypes.Metadata = {
   icons: ["https://walletconnect.com/walletconnect-logo.png"],
 };
 
-export function parseFingerprint(account: string): number | undefined {
-  const parts = account.split(":");
-  const fingerprint = Number(parts[2]);
-  return Number.isFinite(fingerprint) ? fingerprint : undefined;
-}
-
-export interface ChiaWalletInfo {
-  id: number;
-  name: string;
-  type: number;
-  meta?: { assetId?: string; name?: string };
-}
-
-export interface WalletBalance {
-  confirmedWalletBalance: number;
-  spendableBalance: number;
-  walletId: number;
+export interface AssetBalance {
+  confirmed: string;
+  spendable: string;
+  spendableCoinCount: number;
 }
 
 export interface SignMessageResult {
   pubkey: string;
   signature: string;
-  success?: boolean;
 }
 
 export type WcSession = SessionTypes.Struct;

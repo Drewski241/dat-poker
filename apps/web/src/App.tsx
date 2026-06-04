@@ -154,7 +154,7 @@ export function App() {
       );
       setWalletAddress(address);
       setPlayerId(address);
-      setDatBalance(String(balance.spendableBalance ?? balance.confirmedWalletBalance));
+      setDatBalance(balance.spendable);
     });
 
   const joinTable = () =>

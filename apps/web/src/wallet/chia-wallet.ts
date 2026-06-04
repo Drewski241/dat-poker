@@ -1,11 +1,9 @@
 import SignClient from "@walletconnect/sign-client";
 import {
   DAPP_METADATA,
-  type ChiaWalletInfo,
+  type AssetBalance,
   type SignMessageResult,
-  type WalletBalance,
   type WcSession,
-  parseFingerprint,
   requiredNamespaces,
 } from "./constants.js";
 
@@ -35,15 +33,6 @@ export async function beginWalletConnect(params: {
   return { uri, approval };
 }
 
-export async function connectWallet(params: {
-  projectId: string;
-  chainId: string;
-}): Promise<{ session: WcSession; uri: string }> {
-  const { uri, approval } = await beginWalletConnect(params);
-  const session = await approval();
-  return { session, uri };
-}
-
 export async function disconnectWallet(session: WcSession, projectId: string): Promise<void> {
   const client = await getSignClient(projectId);
   await client.disconnect({
@@ -67,61 +56,30 @@ async function wcRequest<T>(
   });
 }
 
-export function getSessionFingerprint(session: WcSession): number {
-  const accounts = session.namespaces.chia?.accounts ?? [];
-  if (!accounts.length) {
-    throw new Error("No Chia accounts in WalletConnect session");
-  }
-  const fingerprint = parseFingerprint(accounts[0]);
-  if (fingerprint === undefined) {
-    throw new Error("Could not parse wallet fingerprint from session");
-  }
-  return fingerprint;
-}
-
-export async function loginSession(
+export async function getWalletAddress(
   session: WcSession,
   projectId: string,
   chainId: string,
-): Promise<void> {
-  const fingerprint = getSessionFingerprint(session);
-  await wcRequest(session, projectId, chainId, "chia_logIn", { fingerprint });
-}
-
-export async function getWallets(
-  session: WcSession,
-  projectId: string,
-  chainId: string,
-): Promise<ChiaWalletInfo[]> {
-  const result = await wcRequest<{ wallets: ChiaWalletInfo[] }>(
+): Promise<string> {
+  const result = await wcRequest<{ address: string }>(
     session,
     projectId,
     chainId,
-    "chia_getWallets",
-    { includeData: true },
+    "chia_getAddress",
+    {},
   );
-  return result.wallets ?? (result as unknown as ChiaWalletInfo[]);
+  return result.address;
 }
 
-export async function getWalletBalance(
+export async function getDatAssetBalance(
   session: WcSession,
   projectId: string,
   chainId: string,
-  walletId: number,
-): Promise<WalletBalance> {
-  return wcRequest<WalletBalance>(session, projectId, chainId, "chia_getWalletBalance", {
-    walletId,
-  });
-}
-
-export async function getCurrentAddress(
-  session: WcSession,
-  projectId: string,
-  chainId: string,
-  walletId?: number,
-): Promise<string> {
-  return wcRequest<string>(session, projectId, chainId, "chia_getCurrentAddress", {
-    walletId,
+  assetId: string,
+): Promise<AssetBalance> {
+  return wcRequest<AssetBalance>(session, projectId, chainId, "chip0002_getAssetBalance", {
+    type: "cat",
+    assetId,
   });
 }
 
@@ -132,36 +90,38 @@ export async function signBuyInMessage(
   message: string,
   address: string,
 ): Promise<SignMessageResult> {
-  return wcRequest<SignMessageResult>(session, projectId, chainId, "chia_signMessageByAddress", {
-    message,
-    address,
-  });
+  const result = await wcRequest<{ publicKey?: string; pubkey?: string; signature: string }>(
+    session,
+    projectId,
+    chainId,
+    "chia_signMessageByAddress",
+    { message, address },
+  );
+  const pubkey = result.publicKey ?? result.pubkey;
+  if (!pubkey) {
+    throw new Error("Wallet did not return a public key for signed message");
+  }
+  return { pubkey, signature: result.signature };
 }
-
-const CAT_WALLET_TYPE = 6;
 
 export async function findDatCatWallet(
   session: WcSession,
   projectId: string,
   chainId: string,
   assetId: string,
-): Promise<{ wallet: ChiaWalletInfo; balance: WalletBalance; address: string }> {
-  await loginSession(session, projectId, chainId);
-  const wallets = await getWallets(session, projectId, chainId);
-  const normalizedAssetId = assetId.toLowerCase();
-  const catWallet = wallets.find(
-    (w) =>
-      w.type === CAT_WALLET_TYPE &&
-      w.meta?.assetId?.toLowerCase() === normalizedAssetId,
-  );
-  if (!catWallet) {
+): Promise<{ balance: AssetBalance; address: string }> {
+  const [address, balance] = await Promise.all([
+    getWalletAddress(session, projectId, chainId),
+    getDatAssetBalance(session, projectId, chainId, assetId),
+  ]);
+
+  if (BigInt(balance.spendable) <= 0n) {
     throw new Error(
-      `DAT CAT wallet not found in Sage. Add token asset id ${assetId.slice(0, 8)}… in your wallet.`,
+      `No spendable DAT balance found. Add CAT asset ${assetId.slice(0, 8)}… in Sage (mainnet).`,
     );
   }
-  const balance = await getWalletBalance(session, projectId, chainId, catWallet.id);
-  const address = await getCurrentAddress(session, projectId, chainId);
-  return { wallet: catWallet, balance, address };
+
+  return { balance, address };
 }
 
 export type { WcSession } from "./constants.js";

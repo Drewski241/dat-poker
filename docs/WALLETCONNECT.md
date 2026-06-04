@@ -73,7 +73,9 @@ pnpm dev:api   # terminal 1
 pnpm dev:web   # terminal 2 — open http://localhost:5173
 ```
 
-> **Note:** Buy-in is **signed authorization + balance check** (Phase 2 alpha). On-chain CAT escrow/spend is planned next; no DAT leaves your wallet until spendCAT is wired.
+> **Sage wallet:** Uses CHIP-0002 WalletConnect methods (`chip0002_getAssetBalance`, `chia_getAddress`, `chia_signMessageByAddress`). The Chia reference wallet `chia_logIn` / `chia_getWallets` RPCs are not used.
+
+> **Note:** Buy-in is **signed authorization + balance check** (Phase 2 alpha). On-chain CAT escrow/spend is planned next; no DAT leaves your wallet until `chia_send` is wired for treasury deposits.
 
 ## Development vs production
 
