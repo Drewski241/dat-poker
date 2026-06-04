@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-import { formatDatMojos } from "@dat-poker/shared";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
 import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { BetSlider } from "./components/BetSlider.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
   beginWalletConnect,
@@ -14,7 +15,7 @@ import {
 } from "./wallet/chia-wallet.js";
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
-const DAT_BIG_BLIND_MOJOS = 10_000n;
+const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
 
 function playerLabel(id: string, youId: string | null): string {
   if (id === youId) return "You";
@@ -52,6 +53,7 @@ export function App() {
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
 
   useEffect(() => {
     void (async () => {
@@ -310,8 +312,12 @@ export function App() {
       });
 
       if (result.mode === "offer" && result.offer && session && wcConfig) {
-        setStatus("Accept treasury payout in Sage…");
-        await takeOffer(session, wcConfig.projectId, wcConfig.chainId, result.offer, BigInt(result.feeMojos));
+        if (result.offer.startsWith("mock-offer:")) {
+          setStatus("Mock treasury offer (dev) — skipping Sage takeOffer");
+        } else {
+          setStatus("Accept treasury payout in Sage…");
+          await takeOffer(session, wcConfig.projectId, wcConfig.chainId, result.offer, BigInt(result.feeMojos));
+        }
       }
 
       setWithdrawResult(result);
@@ -337,12 +343,18 @@ export function App() {
   const myBet = BigInt(me?.betThisStreetMojos ?? 0);
   const toCall = currentBet - myBet;
   const canCheck = toCall <= 0n;
-  const betTo = (DAT_BIG_BLIND_MOJOS * 2n).toString();
-  const raiseTo =
-    currentBet === 0n
-      ? betTo
-      : (currentBet + DAT_BIG_BLIND_MOJOS).toString();
   const myStack = BigInt(me?.stackMojos ?? 0);
+
+  const betRange = useMemo(
+    () =>
+      computeNlheBetRange({
+        bigBlindMojos: DAT_BIG_BLIND_MOJOS,
+        currentBetMojos: currentBet,
+        myBetThisStreetMojos: myBet,
+        myStackMojos: myStack,
+      }),
+    [currentBet, myBet, myStack],
+  );
 
   const actionSeatPlayer =
     hand?.actionSeat != null
@@ -350,6 +362,21 @@ export function App() {
       : null;
 
   const isMyAction = actionSeatPlayer?.playerId === playerId;
+
+  useEffect(() => {
+    if (!isMyAction || !betRange.canBetOrRaise) return;
+    setBetAmountMojos(betRange.minRaiseTo);
+  }, [
+    hand?.handId,
+    hand?.street,
+    hand?.actionSeat,
+    hand?.currentBetMojos,
+    me?.stackMojos,
+    me?.betThisStreetMojos,
+    isMyAction,
+    betRange.minRaiseTo,
+    betRange.canBetOrRaise,
+  ]);
 
   return (
     <div className="app">
@@ -498,18 +525,33 @@ export function App() {
                       call {formatDatMojos(toCall.toString(), datToken?.ticker)}
                     </button>
                   )}
-                  {currentBet === 0n ? (
-                    <button type="button" disabled={busy} onClick={() => sendAction("bet", betTo)}>
-                      bet {formatDatMojos(betTo, datToken?.ticker)}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={busy || myStack + myBet <= currentBet}
-                      onClick={() => sendAction("raise", raiseTo)}
-                    >
-                      raise to {formatDatMojos(raiseTo, datToken?.ticker)}
-                    </button>
+                  {betRange.canBetOrRaise && (
+                    <>
+                      <BetSlider
+                        label={betRange.isOpeningBet ? "Bet size" : "Raise to"}
+                        minMojos={betRange.minRaiseTo}
+                        maxMojos={betRange.maxRaiseTo}
+                        stepMojos={DAT_BIG_BLIND_MOJOS}
+                        valueMojos={betAmountMojos}
+                        ticker={datToken?.ticker}
+                        disabled={busy}
+                        onChange={setBetAmountMojos}
+                      />
+                      <button
+                        type="button"
+                        className="primary-bet"
+                        disabled={busy}
+                        onClick={() =>
+                          sendAction(
+                            betRange.isOpeningBet ? "bet" : "raise",
+                            betAmountMojos.toString(),
+                          )
+                        }
+                      >
+                        {betRange.isOpeningBet ? "bet" : "raise to"}{" "}
+                        {formatDatMojos(betAmountMojos.toString(), datToken?.ticker)}
+                      </button>
+                    </>
                   )}
                   {myStack > 0n && (
                     <button
@@ -534,8 +576,8 @@ export function App() {
 
       <footer>
         <p>
-          Configure API <code>.env</code> with WalletConnect + DAT asset id. Run <code>pnpm dev:api</code> and{" "}
-          <code>pnpm dev:web</code>.
+          Configure API <code>.env</code> with WalletConnect + DAT asset id. Run <code>pnpm dev:api</code>,{" "}
+          <code>pnpm dev:treasury</code>, and <code>pnpm dev:web</code>.
         </p>
       </footer>
     </div>

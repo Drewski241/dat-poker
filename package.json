@@ -14,6 +14,7 @@
     "lint": "pnpm -r run lint",
     "dev:api": "pnpm --filter @dat-poker/api^... build && pnpm --filter @dat-poker/api dev",
     "dev:gateway": "pnpm --filter @dat-poker/gateway dev",
+    "dev:treasury": "pnpm --filter @dat-poker/treasury-payout^... build && pnpm --filter @dat-poker/treasury-payout dev",
     "dev:web": "pnpm --filter @dat-poker/web^... build && pnpm --filter @dat-poker/web dev",
     "typecheck": "pnpm -r run typecheck"
   }

@@ -142,6 +142,37 @@ importers:
         specifier: ^3.2.4
         version: 3.2.6(@types/node@22.19.19)(tsx@4.22.4)
 
+  services/treasury-payout:
+    dependencies:
+      '@dat-poker/chia-bridge':
+        specifier: workspace:*
+        version: link:../../packages/chia-bridge
+      '@dat-poker/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@fastify/cors':
+        specifier: ^11.0.1
+        version: 11.2.0
+      dotenv:
+        specifier: ^16.5.0
+        version: 16.6.1
+      fastify:
+        specifier: ^5.4.0
+        version: 5.8.5
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.30
+        version: 22.19.19
+      tsx:
+        specifier: ^4.20.3
+        version: 4.22.4
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/node@22.19.19)(tsx@4.22.4)
+
 packages:
 
   '@adraffy/ens-normalize@1.11.1':
