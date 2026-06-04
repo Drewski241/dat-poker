@@ -61,7 +61,7 @@ Best for: MTTs.
 | mainnet | `https://coinset.org` |
 | testnet11 | `https://testnet11.api.coinset.org` |
 
-WalletConnect project ID is required for production wallet flows.
+WalletConnect project ID is required for production wallet flows. See [WALLETCONNECT.md](./WALLETCONNECT.md) for setup and API endpoints.
 
 ## Next implementation steps
 

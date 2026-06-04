@@ -6,6 +6,7 @@ import { registerTableRoutes } from "./routes/tables.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
+import { registerWalletRoutes } from "./routes/wallet.js";
 
 const port = Number(process.env.API_PORT ?? 4000);
 const host = process.env.API_HOST ?? "0.0.0.0";
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   });
 
   registerHealthRoutes(app, chiaClient);
+  registerWalletRoutes(app, chiaClient);
   registerTableRoutes(app);
   registerHandRoutes(app);
 
