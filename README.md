@@ -17,14 +17,20 @@ pnpm test
 # Terminal 1 — REST API
 pnpm dev:api
 
-# Terminal 2 — WebSocket gateway
-pnpm dev:gateway
-
-# Terminal 3 — Web client (Vite)
+# Terminal 2 — Web client (Sage WalletConnect + DAT buy-in)
 pnpm dev:web
+
+# Optional — treasury payout offers for withdraw (see .env.example)
+pnpm dev:treasury
 ```
 
-Copy `.env.example` to `.env` and set your DAT Governance Token `asset_id`.
+Configure `.env` from `.env.example`:
+
+- `WALLETCONNECT_PROJECT_ID` — Sage WalletConnect
+- `DAT_GOVERNANCE_TOKEN_ASSET_ID` — your DAT CAT asset id
+- `DAT_MIN_BUY_IN_MOJOS=1000000` — 1000 DAT (1000 mojos per whole token)
+
+See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (connect → buy in → play vs house → withdraw).
 
 ## Monorepo layout
 
