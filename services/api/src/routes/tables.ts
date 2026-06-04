@@ -58,6 +58,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       tableId: req.params.tableId,
       players: table.getActivePlayerCount(),
       hand: table.getHandState(),
+      lastHandResult: table.getLastHandResult(),
     };
   });
 

@@ -11,6 +11,13 @@ import {
 
 export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in";
 
+export interface HandResult {
+  handId: HandId;
+  winnerId: PlayerId;
+  potMojos: bigint;
+  reason: "fold" | "showdown";
+}
+
 export interface PlayerHandState {
   playerId: PlayerId;
   seatIndex: number;
@@ -45,6 +52,7 @@ export class NlheTableEngine {
   private seats: Map<number, PlayerId> = new Map();
   private stacks: Map<PlayerId, bigint> = new Map();
   private hand: TableHandState | null = null;
+  private lastHandResult: HandResult | null = null;
 
   constructor(config: TableConfig) {
     this.config = config;
@@ -76,6 +84,7 @@ export class NlheTableEngine {
       throw new Error("Hand already in progress");
     }
 
+    this.lastHandResult = null;
     const serverSeed = generateServerSeed();
     const { commitHash } = createCommit(serverSeed);
     const seated = [...this.seats.entries()].sort((a, b) => a[0] - b[0]);
@@ -206,6 +215,10 @@ export class NlheTableEngine {
     return this.hand ? structuredClone(this.hand) : null;
   }
 
+  getLastHandResult(): HandResult | null {
+    return this.lastHandResult ? structuredClone(this.lastHandResult) : null;
+  }
+
   private requireHand(): TableHandState {
     if (!this.hand) throw new Error("No active hand");
     return this.hand;
@@ -299,6 +312,12 @@ export class NlheTableEngine {
 
     best.stackMojos += h.potMojos;
     this.stacks.set(best.playerId, best.stackMojos);
+    this.lastHandResult = {
+      handId: h.handId,
+      winnerId: best.playerId,
+      potMojos: h.potMojos,
+      reason: "showdown",
+    };
     h.potMojos = 0n;
     this.hand = null;
   }
@@ -307,6 +326,12 @@ export class NlheTableEngine {
     const winner = this.activePlayers(h)[0];
     winner.stackMojos += h.potMojos;
     this.stacks.set(winner.playerId, winner.stackMojos);
+    this.lastHandResult = {
+      handId: h.handId,
+      winnerId: winner.playerId,
+      potMojos: h.potMojos,
+      reason: "fold",
+    };
     h.potMojos = 0n;
     this.hand = null;
   }

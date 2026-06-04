@@ -19,6 +19,7 @@ export interface HandPlayer {
   seatIndex: number;
   holeCards: { rank: string; suit: string }[];
   stackMojos: string;
+  betThisStreetMojos: string;
   folded: boolean;
 }
 
@@ -27,8 +28,16 @@ export interface HandState {
   street: string;
   board: { rank: string; suit: string }[];
   potMojos: string;
+  currentBetMojos: string;
   actionSeat: number | null;
   players: HandPlayer[];
+}
+
+export interface HandResult {
+  handId: string;
+  winnerId: string;
+  potMojos: string;
+  reason: "fold" | "showdown";
 }
 
 export interface WalletConnectConfig {
@@ -83,9 +92,12 @@ export const api = {
     request<{ tableId: string }>("/v1/tables", { method: "POST", body: "{}" }),
 
   getTable: (tableId: string) =>
-    request<{ tableId: string; players: number; hand: HandState | null }>(
-      `/v1/tables/${tableId}`,
-    ),
+    request<{
+      tableId: string;
+      players: number;
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+    }>(`/v1/tables/${tableId}`),
 
   seatPlayer: (
     tableId: string,
@@ -129,8 +141,11 @@ export const api = {
     }),
 
   action: (tableId: string, playerId: string, action: PlayerAction, amountMojos?: string) =>
-    request<{ ok: boolean; hand: HandState | null }>(`/v1/tables/${tableId}/hands/action`, {
-      method: "POST",
-      body: JSON.stringify({ playerId, action, amountMojos }),
-    }),
+    request<{ ok: boolean; hand: HandState | null; lastHandResult: HandResult | null }>(
+      `/v1/tables/${tableId}/hands/action`,
+      {
+        method: "POST",
+        body: JSON.stringify({ playerId, action, amountMojos }),
+      },
+    ),
 };

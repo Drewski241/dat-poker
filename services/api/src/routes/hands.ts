@@ -56,7 +56,11 @@ export function registerHandRoutes(app: FastifyInstance): void {
     try {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
       table.applyAction(req.body.playerId, req.body.action, amount);
-      return { ok: true, hand: table.getHandState() };
+      return {
+        ok: true,
+        hand: table.getHandState(),
+        lastHandResult: table.getLastHandResult(),
+      };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
     }

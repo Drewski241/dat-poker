@@ -33,5 +33,7 @@ describe("NlheTableEngine", () => {
 
     table.applyAction("alice", "fold");
     expect(table.getHandState()).toBeNull();
+    expect(table.getLastHandResult()?.winnerId).toBe("bob");
+    expect(table.getLastHandResult()?.reason).toBe("fold");
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandState, type PlayerAction } from "./api.js";
+import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction } from "./api.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
   beginWalletConnect,
@@ -12,6 +12,13 @@ import {
 } from "./wallet/chia-wallet.js";
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
+const DAT_BIG_BLIND_MOJOS = 10_000n;
+
+function playerLabel(id: string, youId: string | null): string {
+  if (id === youId) return "You";
+  if (id === HOUSE_PLAYER_ID) return "House";
+  return id.length > 16 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
+}
 
 function cardLabel(card: { rank: string; suit: string }): string {
   const suit = { c: "♣", d: "♦", h: "♥", s: "♠" }[card.suit] ?? card.suit;
@@ -36,6 +43,7 @@ export function App() {
   const [tableId, setTableId] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [hand, setHand] = useState<HandState | null>(null);
+  const [handResult, setHandResult] = useState<HandResult | null>(null);
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +85,16 @@ export function App() {
   const refreshTable = useCallback(async (id: string) => {
     const t = await api.getTable(id);
     setHand(t.hand);
+    if (t.lastHandResult) setHandResult(t.lastHandResult);
   }, []);
+
+  const applyActionResponse = useCallback(
+    (response: { hand: HandState | null; lastHandResult: HandResult | null }) => {
+      setHand(response.hand);
+      if (response.lastHandResult) setHandResult(response.lastHandResult);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!tableId || !hand || !playerId || busy) return;
@@ -88,15 +105,23 @@ export function App() {
       void (async () => {
         setBusy(true);
         try {
-          const action: PlayerAction = "check";
-          const { hand: next } = await api.action(tableId, HOUSE_PLAYER_ID, action);
-          setHand(next);
-          if (!next) await refreshTable(tableId);
+          const currentBet = BigInt(hand.currentBetMojos);
+          const house = hand.players.find((p) => p.playerId === HOUSE_PLAYER_ID);
+          const houseBet = BigInt(house?.betThisStreetMojos ?? 0);
+          const toCall = currentBet - houseBet;
+          let response;
+          if (toCall > 0n) {
+            response = await api.action(tableId, HOUSE_PLAYER_ID, "call");
+          } else {
+            response = await api.action(tableId, HOUSE_PLAYER_ID, "check");
+          }
+          applyActionResponse(response);
+          if (!response.hand) await refreshTable(tableId);
         } catch {
           try {
-            const { hand: next } = await api.action(tableId, HOUSE_PLAYER_ID, "fold");
-            setHand(next);
-            if (!next) await refreshTable(tableId);
+            const response = await api.action(tableId, HOUSE_PLAYER_ID, "fold");
+            applyActionResponse(response);
+            if (!response.hand) await refreshTable(tableId);
           } catch {
             /* ignore */
           }
@@ -107,7 +132,7 @@ export function App() {
     }, 600);
 
     return () => window.clearTimeout(timer);
-  }, [tableId, hand, playerId, busy, refreshTable]);
+  }, [tableId, hand, playerId, busy, refreshTable, applyActionResponse]);
 
   const connectSage = () =>
     run("Opening WalletConnect…", async () => {
@@ -217,6 +242,7 @@ export function App() {
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
     run("Starting hand…", async () => {
+      setHandResult(null);
       await api.startHand(tableId);
       await api.submitSeed(tableId, playerId);
       await api.submitSeed(tableId, HOUSE_PLAYER_ID);
@@ -225,14 +251,26 @@ export function App() {
     });
   };
 
-  const sendAction = (action: PlayerAction) => {
+  const sendAction = (action: PlayerAction, amountMojos?: string) => {
     if (!tableId || !playerId) return;
     run(action, async () => {
-      const { hand: next } = await api.action(tableId, playerId, action);
-      setHand(next);
-      if (!next) await refreshTable(tableId);
+      const response = await api.action(tableId, playerId, action, amountMojos);
+      applyActionResponse(response);
+      if (!response.hand) await refreshTable(tableId);
     });
   };
+
+  const me = hand?.players.find((p) => p.playerId === playerId);
+  const currentBet = BigInt(hand?.currentBetMojos ?? 0);
+  const myBet = BigInt(me?.betThisStreetMojos ?? 0);
+  const toCall = currentBet - myBet;
+  const canCheck = toCall <= 0n;
+  const betTo = (DAT_BIG_BLIND_MOJOS * 2n).toString();
+  const raiseTo =
+    currentBet === 0n
+      ? betTo
+      : (currentBet + DAT_BIG_BLIND_MOJOS).toString();
+  const myStack = BigInt(me?.stackMojos ?? 0);
 
   const actionSeatPlayer =
     hand?.actionSeat != null
@@ -314,9 +352,18 @@ export function App() {
         <section className="panel">
           <h2>Hand</h2>
           {!hand ? (
-            <button type="button" disabled={busy} onClick={startHandFlow}>
-              Start hand vs house
-            </button>
+            <>
+              {handResult && (
+                <div className="banner win">
+                  <strong>{playerLabel(handResult.winnerId, playerId)}</strong> wins{" "}
+                  {formatDatMojos(handResult.potMojos, datToken?.ticker)}
+                  {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
+                </div>
+              )}
+              <button type="button" disabled={busy} onClick={startHandFlow}>
+                {handResult ? "New hand" : "Start hand vs house"}
+              </button>
+            </>
           ) : (
             <>
               <p>
@@ -339,20 +386,44 @@ export function App() {
               {isMyAction && (
                 <div className="actions">
                   <span>Your action</span>
-                  {(["fold", "check", "call"] as const).map((a) => (
-                    <button key={a} type="button" disabled={busy} onClick={() => sendAction(a)}>
-                      {a}
+                  <button type="button" disabled={busy} onClick={() => sendAction("fold")}>
+                    fold
+                  </button>
+                  {canCheck ? (
+                    <button type="button" disabled={busy} onClick={() => sendAction("check")}>
+                      check
                     </button>
-                  ))}
+                  ) : (
+                    <button type="button" disabled={busy} onClick={() => sendAction("call")}>
+                      call {formatDatMojos(toCall.toString(), datToken?.ticker)}
+                    </button>
+                  )}
+                  {currentBet === 0n ? (
+                    <button type="button" disabled={busy} onClick={() => sendAction("bet", betTo)}>
+                      bet {formatDatMojos(betTo, datToken?.ticker)}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busy || myStack + myBet <= currentBet}
+                      onClick={() => sendAction("raise", raiseTo)}
+                    >
+                      raise to {formatDatMojos(raiseTo, datToken?.ticker)}
+                    </button>
+                  )}
+                  {myStack > 0n && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => sendAction("all-in")}
+                    >
+                      all-in
+                    </button>
+                  )}
                 </div>
               )}
               {!isMyAction && actionSeatPlayer && (
-                <p className="muted">Waiting for {actionSeatPlayer.playerId === HOUSE_PLAYER_ID ? "house" : "opponent"}…</p>
-              )}
-              {!actionSeatPlayer && hand && (
-                <button type="button" disabled={busy} onClick={startHandFlow}>
-                  New hand
-                </button>
+                <p className="muted">Waiting for {playerLabel(actionSeatPlayer.playerId, playerId)}…</p>
               )}
             </>
           )}
