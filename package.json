@@ -12,9 +12,9 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
-    "dev:api": "pnpm --filter @dat-poker/api dev",
+    "dev:api": "pnpm --filter @dat-poker/api^... build && pnpm --filter @dat-poker/api dev",
     "dev:gateway": "pnpm --filter @dat-poker/gateway dev",
-    "dev:web": "pnpm --filter @dat-poker/web dev",
+    "dev:web": "pnpm --filter @dat-poker/web^... build && pnpm --filter @dat-poker/web dev",
     "typecheck": "pnpm -r run typecheck"
   }
 }
