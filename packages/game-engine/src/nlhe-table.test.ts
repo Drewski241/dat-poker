@@ -36,4 +36,28 @@ describe("NlheTableEngine", () => {
     expect(table.getLastHandResult()?.winnerId).toBe("bob");
     expect(table.getLastHandResult()?.reason).toBe("fold");
   });
+
+  it("advances to flop after raise and call", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+
+    table.startHand("hand-2");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const pre = table.getHandState()!;
+    const actor = pre.players.find((p) => p.seatIndex === pre.actionSeat)!;
+    const other = pre.players.find((p) => p.playerId !== actor.playerId)!;
+    const raiseTo = pre.currentBetMojos + config.bigBlindMojos;
+
+    table.applyAction(actor.playerId, "raise", raiseTo);
+    expect(table.getHandState()?.street).toBe("preflop");
+
+    table.applyAction(other.playerId, "call");
+    const flop = table.getHandState();
+    expect(flop?.street).toBe("flop");
+    expect(flop?.board).toHaveLength(3);
+  });
 });

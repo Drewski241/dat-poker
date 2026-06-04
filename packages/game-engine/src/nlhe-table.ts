@@ -158,6 +158,9 @@ export class NlheTableEngine {
   applyAction(playerId: PlayerId, action: PlayerAction, amountMojos: bigint = 0n): void {
     const h = this.requireHand();
     const player = this.getPlayer(h, playerId);
+    if (player.seatIndex !== h.actionSeat) {
+      throw new Error("Not this player's turn");
+    }
     if (player.folded || player.allIn) {
       throw new Error("Player cannot act");
     }
@@ -208,6 +211,8 @@ export class NlheTableEngine {
 
     if (this.bettingRoundComplete(h)) {
       this.advanceStreet(h);
+    } else {
+      this.advanceActionSeat(h, playerId);
     }
   }
 
@@ -265,6 +270,23 @@ export class NlheTableEngine {
     const contenders = h.players.filter((p) => !p.folded && !p.allIn);
     if (contenders.length === 0) return true;
     return contenders.every((p) => p.betThisStreetMojos === h.currentBetMojos);
+  }
+
+  private advanceActionSeat(h: TableHandState, fromPlayerId: PlayerId): void {
+    const ordered = [...h.players].sort((a, b) => a.seatIndex - b.seatIndex);
+    const fromIdx = ordered.findIndex((p) => p.playerId === fromPlayerId);
+    if (fromIdx === -1) {
+      h.actionSeat = null;
+      return;
+    }
+    for (let i = 1; i <= ordered.length; i++) {
+      const next = ordered[(fromIdx + i) % ordered.length];
+      if (!next.folded && !next.allIn) {
+        h.actionSeat = next.seatIndex;
+        return;
+      }
+    }
+    h.actionSeat = null;
   }
 
   private advanceStreet(h: TableHandState): void {
