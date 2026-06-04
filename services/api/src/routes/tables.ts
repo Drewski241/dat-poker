@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { TableConfig } from "@dat-poker/shared";
-import { DAT_TABLE_DEFAULTS } from "@dat-poker/shared";
+import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
 import { recordBuyIn } from "../buy-in-store.js";
 import {
@@ -26,8 +26,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const dat = readDatTokenConfig();
     const useDatStakes = Boolean(dat.assetId);
     const minBuyIn = useDatStakes
-      ? BigInt(dat.minBuyInMojos)
-      : 2_000_000_000_000n;
+      ? resolveDatMinBuyInMojos(dat.minBuyInMojos)
+      : DAT_TABLE_DEFAULTS.minBuyInMojos;
     const config: TableConfig = {
       id,
       variant: "nlhe",
@@ -81,10 +81,12 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
     const dat = readDatTokenConfig();
     const buyInMojos = BigInt(req.body.buyInMojos);
-    const minBuyIn = BigInt(dat.minBuyInMojos);
+    const minBuyIn = resolveDatMinBuyInMojos(dat.minBuyInMojos);
 
     if (buyInMojos < minBuyIn) {
-      return reply.status(400).send({ error: `Buy-in below minimum (${dat.minBuyInMojos} mojos)` });
+      return reply.status(400).send({
+        error: `Buy-in below minimum (${minBuyIn.toString()} mojos)`,
+      });
     }
 
     if (!dat.devBuyInEnabled) {
@@ -145,7 +147,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
-    const buyInMojos = BigInt(req.body.buyInMojos ?? "5000000000000");
+    const buyInMojos = BigInt(req.body.buyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString());
     try {
       table.seatPlayer(HOUSE_PLAYER_ID, 1, buyInMojos);
       return { ok: true, playerId: HOUSE_PLAYER_ID };

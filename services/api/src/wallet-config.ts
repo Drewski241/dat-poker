@@ -1,3 +1,5 @@
+import { resolveDatMinBuyInMojos } from "@dat-poker/shared";
+
 export interface DatTokenConfig {
   assetId: string | null;
   ticker: string;
@@ -9,10 +11,11 @@ export interface DatTokenConfig {
 export function readDatTokenConfig(): DatTokenConfig {
   const assetId = process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID?.trim() || undefined;
   const devBuyInEnabled = process.env.DAT_ALLOW_DEV_BUYIN === "true";
+  const minBuyInMojos = resolveDatMinBuyInMojos(process.env.DAT_MIN_BUY_IN_MOJOS).toString();
   return {
     assetId: assetId ?? null,
     ticker: process.env.DAT_GOVERNANCE_TOKEN_TICKER ?? "DAT",
-    minBuyInMojos: process.env.DAT_MIN_BUY_IN_MOJOS ?? "1000000",
+    minBuyInMojos,
     devBuyInEnabled,
     buyInReady: Boolean(assetId) || devBuyInEnabled,
   };

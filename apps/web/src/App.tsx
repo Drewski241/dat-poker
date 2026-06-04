@@ -189,14 +189,16 @@ export function App() {
     setError(null);
     try {
       if (!playerId) throw new Error("Connect Sage and load DAT balance first");
-      const buyIn = datToken?.minBuyInMojos ?? "1000000";
       const ticker = datToken?.ticker ?? "DAT";
+
+      setStatus("Creating table…");
+      const { tableId: id, config: tableConfig } = await api.createTable();
+      const buyIn = tableConfig.minBuyInMojos;
+
       if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
         throw new Error(`Need at least ${formatDatMojos(buyIn, ticker)} in wallet`);
       }
 
-      setStatus("Creating table…");
-      const { tableId: id } = await api.createTable();
       let buyInProof: BuyInProof | undefined;
 
       if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {

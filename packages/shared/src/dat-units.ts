@@ -21,3 +21,21 @@ export const DAT_TABLE_DEFAULTS = {
   smallBlindMojos: 5_000n, // 5 DAT
   bigBlindMojos: 10_000n, // 10 DAT
 } as const;
+
+/** Legacy XCH-style table minimum (10^12 mojos) — not valid for DAT CAT buy-ins. */
+export const XCH_LEGACY_MIN_BUY_IN_MOJOS = 2_000_000_000_000n;
+
+/**
+ * Resolve DAT min buy-in from env. CAT mojos use 1000 per whole DAT token.
+ * Rejects legacy XCH-scale values (>= 10^12) that were mistakenly copied into .env.
+ */
+export function resolveDatMinBuyInMojos(raw: string | undefined): bigint {
+  if (!raw?.trim()) {
+    return DAT_TABLE_DEFAULTS.minBuyInMojos;
+  }
+  const value = BigInt(raw.trim());
+  if (value >= 1_000_000_000_000n) {
+    return DAT_TABLE_DEFAULTS.minBuyInMojos;
+  }
+  return value;
+}

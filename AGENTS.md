@@ -51,6 +51,6 @@ Connect to `ws://localhost:4100/ws`, wait for `connected`, send `{"type":"ping"}
 
 ### Gotchas
 
-- Buy-in amounts are **mojos** (bigint strings in JSON). Default min buy-in is `2000000000000` per table config.
+- Buy-in amounts are **CAT mojos** (1000 mojos = 1 DAT). Default min buy-in is `1000000` (1000 DAT). Do not use XCH-scale values like `2000000000000`.
 - In-memory table state: restarting `pnpm dev:api` clears all tables.
 - `DAT_ALLOW_DEV_BUYIN=true` in `.env.example` allows dev buy-ins without a configured `DAT_GOVERNANCE_TOKEN_ASSET_ID`.

@@ -82,6 +82,14 @@ export interface TableSeat {
   stackMojos: string;
 }
 
+export interface TableConfigResponse {
+  id: string;
+  minBuyInMojos: string;
+  maxBuyInMojos: string;
+  smallBlindMojos: string;
+  bigBlindMojos: string;
+}
+
 export const api = {
   health: () => request<{ status: string }>("/health"),
 
@@ -138,7 +146,10 @@ export const api = {
     }),
 
   createTable: () =>
-    request<{ tableId: string }>("/v1/tables", { method: "POST", body: "{}" }),
+    request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
+      method: "POST",
+      body: "{}",
+    }),
 
   getTable: (tableId: string) =>
     request<{
