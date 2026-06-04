@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import https from "node:https";
 import { URL } from "node:url";
 
@@ -15,11 +16,20 @@ export interface CreateOfferForIdsResponse {
   error?: string;
 }
 
+export function expandWalletPath(path: string | undefined): string | undefined {
+  if (!path?.trim()) return undefined;
+  const trimmed = path.trim();
+  if (trimmed.startsWith("~/")) {
+    return `${homedir()}${trimmed.slice(1)}`;
+  }
+  return trimmed;
+}
+
 export function readWalletRpcConfigFromEnv(): ChiaWalletRpcConfig {
   return {
     url: process.env.TREASURY_WALLET_RPC_URL?.trim() || "https://127.0.0.1:9256",
-    certPath: process.env.TREASURY_WALLET_CERT_PATH?.trim() || undefined,
-    keyPath: process.env.TREASURY_WALLET_KEY_PATH?.trim() || undefined,
+    certPath: expandWalletPath(process.env.TREASURY_WALLET_CERT_PATH),
+    keyPath: expandWalletPath(process.env.TREASURY_WALLET_KEY_PATH),
     rejectUnauthorized: process.env.TREASURY_WALLET_INSECURE !== "true",
   };
 }
@@ -85,4 +95,13 @@ export async function walletRpcRequest<T>(
     req.write(body);
     req.end();
   });
+}
+
+export async function pingWalletRpc(config: ChiaWalletRpcConfig): Promise<boolean> {
+  try {
+    await walletRpcRequest<{ success: boolean; routes?: string[] }>(config, "get_routes", {});
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -58,6 +58,7 @@ The Vite web client (`apps/web`) implements Sage WalletConnect:
 3. **Load DAT balance** — finds your CAT wallet matching `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
 4. **Buy in & join table** — signs a buy-in intent via `chia_signMessageByAddress`, seats you vs house.
 5. **Start hand** — commit-reveal deal; you act when prompted (house auto-plays).
+6. **Withdraw** — cash out table stack; if treasury is configured, accept the DAT offer in Sage. See [TREASURY.md](./TREASURY.md).
 
 ### Mainnet test checklist
 
@@ -69,8 +70,9 @@ CHIA_CHAIN_ID=chia:mainnet
 CHIA_NETWORK=mainnet
 DAT_ALLOW_DEV_BUYIN=false
 
-pnpm dev:api   # terminal 1
-pnpm dev:web   # terminal 2 — open http://localhost:5173
+pnpm dev:api    # terminal 1
+pnpm dev:treasury  # terminal 2 — treasury offers for withdraw (see docs/TREASURY.md)
+pnpm dev:web    # terminal 3 — open http://localhost:5173
 ```
 
 > **Sage wallet:** Uses CHIP-0002 WalletConnect methods (`chip0002_getAssetBalance`, `chia_getAddress`, `chia_signMessageByAddress`). The Chia reference wallet `chia_logIn` / `chia_getWallets` RPCs are not used.
@@ -88,6 +90,7 @@ pnpm dev:web   # terminal 2 — open http://localhost:5173
 
 ## Related docs
 
+- [TREASURY.md](./TREASURY.md) — treasury wallet + on-chain DAT withdraw setup
 - [DAT_TOKEN.md](./DAT_TOKEN.md) — DAT Governance Token buy-in architecture
 - [CHIA_INTEGRATION.md](./CHIA_INTEGRATION.md) — chia-gaming modes and network URLs
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — wallet / treasury component in the platform diagram

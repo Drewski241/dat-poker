@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { buildPayoutOffer, readTreasuryServiceConfig, type PayoutRequestBody } from "./payout.js";
+import { pingWalletRpc } from "@dat-poker/chia-bridge";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -13,13 +14,21 @@ async function main(): Promise<void> {
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
 
-  app.get("/health", async () => ({
-    status: "ok",
-    offerMode: config.offerMode,
-    assetId: config.defaultAssetId,
-    walletRpcUrl: config.walletRpc.url,
-    walletConfigured: Boolean(config.walletRpc.certPath && config.walletRpc.keyPath),
-  }));
+  app.get("/health", async () => {
+    const walletConfigured = Boolean(config.walletRpc.certPath && config.walletRpc.keyPath);
+    let walletRpcReachable: boolean | null = null;
+    if (config.offerMode === "rpc" && walletConfigured) {
+      walletRpcReachable = await pingWalletRpc(config.walletRpc);
+    }
+    return {
+      status: "ok",
+      offerMode: config.offerMode,
+      assetId: config.defaultAssetId,
+      walletRpcUrl: config.walletRpc.url,
+      walletConfigured,
+      walletRpcReachable,
+    };
+  });
 
   app.post<{ Body: PayoutRequestBody }>("/payout", async (req, reply) => {
     try {

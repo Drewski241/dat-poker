@@ -32,6 +32,8 @@ Configure `.env` from `.env.example`:
 
 See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (connect → buy in → play vs house → withdraw).
 
+For **on-chain withdraw payouts**, fund a Chia treasury wallet and run `pnpm dev:treasury` — full steps in [docs/TREASURY.md](./docs/TREASURY.md).
+
 ## Monorepo layout
 
 | Path | Purpose |
