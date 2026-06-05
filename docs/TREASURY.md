@@ -29,6 +29,66 @@ sequenceDiagram
 
 Use a **separate Sage key/fingerprint** for treasury — not the same profile players use to play.
 
+**Treasury Sage and player Sage are always on different machines in production.** The player wallet is on the user's phone or PC; the treasury wallet stays on an operator-controlled host. They never share a device.
+
+---
+
+## Multi-machine layout (production)
+
+```text
+┌─────────────────────────────┐     ┌──────────────────────────────┐
+│  Player device              │     │  Treasury host (operator)    │
+│  Sage + browser             │     │  Sage (treasury fingerprint) │
+│  WalletConnect ────────────────►│  RPC :9257 (localhost only)  │
+│  takeOffer on withdraw      │     │  treasury-payout :4200       │
+└──────────────┬──────────────┘     └──────────────▲───────────────┘
+               │                                    │
+               │ HTTPS                              │ HTTP (private)
+               ▼                                    │
+┌─────────────────────────────┐     POST /payout   │
+│  Game host (API + web)      │────────────────────┘
+│  pnpm dev:api  :4000        │
+│  pnpm dev:web  :5173        │
+└─────────────────────────────┘
+```
+
+| Machine | Runs | Must NOT |
+|---------|------|----------|
+| **Player phone/PC** | Sage (player key), browser → your web app | Hold treasury DAT |
+| **Game host** | `dev:api`, `dev:web` (or deployed equivalents) | Expose Sage RPC; hold treasury keys |
+| **Treasury host** | Sage (treasury key), `pnpm dev:treasury` | Be reachable by players directly |
+
+### Game host `.env` (API + web)
+
+Set the treasury URL to the **treasury host** on your private network — not `localhost` unless everything runs on one box for dev:
+
+```env
+# Point at treasury machine (example private IP)
+DAT_TREASURY_PAYOUT_URL=http://10.0.0.50:4200/payout
+
+WALLETCONNECT_PROJECT_ID=...
+DAT_GOVERNANCE_TOKEN_ASSET_ID=...
+```
+
+Players only talk to the **game host** (web + API). They never connect to the treasury host.
+
+### Treasury host `.env`
+
+Runs **only** on the machine where treasury Sage is open:
+
+```env
+DAT_GOVERNANCE_TOKEN_ASSET_ID=...   # same asset id as game host
+
+TREASURY_OFFER_MODE=rpc
+TREASURY_WALLET_BACKEND=sage
+TREASURY_WALLET_RPC_URL=https://127.0.0.1:9257   # always local to this machine
+TREASURY_SAGE_FINGERPRINT=...
+TREASURY_HOST=0.0.0.0                            # listen for API server
+TREASURY_PORT=4200
+```
+
+Sage RPC (`9257`) stays **localhost-only**. Firewall `:4200` so **only the game API server IP** can call `/payout` — not the public internet.
+
 ---
 
 ## Step 1 — Treasury Sage wallet
@@ -92,6 +152,16 @@ TREASURY_SAGE_FINGERPRINT=1234567890
 TREASURY_PAYOUT_FEE_MOJOS=0
 ```
 
+### Game host (API + web — can be a different computer)
+
+```env
+DAT_GOVERNANCE_TOKEN_ASSET_ID=your_64_char_asset_id
+DAT_TREASURY_PAYOUT_URL=http://TREASURY_HOST_IP:4200/payout
+DAT_WITHDRAW_PAYOUT_MODE=net
+WALLETCONNECT_PROJECT_ID=...
+# No TREASURY_SAGE_* vars needed here — treasury service runs elsewhere
+```
+
 | Variable | Notes |
 |----------|--------|
 | `TREASURY_SAGE_FINGERPRINT` | Treasury key fingerprint — service calls `login` before `make_offer` |
@@ -103,21 +173,22 @@ TREASURY_PAYOUT_FEE_MOJOS=0
 
 ## Step 3 — Start services
 
+**Treasury host** (treasury Sage must be open with RPC enabled):
+
 ```bash
-pnpm install && pnpm build
+pnpm dev:treasury   # listens on :4200
+```
 
-# Terminal 1 — keep Sage running with RPC enabled
-# (Sage desktop or: sage rpc start)
+**Game host**:
 
-# Terminal 2 — game API
+```bash
 pnpm dev:api
-
-# Terminal 3 — treasury offer builder
-pnpm dev:treasury
-
-# Terminal 4 — web UI
 pnpm dev:web
 ```
+
+**Player device**: open your web URL, connect Sage via WalletConnect — no install on game/treasury servers.
+
+For local all-in-one dev, run everything on one machine; use `DAT_TREASURY_PAYOUT_URL=http://localhost:4200/payout`.
 
 ---
 
