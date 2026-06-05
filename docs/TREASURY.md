@@ -134,6 +134,8 @@ Override with `TREASURY_WALLET_CERT_PATH` / `TREASURY_WALLET_KEY_PATH` if needed
 
 ## Step 2 — Configure `.env`
 
+### Treasury host (same machine as treasury Sage)
+
 ```env
 DAT_GOVERNANCE_TOKEN_ASSET_ID=your_64_char_asset_id
 
@@ -256,8 +258,9 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 
 ## Security
 
-- Never expose port **9257** to the internet — local/trusted network only.
-- Restrict treasury service port **4200** to the API host.
+- **Never expose Sage RPC port 9257** to the network — treasury service talks to `127.0.0.1` on the treasury host only.
+- Restrict treasury service port **4200** to the game API server IP (VPN or private subnet).
+- Players never touch the treasury host; offers are delivered through the API → web → WalletConnect.
 - Use a dedicated treasury fingerprint with limited DAT balance.
 
 ## Related
