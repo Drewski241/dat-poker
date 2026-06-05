@@ -1,4 +1,8 @@
-import { walletRpcRequest, type ChiaWalletRpcConfig, type CreateOfferForIdsResponse } from "./chia-wallet-rpc.js";
+import {
+  treasuryWalletRpcRequest,
+  type CreateOfferForIdsResponse,
+  type TreasuryWalletRpcConfig,
+} from "./sage-wallet-rpc.js";
 
 export interface CatPayoutOfferParams {
   assetId: string;
@@ -29,11 +33,11 @@ export function buildCatGiftOfferRequest(params: CatPayoutOfferParams): Record<s
 }
 
 export async function createCatPayoutOffer(
-  rpc: ChiaWalletRpcConfig,
+  rpc: TreasuryWalletRpcConfig,
   params: CatPayoutOfferParams,
 ): Promise<string> {
   const request = buildCatGiftOfferRequest(params);
-  const response = await walletRpcRequest<CreateOfferForIdsResponse>(
+  const response = await treasuryWalletRpcRequest<CreateOfferForIdsResponse>(
     rpc,
     "create_offer_for_ids",
     request,

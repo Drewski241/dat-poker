@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { buildPayoutOffer, readTreasuryServiceConfig, type PayoutRequestBody } from "./payout.js";
-import { pingWalletRpc } from "@dat-poker/chia-bridge";
+import { pingTreasuryWalletRpc } from "@dat-poker/chia-bridge";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -18,15 +18,17 @@ async function main(): Promise<void> {
     const walletConfigured = Boolean(config.walletRpc.certPath && config.walletRpc.keyPath);
     let walletRpcReachable: boolean | null = null;
     if (config.offerMode === "rpc" && walletConfigured) {
-      walletRpcReachable = await pingWalletRpc(config.walletRpc);
+      walletRpcReachable = await pingTreasuryWalletRpc(config.walletRpc);
     }
     return {
       status: "ok",
       offerMode: config.offerMode,
+      walletBackend: config.walletRpc.backend,
       assetId: config.defaultAssetId,
       walletRpcUrl: config.walletRpc.url,
       walletConfigured,
       walletRpcReachable,
+      sageFingerprint: config.walletRpc.sageFingerprint ?? null,
     };
   });
 
