@@ -33,6 +33,57 @@ Use a **separate Sage key/fingerprint** for treasury — not the same profile pl
 
 ---
 
+## Treasury host quick start
+
+Use a **dedicated machine** (or VM) that players never access directly.
+
+1. **Clone the repo** on the treasury host and install deps:
+   ```bash
+   git clone https://github.com/Drewski241/dat-poker.git
+   cd dat-poker && pnpm install && pnpm build
+   ```
+
+2. **Install Sage** and create a **new treasury key** (not your player wallet):
+   - [Sage releases](https://github.com/xch-dev/sage/releases)
+   - Add the DAT CAT (`DAT_GOVERNANCE_TOKEN_ASSET_ID`)
+   - Fund with **DAT** (payout pool) and **XCH** (fees)
+   - **Settings → Advanced** → enable RPC (port **9257**), keep Sage open
+
+3. **Configure env** — copy the treasury template and fill in values:
+   ```bash
+   cp .env.treasury.example .env
+   # Edit .env: asset id + TREASURY_SAGE_FINGERPRINT
+   ```
+
+4. **Verify Sage + env** before starting the service:
+   ```bash
+   pnpm treasury:check
+   ```
+   All checks should pass (asset id, certs, RPC reachable, fingerprint login).
+
+5. **Start treasury payout service**:
+   ```bash
+   pnpm dev:treasury
+   # Production: pnpm treasury:start
+   ```
+
+6. **Confirm health**:
+   ```bash
+   curl -s http://localhost:4200/health | jq
+   ```
+   Expect `"walletRpcReachable": true`.
+
+7. **Lock down networking**:
+   - Sage RPC **9257** — localhost only (never expose)
+   - Treasury **4200** — allow **only** your game API server IP
+
+8. **On the game host**, set:
+   ```env
+   DAT_TREASURY_PAYOUT_URL=http://<TREASURY_PRIVATE_IP>:4200/payout
+   ```
+
+---
+
 ## Multi-machine layout (production)
 
 ```text
@@ -134,6 +185,12 @@ Override with `TREASURY_WALLET_CERT_PATH` / `TREASURY_WALLET_KEY_PATH` if needed
 
 ## Step 2 — Configure `.env`
 
+On the treasury host, start from `.env.treasury.example`:
+
+```bash
+cp .env.treasury.example .env
+```
+
 ### Treasury host (same machine as treasury Sage)
 
 ```env
@@ -178,7 +235,9 @@ WALLETCONNECT_PROJECT_ID=...
 **Treasury host** (treasury Sage must be open with RPC enabled):
 
 ```bash
-pnpm dev:treasury   # listens on :4200
+pnpm treasury:check   # optional but recommended first
+pnpm dev:treasury     # listens on :4200 (watch mode)
+# pnpm treasury:start # production (compiled dist/)
 ```
 
 **Game host**:
