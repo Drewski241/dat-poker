@@ -1,22 +1,31 @@
 import { resolveDatMinBuyInMojos } from "@dat-poker/shared";
 
+export type BuyInFunding = "player" | "treasury";
+
 export interface DatTokenConfig {
   assetId: string | null;
   ticker: string;
   minBuyInMojos: string;
   devBuyInEnabled: boolean;
+  buyInFunding: BuyInFunding;
   buyInReady: boolean;
+}
+
+export function readBuyInFunding(): BuyInFunding {
+  return process.env.DAT_BUYIN_FUNDING === "treasury" ? "treasury" : "player";
 }
 
 export function readDatTokenConfig(): DatTokenConfig {
   const assetId = process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID?.trim() || undefined;
   const devBuyInEnabled = process.env.DAT_ALLOW_DEV_BUYIN === "true";
+  const buyInFunding = readBuyInFunding();
   const minBuyInMojos = resolveDatMinBuyInMojos(process.env.DAT_MIN_BUY_IN_MOJOS).toString();
   return {
     assetId: assetId ?? null,
     ticker: process.env.DAT_GOVERNANCE_TOKEN_TICKER ?? "DAT",
     minBuyInMojos,
     devBuyInEnabled,
+    buyInFunding,
     buyInReady: Boolean(assetId) || devBuyInEnabled,
   };
 }

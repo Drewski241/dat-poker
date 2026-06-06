@@ -7,6 +7,7 @@ import {
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
 } from "../treasury-payout.js";
+import { getTreasuryBuyInBudgetStatus } from "../treasury-buyin-budget.js";
 import { getTableEngine } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import {
@@ -22,6 +23,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     const projectId = process.env.WALLETCONNECT_PROJECT_ID?.trim();
     const chainId = process.env.CHIA_CHAIN_ID ?? "chia:mainnet";
     const payout = readTreasuryPayoutConfig();
+    const dat = readDatTokenConfig();
 
     return {
       chiaNetwork: process.env.CHIA_NETWORK ?? "mainnet",
@@ -33,6 +35,10 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
             chainId,
           }
         : null,
+      buyIn: {
+        funding: dat.buyInFunding,
+        treasuryBudget: getTreasuryBuyInBudgetStatus(),
+      },
       withdraw: {
         payoutMode: payout.payoutMode,
         treasuryConfigured: Boolean(payout.treasuryPayoutUrl),
@@ -45,7 +51,13 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     };
   });
 
-  app.get("/v1/wallet/dat-token", async () => readDatTokenConfig());
+  app.get<{ Querystring: { playerId?: string } }>("/v1/wallet/dat-token", async (req) => {
+    const dat = readDatTokenConfig();
+    return {
+      ...dat,
+      treasuryBuyInBudget: getTreasuryBuyInBudgetStatus(req.query.playerId),
+    };
+  });
 
   app.get("/v1/wallet/status", async () => {
     const dat = readDatTokenConfig();
@@ -171,7 +183,9 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     }
 
     const buyInRecord = getBuyInRecord(tableId, playerId);
-    const originalBuyInMojos = buyInRecord ? BigInt(buyInRecord.buyInMojos) : stack;
+    const originalBuyInMojos = buyInRecord
+      ? BigInt(buyInRecord.playerContributionMojos)
+      : stack;
     const payoutMojos = computeWithdrawPayout(stack, originalBuyInMojos, payoutConfig.payoutMode);
 
     let cashOut;

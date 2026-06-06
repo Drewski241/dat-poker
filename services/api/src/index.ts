@@ -17,6 +17,17 @@ loadEnv({ path: resolve(__dirname, "../../../.env") });
 const port = Number(process.env.API_PORT ?? 4000);
 const host = process.env.API_HOST ?? "0.0.0.0";
 
+function readCorsOrigin(): boolean | string[] {
+  const raw = process.env.API_CORS_ORIGINS?.trim();
+  if (!raw || raw === "*") {
+    return true;
+  }
+  return raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 const chiaClient = new ChiaGamingClient({
   network: (process.env.CHIA_NETWORK as "mainnet" | "testnet") ?? "mainnet",
   lobbyUrl: process.env.CHIA_GAMING_LOBBY_URL ?? "http://localhost:3001",
@@ -32,7 +43,7 @@ const chiaClient = new ChiaGamingClient({
 
 async function main(): Promise<void> {
   const app = Fastify({ logger: true });
-  await app.register(cors, { origin: true });
+  await app.register(cors, { origin: readCorsOrigin() });
 
   app.addHook("preSerialization", async (_request, _reply, payload) => {
     if (payload === undefined || payload === null) return payload;

@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   buildBuyInMessage,
   buildWithdrawMessage,
+  readBuyInFunding,
   validateBuyInProof,
   validateWithdrawProof,
 } from "./wallet-config.js";
+
+describe("readBuyInFunding", () => {
+  it("defaults to player funding", () => {
+    expect(readBuyInFunding()).toBe("player");
+  });
+});
 
 describe("validateBuyInProof", () => {
   const params = {

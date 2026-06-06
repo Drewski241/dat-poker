@@ -45,12 +45,22 @@ export interface WalletConnectConfig {
   chainId: string;
 }
 
+export interface TreasuryBuyInBudgetInfo {
+  limitMojos: string;
+  usedMojos: string;
+  remainingMojos: string;
+  scope: "global" | "player";
+  windowHours: number;
+}
+
 export interface DatTokenInfo {
   assetId: string | null;
   ticker: string;
   minBuyInMojos: string;
   devBuyInEnabled: boolean;
+  buyInFunding: "player" | "treasury";
   buyInReady: boolean;
+  treasuryBuyInBudget?: TreasuryBuyInBudgetInfo | null;
 }
 
 export interface BuyInProof {
@@ -105,7 +115,10 @@ export const api = {
       };
     }>("/v1/wallet/config"),
 
-  datToken: () => request<DatTokenInfo>("/v1/wallet/dat-token"),
+  datToken: (playerId?: string) => {
+    const q = playerId ? `?playerId=${encodeURIComponent(playerId)}` : "";
+    return request<DatTokenInfo>(`/v1/wallet/dat-token${q}`);
+  },
 
   buyInMessage: (params: {
     tableId: string;
@@ -143,6 +156,50 @@ export const api = {
         playerId,
         ...options,
       }),
+    }),
+
+  listTables: () =>
+    request<{
+      tables: Array<{
+        tableId: string;
+        players: number;
+        openSeats: number;
+        handInProgress: boolean;
+        joinable: boolean;
+      }>;
+    }>("/v1/tables"),
+
+  joinOpenTablePreview: (playerId: string, buyInMojos?: string) =>
+    request<{
+      tableId: string;
+      seatIndex: number;
+      buyInMojos: string;
+      alreadySeated: boolean;
+      createdTable: boolean;
+    }>("/v1/tables/join-open/preview", {
+      method: "POST",
+      body: JSON.stringify({ playerId, buyInMojos }),
+    }),
+
+  joinOpenTable: (
+    playerId: string,
+    options?: {
+      tableId?: string;
+      seatIndex?: number;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      seatIndex: number;
+      alreadySeated: boolean;
+      createdTable: boolean;
+    }>("/v1/tables/join-open", {
+      method: "POST",
+      body: JSON.stringify({ playerId, ...options }),
     }),
 
   createTable: () =>

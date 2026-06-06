@@ -7,6 +7,7 @@ import {
   beginWalletConnect,
   disconnectWallet,
   findDatCatWallet,
+  getWalletAddress,
   restoreSession,
   signBuyInMessage,
   signWithdrawMessage,
@@ -54,6 +55,13 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+
+  const treasuryFundedBuyIn = datToken?.buyInFunding === "treasury";
+
+  const refreshTreasuryBudget = useCallback(async (address?: string | null) => {
+    const dat = await api.datToken(address ?? undefined);
+    setDatToken(dat);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -168,9 +176,20 @@ export function App() {
     });
 
   const loadDatBalance = () =>
-    run("Loading DAT balance…", async () => {
-      if (!session || !wcConfig || !datToken?.assetId) {
-        throw new Error("Connect Sage and configure DAT_GOVERNANCE_TOKEN_ASSET_ID on API");
+    run(treasuryFundedBuyIn ? "Connecting wallet…" : "Loading DAT balance…", async () => {
+      if (!session || !wcConfig) {
+        throw new Error("Connect Sage via WalletConnect first");
+      }
+      if (treasuryFundedBuyIn) {
+        const address = await getWalletAddress(session, wcConfig.projectId, wcConfig.chainId);
+        setWalletAddress(address);
+        setPlayerId(address);
+        setDatBalance(null);
+        await refreshTreasuryBudget(address);
+        return;
+      }
+      if (!datToken?.assetId) {
+        throw new Error("Configure DAT_GOVERNANCE_TOKEN_ASSET_ID on API");
       }
       const { balance, address } = await findDatCatWallet(
         session,
@@ -183,28 +202,36 @@ export function App() {
       setDatBalance(balance.spendable);
     });
 
-  const joinTable = async () => {
+  const joinOpenTable = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      if (!playerId) throw new Error("Connect Sage and load DAT balance first");
-      const ticker = datToken?.ticker ?? "DAT";
+      if (!playerId) throw new Error("Connect Sage and identify your wallet first");
 
-      setStatus("Creating table…");
-      const { tableId: id, config: tableConfig } = await api.createTable();
-      const buyIn = tableConfig.minBuyInMojos;
-
-      if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
-        throw new Error(`Need at least ${formatDatMojos(buyIn, ticker)} in wallet`);
+      const buyIn = datToken?.minBuyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString();
+      if (!treasuryFundedBuyIn && datBalance && BigInt(datBalance) < BigInt(buyIn)) {
+        throw new Error(`Need at least ${formatDatMojos(buyIn, datToken?.ticker)} in wallet`);
       }
 
+      setStatus("Finding an open table…");
       let buyInProof: BuyInProof | undefined;
+      let tableIdToJoin: string | undefined;
+      let seatIndexToJoin: number | undefined;
 
-      if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
+      if (!treasuryFundedBuyIn && !datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
+        const preview = await api.joinOpenTablePreview(playerId, buyIn);
+        if (preview.alreadySeated) {
+          setTableId(preview.tableId);
+          await refreshTable(preview.tableId);
+          await refreshTreasuryBudget(playerId);
+          return;
+        }
+        tableIdToJoin = preview.tableId;
+        seatIndexToJoin = preview.seatIndex;
         const { message } = await api.buyInMessage({
-          tableId: id,
-          seatIndex: 0,
+          tableId: preview.tableId,
+          seatIndex: preview.seatIndex,
           buyInMojos: buyIn,
           address: walletAddress,
         });
@@ -234,14 +261,18 @@ export function App() {
         }
       }
 
-      setStatus("Seating you at the table…");
-      await api.seatPlayer(id, playerId, 0, buyIn, {
+      setStatus("Joining open table…");
+      const result = await api.joinOpenTable(playerId, {
+        tableId: tableIdToJoin,
+        seatIndex: seatIndexToJoin,
+        buyInMojos: buyIn,
         buyInProof,
         devAck: datToken?.devBuyInEnabled,
       });
-      await api.seatHouse(id, buyIn);
-      setTableId(id);
-      await refreshTable(id);
+
+      setTableId(result.tableId);
+      await refreshTable(result.tableId);
+      await refreshTreasuryBudget(playerId);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -328,7 +359,7 @@ export function App() {
       setHand(null);
       setHandResult(null);
 
-      if (session && wcConfig && datToken?.assetId) {
+      if (session && wcConfig && datToken?.assetId && !treasuryFundedBuyIn) {
         const { balance } = await findDatCatWallet(
           session,
           wcConfig.projectId,
@@ -384,7 +415,10 @@ export function App() {
     <div className="app">
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
+        <p className="tagline">
+          Sage WalletConnect · {treasuryFundedBuyIn ? "treasury-funded buy-in" : "DAT buy-in"} · NLHE vs
+          house · withdraw winnings
+        </p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -406,7 +440,7 @@ export function App() {
             <p className="ok-text">WalletConnect session active</p>
             <div className="row">
               <button type="button" disabled={busy} className="secondary" onClick={loadDatBalance}>
-                Load DAT balance
+                {treasuryFundedBuyIn ? "Identify wallet" : "Load DAT balance"}
               </button>
               <button type="button" disabled={busy} className="secondary" onClick={disconnectSage}>
                 Disconnect
@@ -421,15 +455,30 @@ export function App() {
                     · {datToken?.ticker ?? "DAT"}: {formatDatMojos(datBalance, datToken?.ticker)}
                   </>
                 )}
+                {treasuryFundedBuyIn && datBalance == null && (
+                  <> · treasury supplies table chips</>
+                )}
               </p>
             )}
           </>
         )}
         {datToken && (
           <p className="muted small">
-            Network buy-in mode:{" "}
-            {datToken.devBuyInEnabled ? "dev (signed proof optional)" : "mainnet (signed DAT proof required)"}
+            Buy-in funding:{" "}
+            {treasuryFundedBuyIn
+              ? "treasury host (no player DAT required)"
+              : datToken.devBuyInEnabled
+                ? "dev (signed proof optional)"
+                : "player wallet (signed DAT proof required)"}
             {datToken.assetId && ` · asset ${datToken.assetId.slice(0, 8)}…`}
+            {treasuryFundedBuyIn && datToken.treasuryBuyInBudget && (
+              <>
+                {" "}
+                · treasury budget: {formatDatMojos(datToken.treasuryBuyInBudget.remainingMojos, datToken.ticker)}
+                remaining / {formatDatMojos(datToken.treasuryBuyInBudget.limitMojos, datToken.ticker)} (24h
+                {datToken.treasuryBuyInBudget.scope === "player" ? ", per wallet" : ", shared"})
+              </>
+            )}
           </p>
         )}
       </section>
@@ -437,13 +486,17 @@ export function App() {
       <section className="panel">
         <h2>Table</h2>
         {!tableId ? (
-          <button
-            type="button"
-            disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-            onClick={() => void joinTable()}
-          >
-            Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
-          </button>
+          <>
+            <button
+              type="button"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinOpenTable()}
+            >
+              Join open table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}
+              {treasuryFundedBuyIn ? ", treasury-funded" : ""})
+            </button>
+            <p className="muted small">No invite link needed — you are seated at the next open public table.</p>
+          </>
         ) : (
           <>
             <p className="mono">Table ID: {tableId}</p>
@@ -578,8 +631,8 @@ export function App() {
 
       <footer>
         <p>
-          Configure API <code>.env</code> with WalletConnect + DAT asset id. Run <code>pnpm dev:api</code>,{" "}
-          <code>pnpm dev:treasury</code>, and <code>pnpm dev:web</code>.
+          For external players: set <code>DAT_BUYIN_FUNDING=treasury</code> and expose API/web ports — anyone can join an open table. Run <code>pnpm dev:api</code>, <code>pnpm dev:treasury</code>, and{" "}
+          <code>pnpm dev:web</code>.
         </p>
       </footer>
     </div>
