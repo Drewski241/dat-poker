@@ -2,6 +2,9 @@ import type { BuyInProof } from "./wallet-config.js";
 
 export interface BuyInRecord {
   buyInMojos: string;
+  /** Amount the player contributed from their wallet (0 when treasury-funded). */
+  playerContributionMojos: string;
+  treasuryFunded: boolean;
   proof: BuyInProof;
   recordedAt: string;
 }
@@ -17,9 +20,13 @@ export function recordBuyIn(
   playerId: string,
   proof: BuyInProof,
   buyInMojos: string,
+  options?: { treasuryFunded?: boolean },
 ): void {
+  const treasuryFunded = options?.treasuryFunded ?? false;
   verifiedBuyIns.set(buyInKey(tableId, playerId), {
     buyInMojos,
+    playerContributionMojos: treasuryFunded ? "0" : buyInMojos,
+    treasuryFunded,
     proof,
     recordedAt: new Date().toISOString(),
   });

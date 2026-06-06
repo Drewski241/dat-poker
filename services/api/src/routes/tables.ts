@@ -89,7 +89,13 @@ export function registerTableRoutes(app: FastifyInstance): void {
       });
     }
 
-    if (!dat.devBuyInEnabled) {
+    const treasuryFundedBuyIn = dat.buyInFunding === "treasury";
+
+    if (treasuryFundedBuyIn) {
+      if (!dat.assetId) {
+        return reply.status(503).send({ error: "DAT token not configured for treasury buy-in" });
+      }
+    } else if (!dat.devBuyInEnabled) {
       if (!dat.assetId) {
         return reply.status(503).send({ error: "DAT token not configured" });
       }
@@ -129,7 +135,9 @@ export function registerTableRoutes(app: FastifyInstance): void {
       signature: "",
       pubkey: "",
     };
-    recordBuyIn(req.params.tableId, req.body.playerId, buyInProof, req.body.buyInMojos);
+    recordBuyIn(req.params.tableId, req.body.playerId, buyInProof, req.body.buyInMojos, {
+      treasuryFunded: treasuryFundedBuyIn,
+    });
 
     try {
       table.seatPlayer(req.body.playerId, req.body.seatIndex, buyInMojos);

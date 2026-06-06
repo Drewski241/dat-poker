@@ -10,6 +10,10 @@ describe("computeWithdrawPayout", () => {
     expect(computeWithdrawPayout(900_000n, 1_000_000n, "net")).toBe(0n);
   });
 
+  it("pays full stack when player contributed nothing (treasury buy-in)", () => {
+    expect(computeWithdrawPayout(1_050_000n, 0n, "net")).toBe(1_050_000n);
+  });
+
   it("pays full stack in full mode", () => {
     expect(computeWithdrawPayout(1_050_000n, 1_000_000n, "full")).toBe(1_050_000n);
   });

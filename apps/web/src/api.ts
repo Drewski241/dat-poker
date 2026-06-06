@@ -50,6 +50,7 @@ export interface DatTokenInfo {
   ticker: string;
   minBuyInMojos: string;
   devBuyInEnabled: boolean;
+  buyInFunding: "player" | "treasury";
   buyInReady: boolean;
 }
 

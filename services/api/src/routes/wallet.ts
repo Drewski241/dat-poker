@@ -22,6 +22,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     const projectId = process.env.WALLETCONNECT_PROJECT_ID?.trim();
     const chainId = process.env.CHIA_CHAIN_ID ?? "chia:mainnet";
     const payout = readTreasuryPayoutConfig();
+    const dat = readDatTokenConfig();
 
     return {
       chiaNetwork: process.env.CHIA_NETWORK ?? "mainnet",
@@ -33,6 +34,9 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
             chainId,
           }
         : null,
+      buyIn: {
+        funding: dat.buyInFunding,
+      },
       withdraw: {
         payoutMode: payout.payoutMode,
         treasuryConfigured: Boolean(payout.treasuryPayoutUrl),
@@ -171,7 +175,9 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     }
 
     const buyInRecord = getBuyInRecord(tableId, playerId);
-    const originalBuyInMojos = buyInRecord ? BigInt(buyInRecord.buyInMojos) : stack;
+    const originalBuyInMojos = buyInRecord
+      ? BigInt(buyInRecord.playerContributionMojos)
+      : stack;
     const payoutMojos = computeWithdrawPayout(stack, originalBuyInMojos, payoutConfig.payoutMode);
 
     let cashOut;
