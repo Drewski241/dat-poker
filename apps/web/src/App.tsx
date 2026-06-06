@@ -80,6 +80,11 @@ export function App() {
 
   const treasuryFundedBuyIn = datToken?.buyInFunding === "treasury";
 
+  const refreshTreasuryBudget = useCallback(async (address?: string | null) => {
+    const dat = await api.datToken(address ?? undefined);
+    setDatToken(dat);
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -202,6 +207,7 @@ export function App() {
         setWalletAddress(address);
         setPlayerId(address);
         setDatBalance(null);
+        await refreshTreasuryBudget(address);
         return;
       }
       if (!datToken?.assetId) {
@@ -296,6 +302,7 @@ export function App() {
       setTableId(id);
       setShareLink(buildShareLink(id));
       await refreshTable(id);
+      await refreshTreasuryBudget(playerId);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -321,6 +328,7 @@ export function App() {
       await seatAtTable(inviteTableId, buyIn);
       setTableId(inviteTableId);
       await refreshTable(inviteTableId);
+      await refreshTreasuryBudget(playerId);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -520,6 +528,14 @@ export function App() {
                 ? "dev (signed proof optional)"
                 : "player wallet (signed DAT proof required)"}
             {datToken.assetId && ` · asset ${datToken.assetId.slice(0, 8)}…`}
+            {treasuryFundedBuyIn && datToken.treasuryBuyInBudget && (
+              <>
+                {" "}
+                · treasury budget: {formatDatMojos(datToken.treasuryBuyInBudget.remainingMojos, datToken.ticker)}
+                remaining / {formatDatMojos(datToken.treasuryBuyInBudget.limitMojos, datToken.ticker)} (24h
+                {datToken.treasuryBuyInBudget.scope === "player" ? ", per wallet" : ", shared"})
+              </>
+            )}
           </p>
         )}
       </section>

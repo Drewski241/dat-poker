@@ -45,6 +45,14 @@ export interface WalletConnectConfig {
   chainId: string;
 }
 
+export interface TreasuryBuyInBudgetInfo {
+  limitMojos: string;
+  usedMojos: string;
+  remainingMojos: string;
+  scope: "global" | "player";
+  windowHours: number;
+}
+
 export interface DatTokenInfo {
   assetId: string | null;
   ticker: string;
@@ -52,6 +60,7 @@ export interface DatTokenInfo {
   devBuyInEnabled: boolean;
   buyInFunding: "player" | "treasury";
   buyInReady: boolean;
+  treasuryBuyInBudget?: TreasuryBuyInBudgetInfo | null;
 }
 
 export interface BuyInProof {
@@ -106,7 +115,10 @@ export const api = {
       };
     }>("/v1/wallet/config"),
 
-  datToken: () => request<DatTokenInfo>("/v1/wallet/dat-token"),
+  datToken: (playerId?: string) => {
+    const q = playerId ? `?playerId=${encodeURIComponent(playerId)}` : "";
+    return request<DatTokenInfo>(`/v1/wallet/dat-token${q}`);
+  },
 
   buyInMessage: (params: {
     tableId: string;

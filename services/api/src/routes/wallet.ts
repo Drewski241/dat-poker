@@ -7,6 +7,7 @@ import {
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
 } from "../treasury-payout.js";
+import { getTreasuryBuyInBudgetStatus } from "../treasury-buyin-budget.js";
 import { getTableEngine } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import {
@@ -36,6 +37,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         : null,
       buyIn: {
         funding: dat.buyInFunding,
+        treasuryBudget: getTreasuryBuyInBudgetStatus(),
       },
       withdraw: {
         payoutMode: payout.payoutMode,
@@ -49,7 +51,13 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     };
   });
 
-  app.get("/v1/wallet/dat-token", async () => readDatTokenConfig());
+  app.get<{ Querystring: { playerId?: string } }>("/v1/wallet/dat-token", async (req) => {
+    const dat = readDatTokenConfig();
+    return {
+      ...dat,
+      treasuryBuyInBudget: getTreasuryBuyInBudgetStatus(req.query.playerId),
+    };
+  });
 
   app.get("/v1/wallet/status", async () => {
     const dat = readDatTokenConfig();

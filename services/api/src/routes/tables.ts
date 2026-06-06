@@ -5,6 +5,10 @@ import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
 import { recordBuyIn } from "../buy-in-store.js";
 import {
+  checkTreasuryBuyInBudget,
+  recordTreasuryBuyInAllocation,
+} from "../treasury-buyin-budget.js";
+import {
   type BuyInProof,
   readDatTokenConfig,
   validateBuyInProof,
@@ -95,6 +99,10 @@ export function registerTableRoutes(app: FastifyInstance): void {
       if (!dat.assetId) {
         return reply.status(503).send({ error: "DAT token not configured for treasury buy-in" });
       }
+      const budgetError = checkTreasuryBuyInBudget(buyInMojos, req.body.playerId);
+      if (budgetError) {
+        return reply.status(429).send({ error: budgetError });
+      }
     } else if (!dat.devBuyInEnabled) {
       if (!dat.assetId) {
         return reply.status(503).send({ error: "DAT token not configured" });
@@ -138,6 +146,9 @@ export function registerTableRoutes(app: FastifyInstance): void {
     recordBuyIn(req.params.tableId, req.body.playerId, buyInProof, req.body.buyInMojos, {
       treasuryFunded: treasuryFundedBuyIn,
     });
+    if (treasuryFundedBuyIn) {
+      recordTreasuryBuyInAllocation(buyInMojos, req.body.playerId);
+    }
 
     try {
       table.seatPlayer(req.body.playerId, req.body.seatIndex, buyInMojos);

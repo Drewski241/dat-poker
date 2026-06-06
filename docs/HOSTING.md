@@ -13,6 +13,20 @@ This guide covers opening DAT POKER to players outside your LAN and funding thei
 | `VITE_API_URL` | Public API URL baked into production web builds |
 | `API_CORS_ORIGINS` | Allowed browser origins for cross-origin API calls |
 
+
+## Treasury daily buy-in cap
+
+By default, treasury-funded buy-ins are capped at **10,000 DAT per rolling 24 hours** (10,000,000 mojos). Configure on the game host:
+
+```env
+DAT_TREASURY_DAILY_BUYIN_LIMIT_MOJOS=10000000
+# global = one shared pool for all players (default)
+# player = each wallet address gets its own 24h cap
+DAT_TREASURY_DAILY_BUYIN_SCOPE=global
+```
+
+When the cap is exceeded, `POST /v1/tables/:id/seat` returns **429** with a remaining-budget message. The web client shows remaining treasury budget in treasury mode.
+
 ## Treasury-funded buy-in flow
 
 ```mermaid
