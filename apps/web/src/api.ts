@@ -158,6 +158,50 @@ export const api = {
       }),
     }),
 
+  listTables: () =>
+    request<{
+      tables: Array<{
+        tableId: string;
+        players: number;
+        openSeats: number;
+        handInProgress: boolean;
+        joinable: boolean;
+      }>;
+    }>("/v1/tables"),
+
+  joinOpenTablePreview: (playerId: string, buyInMojos?: string) =>
+    request<{
+      tableId: string;
+      seatIndex: number;
+      buyInMojos: string;
+      alreadySeated: boolean;
+      createdTable: boolean;
+    }>("/v1/tables/join-open/preview", {
+      method: "POST",
+      body: JSON.stringify({ playerId, buyInMojos }),
+    }),
+
+  joinOpenTable: (
+    playerId: string,
+    options?: {
+      tableId?: string;
+      seatIndex?: number;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      seatIndex: number;
+      alreadySeated: boolean;
+      createdTable: boolean;
+    }>("/v1/tables/join-open", {
+      method: "POST",
+      body: JSON.stringify({ playerId, ...options }),
+    }),
+
   createTable: () =>
     request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
       method: "POST",

@@ -77,14 +77,11 @@ VITE_API_URL=https://api.poker.example.com pnpm --filter @dat-poker/web build
 
 Serve the `apps/web/dist` folder behind HTTPS (nginx, Caddy, etc.).
 
-## Inviting external players
+## Open join (no invite required)
 
-1. Host creates a table in the web app (**Create table & host**).
-2. Copy the **Share with players** link (includes `?table=<uuid>`).
-3. Send the link to external players.
-4. Guests open the link, connect Sage, click **Identify wallet**, then **Join table**.
+External players open your web URL, connect Sage, click **Identify wallet**, then **Join open table**. The API seats them at the next available public table (creating one with a house opponent if needed).
 
-Each guest is seated at the next open seat. The host table includes a house bot at seat 1 for heads-up play.
+No host invite link or table ID is required.
 
 ## Network checklist
 

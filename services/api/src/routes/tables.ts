@@ -3,21 +3,172 @@ import { randomUUID } from "node:crypto";
 import type { TableConfig } from "@dat-poker/shared";
 import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
-import { recordBuyIn } from "../buy-in-store.js";
 import {
-  checkTreasuryBuyInBudget,
-  recordTreasuryBuyInAllocation,
-} from "../treasury-buyin-budget.js";
-import {
-  type BuyInProof,
-  readDatTokenConfig,
-  validateBuyInProof,
-} from "../wallet-config.js";
+  DEFAULT_MAX_SEATS,
+  HOUSE_PLAYER_ID,
+  buildDefaultTableConfig,
+  createOpenTableWithHouse,
+  findJoinableTableId,
+  findOpenSeatIndex,
+  findPlayerSeat,
+  summarizeOpenTables,
+} from "../open-tables.js";
+import { seatPlayerWithBuyIn } from "../table-seating.js";
+import { type BuyInProof, readDatTokenConfig } from "../wallet-config.js";
 
 const tables = new Map<string, NlheTableEngine>();
-const HOUSE_PLAYER_ID = "dat-poker:house";
+
+function resolveDefaultBuyInMojos(): bigint {
+  const dat = readDatTokenConfig();
+  return dat.assetId
+    ? resolveDatMinBuyInMojos(dat.minBuyInMojos)
+    : DAT_TABLE_DEFAULTS.minBuyInMojos;
+}
 
 export function registerTableRoutes(app: FastifyInstance): void {
+  app.get("/v1/tables", async () => ({
+    tables: summarizeOpenTables(tables),
+  }));
+
+  app.post<{ Body: { playerId: string; buyInMojos?: string } }>(
+    "/v1/tables/join-open/preview",
+    async (req, reply) => {
+      const { playerId } = req.body;
+      if (!playerId) {
+        return reply.status(400).send({ error: "playerId required" });
+      }
+
+      const buyInMojos = req.body.buyInMojos ?? resolveDefaultBuyInMojos().toString();
+      const existingSeat = findPlayerSeat(tables, playerId);
+      if (existingSeat) {
+        return {
+          tableId: existingSeat.tableId,
+          seatIndex: existingSeat.seatIndex,
+          buyInMojos,
+          alreadySeated: true,
+          createdTable: false,
+        };
+      }
+
+      let tableId = findJoinableTableId(tables);
+      let createdTable = false;
+      let table: NlheTableEngine;
+
+      if (tableId) {
+        table = tables.get(tableId)!;
+      } else {
+        tableId = randomUUID();
+        table = createOpenTableWithHouse(tables, tableId, BigInt(buyInMojos));
+        createdTable = true;
+      }
+
+      const seatIndex = findOpenSeatIndex(table);
+      if (seatIndex === null) {
+        if (createdTable) {
+          tables.delete(tableId);
+        }
+        return reply.status(409).send({ error: "No open seats at the public table" });
+      }
+
+      return {
+        tableId,
+        seatIndex,
+        buyInMojos,
+        alreadySeated: false,
+        createdTable,
+      };
+    },
+  );
+
+  app.post<{
+    Body: {
+      playerId: string;
+      tableId?: string;
+      seatIndex?: number;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+    };
+  }>("/v1/tables/join-open", async (req, reply) => {
+    const { playerId, buyInProof, devAck } = req.body;
+    if (!playerId) {
+      return reply.status(400).send({ error: "playerId required" });
+    }
+
+    const buyInMojos = req.body.buyInMojos ?? resolveDefaultBuyInMojos().toString();
+    const existingSeat = findPlayerSeat(tables, playerId);
+    if (existingSeat) {
+      return {
+        ok: true,
+        tableId: existingSeat.tableId,
+        seatIndex: existingSeat.seatIndex,
+        alreadySeated: true,
+        createdTable: false,
+      };
+    }
+
+    let tableId: string;
+    let seatIndex: number;
+    let createdTable = false;
+    let table: NlheTableEngine;
+
+    if (req.body.tableId !== undefined && req.body.seatIndex !== undefined) {
+      tableId = req.body.tableId;
+      seatIndex = req.body.seatIndex;
+      const existingTable = tables.get(tableId);
+      if (!existingTable) {
+        return reply.status(404).send({ error: "Table not found" });
+      }
+      table = existingTable;
+      const openSeat = findOpenSeatIndex(table);
+      if (openSeat === null || openSeat !== seatIndex) {
+        return reply.status(409).send({ error: "Seat no longer available — try again" });
+      }
+    } else {
+      const joinableId = findJoinableTableId(tables);
+      if (joinableId) {
+        tableId = joinableId;
+        table = tables.get(tableId)!;
+      } else {
+        tableId = randomUUID();
+        table = createOpenTableWithHouse(tables, tableId, BigInt(buyInMojos));
+        createdTable = true;
+      }
+
+      const openSeat = findOpenSeatIndex(table);
+      if (openSeat === null) {
+        if (createdTable) {
+          tables.delete(tableId);
+        }
+        return reply.status(409).send({ error: "No open seats at the public table" });
+      }
+      seatIndex = openSeat;
+    }
+
+    const seatResult = seatPlayerWithBuyIn(table, {
+      tableId,
+      playerId,
+      seatIndex,
+      buyInMojos,
+      buyInProof,
+      devAck,
+    });
+    if (!seatResult.ok) {
+      if (createdTable) {
+        tables.delete(tableId);
+      }
+      return reply.status(seatResult.status).send({ error: seatResult.error });
+    }
+
+    return {
+      ok: true,
+      tableId,
+      seatIndex,
+      alreadySeated: false,
+      createdTable,
+    };
+  });
+
   app.post<{
     Body: {
       variant?: string;
@@ -27,30 +178,15 @@ export function registerTableRoutes(app: FastifyInstance): void {
     };
   }>("/v1/tables", async (req) => {
     const id = randomUUID();
-    const dat = readDatTokenConfig();
-    const useDatStakes = Boolean(dat.assetId);
-    const minBuyIn = useDatStakes
-      ? resolveDatMinBuyInMojos(dat.minBuyInMojos)
-      : DAT_TABLE_DEFAULTS.minBuyInMojos;
-    const config: TableConfig = {
-      id,
-      variant: "nlhe",
-      format: "cash",
-      maxSeats: req.body.maxSeats ?? 6,
-      smallBlindMojos: BigInt(
-        req.body.smallBlindMojos ??
-          (useDatStakes ? DAT_TABLE_DEFAULTS.smallBlindMojos : 50_000_000_000n),
-      ),
-      bigBlindMojos: BigInt(
-        req.body.bigBlindMojos ??
-          (useDatStakes ? DAT_TABLE_DEFAULTS.bigBlindMojos : 100_000_000_000n),
-      ),
-      minBuyInMojos: minBuyIn,
-      maxBuyInMojos: useDatStakes ? DAT_TABLE_DEFAULTS.maxBuyInMojos : 20_000_000_000_000n,
-      rakeBps: 500,
-    };
+    const config = buildDefaultTableConfig(id, req.body.maxSeats ?? DEFAULT_MAX_SEATS);
+    if (req.body.smallBlindMojos) {
+      config.smallBlindMojos = BigInt(req.body.smallBlindMojos);
+    }
+    if (req.body.bigBlindMojos) {
+      config.bigBlindMojos = BigInt(req.body.bigBlindMojos);
+    }
     tables.set(id, new NlheTableEngine(config));
-    return { tableId: id, config };
+    return { tableId: id, config: config as TableConfig };
   });
 
   app.get<{ Params: { tableId: string } }>("/v1/tables/:tableId", async (req, reply) => {
@@ -83,79 +219,18 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return reply.status(404).send({ error: "Table not found" });
     }
 
-    const dat = readDatTokenConfig();
-    const buyInMojos = BigInt(req.body.buyInMojos);
-    const minBuyIn = resolveDatMinBuyInMojos(dat.minBuyInMojos);
-
-    if (buyInMojos < minBuyIn) {
-      return reply.status(400).send({
-        error: `Buy-in below minimum (${minBuyIn.toString()} mojos)`,
-      });
-    }
-
-    const treasuryFundedBuyIn = dat.buyInFunding === "treasury";
-
-    if (treasuryFundedBuyIn) {
-      if (!dat.assetId) {
-        return reply.status(503).send({ error: "DAT token not configured for treasury buy-in" });
-      }
-      const budgetError = checkTreasuryBuyInBudget(buyInMojos, req.body.playerId);
-      if (budgetError) {
-        return reply.status(429).send({ error: budgetError });
-      }
-    } else if (!dat.devBuyInEnabled) {
-      if (!dat.assetId) {
-        return reply.status(503).send({ error: "DAT token not configured" });
-      }
-      if (!req.body.buyInProof) {
-        return reply.status(400).send({ error: "Wallet buy-in proof required" });
-      }
-      const proofError = validateBuyInProof(req.body.buyInProof, {
-        tableId: req.params.tableId,
-        seatIndex: req.body.seatIndex,
-        buyInMojos: req.body.buyInMojos,
-        playerId: req.body.playerId,
-      });
-      if (proofError) {
-        return reply.status(400).send({ error: proofError });
-      }
-      if (req.body.buyInProof.datBalanceMojos) {
-        const balance = BigInt(req.body.buyInProof.datBalanceMojos);
-        if (balance < buyInMojos) {
-          return reply.status(400).send({ error: "Insufficient DAT balance for buy-in" });
-        }
-      }
-    } else if (!req.body.devAck && dat.assetId && req.body.buyInProof) {
-      const proofError = validateBuyInProof(req.body.buyInProof, {
-        tableId: req.params.tableId,
-        seatIndex: req.body.seatIndex,
-        buyInMojos: req.body.buyInMojos,
-        playerId: req.body.playerId,
-      });
-      if (proofError) {
-        return reply.status(400).send({ error: proofError });
-      }
-    }
-
-    const buyInProof = req.body.buyInProof ?? {
-      address: req.body.playerId,
-      message: "",
-      signature: "",
-      pubkey: "",
-    };
-    recordBuyIn(req.params.tableId, req.body.playerId, buyInProof, req.body.buyInMojos, {
-      treasuryFunded: treasuryFundedBuyIn,
+    const seatResult = seatPlayerWithBuyIn(table, {
+      tableId: req.params.tableId,
+      playerId: req.body.playerId,
+      seatIndex: req.body.seatIndex,
+      buyInMojos: req.body.buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
     });
-    if (treasuryFundedBuyIn) {
-      recordTreasuryBuyInAllocation(buyInMojos, req.body.playerId);
+    if (!seatResult.ok) {
+      return reply.status(seatResult.status).send({ error: seatResult.error });
     }
-
-    try {
-      table.seatPlayer(req.body.playerId, req.body.seatIndex, buyInMojos);
-      return { ok: true };
-    } catch (e) {
-      return reply.status(400).send({ error: (e as Error).message });
-    }
+    return { ok: true };
   });
 
   app.post<{
@@ -166,7 +241,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
-    const buyInMojos = BigInt(req.body.buyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString());
+    const buyInMojos = BigInt(req.body.buyInMojos ?? resolveDefaultBuyInMojos().toString());
     try {
       table.seatPlayer(HOUSE_PLAYER_ID, 1, buyInMojos);
       return { ok: true, playerId: HOUSE_PLAYER_ID };
@@ -175,6 +250,9 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
   });
 }
+
 export function getTableEngine(tableId: string): NlheTableEngine | undefined {
   return tables.get(tableId);
 }
+
+export { HOUSE_PLAYER_ID };

@@ -17,26 +17,6 @@ import {
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
 const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
-const MAX_TABLE_SEATS = 6;
-
-function parseInviteTableId(): string | null {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("table") ?? params.get("tableId");
-}
-
-function buildShareLink(tableId: string): string {
-  const url = new URL(window.location.href);
-  url.searchParams.set("table", tableId);
-  return url.toString();
-}
-
-function findOpenSeat(seats: TableSeat[]): number | null {
-  const taken = new Set(seats.map((seat) => seat.seatIndex));
-  for (let seatIndex = 0; seatIndex < MAX_TABLE_SEATS; seatIndex += 1) {
-    if (!taken.has(seatIndex)) return seatIndex;
-  }
-  return null;
-}
 
 function playerLabel(id: string, youId: string | null): string {
   if (id === youId) return "You";
@@ -65,8 +45,6 @@ export function App() {
   const [datBalance, setDatBalance] = useState<string | null>(null);
 
   const [tableId, setTableId] = useState<string | null>(null);
-  const [inviteTableId] = useState<string | null>(() => parseInviteTableId());
-  const [shareLink, setShareLink] = useState<string | null>(null);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
   const [handInProgress, setHandInProgress] = useState(false);
   const [withdrawResult, setWithdrawResult] = useState<WithdrawResult | null>(null);
@@ -224,110 +202,76 @@ export function App() {
       setDatBalance(balance.spendable);
     });
 
-  const seatAtTable = async (id: string, buyIn: string) => {
-    if (!playerId) throw new Error("Connect Sage and identify your wallet first");
-
-    const table = await api.getTable(id);
-    const seatIndex = findOpenSeat(table.seats);
-    if (seatIndex === null) {
-      throw new Error("Table is full");
-    }
-
-    let buyInProof: BuyInProof | undefined;
-
-    if (
-      !treasuryFundedBuyIn &&
-      !datToken?.devBuyInEnabled &&
-      session &&
-      wcConfig &&
-      walletAddress
-    ) {
-      const { message } = await api.buyInMessage({
-        tableId: id,
-        seatIndex,
-        buyInMojos: buyIn,
-        address: walletAddress,
-      });
-      buyInProof = {
-        address: walletAddress,
-        message,
-        signature: "",
-        pubkey: "",
-        datBalanceMojos: datBalance ?? undefined,
-      };
-      setStatus("Approve buy-in in Sage (check your phone)…");
-      try {
-        const signed = await signBuyInMessage(
-          session,
-          wcConfig.projectId,
-          wcConfig.chainId,
-          message,
-          walletAddress,
-        );
-        buyInProof.signature = signed.signature;
-        buyInProof.pubkey = signed.pubkey;
-      } catch (signErr) {
-        if (!datBalance || BigInt(datBalance) < BigInt(buyIn)) {
-          throw signErr;
-        }
-        setStatus("Signature skipped — using wallet balance attestation…");
-      }
-    }
-
-    setStatus("Seating you at the table…");
-    await api.seatPlayer(id, playerId, seatIndex, buyIn, {
-      buyInProof,
-      devAck: datToken?.devBuyInEnabled,
-    });
-  };
-
-  const createAndHostTable = async () => {
+  const joinOpenTable = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
       if (!playerId) throw new Error("Connect Sage and identify your wallet first");
-      const ticker = datToken?.ticker ?? "DAT";
 
-      setStatus("Creating table…");
-      const { tableId: id, config: tableConfig } = await api.createTable();
-      const buyIn = tableConfig.minBuyInMojos;
-
-      if (!treasuryFundedBuyIn && datBalance && BigInt(datBalance) < BigInt(buyIn)) {
-        throw new Error(`Need at least ${formatDatMojos(buyIn, ticker)} in wallet`);
-      }
-
-      await seatAtTable(id, buyIn);
-      await api.seatHouse(id, buyIn);
-      setTableId(id);
-      setShareLink(buildShareLink(id));
-      await refreshTable(id);
-      await refreshTreasuryBudget(playerId);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-      setStatus("");
-    }
-  };
-
-  const joinInvitedTable = async () => {
-    if (busy || !inviteTableId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      if (!playerId) throw new Error("Connect Sage and identify your wallet first");
-
-      setStatus("Joining table…");
       const buyIn = datToken?.minBuyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString();
-
       if (!treasuryFundedBuyIn && datBalance && BigInt(datBalance) < BigInt(buyIn)) {
         throw new Error(`Need at least ${formatDatMojos(buyIn, datToken?.ticker)} in wallet`);
       }
 
-      await seatAtTable(inviteTableId, buyIn);
-      setTableId(inviteTableId);
-      await refreshTable(inviteTableId);
+      setStatus("Finding an open table…");
+      let buyInProof: BuyInProof | undefined;
+      let tableIdToJoin: string | undefined;
+      let seatIndexToJoin: number | undefined;
+
+      if (!treasuryFundedBuyIn && !datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
+        const preview = await api.joinOpenTablePreview(playerId, buyIn);
+        if (preview.alreadySeated) {
+          setTableId(preview.tableId);
+          await refreshTable(preview.tableId);
+          await refreshTreasuryBudget(playerId);
+          return;
+        }
+        tableIdToJoin = preview.tableId;
+        seatIndexToJoin = preview.seatIndex;
+        const { message } = await api.buyInMessage({
+          tableId: preview.tableId,
+          seatIndex: preview.seatIndex,
+          buyInMojos: buyIn,
+          address: walletAddress,
+        });
+        buyInProof = {
+          address: walletAddress,
+          message,
+          signature: "",
+          pubkey: "",
+          datBalanceMojos: datBalance ?? undefined,
+        };
+        setStatus("Approve buy-in in Sage (check your phone)…");
+        try {
+          const signed = await signBuyInMessage(
+            session,
+            wcConfig.projectId,
+            wcConfig.chainId,
+            message,
+            walletAddress,
+          );
+          buyInProof.signature = signed.signature;
+          buyInProof.pubkey = signed.pubkey;
+        } catch (signErr) {
+          if (!datBalance || BigInt(datBalance) < BigInt(buyIn)) {
+            throw signErr;
+          }
+          setStatus("Signature skipped — using wallet balance attestation…");
+        }
+      }
+
+      setStatus("Joining open table…");
+      const result = await api.joinOpenTable(playerId, {
+        tableId: tableIdToJoin,
+        seatIndex: seatIndexToJoin,
+        buyInMojos: buyIn,
+        buyInProof,
+        devAck: datToken?.devBuyInEnabled,
+      });
+
+      setTableId(result.tableId);
+      await refreshTable(result.tableId);
       await refreshTreasuryBudget(playerId);
     } catch (e) {
       setError((e as Error).message);
@@ -411,7 +355,6 @@ export function App() {
 
       setWithdrawResult(result);
       setTableId(null);
-      setShareLink(null);
       setTableSeats([]);
       setHand(null);
       setHandResult(null);
@@ -544,40 +487,19 @@ export function App() {
         <h2>Table</h2>
         {!tableId ? (
           <>
-            {inviteTableId ? (
-              <>
-                <p className="mono">Invited to table: {inviteTableId}</p>
-                <button
-                  type="button"
-                  disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                  onClick={() => void joinInvitedTable()}
-                >
-                  Join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}
-                  {treasuryFundedBuyIn ? ", treasury-funded" : ""})
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                onClick={() => void createAndHostTable()}
-              >
-                Create table &amp; host ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}
-                {treasuryFundedBuyIn ? ", treasury-funded" : ""})
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinOpenTable()}
+            >
+              Join open table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}
+              {treasuryFundedBuyIn ? ", treasury-funded" : ""})
+            </button>
+            <p className="muted small">No invite link needed — you are seated at the next open public table.</p>
           </>
         ) : (
           <>
             <p className="mono">Table ID: {tableId}</p>
-            {shareLink && (
-              <p className="mono small">
-                Share with players:{" "}
-                <a href={shareLink} target="_blank" rel="noreferrer">
-                  {shareLink}
-                </a>
-              </p>
-            )}
             {tableStackMojos && (
               <p>
                 Your table stack:{" "}
@@ -709,8 +631,7 @@ export function App() {
 
       <footer>
         <p>
-          For external players: set <code>DAT_BUYIN_FUNDING=treasury</code>, expose API/web ports, and share
-          the table link. Run <code>pnpm dev:api</code>, <code>pnpm dev:treasury</code>, and{" "}
+          For external players: set <code>DAT_BUYIN_FUNDING=treasury</code> and expose API/web ports — anyone can join an open table. Run <code>pnpm dev:api</code>, <code>pnpm dev:treasury</code>, and{" "}
           <code>pnpm dev:web</code>.
         </p>
       </footer>
