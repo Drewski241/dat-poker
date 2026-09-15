@@ -56,11 +56,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-httpd = http.server.HTTPServer(("127.0.0.1", port), Handler)
+httpd_holder = {}
 
 def start():
     time.sleep(2)
-    httpd.serve_forever()
+    httpd_holder["s"] = http.server.HTTPServer(("127.0.0.1", port), Handler)
+    httpd_holder["s"].serve_forever()
 
 thread = threading.Thread(target=start, daemon=True)
 thread.start()
@@ -74,9 +75,12 @@ proc = subprocess.run(
     capture_output=True,
     text=True,
 )
-httpd.shutdown()
+if "s" in httpd_holder:
+    httpd_holder["s"].shutdown()
 assert proc.returncode == 0, proc.stderr + proc.stdout
 assert "API healthy after" in proc.stdout
+# Port is closed for 2s, so the first curl must be connection-refused.
+assert "after 1s" not in proc.stdout
 print(proc.stdout.strip())
 PY
 
