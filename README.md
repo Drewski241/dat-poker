@@ -34,12 +34,10 @@ See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (co
 
 ## AWS EC2 (Free Tier $20 credit)
 
-AWS emails the **Launch an instance using EC2** activity to new accounts. The
-instance has to be created **in that AWS account** (a Cloud Agent cannot log
-into AWS for you). Use [docs/AWS_EC2.md](./docs/AWS_EC2.md): Console Launch
-instance + [`deploy/aws-ec2/user-data.sh`](./deploy/aws-ec2/user-data.sh)
-installs nginx (tutorial web page) and DAT POKER on the same box. Terminate
-when you are done so credits are not spent on idle `t3.micro` hours.
+The email tutorial is [Deploy a web server to the cloud](https://builder.aws.com/content/3BfvbBpwbonTDicuPTMLZBTt4Br/deploy-a-web-server-to-the-cloud)
+(Apache + Session Manager, not nginx). Follow [docs/AWS_EC2.md](./docs/AWS_EC2.md)
+in **your** AWS Console. A Cloud Agent cannot log in for you. Terminate
+`my-web-server` when the article says to clean up.
 
 For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a **separate treasury host**; copy `.env.treasury.example` → `.env`, run `pnpm treasury:check`, then point the game API at it with `DAT_TREASURY_PAYOUT_URL`. See [docs/TREASURY.md](./docs/TREASURY.md).
 

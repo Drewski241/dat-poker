@@ -1,160 +1,191 @@
 # Launch DAT POKER on Amazon EC2 ($20 Free Tier credit)
 
-AWS cannot be launched from this repo’s CI or from a Cursor Cloud Agent: the
-instance has to be created **in your AWS account**. Completing
-**Launch an instance using EC2** in that account is what credits the extra
-**$20**.
+Use the official tutorial in the email — not nginx user data — to earn the
+**$20**. That article is [Deploy a web server to the cloud](https://builder.aws.com/content/3BfvbBpwbonTDicuPTMLZBTt4Br/deploy-a-web-server-to-the-cloud)
+(Free Tier Tutorial Series #5). Completing it also finishes the
+**Launch an instance using EC2** activity.
 
-This guide matches the email tutorial (launch, browser shell, nginx web page,
-clean up) and leaves DAT POKER running on the same instance.
+This Cloud Agent cannot sign into your AWS account. Click the steps in
+**your** Console.
 
-Official activity list: [Earning additional credits](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier-plans-activities.html).
+Do **not** paste `deploy/aws-ec2/user-data.sh` while you are on this tutorial.
+User data would skip the Apache + Session Manager path the article (and the
+credit email) walk through.
 
-## What actually qualifies
+## What the article asks you to do
 
-| Requirement | How this guide covers it |
-|-------------|--------------------------|
-| Launch a virtual server | EC2 **Launch instance** wizard (or the CloudFormation stack below) |
-| Connect with a browser-based shell | Console **Connect** → **EC2 Instance Connect** |
-| Install a web server and serve a page | nginx + DAT POKER landing page (user data does this on first boot) |
-| Clean up | Terminate the instance after the credit posts unless you want to keep the game online |
-| Extra $20 | Billing console → **Credits**, usually within about 10 minutes of the instance reaching **Running** |
+| Tutorial step | What to use |
+|---------------|-------------|
+| IAM role for Session Manager | Role name `ec2-ssm-role`, use case **EC2 Role for AWS Systems Manager** (`AmazonSSMManagedInstanceCore`) |
+| Launch a VM | Name `my-web-server`, **Amazon Linux 2023**, **t2.micro**, **Proceed without a key pair**, check **Allow HTTP traffic from the internet**, IAM instance profile `ec2-ssm-role` |
+| Browser shell | Instance → **Connect** → **Session Manager** (user `ssm-user`) |
+| Web server | Apache: `httpd`, files in `/var/www/html/` |
+| Custom page | `sudo nano /var/www/html/index.html` |
+| Clean up | **Terminate** `my-web-server` (the article says to do this so you earn the credit and do not keep paying) |
 
-Start from the **Explore AWS** widget on [Console Home](https://console.aws.amazon.com/console/home)
-and choose **Launch an instance using Amazon EC2**, then follow the wizard so
-AWS records the activity. A `RunInstances` API call from CloudFormation often
-counts as well; the widget path is the one AWS documents.
+Source: Sean Boult, AWS Builder Center, published 1 Apr 2026.
 
-The credit is **not** paid to GitHub or this repo. It lands on the AWS account
-that launches the instance.
+## Path A — follow the tutorial (this is the $20)
 
-## Cost
+Stay on the Builder Center tab and click its console links, or use the
+checklist below.
 
-New accounts on the credit-based Free Tier (accounts created on/after 15 Jul 2025)
-pay for EC2 out of promotional credits. A `t3.micro` left running will consume
-those credits. Terminate when you are done (step 6).
+### 1. IAM role
 
-Do **not** attach a key pair unless you want SSH from your laptop. Instance
-Connect does not need one.
+1. Open [IAM → Roles](https://console.aws.amazon.com/iam/home#/roles) → **Create role**.
+2. Trusted entity: **AWS service** → **EC2**.
+3. Use case: **EC2 Role for AWS Systems Manager**.
+4. **Next** (policy `AmazonSSMManagedInstanceCore` is already attached).
+5. Role name: `ec2-ssm-role` → **Create role**.
 
-## Path A — Console (recommended for the $20 email)
+### 2. Launch the instance
 
-Takes a few minutes of clicking. User data then installs nginx immediately and
-builds DAT POKER in the background.
+1. Open the [EC2 console](https://console.aws.amazon.com/ec2/) → **Launch instance**.
+2. Name: `my-web-server`.
+3. AMI: **Amazon Linux 2023**.
+4. Instance type: **t2.micro** (Free Tier eligible). If your region only lists
+   `t3.micro`, that is fine.
+5. Key pair: **Proceed without a key pair**.
+6. Network: check **Allow HTTP traffic from the internet**.
+7. **Advanced details** → IAM instance profile: `ec2-ssm-role`.
+8. Leave **User data** empty.
+9. **Launch instance**. Wait until **Running** and status checks are complete.
 
-1. Sign in at [https://console.aws.amazon.com](https://console.aws.amazon.com)
-   with the account that received the email.
-2. Open **Explore AWS** on the home dashboard → **Launch an instance using Amazon EC2**
-   (or go to [EC2](https://console.aws.amazon.com/ec2/) → **Launch instance**).
-3. Fill in:
+That **Running** instance is the **Launch an instance using EC2** activity.
+Credits usually show under **Billing → Credits** within about 10 minutes.
 
-   | Field | Value |
-   |-------|--------|
-   | **Name** | `dat-poker-first-server` |
-   | **AMI** | Amazon Linux 2023, **Free Tier eligible** |
-   | **Instance type** | `t3.micro` or `t2.micro` (Free Tier eligible) |
-   | **Key pair** | **Proceed without a key pair** |
-   | **Firewall (security group)** | Allow **SSH** (22) and **HTTP** (80) from Anywhere (`0.0.0.0/0`) |
-   | **Storage** | **20 GiB** gp3 (8 GiB is tight for Node + pnpm) |
+### 3. Connect with Session Manager
 
-4. Open **Advanced details** → **User data**. Paste the full contents of
-   [`deploy/aws-ec2/user-data.sh`](../deploy/aws-ec2/user-data.sh).
-5. **Launch instance**. Wait until **Instance state** is **Running**. That is
-   the event the $20 activity looks for.
-6. Select the instance → **Connect** → **EC2 Instance Connect** → **Connect**.
-   In the browser shell:
+1. Select `my-web-server` → **Connect** → **Session Manager** → **Connect**.
+2. You should be `ssm-user`. Confirm with `whoami`.
 
-   ```bash
-   curl -s http://127.0.0.1/
-   sudo tail -n 50 /var/log/dat-poker-bootstrap.log
-   curl -s http://127.0.0.1/health || true
-   ```
+If the Session Manager tab is greyed out, wait a minute for the IAM profile
+and SSM agent. Amazon Linux 2023 already includes the agent. You do not need
+port 22.
 
-   The first `curl` should return HTML titled **DAT POKER** (nginx). `/health`
-   returns JSON once the API build finishes (often several minutes on
-   `t3.micro` because of swap + `pnpm`).
-7. In a browser, open `http://PUBLIC_IPV4/` (Public IPv4 address on the
-   instance summary). You should see the DAT POKER landing page, then the table
-   UI after the web build copies `apps/web/dist` into nginx.
-8. Credits: **Billing and Cost Management** → **Credits**. Give it up to
-   10 minutes after the instance is **Running**.
-9. **Clean up** (tutorial last step, also how you stop spending credits):
-
-   Instance → **Instance state** → **Terminate instance**.
-
-   Keep it running only if you still want the public demo. Dev buy-in is
-   enabled (`DAT_ALLOW_DEV_BUYIN=true`) on this image — do not point real
-   treasury keys at it.
-
-### Manual nginx (if you skipped user data)
-
-The email tutorial still works without DAT POKER. After Instance Connect:
+### 4. Install Apache (verbatim from the article)
 
 ```bash
-sudo dnf install -y nginx
-echo '<h1>DAT POKER</h1><p>First web server on Amazon EC2.</p>' | sudo tee /usr/share/nginx/html/index.html
-sudo systemctl enable --now nginx
-curl -s http://127.0.0.1/
+sudo yum install -y httpd
+sudo systemctl start httpd
+sudo systemctl enable httpd
+sudo systemctl status httpd
 ```
 
-Then terminate when the credit appears.
+You want `active (running)`.
 
-## Path B — CloudFormation (same account)
+### 5. See it live
 
-Requires the AWS CLI on your machine, configured for **this** AWS account
-(`aws sts get-caller-identity`).
+Copy the instance **Public IPv4 address** and open `http://<your-public-ip>`.
+You should see Apache’s **It works!** page.
 
-After this file exists on the branch you deploy (`main` once merged):
+### 6. Serve your own page
+
+```bash
+sudo nano /var/www/html/index.html
+```
+
+Example from the article:
+
+```html
+<pre>
+  __( )< (woof)
+  \___)
+</pre>
+```
+
+Save: **Ctrl+O**, Enter. Exit: **Ctrl+X**. Refresh the public URL.
+
+You can put DAT POKER in that file instead of the dog ASCII if you want the
+public page to say DAT POKER. That still counts as “your own web page.”
+
+### 7. Clean up (tutorial last step)
+
+The article: follow Clean up to earn the credits and to avoid leftover charges.
+
+1. EC2 → select `my-web-server` → **Instance state** → **Terminate instance**.
+2. Optional: delete the instance security group and IAM role `ec2-ssm-role`
+   (they do not bill, but they leave the account tidy).
+
+Stopping keeps the EBS disk (small storage fee). Terminating deletes the
+instance and disk.
+
+## Path B — DAT POKER on the same box (optional, after Apache is live)
+
+Only after Path A steps 1–6. Port 80 is already Apache; do not install nginx
+alongside it.
+
+In Session Manager:
+
+```bash
+# still Apache; install Node and the API
+curl -fsSL https://raw.githubusercontent.com/Drewski241/dat-poker/main/deploy/aws-ec2/user-data.sh -o /tmp/dat-poker-user-data.sh
+# user-data.sh also installs nginx — skip it on this host.
+# Instead build the API, then copy the web dist over Apache's docroot:
+```
+
+Safer sequence (copy-paste):
+
+```bash
+sudo yum install -y git tar xz
+sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz -o /tmp/node.tar.xz
+sudo tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
+corepack enable && corepack prepare pnpm@9.15.0 --activate
+sudo git clone --depth 1 https://github.com/Drewski241/dat-poker.git /opt/dat-poker
+cd /opt/dat-poker
+sudo cp .env.example .env
+sudo sed -i 's/^DAT_ALLOW_DEV_BUYIN=.*/DAT_ALLOW_DEV_BUYIN=true/' .env
+pnpm install --frozen-lockfile
+pnpm --filter @dat-poker/api^... build
+pnpm --filter @dat-poker/api build
+pnpm --filter @dat-poker/web build
+sudo cp -a apps/web/dist/. /var/www/html/
+sudo tee /etc/httpd/conf.d/dat-poker-proxy.conf >/dev/null <<'CONF'
+ProxyPass /health http://127.0.0.1:4000/health
+ProxyPassReverse /health http://127.0.0.1:4000/health
+ProxyPass /v1/ http://127.0.0.1:4000/v1/
+ProxyPassReverse /v1/ http://127.0.0.1:4000/v1/
+CONF
+sudo systemctl restart httpd
+sudo cp deploy/aws-ec2/dat-poker-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now dat-poker-api
+```
+
+`t2.micro` is 1 GB RAM; the Node build needs the 2 GiB swap file. If you only
+wanted the $20, skip Path B and terminate.
+
+Dev buy-in is on (`DAT_ALLOW_DEV_BUYIN=true`). Do not point real treasury keys
+at this instance.
+
+## Path C — CloudFormation DAT POKER kit (not the email tutorial)
+
+[`deploy/aws-ec2/cloudformation.yaml`](../deploy/aws-ec2/cloudformation.yaml)
+launches Amazon Linux + nginx + DAT POKER. Use it **after** you already have
+the credit, or if you do not care about matching the Apache article.
 
 ```bash
 aws cloudformation deploy \
   --stack-name dat-poker-first-server \
   --template-file deploy/aws-ec2/cloudformation.yaml \
-  --parameter-overrides RepoRef=main
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides RepoRef=main InstanceType=t2.micro
 
-aws cloudformation describe-stacks \
-  --stack-name dat-poker-first-server \
-  --query 'Stacks[0].Outputs'
-```
-
-Before merge, set `RepoRef` to this feature branch so User data can download
-`user-data.sh`. Delete the stack to terminate the instance:
-
-```bash
 aws cloudformation delete-stack --stack-name dat-poker-first-server
 ```
 
-## What the instance runs
-
-```
-Internet :80
-  nginx
-    /           static web client (landing page, then apps/web dist)
-    /health     DAT POKER API
-    /v1/*       DAT POKER API
-127.0.0.1:4000  systemd unit dat-poker-api (in-memory tables)
-```
-
-Postgres, Redis, chia-gaming, and the treasury host are **not** started. That
-matches local REST play: API + web, `DAT_ALLOW_DEV_BUYIN=true`. Gateway
-WebSocket (`:4100`) is omitted on this 1 GB box.
-
-Buy-ins stay in **CAT mojos** (default min `1000000` = 1000 DAT).
+`--capabilities CAPABILITY_IAM` is required because the stack creates the SSM
+instance profile.
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---------|--------|
-| Credit missing | Instance reached **Running** in the account from the email; wait 10 minutes; confirm you are not on a paid plan that AWS marked ineligible |
-| Browser timeout on port 80 | Security group inbound **HTTP 80**; wait 1–2 minutes for nginx; public IPv4 not empty |
-| `/health` 502 | `sudo systemctl status dat-poker-api`; `sudo journalctl -u dat-poker-api -n 80`; bootstrap log |
-| Build OOM | Swap file `/swapfile` (2 GiB); 20 GiB root volume; try `t3.small` if you keep the box |
-| Landing page never replaced | `ls /opt/dat-poker/apps/web/dist`; re-run `sudo bash /var/lib/...` is not used — re-run by copying `user-data.sh` onto the box |
+| Credit missing | Instance reached **Running** in the account from the email; wait ~10 minutes; finish **Terminate** as the article asks |
+| Session Manager greyed out | IAM profile `ec2-ssm-role` attached; 2/2 status checks; wait 1–2 minutes |
+| Browser timeout on port 80 | **Allow HTTP traffic from the internet** was checked; Apache `active (running)` |
+| `httpd` not found | You are on Amazon Linux 2023; `yum` is a `dnf` wrapper — keep the article’s `sudo yum install -y httpd` |
 
-Bootstrap log: `/var/log/dat-poker-bootstrap.log`.
-
-## This environment cannot click Launch for you
-
-A Cursor Cloud Agent has no AWS access keys and must not use yours. Launch
-from **your** console (Path A) or from **your** CLI (Path B). After **Running**,
-the $20 activity is between you and AWS Billing.
+Same-account billing: [AWS Billing console](https://console.aws.amazon.com/billing/).

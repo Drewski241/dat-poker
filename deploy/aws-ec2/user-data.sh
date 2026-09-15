@@ -1,7 +1,7 @@
 #!/bin/bash
-# DAT POKER first-server bootstrap for Amazon Linux 2023.
-# Paste this entire file into EC2 Launch instance → Advanced details → User data.
-# Safe to re-run (idempotent enough for a tutorial instance).
+# DAT POKER nginx bootstrap for Amazon Linux 2023 (optional Path C).
+# Do NOT paste this into User data while following the $20 Builder Center
+# Apache + Session Manager tutorial (docs/AWS_EC2.md Path A).
 set -euxo pipefail
 exec > >(tee /var/log/dat-poker-bootstrap.log) 2>&1
 

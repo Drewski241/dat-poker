@@ -47,9 +47,24 @@ assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
 assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
-for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml; do
+for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf; do
   [[ -s "$DIR/$f" ]] && ok "$f exists" || bad "$f missing"
 done
+
+bash -n "$DIR/apache-commands.sh" && ok "apache-commands.sh bash syntax" || bad "apache-commands.sh bash syntax"
+
+if grep -q 'sudo yum install -y httpd' "$DIR/apache-commands.sh" \
+  && grep -q '/var/www/html/index.html' "$DIR/apache-commands.sh"; then
+  ok "apache-commands.sh matches the Builder Center httpd tutorial"
+else
+  bad "apache-commands.sh tutorial commands"
+fi
+
+if grep -q 'AmazonSSMManagedInstanceCore' "$DIR/cloudformation.yaml"; then
+  ok "cloudformation.yaml attaches the SSM instance role"
+else
+  bad "cloudformation.yaml missing SSM role"
+fi
 
 if grep -q 'DAT POKER' "$DIR/landing.html" && grep -q '/health' "$DIR/landing.html"; then
   ok "landing.html identifies DAT POKER and probes /health"
@@ -108,8 +123,11 @@ assert "nginx" in body.lower() or "EC2" in body
 print(f"served {len(body)} bytes on 127.0.0.1:{port}")
 PY
 
-if [[ -f "$ROOT/docs/AWS_EC2.md" ]] && grep -q 'Launch an instance using EC2' "$ROOT/docs/AWS_EC2.md"; then
-  ok "docs/AWS_EC2.md covers the Free Tier activity"
+if [[ -f "$ROOT/docs/AWS_EC2.md" ]] \
+  && grep -q 'Launch an instance using EC2' "$ROOT/docs/AWS_EC2.md" \
+  && grep -q 'Session Manager' "$ROOT/docs/AWS_EC2.md" \
+  && grep -q 'sudo yum install -y httpd' "$ROOT/docs/AWS_EC2.md"; then
+  ok "docs/AWS_EC2.md covers the Builder Center Apache tutorial"
 else
   bad "docs/AWS_EC2.md"
 fi

@@ -1,19 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  DAT POKER first EC2 server (Amazon Linux 2023 + nginx + API/web).
-  Launching this stack completes the Free Tier “Launch an instance using EC2”
-  activity in the account that deploys it. Prefer the Console Launch wizard
-  in docs/AWS_EC2.md if you are following the Explore AWS widget.
+  DAT POKER first EC2 server (Amazon Linux 2023 + nginx + API/web + SSM).
+  For the $20 email, follow docs/AWS_EC2.md Path A (Apache + Session Manager)
+  instead of this stack.
 
 Parameters:
   InstanceType:
     Type: String
-    Default: t3.micro
+    Default: t2.micro
     AllowedValues:
-      - t3.micro
       - t2.micro
+      - t3.micro
       - t3.small
-    Description: Use t3.micro or t2.micro for the Free Tier tutorial.
+    Description: Tutorial uses t2.micro (Free Tier eligible).
 
   RepoUrl:
     Type: String
@@ -29,21 +28,38 @@ Parameters:
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
 
 Resources:
+  SsmRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: dat-poker-ssm-role
+
+  SsmInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref SsmRole
+
   WebSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: DAT POKER EC2 — HTTP plus SSH for EC2 Instance Connect
+      GroupDescription: DAT POKER EC2 — HTTP (Session Manager does not need port 22)
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
           Description: HTTP
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
-          Description: SSH / EC2 Instance Connect (tutorial)
       Tags:
         - Key: Name
           Value: dat-poker-web
@@ -53,6 +69,7 @@ Resources:
     Properties:
       InstanceType: !Ref InstanceType
       ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref SsmInstanceProfile
       SecurityGroupIds:
         - !Ref WebSecurityGroup
       BlockDeviceMappings:
