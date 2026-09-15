@@ -1,0 +1,16 @@
+[Unit]
+Description=DAT POKER REST API
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/dat-poker
+EnvironmentFile=-/opt/dat-poker/.env
+ExecStart=/usr/local/bin/node /opt/dat-poker/services/api/dist/index.js
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

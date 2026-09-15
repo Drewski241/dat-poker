@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  DAT POKER first EC2 server (Amazon Linux 2023 + nginx + API/web).
+  Launching this stack completes the Free Tier “Launch an instance using EC2”
+  activity in the account that deploys it. Prefer the Console Launch wizard
+  in docs/AWS_EC2.md if you are following the Explore AWS widget.
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t2.micro
+      - t3.small
+    Description: Use t3.micro or t2.micro for the Free Tier tutorial.
+
+  RepoUrl:
+    Type: String
+    Default: https://github.com/Drewski241/dat-poker.git
+
+  RepoRef:
+    Type: String
+    Default: main
+    Description: Git branch or tag to clone (use this PR branch before it is merged).
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DAT POKER EC2 — HTTP plus SSH for EC2 Instance Connect
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH / EC2 Instance Connect (tutorial)
+      Tags:
+        - Key: Name
+          Value: dat-poker-web
+
+  DatPokerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds:
+        - !Ref WebSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          exec > >(tee /var/log/dat-poker-bootstrap.log) 2>&1
+          export DAT_POKER_REPO_URL="${RepoUrl}"
+          export DAT_POKER_REPO_REF="${RepoRef}"
+          dnf install -y nginx git tar xz curl
+          mkdir -p /usr/share/nginx/html
+          printf '%s\n' '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>DAT POKER</title></head><body style="font-family:sans-serif;background:#0b1f16;color:#e8f5ee;padding:2rem"><h1>DAT POKER</h1><p>nginx is running on this EC2 instance. Full app bootstrap continues.</p></body></html>' > /usr/share/nginx/html/index.html
+          systemctl enable --now nginx
+          rm -rf /tmp/dat-poker-src
+          git clone --depth 1 --branch "${RepoRef}" "${RepoUrl}" /tmp/dat-poker-src || git clone --depth 1 "${RepoUrl}" /tmp/dat-poker-src
+          if [[ -f /tmp/dat-poker-src/deploy/aws-ec2/user-data.sh ]]; then
+            bash /tmp/dat-poker-src/deploy/aws-ec2/user-data.sh
+          else
+            echo "user-data.sh not in ${RepoRef} yet; nginx page is live" >&2
+          fi
+      Tags:
+        - Key: Name
+          Value: dat-poker-first-server
+
+Outputs:
+  InstanceId:
+    Description: EC2 instance id (this is what the Free Tier activity looks for)
+    Value: !Ref DatPokerInstance
+  PublicIp:
+    Description: Public IPv4 — open http://THIS_IP/ in a browser
+    Value: !GetAtt DatPokerInstance.PublicIp
+  PublicDns:
+    Value: !GetAtt DatPokerInstance.PublicDnsName
+  WebsiteUrl:
+    Value: !Sub http://${DatPokerInstance.PublicIp}/
