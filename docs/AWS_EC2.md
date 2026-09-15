@@ -5,6 +5,9 @@ Use the official tutorial in the email — not nginx user data — to earn the
 (Free Tier Tutorial Series #5). Completing it also finishes the
 **Launch an instance using EC2** activity.
 
+When the credit is in **Billing → Credits** and the tutorial instance is
+terminated, launch the poker site with [docs/BETA.md](./BETA.md).
+
 This Cloud Agent cannot sign into your AWS account. Click the steps in
 **your** Console.
 

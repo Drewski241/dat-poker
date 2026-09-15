@@ -47,9 +47,18 @@ assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
 assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
-for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf; do
+for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml; do
   [[ -s "$DIR/$f" ]] && ok "$f exists" || bad "$f missing"
 done
+
+bash -n "$DIR/redeploy.sh" && ok "redeploy.sh bash syntax" || bad "redeploy.sh bash syntax"
+
+if grep -q 'AWS::EC2::EIP' "$DIR/beta-cloudformation.yaml" \
+  && grep -q 'dat-poker-beta' "$DIR/beta-cloudformation.yaml"; then
+  ok "beta-cloudformation.yaml declares an Elastic IP beta host"
+else
+  bad "beta-cloudformation.yaml"
+fi
 
 bash -n "$DIR/apache-commands.sh" && ok "apache-commands.sh bash syntax" || bad "apache-commands.sh bash syntax"
 
@@ -130,6 +139,25 @@ if [[ -f "$ROOT/docs/AWS_EC2.md" ]] \
   ok "docs/AWS_EC2.md covers the Builder Center Apache tutorial"
 else
   bad "docs/AWS_EC2.md"
+fi
+
+if [[ -f "$ROOT/docs/BETA.md" ]] && grep -q 'Elastic IP' "$ROOT/docs/BETA.md"; then
+  ok "docs/BETA.md covers the public beta host"
+else
+  bad "docs/BETA.md"
+fi
+
+if grep -q 'VITE_APP_STAGE' "$ROOT/apps/web/src/App.tsx" \
+  && grep -q 'beta-banner' "$ROOT/apps/web/src/App.tsx"; then
+  ok "web client shows a beta banner when VITE_APP_STAGE=beta"
+else
+  bad "web beta banner"
+fi
+
+if [[ -f "$ROOT/.env.beta.example" ]] && grep -q 'DAT_ALLOW_DEV_BUYIN=true' "$ROOT/.env.beta.example"; then
+  ok ".env.beta.example enables dev buy-in"
+else
+  bad ".env.beta.example"
 fi
 
 echo

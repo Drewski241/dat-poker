@@ -1,13 +1,14 @@
 #!/bin/bash
-# DAT POKER nginx bootstrap for Amazon Linux 2023 (optional Path C).
+# DAT POKER nginx bootstrap for Amazon Linux 2023 (public beta / Path C).
 # Do NOT paste this into User data while following the $20 Builder Center
 # Apache + Session Manager tutorial (docs/AWS_EC2.md Path A).
+# For the poker website after that credit: docs/BETA.md
 set -euxo pipefail
 exec > >(tee /var/log/dat-poker-bootstrap.log) 2>&1
 
 REPO_URL="${DAT_POKER_REPO_URL:-https://github.com/Drewski241/dat-poker.git}"
 REPO_REF="${DAT_POKER_REPO_REF:-main}"
-NODE_VERSION="${DAT_POKER_NODE_VERSION:-v22.14.0}"
+DAT_POKER_STAGE="${DAT_POKER_STAGE:-beta}"
 INSTALL_ROOT="/opt/dat-poker"
 WEB_ROOT="/usr/share/nginx/html"
 
@@ -170,7 +171,11 @@ clone_repo() {
 
 write_env() {
   if [[ ! -f "$INSTALL_ROOT/.env" ]]; then
-    cp "$INSTALL_ROOT/.env.example" "$INSTALL_ROOT/.env"
+    if [[ -f "$INSTALL_ROOT/.env.beta.example" ]]; then
+      cp "$INSTALL_ROOT/.env.beta.example" "$INSTALL_ROOT/.env"
+    else
+      cp "$INSTALL_ROOT/.env.example" "$INSTALL_ROOT/.env"
+    fi
   fi
   sed -i 's/^DAT_ALLOW_DEV_BUYIN=.*/DAT_ALLOW_DEV_BUYIN=true/' "$INSTALL_ROOT/.env"
   grep -q '^DAT_ALLOW_DEV_BUYIN=' "$INSTALL_ROOT/.env" \
@@ -181,10 +186,12 @@ install_app() {
   cd "$INSTALL_ROOT"
   export CI=true
   export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=512}"
+  export VITE_APP_STAGE="${DAT_POKER_STAGE:-beta}"
   corepack enable
   corepack prepare pnpm@9.15.0 --activate
   pnpm install --frozen-lockfile
   pnpm --filter @dat-poker/api^... build
+  pnpm --filter @dat-poker/api build
   pnpm --filter @dat-poker/web build
   rm -rf "${WEB_ROOT:?}/"*
   cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"

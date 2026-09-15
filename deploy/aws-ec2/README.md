@@ -5,16 +5,21 @@ The **$20** email maps to AWS Builder Center
 (Apache `httpd` + Session Manager). Click-through:
 [docs/AWS_EC2.md](../../docs/AWS_EC2.md).
 
+After that credit posts, run the poker **beta** with
+[docs/BETA.md](../../docs/BETA.md).
+
 **You must launch from your AWS account.** Do not paste `user-data.sh` during
-that tutorial.
+the Apache tutorial.
 
 | File | Purpose |
 |------|---------|
 | `apache-commands.sh` | Verbatim Apache commands from the Builder Center article |
 | `httpd-dat-poker.conf` | Optional Apache reverse proxy after the tutorial page works |
-| `user-data.sh` | Optional nginx + DAT POKER bootstrap (not the email path) |
+| `user-data.sh` | nginx + DAT POKER beta bootstrap (not the email path) |
+| `redeploy.sh` | `git fetch` + rebuild + restart API on an existing beta host |
 | `landing.html` | Static DAT POKER page used by the nginx kit |
 | `nginx.conf` | Port 80 → static UI + `/health` and `/v1` to the API |
 | `dat-poker-api.service` | systemd unit for the REST API |
-| `cloudformation.yaml` | Optional one-stack DAT POKER launch (`CAPABILITY_IAM`) |
+| `cloudformation.yaml` | Optional first-server stack |
+| `beta-cloudformation.yaml` | Beta stack with Elastic IP (`CAPABILITY_IAM`) |
 | `validate.sh` | Local checks (no AWS keys) |

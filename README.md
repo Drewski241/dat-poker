@@ -36,8 +36,8 @@ See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (co
 
 The email tutorial is [Deploy a web server to the cloud](https://builder.aws.com/content/3BfvbBpwbonTDicuPTMLZBTt4Br/deploy-a-web-server-to-the-cloud)
 (Apache + Session Manager, not nginx). Follow [docs/AWS_EC2.md](./docs/AWS_EC2.md)
-in **your** AWS Console. A Cloud Agent cannot log in for you. Terminate
-`my-web-server` when the article says to clean up.
+in **your** AWS Console. After the $20 credit posts and that tutorial box is
+gone, launch the public beta with [docs/BETA.md](./docs/BETA.md).
 
 For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a **separate treasury host**; copy `.env.treasury.example` → `.env`, run `pnpm treasury:check`, then point the game API at it with `DAT_TREASURY_PAYOUT_URL`. See [docs/TREASURY.md](./docs/TREASURY.md).
 
