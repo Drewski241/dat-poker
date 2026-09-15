@@ -39,6 +39,15 @@ header h1 {
   font-size: 0.95rem;
 }
 
+.beta-banner {
+  margin: 0 0 1.25rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 6px;
+  background: rgba(255, 193, 7, 0.14);
+  color: #f3d37a;
+  font-size: 0.9rem;
+}
+
 .api-status.ok {
   color: var(--accent);
 }

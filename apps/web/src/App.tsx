@@ -340,6 +340,9 @@ export function App() {
     });
   };
 
+  const appStage = import.meta.env.VITE_APP_STAGE;
+  const isBeta = appStage === "beta";
+
   const me = hand?.players.find((p) => p.playerId === playerId);
   const currentBet = BigInt(hand?.currentBetMojos ?? 0);
   const myBet = BigInt(me?.betThisStreetMojos ?? 0);
@@ -366,6 +369,10 @@ export function App() {
   const isMyAction = actionSeatPlayer?.playerId === playerId;
 
   useEffect(() => {
+    document.title = isBeta ? "DAT Poker beta" : "DAT Poker";
+  }, [isBeta]);
+
+  useEffect(() => {
     if (!isMyAction || !betRange.canBetOrRaise) return;
     setBetAmountMojos(betRange.minRaiseTo);
   }, [
@@ -382,8 +389,14 @@ export function App() {
 
   return (
     <div className="app">
+      {isBeta && (
+        <div className="beta-banner" role="status">
+          Public beta — software under development. Tables live in memory and reset when
+          the server restarts. Dev buy-in is for testing, not real-money settlement.
+        </div>
+      )}
       <header>
-        <h1>DAT Poker</h1>
+        <h1>DAT Poker{isBeta ? " beta" : ""}</h1>
         <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
@@ -577,10 +590,18 @@ export function App() {
       {wcUri && <QrConnectModal uri={wcUri} onClose={() => setWcUri(null)} />}
 
       <footer>
-        <p>
-          Configure API <code>.env</code> with WalletConnect + DAT asset id. Run <code>pnpm dev:api</code>,{" "}
-          <code>pnpm dev:treasury</code>, and <code>pnpm dev:web</code>.
-        </p>
+        {isBeta ? (
+          <p>
+            DAT POKER public beta. Use this host to develop the table, engine, and wallet
+            flows. Do not send real DAT until treasury is configured on a separate machine.
+          </p>
+        ) : (
+          <p>
+            Configure API <code>.env</code> with WalletConnect + DAT asset id. Run{" "}
+            <code>pnpm dev:api</code>, <code>pnpm dev:treasury</code>, and{" "}
+            <code>pnpm dev:web</code>.
+          </p>
+        )}
       </footer>
     </div>
   );
