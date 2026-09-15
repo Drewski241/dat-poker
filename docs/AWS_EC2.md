@@ -65,6 +65,13 @@ port 22.
 
 ### 4. Install Apache (verbatim from the article)
 
+Run these **in the Session Manager browser tab**, not in a terminal on your
+laptop. Amazon Linux has `yum` and `httpd`. Ubuntu laptops do not, and
+installing Apache locally does not earn the $20.
+
+If the prompt looks like `you@your-laptop` instead of `ssm-user@ip-...`, go
+back to step 3. `whoami` should print `ssm-user`.
+
 ```bash
 sudo yum install -y httpd
 sudo systemctl start httpd
@@ -186,6 +193,7 @@ instance profile.
 | Credit missing | Instance reached **Running** in the account from the email; wait ~10 minutes; finish **Terminate** as the article asks |
 | Session Manager greyed out | IAM profile `ec2-ssm-role` attached; 2/2 status checks; wait 1–2 minutes |
 | Browser timeout on port 80 | **Allow HTTP traffic from the internet** was checked; Apache `active (running)` |
+| `sudo: yum: command not found` | You ran the commands on a laptop (Ubuntu, etc.). Open Session Manager on `my-web-server` and run them there. |
 | `httpd` not found | You are on Amazon Linux 2023; `yum` is a `dnf` wrapper — keep the article’s `sudo yum install -y httpd` |
 
 Same-account billing: [AWS Billing console](https://console.aws.amazon.com/billing/).
