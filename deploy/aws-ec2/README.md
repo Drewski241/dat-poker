@@ -15,7 +15,8 @@ the Apache tutorial.
 |------|---------|
 | `apache-commands.sh` | Verbatim Apache commands from the Builder Center article |
 | `httpd-dat-poker.conf` | Optional Apache reverse proxy after the tutorial page works |
-| `user-data.sh` | nginx + DAT POKER beta bootstrap (not the email path) |
+| `console-user-data.sh` | **Paste this** into Launch instance → User data |
+| `user-data.sh` | Full bootstrap (pulled by the paste snippet) |
 | `redeploy.sh` | `git fetch` + rebuild + restart API on an existing beta host |
 | `landing.html` | Static DAT POKER page used by the nginx kit |
 | `nginx.conf` | Port 80 → static UI + `/health` and `/v1` to the API |

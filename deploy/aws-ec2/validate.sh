@@ -47,11 +47,18 @@ assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
 assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
-for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml; do
+for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh; do
   [[ -s "$DIR/$f" ]] && ok "$f exists" || bad "$f missing"
 done
 
+bash -n "$DIR/console-user-data.sh" && ok "console-user-data.sh bash syntax" || bad "console-user-data.sh bash syntax"
 bash -n "$DIR/redeploy.sh" && ok "redeploy.sh bash syntax" || bad "redeploy.sh bash syntax"
+
+if grep -q 'raw.githubusercontent.com/Drewski241/dat-poker' "$DIR/console-user-data.sh"; then
+  ok "console-user-data.sh fetches user-data.sh from GitHub"
+else
+  bad "console-user-data.sh GitHub curl"
+fi
 
 if grep -q 'AWS::EC2::EIP' "$DIR/beta-cloudformation.yaml" \
   && grep -q 'dat-poker-beta' "$DIR/beta-cloudformation.yaml"; then

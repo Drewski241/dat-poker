@@ -47,16 +47,38 @@ You deleted `ec2-ssm-role`. Create a new one named `dat-poker-beta-ssm`:
 6. Network: **Allow HTTP** and **Allow HTTPS** from the internet
 7. Storage: **20 GiB** gp3
 8. Advanced details → IAM instance profile: `dat-poker-beta-ssm`
-9. User data — paste `deploy/aws-ec2/user-data.sh` from this repo. Optional
-   first lines after the shebang (before merge, use this branch):
+9. **User data** (this is the confusing one — see [User data walkthrough](#user-data-walkthrough) below). Paste the **five-line** script in `deploy/aws-ec2/console-user-data.sh`, not the whole `user-data.sh` file.
+10. Launch. Wait until **Running** and 2/2 status checks.
+
+### User data walkthrough
+
+User data is a script AWS runs **once**, on first boot. It is not a setting on your laptop.
+
+1. Stay on the **Launch instance** page. Scroll to the **bottom**.
+2. Find **Advanced details** and click the row to expand it (it is collapsed by default).
+3. Scroll inside that section. You already set **IAM instance profile** here. Keep going.
+4. Find the **User data** box (a large empty text area). Directly under it, leave **User data already base64 encoded** **unchecked**.
+5. Open [console-user-data.sh on GitHub](https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/aws-ec2-first-server-6971/deploy/aws-ec2/console-user-data.sh), Select All, Copy.
+6. Click in the AWS **User data** box and Paste. You should see something like:
 
    ```bash
-   export DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971
-   export DAT_POKER_STAGE=beta
+   #!/bin/bash
+   # Paste this entire box into EC2 Launch instance → Advanced details → User data.
+   # Leave “User data already base64 encoded” unchecked.
+   set -euxo pipefail
+   export DAT_POKER_REPO_REF="${DAT_POKER_REPO_REF:-cursor/aws-ec2-first-server-6971}"
+   export DAT_POKER_STAGE="${DAT_POKER_STAGE:-beta}"
+   curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/${DAT_POKER_REPO_REF}/deploy/aws-ec2/user-data.sh" | bash
    ```
 
-   After this lands on `main`, `DAT_POKER_REPO_REF=main` is enough.
-10. Launch. Wait until **Running** and 2/2 status checks.
+7. Do not add extra spaces before `#!/bin/bash`. Then scroll up and click **Launch instance**.
+
+If you already launched without this box filled, User data will not run. Terminate that instance and launch a new one, **or** in Session Manager run:
+
+```bash
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971 DAT_POKER_STAGE=beta
+curl -fsSL https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/aws-ec2-first-server-6971/deploy/aws-ec2/user-data.sh | bash'
+```
 
 ### 3. Elastic IP
 
