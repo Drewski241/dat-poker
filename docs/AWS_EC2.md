@@ -21,7 +21,7 @@ credit email) walk through.
 |---------------|-------------|
 | IAM role for Session Manager | Role name `ec2-ssm-role`, use case **EC2 Role for AWS Systems Manager** (`AmazonSSMManagedInstanceCore`) |
 | Launch a VM | Name `my-web-server`, **Amazon Linux 2023**, **t2.micro**, **Proceed without a key pair**, check **Allow HTTP traffic from the internet**, IAM instance profile `ec2-ssm-role` |
-| Browser shell | Instance → **Connect** → **Session Manager** (user `ssm-user`) |
+| Browser shell | Instance → **Connect** (Session Manager or EC2 Instance Connect; user `ec2-user` or `ssm-user`) |
 | Web server | Apache: `httpd`, files in `/var/www/html/` |
 | Custom page | `sudo nano /var/www/html/index.html` |
 | Clean up | **Terminate** `my-web-server` (the article says to do this so you earn the credit and do not keep paying) |
@@ -60,7 +60,7 @@ Credits usually show under **Billing → Credits** within about 10 minutes.
 ### 3. Connect with Session Manager
 
 1. Select `my-web-server` → **Connect** → **Session Manager** → **Connect**.
-2. You should be `ssm-user`. Confirm with `whoami`.
+2. You should be `ec2-user` or `ssm-user` on a host named `ip-…`. Confirm with `whoami`.
 
 If the Session Manager tab is greyed out, wait a minute for the IAM profile
 and SSM agent. Amazon Linux 2023 already includes the agent. You do not need
@@ -72,8 +72,9 @@ Run these **in the Session Manager browser tab**, not in a terminal on your
 laptop. Amazon Linux has `yum` and `httpd`. Ubuntu laptops do not, and
 installing Apache locally does not earn the $20.
 
-If the prompt looks like `you@your-laptop` instead of `ssm-user@ip-...`, go
-back to step 3. `whoami` should print `ssm-user`.
+If the prompt looks like `you@your-laptop` instead of `ec2-user@ip-...` or
+`ssm-user@ip-...`, go back to step 3. `whoami` should print `ec2-user` or
+`ssm-user` (both are the VM).
 
 ```bash
 sudo yum install -y httpd

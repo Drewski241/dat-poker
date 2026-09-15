@@ -117,7 +117,8 @@ in your IdeaPad terminal.
    whoami
    ```
 
-   You want `ssm-user`. If this tab is greyed out, wait for 2/2 status checks
+   You want `ec2-user` or `ssm-user`, and a hostname like `ip-172-31-…`.
+   That is the VM. If Connect is greyed out, wait for 2/2 status checks
    and confirm the instance profile is `dat-poker-beta-ssm`.
 5. Watch the install log (several minutes; Node + `pnpm`):
 
