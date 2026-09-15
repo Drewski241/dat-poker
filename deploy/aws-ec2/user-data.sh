@@ -9,6 +9,7 @@ exec > >(tee /var/log/dat-poker-bootstrap.log) 2>&1
 REPO_URL="${DAT_POKER_REPO_URL:-https://github.com/Drewski241/dat-poker.git}"
 REPO_REF="${DAT_POKER_REPO_REF:-main}"
 DAT_POKER_STAGE="${DAT_POKER_STAGE:-beta}"
+NODE_VERSION="${DAT_POKER_NODE_VERSION:-v22.14.0}"
 INSTALL_ROOT="/opt/dat-poker"
 WEB_ROOT="/usr/share/nginx/html"
 
@@ -99,6 +100,7 @@ events {
 http {
   include /etc/nginx/mime.types;
   default_type application/octet-stream;
+  types_hash_max_size 4096;
   sendfile on;
   keepalive_timeout 65;
   access_log /var/log/nginx/access.log;
@@ -149,7 +151,8 @@ install_node() {
     aarch64) node_arch=linux-arm64 ;;
     *) echo "unsupported arch: $arch"; return 1 ;;
   esac
-  curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-${node_arch}.tar.xz" \
+  local node_ver="${NODE_VERSION:-v22.14.0}"
+  curl -fsSL "https://nodejs.org/dist/${node_ver}/node-${node_ver}-${node_arch}.tar.xz" \
     -o /tmp/node.tar.xz
   tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
   rm -f /tmp/node.tar.xz

@@ -13,6 +13,13 @@ bad() { echo "FAIL  $*" >&2; FAIL=$((FAIL + 1)); }
 
 bash -n "$DIR/user-data.sh" && ok "user-data.sh bash syntax" || bad "user-data.sh bash syntax"
 
+if grep -q 'NODE_VERSION=' "$DIR/user-data.sh" \
+  && grep -q 'node_ver=' "$DIR/user-data.sh"; then
+  ok "user-data.sh defines NODE_VERSION for Node tarball download"
+else
+  bad "user-data.sh NODE_VERSION"
+fi
+
 if grep -q 'AWSTemplateFormatVersion' "$DIR/cloudformation.yaml" \
   && grep -q 'AWS::EC2::Instance' "$DIR/cloudformation.yaml" \
   && grep -q 'UserData' "$DIR/cloudformation.yaml"; then
