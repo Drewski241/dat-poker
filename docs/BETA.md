@@ -82,33 +82,68 @@ curl -fsSL https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/aws-ec2
 
 ### 3. Elastic IP
 
-1. EC2 → **Elastic IPs** → Allocate (VPC)
-2. Actions → Associate → instance `dat-poker-beta`
-3. Bookmark `http://THE_ELASTIC_IP/`
+This pins a public IPv4 address so `http://…` does not change if you stop and
+start the instance. Do this in the AWS Console, not on your laptop.
 
-An Elastic IP is free while it is attached to a running instance. It starts
-billing if you stop the instance and leave the address allocated.
+1. Confirm `dat-poker-beta` is **Running** (EC2 → **Instances**).
+2. In the left sidebar, under **Network & Security**, click **Elastic IPs**.
+3. Click **Allocate Elastic IP address**.
+4. Leave the defaults: IPv4, Amazon’s pool of IPv4 addresses. Click **Allocate**.
+5. Tick the checkbox on the new row. Click **Actions** → **Associate Elastic IP address**.
+6. Resource type: **Instance**. Instance: choose **dat-poker-beta**. Private IP: leave the default. Click **Associate**.
+7. The **Allocated IPv4 address** column is `THAT_IP` (four numbers with dots, like `54.12.34.56`).
+8. On your laptop browser, bookmark `http://THAT_IP/` (plain `http`, no `https`, no port number). The site may be a landing page until bootstrap finishes.
 
-### 4. Watch bootstrap, then play
+An Elastic IP is free while it is attached to a **running** instance. It starts
+billing if you stop the instance and leave the address allocated — disassociate
+or release it if you stop for a long time.
 
-Session Manager (instance → Connect → Session Manager):
+The instance also shows a **Public IPv4 address** on the instance list. After
+you associate the Elastic IP, those two values should match. Use the Elastic IP
+for the bookmark.
 
-```bash
-whoami
-# ssm-user
+### 4. Watch bootstrap, then play (Session Manager)
 
-sudo tail -f /var/log/dat-poker-bootstrap.log
-```
+Session Manager is a **terminal in your web browser** on the EC2 machine (same
+idea as the Apache tutorial). The `tail` and `curl` commands run **there**, not
+in your IdeaPad terminal.
 
-First boot can take several minutes (`pnpm` + swap). Then:
+1. EC2 → **Instances** → click the row **dat-poker-beta** (checkbox).
+2. Click **Connect** (top right of the instances page).
+3. Open the **Session Manager** tab → **Connect**. A black terminal tab opens.
+4. Confirm you are on the VM:
 
-```bash
-curl -s http://127.0.0.1/health
-# {"status":"ok","service":"dat-poker-api"}
-```
+   ```bash
+   whoami
+   ```
 
-Open `http://ELASTIC_IP/` — you should see **DAT Poker beta** and the yellow
-banner. Buy in vs house with **dev buy-in** (no DAT CAT required).
+   You want `ssm-user`. If this tab is greyed out, wait for 2/2 status checks
+   and confirm the instance profile is `dat-poker-beta-ssm`.
+5. Watch the install log (several minutes; Node + `pnpm`):
+
+   ```bash
+   sudo tail -f /var/log/dat-poker-bootstrap.log
+   ```
+
+   If you see `No such file or directory`, wait 30 seconds and try again (the
+   first-boot script has not created the log yet). Leave this running until you
+   see a line about the API being healthy, or `DAT POKER API is healthy`, or
+   the script finishes. Press **Ctrl+C** to stop following the log.
+6. Still in Session Manager, check the API:
+
+   ```bash
+   curl -s http://127.0.0.1/health
+   ```
+
+   You want `{"status":"ok","service":"dat-poker-api"}`. If you get `Connection
+   refused` or HTML with 502, wait a minute and run `curl` again — the web page
+   can be up before the API has finished building.
+7. On your **laptop** browser (not inside Session Manager), open the bookmark
+   `http://THAT_IP/`. You should see **DAT Poker beta** and the yellow banner.
+   Buy in vs house with **dev buy-in** (no DAT CAT required).
+
+If the laptop browser times out but `curl` in Session Manager works, the
+security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
 
 ## Redeploy after you push code
 
