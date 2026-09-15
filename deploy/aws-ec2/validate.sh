@@ -20,6 +20,80 @@ else
   bad "user-data.sh NODE_VERSION"
 fi
 
+if grep -q 'wait_for_api()' "$DIR/user-data.sh" \
+  && grep -q 'dump_api_logs()' "$DIR/user-data.sh" \
+  && grep -q 'journalctl -u dat-poker-api' "$DIR/user-data.sh"; then
+  ok "user-data.sh retries API health and dumps systemd logs on failure"
+else
+  bad "user-data.sh API health retry"
+fi
+
+python3 - <<'PY' && ok "wait_for_api succeeds after a delayed /health listener" || bad "wait_for_api delayed listener"
+import http.server
+import os
+import socket
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+port = sock.getsockname()[1]
+sock.close()
+body = b'{"status":"ok","service":"dat-poker-api"}'
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_error(404)
+    def log_message(self, *args):
+        pass
+
+httpd = http.server.HTTPServer(("127.0.0.1", port), Handler)
+
+def start():
+    time.sleep(2)
+    httpd.serve_forever()
+
+thread = threading.Thread(target=start, daemon=True)
+thread.start()
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "user-data.sh").read_text()
+fn_start = script.index("wait_for_api() {")
+fn_end = script.index("\n}", fn_start) + 2
+fn = script[fn_start:fn_end]
+proc = subprocess.run(
+    ["bash", "-c", fn + f'\nwait_for_api http://127.0.0.1:{port}/health 10\n'],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+httpd.shutdown()
+assert proc.returncode == 0, proc.stderr + proc.stdout
+assert "API healthy after" in proc.stdout
+print(proc.stdout.strip())
+PY
+
+if grep -q 'seq 1 30' "$DIR/redeploy.sh" \
+  && grep -q 'journalctl -u dat-poker-api' "$DIR/redeploy.sh"; then
+  ok "redeploy.sh retries nginx /health after API restart"
+else
+  bad "redeploy.sh API health retry"
+fi
+
+if grep -q 'dat-poker-bootstrap.web-only' "$ROOT/docs/BETA.md" \
+  && grep -q 'systemctl status dat-poker-api' "$ROOT/docs/BETA.md"; then
+  ok "docs/BETA.md covers the systemd vs curl race"
+else
+  bad "docs/BETA.md health-check race"
+fi
+
 if grep -q 'AWSTemplateFormatVersion' "$DIR/cloudformation.yaml" \
   && grep -q 'AWS::EC2::Instance' "$DIR/cloudformation.yaml" \
   && grep -q 'UserData' "$DIR/cloudformation.yaml"; then

@@ -27,5 +27,20 @@ cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 systemctl restart dat-poker-api
 nginx -s reload || systemctl reload nginx
-curl -fsS http://127.0.0.1/health
+
+ok=0
+for i in $(seq 1 30); do
+  if curl -fsS http://127.0.0.1/health >/dev/null 2>&1; then
+    echo "API healthy after ${i}s via nginx /health"
+    ok=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$ok" -ne 1 ]]; then
+  echo "API did not become healthy within 30s" >&2
+  systemctl status dat-poker-api --no-pager >&2 || true
+  journalctl -u dat-poker-api -n 80 --no-pager >&2 || true
+  exit 1
+fi
 echo "beta redeploy ok"

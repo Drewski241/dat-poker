@@ -221,6 +221,29 @@ WantedBy=multi-user.target
 UNIT
 }
 
+# systemd enable --now returns when the process is spawned, not when Fastify
+# is listening. A single immediate curl to :4000 races and falsely marks web-only.
+wait_for_api() {
+  local url="${1:-http://127.0.0.1:4000/health}"
+  local attempts="${2:-30}"
+  local i
+  for i in $(seq 1 "$attempts"); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      echo "API healthy after ${i}s at ${url}"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+dump_api_logs() {
+  echo "--- dat-poker-api status ---" >&2
+  systemctl status dat-poker-api --no-pager >&2 || true
+  echo "--- dat-poker-api journal ---" >&2
+  journalctl -u dat-poker-api -n 80 --no-pager >&2 || true
+}
+
 install_swap
 dnf install -y nginx git tar xz
 write_landing_page
@@ -242,10 +265,12 @@ systemctl enable --now dat-poker-api
 nginx -s reload
 set -e
 
-if systemctl is-active --quiet dat-poker-api && curl -fsS http://127.0.0.1:4000/health >/dev/null; then
+if systemctl is-active --quiet dat-poker-api && wait_for_api http://127.0.0.1:4000/health 30; then
   echo "DAT POKER API is healthy"
+  rm -f /var/lib/dat-poker-bootstrap.web-only
   touch /var/lib/dat-poker-bootstrap.ok
 else
-  echo "nginx is serving the landing page; API still starting or build failed. See /var/log/dat-poker-bootstrap.log" >&2
+  echo "nginx is serving the web client; API still starting or build failed. See /var/log/dat-poker-bootstrap.log" >&2
+  dump_api_logs
   touch /var/lib/dat-poker-bootstrap.web-only
 fi

@@ -139,6 +139,29 @@ in your IdeaPad terminal.
    You want `{"status":"ok","service":"dat-poker-api"}`. If you get `Connection
    refused` or HTML with 502, wait a minute and run `curl` again — the web page
    can be up before the API has finished building.
+
+   If the bootstrap log ends with `curl: (7) Failed to connect to 127.0.0.1:4000`
+   and `dat-poker-bootstrap.web-only`, that is usually a **timing race**, not a
+   failed build. Node was spawned (`systemctl enable --now`) and curl ran
+   before Fastify bound `:4000`. Stay in Session Manager and check whether the
+   API came up a few seconds later:
+
+   ```bash
+   sudo systemctl status dat-poker-api --no-pager
+   sudo journalctl -u dat-poker-api -n 50 --no-pager
+   curl -sS http://127.0.0.1:4000/health
+   curl -sS http://127.0.0.1/health
+   ```
+
+   You want `active (running)` and `{"status":"ok","service":"dat-poker-api"}`.
+   If `:4000` is healthy, do **not** re-run the full bootstrap. Open
+   `http://THAT_IP/` on the laptop. If the service is `failed`, restart it:
+
+   ```bash
+   sudo systemctl restart dat-poker-api
+   sleep 3
+   curl -sS http://127.0.0.1:4000/health
+   ```
 7. On your **laptop** browser (not inside Session Manager), open the bookmark
    `http://THAT_IP/`. You should see **DAT Poker beta** and the yellow banner.
    Buy in vs house with **dev buy-in** (no DAT CAT required).
