@@ -24,16 +24,27 @@ fi
 python3 - <<'PY' && ok "cloudformation.yaml is parseable YAML" || bad "cloudformation.yaml YAML parse"
 from pathlib import Path
 import os
+import yaml
+
 text = Path(os.environ["DAT_POKER_EC2_DIR"], "cloudformation.yaml").read_text()
-try:
-    import yaml  # type: ignore
-    data = yaml.safe_load(text)
-    assert data["AWSTemplateFormatVersion"] == "2010-09-09"
-    assert "DatPokerInstance" in data["Resources"]
-    assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
-except ImportError:
-    assert "AWSTemplateFormatVersion:" in text
-    assert "Type: AWS::EC2::Instance" in text
+
+class CfnLoader(yaml.SafeLoader):
+    pass
+
+def _cfn_tag(loader, suffix, node):
+    if isinstance(node, yaml.ScalarNode):
+        return loader.construct_scalar(node)
+    if isinstance(node, yaml.SequenceNode):
+        return loader.construct_sequence(node)
+    if isinstance(node, yaml.MappingNode):
+        return loader.construct_mapping(node)
+    return None
+
+CfnLoader.add_multi_constructor("!", _cfn_tag)
+data = yaml.load(text, Loader=CfnLoader)
+assert data["AWSTemplateFormatVersion"] == "2010-09-09"
+assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
+assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
 for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml; do
