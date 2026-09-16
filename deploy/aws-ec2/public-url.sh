@@ -4,7 +4,7 @@
 #   bash /opt/dat-poker/deploy/aws-ec2/public-url.sh
 #
 # Optional:
-#   DAT_POKER_DOMAIN=datpoker.com
+#   DAT_POKER_DOMAIN=dat-poker.com
 #   DAT_POKER_PUBLIC_IPV4=54.12.34.56
 set -euo pipefail
 
@@ -58,9 +58,9 @@ EOF
 if [[ "$DAT_POKER_DOMAIN" == *.sslip.io ]]; then
   cat <<'EOF'
 
-That sslip.io name works until you point datpoker.com at this Elastic IP.
-Cloudflare → datpoker.com → DNS → A @ and A www = Elastic IP, DNS only (grey cloud). Then:
+That sslip.io name works until you buy a domain such as dat-poker.com
+and point Cloudflare A records at this Elastic IP (DNS only / grey cloud). Then:
 
-  sudo DAT_POKER_DOMAIN=datpoker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
+  sudo DAT_POKER_DOMAIN=dat-poker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 EOF
 fi

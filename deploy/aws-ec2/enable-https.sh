@@ -3,11 +3,11 @@
 # Run as root after the HTTP site already works:
 #   sudo bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 #
-# Branded site (datpoker.com is already registered at Cloudflare):
-#   sudo DAT_POKER_DOMAIN=datpoker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
+# Branded site (buy dat-poker.com — datpoker.com is taken):
+#   sudo DAT_POKER_DOMAIN=dat-poker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 #
 # Optional:
-#   DAT_POKER_DOMAIN=datpoker.com     # DNS A record at the Elastic IP
+#   DAT_POKER_DOMAIN=dat-poker.com    # DNS A record at the Elastic IP
 #   DAT_POKER_WWW=0                  # skip www.<domain> cert
 #   DAT_POKER_PUBLIC_IPV4=54.12.34.56
 #   CADDY_VERSION=2.9.1
@@ -111,8 +111,8 @@ DOMAIN="${DAT_POKER_DOMAIN:-}"
 if [[ -z "$DOMAIN" ]]; then
   DOMAIN="$(ip_to_sslip "$PUB_IP")"
   echo "No DAT_POKER_DOMAIN set; using $DOMAIN (Elastic IP $PUB_IP)"
-  echo "For https://datpoker.com/ point Cloudflare A records at $PUB_IP, then re-run:"
-  echo "  sudo DAT_POKER_DOMAIN=datpoker.com bash $0"
+  echo "For https://dat-poker.com/ register that name, point A records at $PUB_IP, then re-run:"
+  echo "  sudo DAT_POKER_DOMAIN=dat-poker.com bash $0"
 fi
 
 SITE="$DOMAIN"
