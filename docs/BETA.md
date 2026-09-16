@@ -17,7 +17,8 @@ This Cloud Agent cannot click Launch in your account.
 | `t3.small` (2 GiB) | Room for Node + `pnpm` (prefer this over `t3.micro`) |
 | Elastic IP | Stable `http://EIP/` bookmark |
 | nginx `:80` | Static web UI + `/health` and `/v1` to the API |
-| systemd `dat-poker-api` | NLHE vs house |
+| systemd `dat-poker-api` | NLHE 6-max; house or humans |
+| Daily redeem | 5000 DAT / UTC day into the in-game table account |
 | `VITE_APP_STAGE=beta` | Yellow beta banner in the UI |
 | Session Manager | Same browser shell you used for the tutorial (recreate the IAM role) |
 
@@ -304,8 +305,10 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 2. Click **Connect Sage (WalletConnect)**.
 3. Scan the QR with Sage (or paste the URI in Sage desktop).
 4. Approve the session in Sage.
-5. Click **Load DAT balance**. You should see your spendable DAT.
-6. **Buy in & join table** — approve the message in Sage if asked.
+5. Click **Load wallet**.
+6. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits).
+7. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
+8. **Deal hand** when at least two seats are filled.
 
 If the page is still `http://` you will see a note that Sage needs HTTPS.
 

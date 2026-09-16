@@ -183,7 +183,23 @@ export async function takeOffer(
   });
 }
 
-export const signWithdrawMessage = signBuyInMessage;
+export async function loadPlayerWallet(
+  session: WcSession,
+  projectId: string,
+  chainId: string,
+  assetId?: string | null,
+): Promise<{ balance: AssetBalance; address: string }> {
+  const address = await getWalletAddress(session, projectId, chainId);
+  let balance: AssetBalance = { confirmed: "0", spendable: "0", spendableCoinCount: 0 };
+  if (assetId) {
+    try {
+      balance = await getDatAssetBalance(session, projectId, chainId, assetId);
+    } catch {
+      /* CAT may not be added yet — daily redeem funds the table account */
+    }
+  }
+  return { balance, address };
+}
 
 export async function findDatCatWallet(
   session: WcSession,
@@ -191,21 +207,13 @@ export async function findDatCatWallet(
   chainId: string,
   assetId: string,
 ): Promise<{ balance: AssetBalance; address: string }> {
-  const [address, balance] = await Promise.all([
-    getWalletAddress(session, projectId, chainId),
-    getDatAssetBalance(session, projectId, chainId, assetId),
-  ]);
-
-  if (BigInt(balance.spendable) <= 0n) {
-    throw new Error(
-      `No spendable DAT balance found. Add CAT asset ${assetId.slice(0, 8)}… in Sage (mainnet).`,
-    );
-  }
-
-  return { balance, address };
+  return loadPlayerWallet(session, projectId, chainId, assetId);
 }
 
 export type { WcSession } from "./constants.js";
+
+export const signWithdrawMessage = signBuyInMessage;
+export const signRedeemMessage = signBuyInMessage;
 
 export function restoreSession(projectId: string): Promise<WcSession | undefined> {
   return getSignClient(projectId).then((client) => {

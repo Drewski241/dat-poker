@@ -1,7 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { ChiaGamingClient } from "@dat-poker/chia-bridge";
+import {
+  nextUtcDayIso,
+  resolveDatDailyRedeemMojos,
+  utcDateKey,
+} from "@dat-poker/shared";
 import { clearBuyIn, getBuyInRecord, hasBuyIn } from "../buy-in-store.js";
+import {
+  getAccountBalance,
+  hasRedeemedToday,
+  tryRedeemDaily,
+  creditAccount,
+} from "../account-store.js";
 import {
   computeWithdrawPayout,
   readTreasuryPayoutConfig,
@@ -11,9 +22,12 @@ import { getTableEngine } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import {
   buildBuyInMessage,
+  buildRedeemMessage,
   buildWithdrawMessage,
   readDatTokenConfig,
+  type RedeemProof,
   type WithdrawProof,
+  validateRedeemProof,
   validateWithdrawProof,
 } from "../wallet-config.js";
 
@@ -46,6 +60,99 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
   });
 
   app.get("/v1/wallet/dat-token", async () => readDatTokenConfig());
+
+  app.get<{ Querystring: { address?: string } }>("/v1/wallet/account", async (req, reply) => {
+    const address = req.query.address?.trim();
+    if (!address) {
+      return reply.status(400).send({ error: "address required" });
+    }
+    const amount = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS);
+    const now = new Date();
+    return {
+      address,
+      balanceMojos: getAccountBalance(address).toString(),
+      dailyRedeemMojos: amount.toString(),
+      redeemedToday: hasRedeemedToday(address, now),
+      nextRedeemAt: nextUtcDayIso(now),
+    };
+  });
+
+  app.get<{ Querystring: { address?: string } }>("/v1/wallet/redeem/message", async (req, reply) => {
+    const address = req.query.address?.trim();
+    if (!address) {
+      return reply.status(400).send({ error: "address required" });
+    }
+    const amount = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS);
+    const utcDate = utcDateKey();
+    return {
+      message: buildRedeemMessage({
+        utcDate,
+        address,
+        amountMojos: amount.toString(),
+      }),
+      utcDate,
+      amountMojos: amount.toString(),
+    };
+  });
+
+  app.post<{
+    Body: {
+      playerId: string;
+      redeemProof?: RedeemProof;
+      devAck?: boolean;
+    };
+  }>("/v1/wallet/redeem", async (req, reply) => {
+    const playerId = req.body.playerId?.trim();
+    if (!playerId) {
+      return reply.status(400).send({ error: "playerId required" });
+    }
+    const dat = readDatTokenConfig();
+    const amount = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS);
+    const now = new Date();
+    const utcDate = utcDateKey(now);
+
+    if (!dat.devBuyInEnabled) {
+      if (!req.body.redeemProof) {
+        return reply.status(400).send({ error: "Redeem proof required (approve in Sage)" });
+      }
+      const proofError = validateRedeemProof(req.body.redeemProof, {
+        utcDate,
+        address: playerId,
+        amountMojos: amount.toString(),
+        playerId,
+      });
+      if (proofError) {
+        return reply.status(400).send({ error: proofError });
+      }
+    } else if (!req.body.devAck && req.body.redeemProof) {
+      const proofError = validateRedeemProof(req.body.redeemProof, {
+        utcDate,
+        address: playerId,
+        amountMojos: amount.toString(),
+        playerId,
+      });
+      if (proofError) {
+        return reply.status(400).send({ error: proofError });
+      }
+    }
+
+    const result = tryRedeemDaily(playerId, amount, now);
+    if (!result.credited) {
+      return reply.status(429).send({
+        error: "Already redeemed 5000 DAT today. Come back after UTC midnight.",
+        balanceMojos: result.balance.toString(),
+        nextRedeemAt: nextUtcDayIso(now),
+      });
+    }
+    return {
+      ok: true,
+      creditedMojos: amount.toString(),
+      balanceMojos: result.balance.toString(),
+      ticker: dat.ticker,
+      nextRedeemAt: nextUtcDayIso(now),
+      note: "In-game table credits (beta faucet). DAT CAT does not leave a treasury wallet on this host.",
+    };
+  });
 
   app.get("/v1/wallet/status", async () => {
     const dat = readDatTokenConfig();
@@ -215,6 +322,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       createdAt: new Date().toISOString(),
     });
     clearBuyIn(tableId, playerId);
+    const accountMojos = creditAccount(playerId, cashOut.stackMojos);
 
     return {
       ok: true,
@@ -226,11 +334,12 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       mode,
       offer,
       feeMojos: feeMojos.toString(),
+      accountMojos: accountMojos.toString(),
       note:
         mode === "ledger"
           ? payoutMojos > 0n
-            ? "Virtual buy-in: table stack cleared. Configure DAT_TREASURY_PAYOUT_URL for on-chain winnings."
-            : "Table stack cleared. No net winnings to pay out."
+            ? "Table stack returned to your DAT account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT."
+            : "Table stack returned to your DAT account."
           : "Approve the treasury offer in Sage to receive DAT.",
     };
   });

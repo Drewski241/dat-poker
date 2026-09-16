@@ -1,9 +1,10 @@
-import { resolveDatMinBuyInMojos } from "@dat-poker/shared";
+import { resolveDatDailyRedeemMojos, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 
 export interface DatTokenConfig {
   assetId: string | null;
   ticker: string;
   minBuyInMojos: string;
+  dailyRedeemMojos: string;
   devBuyInEnabled: boolean;
   buyInReady: boolean;
 }
@@ -12,10 +13,12 @@ export function readDatTokenConfig(): DatTokenConfig {
   const assetId = process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID?.trim() || undefined;
   const devBuyInEnabled = process.env.DAT_ALLOW_DEV_BUYIN === "true";
   const minBuyInMojos = resolveDatMinBuyInMojos(process.env.DAT_MIN_BUY_IN_MOJOS).toString();
+  const dailyRedeemMojos = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS).toString();
   return {
     assetId: assetId ?? null,
     ticker: process.env.DAT_GOVERNANCE_TOKEN_TICKER ?? "DAT",
     minBuyInMojos,
+    dailyRedeemMojos,
     devBuyInEnabled,
     buyInReady: Boolean(assetId) || devBuyInEnabled,
   };
@@ -36,6 +39,33 @@ export function buildWithdrawMessage(params: {
   address: string;
 }): string {
   return `dat-poker:v1:withdraw:${params.tableId}:${params.stackMojos}:${params.address}`;
+}
+
+export function buildRedeemMessage(params: { utcDate: string; address: string; amountMojos: string }): string {
+  return `dat-poker:v1:redeem:${params.utcDate}:${params.address}:${params.amountMojos}`;
+}
+
+export type RedeemProof = BuyInProof;
+
+export function validateRedeemProof(
+  proof: RedeemProof,
+  params: { utcDate: string; address: string; amountMojos: string; playerId: string },
+): string | null {
+  if (proof.address !== params.playerId || proof.address !== params.address) {
+    return "Redeem address must match playerId";
+  }
+  const expected = buildRedeemMessage({
+    utcDate: params.utcDate,
+    address: params.address,
+    amountMojos: params.amountMojos,
+  });
+  if (proof.message !== expected) {
+    return "Invalid redeem message";
+  }
+  if (!proof.signature || !proof.pubkey) {
+    return "Redeem signature required (approve in Sage)";
+  }
+  return null;
 }
 
 export interface BuyInProof {

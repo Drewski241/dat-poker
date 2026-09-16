@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { CAT_MOJOS_PER_TOKEN, formatDatMojos, resolveDatMinBuyInMojos } from "./dat-units.js";
+import {
+  CAT_MOJOS_PER_TOKEN,
+  formatDatMojos,
+  resolveDatDailyRedeemMojos,
+  resolveDatMinBuyInMojos,
+} from "./dat-units.js";
 
 describe("formatDatMojos", () => {
   it("formats whole DAT tokens from CAT mojos", () => {
@@ -29,5 +34,12 @@ describe("resolveDatMinBuyInMojos", () => {
 
   it("rejects legacy XCH-scale min buy-in values", () => {
     expect(resolveDatMinBuyInMojos("2000000000000")).toBe(1_000_000n);
+  });
+});
+
+describe("resolveDatDailyRedeemMojos", () => {
+  it("defaults to 5000 DAT", () => {
+    expect(resolveDatDailyRedeemMojos(undefined)).toBe(5_000_000n);
+    expect(resolveDatDailyRedeemMojos("5000000")).toBe(5_000_000n);
   });
 });

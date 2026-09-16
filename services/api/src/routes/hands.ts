@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type PlayerAction } from "@dat-poker/game-engine";
 import { getTableEngine } from "./tables.js";
+import { playHouseIfDue } from "../house-play.js";
+import { redactHandForViewer } from "../redact-hand.js";
 
 export function registerHandRoutes(app: FastifyInstance): void {
   app.post<{ Params: { tableId: string }; Body: { handId?: string } }>(
@@ -21,6 +23,32 @@ export function registerHandRoutes(app: FastifyInstance): void {
 
   app.post<{
     Params: { tableId: string };
+    Body: { playerId?: string };
+  }>("/v1/tables/:tableId/hands/go", async (req, reply) => {
+    const table = getTableEngine(req.params.tableId);
+    if (!table) return reply.status(404).send({ error: "Table not found" });
+    try {
+      const handId = randomUUID();
+      const { commitHash } = table.startHand(handId);
+      for (const seated of table.getSeatedPlayers()) {
+        table.submitPlayerSeed(seated.playerId, generateServerSeed());
+      }
+      table.revealAndDeal();
+      playHouseIfDue(table);
+      return {
+        ok: true,
+        handId,
+        commitHash,
+        hand: redactHandForViewer(table.getHandState(), req.body.playerId),
+        lastHandResult: table.getLastHandResult(),
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Params: { tableId: string };
     Body: { playerId: string; seed?: string };
   }>("/v1/tables/:tableId/hands/seed", async (req, reply) => {
     const table = getTableEngine(req.params.tableId);
@@ -33,14 +61,18 @@ export function registerHandRoutes(app: FastifyInstance): void {
     }
   });
 
-  app.post<{ Params: { tableId: string } }>(
+  app.post<{ Params: { tableId: string }; Body: { playerId?: string } }>(
     "/v1/tables/:tableId/hands/deal",
     async (req, reply) => {
       const table = getTableEngine(req.params.tableId);
       if (!table) return reply.status(404).send({ error: "Table not found" });
       try {
         table.revealAndDeal();
-        return { ok: true, hand: table.getHandState() };
+        playHouseIfDue(table);
+        return {
+          ok: true,
+          hand: redactHandForViewer(table.getHandState(), req.body.playerId),
+        };
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message });
       }
@@ -56,9 +88,10 @@ export function registerHandRoutes(app: FastifyInstance): void {
     try {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
       table.applyAction(req.body.playerId, req.body.action, amount);
+      playHouseIfDue(table);
       return {
         ok: true,
-        hand: table.getHandState(),
+        hand: redactHandForViewer(table.getHandState(), req.body.playerId),
         lastHandResult: table.getLastHandResult(),
       };
     } catch (e) {

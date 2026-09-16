@@ -72,6 +72,21 @@ export class NlheTableEngine {
     this.stacks.set(playerId, buyInMojos);
   }
 
+  getMaxSeats(): number {
+    return this.config.maxSeats;
+  }
+
+  emptySeatIndex(): number | null {
+    for (let i = 0; i < this.config.maxSeats; i++) {
+      if (!this.seats.has(i)) return i;
+    }
+    return null;
+  }
+
+  hasPlayer(playerId: PlayerId): boolean {
+    return [...this.seats.values()].includes(playerId);
+  }
+
   getActivePlayerCount(): number {
     return this.seats.size;
   }

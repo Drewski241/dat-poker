@@ -39,3 +39,27 @@ export function resolveDatMinBuyInMojos(raw: string | undefined): bigint {
   }
   return value;
 }
+
+/** Beta faucet: 5,000 DAT per UTC day credited to the in-game account. */
+export const DAT_DAILY_REDEEM_MOJOS = 5_000_000n;
+
+export function resolveDatDailyRedeemMojos(raw: string | undefined): bigint {
+  if (!raw?.trim()) {
+    return DAT_DAILY_REDEEM_MOJOS;
+  }
+  const value = BigInt(raw.trim());
+  if (value <= 0n || value >= 1_000_000_000_000n) {
+    return DAT_DAILY_REDEEM_MOJOS;
+  }
+  return value;
+}
+
+export function utcDateKey(now = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+export function nextUtcDayIso(now = new Date()): string {
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
+  ).toISOString();
+}

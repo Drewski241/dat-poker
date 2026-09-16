@@ -49,6 +49,7 @@ export interface DatTokenInfo {
   assetId: string | null;
   ticker: string;
   minBuyInMojos: string;
+  dailyRedeemMojos?: string;
   devBuyInEnabled: boolean;
   buyInReady: boolean;
 }
@@ -73,6 +74,7 @@ export interface WithdrawResult {
   mode: "ledger" | "offer";
   offer?: string;
   feeMojos: string;
+  accountMojos?: string;
   note: string;
 }
 
@@ -106,6 +108,33 @@ export const api = {
     }>("/v1/wallet/config"),
 
   datToken: () => request<DatTokenInfo>("/v1/wallet/dat-token"),
+
+  account: (address: string) =>
+    request<{
+      address: string;
+      balanceMojos: string;
+      dailyRedeemMojos: string;
+      redeemedToday: boolean;
+      nextRedeemAt: string;
+    }>(`/v1/wallet/account?address=${encodeURIComponent(address)}`),
+
+  redeemMessage: (address: string) =>
+    request<{ message: string; utcDate: string; amountMojos: string }>(
+      `/v1/wallet/redeem/message?address=${encodeURIComponent(address)}`,
+    ),
+
+  redeem: (playerId: string, options?: { redeemProof?: BuyInProof; devAck?: boolean }) =>
+    request<{
+      ok: boolean;
+      creditedMojos: string;
+      balanceMojos: string;
+      ticker: string;
+      nextRedeemAt: string;
+      note: string;
+    }>("/v1/wallet/redeem", {
+      method: "POST",
+      body: JSON.stringify({ playerId, ...options }),
+    }),
 
   buyInMessage: (params: {
     tableId: string;
@@ -151,15 +180,40 @@ export const api = {
       body: "{}",
     }),
 
-  getTable: (tableId: string) =>
+  joinTable: (
+    playerId: string,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
     request<{
+      ok: boolean;
       tableId: string;
-      players: number;
+      maxSeats: number;
+      humans: number;
       handInProgress: boolean;
       seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;
-    }>(`/v1/tables/${tableId}`),
+    }>("/v1/tables/join", {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        buyInMojos,
+        ...options,
+      }),
+    }),
+
+  getTable: (tableId: string, playerId?: string) =>
+    request<{
+      tableId: string;
+      maxSeats?: number;
+      players: number;
+      humans?: number;
+      handInProgress: boolean;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+    }>(`/v1/tables/${tableId}${playerId ? `?playerId=${encodeURIComponent(playerId)}` : ""}`),
 
   seatPlayer: (
     tableId: string,
@@ -184,11 +238,17 @@ export const api = {
       body: JSON.stringify({ buyInMojos }),
     }),
 
-  startHand: (tableId: string) =>
-    request<{ handId: string; commitHash: string; phase: string }>(
-      `/v1/tables/${tableId}/hands/start`,
-      { method: "POST", body: "{}" },
-    ),
+  goHand: (tableId: string, playerId: string) =>
+    request<{
+      ok: boolean;
+      handId: string;
+      commitHash: string;
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+    }>(`/v1/tables/${tableId}/hands/go`, {
+      method: "POST",
+      body: JSON.stringify({ playerId }),
+    }),
 
   submitSeed: (tableId: string, playerId: string) =>
     request<{ ok: boolean }>(`/v1/tables/${tableId}/hands/seed`, {
