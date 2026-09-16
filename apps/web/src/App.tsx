@@ -3,12 +3,14 @@ import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-po
 import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
+import { SiteNav } from "./SiteNav.js";
+import type { SitePage } from "./site-route.js";
 import {
   beginWalletConnect,
   disconnectWallet,
-  findDatCatWallet,
+  loadPlayerWallet,
   restoreSession,
-  signBuyInMessage,
+  signRedeemMessage,
   signWithdrawMessage,
   takeOffer,
   type WcSession,
@@ -33,7 +35,7 @@ function shortAddress(addr: string): string {
   return `${addr.slice(0, 8)}…${addr.slice(-6)}`;
 }
 
-export function App() {
+export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = {}) {
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [datToken, setDatToken] = useState<DatTokenInfo | null>(null);
   const [wcConfig, setWcConfig] = useState<{ projectId: string; chainId: string } | null>(null);
@@ -42,6 +44,8 @@ export function App() {
   const [wcUri, setWcUri] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [datBalance, setDatBalance] = useState<string | null>(null);
+  const [accountMojos, setAccountMojos] = useState<string | null>(null);
+  const [redeemedToday, setRedeemedToday] = useState(false);
 
   const [tableId, setTableId] = useState<string | null>(null);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
@@ -89,13 +93,19 @@ export function App() {
     }
   }, []);
 
+  const refreshAccount = useCallback(async (address: string) => {
+    const acc = await api.account(address);
+    setAccountMojos(acc.balanceMojos);
+    setRedeemedToday(acc.redeemedToday);
+  }, []);
+
   const refreshTable = useCallback(async (id: string) => {
-    const t = await api.getTable(id);
+    const t = await api.getTable(id, playerId ?? undefined);
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
     if (t.lastHandResult) setHandResult(t.lastHandResult);
-  }, []);
+  }, [playerId]);
 
   const applyActionResponse = useCallback(
     (response: { hand: HandState | null; lastHandResult: HandResult | null }) => {
@@ -106,42 +116,12 @@ export function App() {
   );
 
   useEffect(() => {
-    if (!tableId || !hand || !playerId || busy) return;
-    const actor = hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded);
-    if (!actor || actor.playerId !== HOUSE_PLAYER_ID) return;
-
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        setBusy(true);
-        try {
-          const currentBet = BigInt(hand.currentBetMojos);
-          const house = hand.players.find((p) => p.playerId === HOUSE_PLAYER_ID);
-          const houseBet = BigInt(house?.betThisStreetMojos ?? 0);
-          const toCall = currentBet - houseBet;
-          let response;
-          if (toCall > 0n) {
-            response = await api.action(tableId, HOUSE_PLAYER_ID, "call");
-          } else {
-            response = await api.action(tableId, HOUSE_PLAYER_ID, "check");
-          }
-          applyActionResponse(response);
-          if (!response.hand) await refreshTable(tableId);
-        } catch {
-          try {
-            const response = await api.action(tableId, HOUSE_PLAYER_ID, "fold");
-            applyActionResponse(response);
-            if (!response.hand) await refreshTable(tableId);
-          } catch {
-            /* ignore */
-          }
-        } finally {
-          setBusy(false);
-        }
-      })();
-    }, 600);
-
-    return () => window.clearTimeout(timer);
-  }, [tableId, hand, playerId, busy, refreshTable, applyActionResponse]);
+    if (!tableId) return;
+    const timer = window.setInterval(() => {
+      void refreshTable(tableId);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [tableId, refreshTable]);
 
   const connectSage = () =>
     run("Opening WalletConnect…", async () => {
@@ -164,23 +144,61 @@ export function App() {
       setSession(null);
       setWalletAddress(null);
       setDatBalance(null);
+      setAccountMojos(null);
+      setRedeemedToday(false);
       setPlayerId(null);
     });
 
   const loadDatBalance = () =>
-    run("Loading DAT balance…", async () => {
-      if (!session || !wcConfig || !datToken?.assetId) {
-        throw new Error("Connect Sage and configure DAT_GOVERNANCE_TOKEN_ASSET_ID on API");
+    run("Loading wallet…", async () => {
+      if (!session || !wcConfig) {
+        throw new Error("Connect Sage first");
       }
-      const { balance, address } = await findDatCatWallet(
+      const { balance, address } = await loadPlayerWallet(
         session,
         wcConfig.projectId,
         wcConfig.chainId,
-        datToken.assetId,
+        datToken?.assetId,
       );
       setWalletAddress(address);
       setPlayerId(address);
       setDatBalance(balance.spendable);
+      await refreshAccount(address);
+    });
+
+  const redeemDaily = () =>
+    run("Redeeming 5000 DAT…", async () => {
+      if (!playerId) throw new Error("Connect Sage and load wallet first");
+      const ticker = datToken?.ticker ?? "DAT";
+      let redeemProof: BuyInProof | undefined;
+      if (session && wcConfig) {
+        const { message, amountMojos } = await api.redeemMessage(playerId);
+        setStatus(`Approve ${formatDatMojos(amountMojos, ticker)} redeem in Sage…`);
+        try {
+          const signed = await signRedeemMessage(
+            session,
+            wcConfig.projectId,
+            wcConfig.chainId,
+            message,
+            playerId,
+          );
+          redeemProof = {
+            address: playerId,
+            message,
+            signature: signed.signature,
+            pubkey: signed.pubkey,
+          };
+        } catch (signErr) {
+          if (!datToken?.devBuyInEnabled) throw signErr;
+        }
+      }
+      const result = await api.redeem(playerId, {
+        redeemProof,
+        devAck: datToken?.devBuyInEnabled,
+      });
+      setAccountMojos(result.balanceMojos);
+      setRedeemedToday(true);
+      setStatus(result.note);
     });
 
   const joinTable = async () => {
@@ -188,60 +206,31 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
-      if (!playerId) throw new Error("Connect Sage and load DAT balance first");
+      if (!playerId) throw new Error("Connect Sage and load wallet first");
       const ticker = datToken?.ticker ?? "DAT";
-
-      setStatus("Creating table…");
-      const { tableId: id, config: tableConfig } = await api.createTable();
-      const buyIn = tableConfig.minBuyInMojos;
-
-      if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
-        throw new Error(`Need at least ${formatDatMojos(buyIn, ticker)} in wallet`);
+      const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      const account = BigInt(accountMojos ?? "0");
+      const sage = BigInt(datBalance ?? "0");
+      if (account < BigInt(buyIn) && sage < BigInt(buyIn) && !datToken?.devBuyInEnabled) {
+        throw new Error(`Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`);
       }
 
-      let buyInProof: BuyInProof | undefined;
-
-      if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
-        const { message } = await api.buyInMessage({
-          tableId: id,
-          seatIndex: 0,
-          buyInMojos: buyIn,
-          address: walletAddress,
-        });
-        buyInProof = {
-          address: walletAddress,
-          message,
-          signature: "",
-          pubkey: "",
-          datBalanceMojos: datBalance ?? undefined,
-        };
-        setStatus("Approve buy-in in Sage (check your phone)…");
-        try {
-          const signed = await signBuyInMessage(
-            session,
-            wcConfig.projectId,
-            wcConfig.chainId,
-            message,
-            walletAddress,
-          );
-          buyInProof.signature = signed.signature;
-          buyInProof.pubkey = signed.pubkey;
-        } catch (signErr) {
-          if (!datBalance || BigInt(datBalance) < BigInt(buyIn)) {
-            throw signErr;
-          }
-          setStatus("Signature skipped — using wallet balance attestation…");
-        }
-      }
-
-      setStatus("Seating you at the table…");
-      await api.seatPlayer(id, playerId, 0, buyIn, {
-        buyInProof,
+      setStatus("Joining 6-max table…");
+      const joined = await api.joinTable(playerId, buyIn, {
         devAck: datToken?.devBuyInEnabled,
       });
-      await api.seatHouse(id, buyIn);
-      setTableId(id);
-      await refreshTable(id);
+      setTableId(joined.tableId);
+      setTableSeats(joined.seats);
+      setHand(joined.hand);
+      setHandInProgress(joined.handInProgress);
+      if (joined.lastHandResult) setHandResult(joined.lastHandResult);
+      await refreshAccount(playerId);
+      const humans = joined.humans;
+      setStatus(
+        humans >= 2
+          ? "Seated with another player. Deal when everyone is ready."
+          : "Seated vs house. Another human can take an empty seat.",
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -252,13 +241,12 @@ export function App() {
 
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
-    run("Starting hand…", async () => {
+    run("Dealing hand…", async () => {
       setHandResult(null);
-      await api.startHand(tableId);
-      await api.submitSeed(tableId, playerId);
-      await api.submitSeed(tableId, HOUSE_PLAYER_ID);
-      const { hand: dealt } = await api.deal(tableId);
-      setHand(dealt);
+      const dealt = await api.goHand(tableId, playerId);
+      setHand(dealt.hand);
+      if (dealt.lastHandResult) setHandResult(dealt.lastHandResult);
+      await refreshTable(tableId);
     });
   };
 
@@ -273,12 +261,15 @@ export function App() {
 
   const myTableSeat = tableSeats.find((s) => s.playerId === playerId);
   const tableStackMojos = myTableSeat?.stackMojos ?? null;
+  const handsPlayed = myTableSeat?.handsPlayed ?? 0;
+  const handsRequired = myTableSeat?.handsRequired ?? 0;
+  const playthroughRemaining = myTableSeat?.playthroughRemaining ?? 0;
 
   const withdrawToSage = () => {
     if (!tableId || !playerId || !walletAddress) return;
     run("Withdrawing to Sage…", async () => {
       await refreshTable(tableId);
-      const seat = (await api.getTable(tableId)).seats.find((s) => s.playerId === playerId);
+      const seat = (await api.getTable(tableId, playerId)).seats.find((s) => s.playerId === playerId);
       if (!seat) {
         throw new Error("You are no longer seated at this table");
       }
@@ -329,7 +320,7 @@ export function App() {
       setHandResult(null);
 
       if (session && wcConfig && datToken?.assetId) {
-        const { balance } = await findDatCatWallet(
+        const { balance } = await loadPlayerWallet(
           session,
           wcConfig.projectId,
           wcConfig.chainId,
@@ -337,8 +328,13 @@ export function App() {
         );
         setDatBalance(balance.spendable);
       }
+      await refreshAccount(playerId);
     });
   };
+
+  const appStage = import.meta.env.VITE_APP_STAGE;
+  const isBeta = appStage === "beta";
+  const pageIsHttp = typeof window !== "undefined" && window.location.protocol === "http:";
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const currentBet = BigInt(hand?.currentBetMojos ?? 0);
@@ -366,6 +362,10 @@ export function App() {
   const isMyAction = actionSeatPlayer?.playerId === playerId;
 
   useEffect(() => {
+    document.title = isBeta ? "DAT Poker beta" : "DAT Poker";
+  }, [isBeta]);
+
+  useEffect(() => {
     if (!isMyAction || !betRange.canBetOrRaise) return;
     setBetAmountMojos(betRange.minRaiseTo);
   }, [
@@ -382,9 +382,16 @@ export function App() {
 
   return (
     <div className="app">
+      {isBeta && (
+        <div className="beta-banner" role="status">
+          Public beta — software under development. Tables live in memory and reset when
+          the server restarts. Dev buy-in is for testing, not real-money settlement.
+        </div>
+      )}
       <header>
-        <h1>DAT Poker</h1>
-        <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
+        {onNavigate && <SiteNav page="play" onNavigate={onNavigate} />}
+        <h1>DAT Poker{isBeta ? " beta" : ""}</h1>
+        <p className="tagline">Sage · daily 5000 DAT redeem · 6-max vs house or humans</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -395,6 +402,13 @@ export function App() {
 
       <section className="panel">
         <h2>Wallet</h2>
+        {pageIsHttp && (
+          <p className="muted">
+            Sage WalletConnect needs HTTPS. Open the <code>https://</code> site
+            (for example <code>https://datspiritpoker.com</code>), not <code>http://</code>
+            plus the Elastic IP.
+          </p>
+        )}
         {!wcConfig ? (
           <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage.</p>
         ) : !session ? (
@@ -406,7 +420,7 @@ export function App() {
             <p className="ok-text">WalletConnect session active</p>
             <div className="row">
               <button type="button" disabled={busy} className="secondary" onClick={loadDatBalance}>
-                Load DAT balance
+                Load wallet
               </button>
               <button type="button" disabled={busy} className="secondary" onClick={disconnectSage}>
                 Disconnect
@@ -418,11 +432,27 @@ export function App() {
                 {datBalance != null && (
                   <>
                     {" "}
-                    · {datToken?.ticker ?? "DAT"}: {formatDatMojos(datBalance, datToken?.ticker)}
+                    · Sage {datToken?.ticker ?? "DAT"}: {formatDatMojos(datBalance, datToken?.ticker)}
                   </>
                 )}
               </p>
             )}
+            {accountMojos != null && (
+              <p>
+                Table account:{" "}
+                <strong>{formatDatMojos(accountMojos, datToken?.ticker)}</strong>
+                {redeemedToday ? " · daily redeem used" : ""}
+              </p>
+            )}
+            <div className="row">
+              <button
+                type="button"
+                disabled={busy || !playerId || redeemedToday}
+                onClick={redeemDaily}
+              >
+                Redeem {formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", datToken?.ticker)} today
+              </button>
+            </div>
           </>
         )}
         {datToken && (
@@ -442,20 +472,43 @@ export function App() {
             disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
             onClick={() => void joinTable()}
           >
-            Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+            Buy in &amp; join 6-max ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
           </button>
         ) : (
           <>
             <p className="mono">Table ID: {tableId}</p>
+            <ol className="seat-list">
+              {Array.from({ length: 6 }, (_, i) => {
+                const seated = tableSeats.find((s) => s.seatIndex === i);
+                return (
+                  <li key={i}>
+                    Seat {i + 1}:{" "}
+                    {seated
+                      ? `${playerLabel(seated.playerId, playerId)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}`
+                      : "empty"}
+                  </li>
+                );
+              })}
+            </ol>
             {tableStackMojos && (
               <p>
                 Your table stack:{" "}
                 <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
               </p>
             )}
+            {tableId && handsRequired > 0 && (
+              <p className="muted small">
+                Play-through: {handsPlayed}/{handsRequired} hands (one hand per DAT token of buy-in)
+                {playthroughRemaining > 0 ? ` — ${playthroughRemaining} remaining` : " — met"}
+              </p>
+            )}
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">
-                <button type="button" disabled={busy} onClick={withdrawToSage}>
+                <button
+                  type="button"
+                  disabled={busy || playthroughRemaining > 0}
+                  onClick={withdrawToSage}
+                >
                   Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
                 </button>
               </div>
@@ -489,9 +542,12 @@ export function App() {
                   {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
                 </div>
               )}
-              <button type="button" disabled={busy} onClick={startHandFlow}>
-                {handResult ? "New hand" : "Start hand vs house"}
+              <button type="button" disabled={busy || tableSeats.length < 2} onClick={startHandFlow}>
+                {handResult ? "New hand" : "Deal hand"}
               </button>
+              <p className="muted small">
+                6-max: house fills if you are alone; another human can sit an empty seat between hands.
+              </p>
             </>
           ) : (
             <>
@@ -577,10 +633,18 @@ export function App() {
       {wcUri && <QrConnectModal uri={wcUri} onClose={() => setWcUri(null)} />}
 
       <footer>
-        <p>
-          Configure API <code>.env</code> with WalletConnect + DAT asset id. Run <code>pnpm dev:api</code>,{" "}
-          <code>pnpm dev:treasury</code>, and <code>pnpm dev:web</code>.
-        </p>
+        {isBeta ? (
+          <p>
+            DAT POKER public beta. Redeem 5000 DAT per UTC day into a table account (not an
+            on-chain CAT send). 6-max: play the house or another human on an open seat.
+          </p>
+        ) : (
+          <p>
+            Configure API <code>.env</code> with WalletConnect + DAT asset id. Run{" "}
+            <code>pnpm dev:api</code>, <code>pnpm dev:treasury</code>, and{" "}
+            <code>pnpm dev:web</code>.
+          </p>
+        )}
       </footer>
     </div>
   );

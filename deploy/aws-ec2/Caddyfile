@@ -1,0 +1,22 @@
+# Public TLS front for DAT POKER. enable-https.sh replaces {$DAT_POKER_SITE}
+# with real hostnames in /etc/caddy/Caddyfile. ACME HTTP-01 uses :80 — nginx
+# must be stopped so Caddy can bind it. Cloudflare records must be DNS only
+# (grey cloud) so Let's Encrypt reaches this host.
+
+{$DAT_POKER_SITE} {
+  encode gzip
+
+  handle /health* {
+    reverse_proxy 127.0.0.1:4000
+  }
+
+  handle /v1/* {
+    reverse_proxy 127.0.0.1:4000
+  }
+
+  handle {
+    root * /usr/share/nginx/html
+    try_files {path} /index.html
+    file_server
+  }
+}

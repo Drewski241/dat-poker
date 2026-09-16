@@ -35,6 +35,8 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()).toBeNull();
     expect(table.getLastHandResult()?.winnerId).toBe("bob");
     expect(table.getLastHandResult()?.reason).toBe("fold");
+    expect(table.getHandsPlayed("alice")).toBe(1);
+    expect(table.getHandsPlayed("bob")).toBe(1);
   });
 
   it("advances to flop after raise and call", () => {
@@ -88,5 +90,26 @@ describe("NlheTableEngine", () => {
     table.seatPlayer("bob", 1, 5_000_000_000_000n);
     table.startHand("hand-4");
     expect(() => table.cashOutPlayer("alice")).toThrow(/active hand/i);
+  });
+
+  it("seats six-max with three players and awards a fold", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 2, 5_000_000_000_000n);
+    table.seatPlayer("dat-poker:house", 5, 5_000_000_000_000n);
+    expect(table.getMaxSeats()).toBe(6);
+    expect(table.emptySeatIndex()).toBe(1);
+
+    table.startHand("hand-5");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.submitPlayerSeed("dat-poker:house", generateServerSeed());
+    table.revealAndDeal();
+
+    expect(table.getHandState()?.players).toHaveLength(3);
+    const first = table.getHandState()!;
+    const actorId = first.players.find((p) => p.seatIndex === first.actionSeat)!.playerId;
+    table.applyAction(actorId, "fold");
+    expect(table.getHandState()?.players.filter((p) => !p.folded).length).toBe(2);
   });
 });

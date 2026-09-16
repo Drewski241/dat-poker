@@ -32,6 +32,13 @@ Configure `.env` from `.env.example`:
 
 See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (connect → buy in → play vs house → withdraw).
 
+## AWS EC2 (Free Tier $20 credit)
+
+The email tutorial is [Deploy a web server to the cloud](https://builder.aws.com/content/3BfvbBpwbonTDicuPTMLZBTt4Br/deploy-a-web-server-to-the-cloud)
+(Apache + Session Manager, not nginx). Follow [docs/AWS_EC2.md](./docs/AWS_EC2.md)
+in **your** AWS Console. After the $20 credit posts and that tutorial box is
+gone, launch the public beta with [docs/BETA.md](./docs/BETA.md).
+
 For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a **separate treasury host**; copy `.env.treasury.example` → `.env`, run `pnpm treasury:check`, then point the game API at it with `DAT_TREASURY_PAYOUT_URL`. See [docs/TREASURY.md](./docs/TREASURY.md).
 
 ## Monorepo layout
@@ -44,7 +51,7 @@ For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a 
 | `services/api` | REST API (tables, hands, wallet, withdraw) |
 | `services/treasury-payout` | Treasury offer builder for on-chain DAT payouts |
 | `services/gateway` | WebSocket realtime |
-| `apps/web` | Web client — Sage WalletConnect, NLHE vs house |
+| `apps/web` | Public website (`/` landing, `/play` table) — Sage, NLHE 6-max |
 | `docs/` | Architecture, DAT token, Chia integration, roadmap |
 
 ## Create this repo on GitHub

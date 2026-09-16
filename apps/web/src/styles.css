@@ -27,6 +27,76 @@ body {
   padding: 1.5rem;
 }
 
+.site-nav {
+  display: flex;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+}
+
+.site-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.site-nav a:hover,
+.site-nav a.active {
+  color: var(--accent);
+}
+
+.hero .lede {
+  font-size: 1.1rem;
+  color: var(--text);
+  max-width: 36rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+a.cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.85rem;
+  padding: 1.1rem 2.25rem;
+  min-height: 3.75rem;
+  min-width: min(100%, 24rem);
+  border-radius: 10px;
+  background: var(--accent);
+  color: #0a0f12;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+a.cta:hover {
+  filter: brightness(1.05);
+  color: #0a0f12;
+}
+
+.how-to,
+.notes {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text);
+}
+
+.how-to li,
+.notes li {
+  margin: 0.45rem 0;
+}
+
+.landing footer a {
+  color: var(--accent);
+}
+
 header h1 {
   margin: 0 0 0.25rem;
   font-size: 1.75rem;
@@ -37,6 +107,15 @@ header h1 {
   margin: 0;
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.beta-banner {
+  margin: 0 0 1.25rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 6px;
+  background: rgba(255, 193, 7, 0.14);
+  color: #f3d37a;
+  font-size: 0.9rem;
 }
 
 .api-status.ok {
@@ -106,10 +185,16 @@ button:disabled {
   margin-bottom: 0.75rem;
 }
 
-.players {
+.seat-list {
   list-style: none;
   padding: 0;
   margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.seat-list li {
+  padding: 0.2rem 0;
+  color: var(--muted);
 }
 
 .players li {

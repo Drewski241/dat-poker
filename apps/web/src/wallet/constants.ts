@@ -26,8 +26,11 @@ export function requiredNamespaces(chainId: string): ProposalTypes.RequiredNames
 }
 
 export const DAPP_METADATA: CoreTypes.Metadata = {
-  name: "DAT Poker",
-  description: "NLHE poker with DAT Governance Token buy-ins on Chia",
+  name: import.meta.env.VITE_APP_STAGE === "beta" ? "DAT Poker (beta)" : "DAT Poker",
+  description:
+    import.meta.env.VITE_APP_STAGE === "beta"
+      ? "Public beta — NLHE on Chia with DAT buy-ins. Software under development."
+      : "NLHE poker with DAT Governance Token buy-ins on Chia",
   url: typeof window !== "undefined" ? window.location.origin : "https://dat-poker.local",
   icons: ["https://walletconnect.com/walletconnect-logo.png"],
 };
