@@ -309,6 +309,7 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 6. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits).
 7. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
 8. **Deal hand** when at least two seats are filled.
+9. **Withdraw to Sage** is locked until you complete **one hand per DAT token** of that buy-in (1000 DAT buy-in → 1000 hands). The table panel shows play-through progress.
 
 If the page is still `http://` you will see a note that Sage needs HTTPS.
 
