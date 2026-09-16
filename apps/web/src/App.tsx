@@ -3,6 +3,7 @@ import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-po
 import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { AuthPanel } from "./AuthPanel.js";
 import { BetSlider } from "./components/BetSlider.js";
+import { CardRow } from "./components/PlayingCard.js";
 import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
 import { isLuckyIrishWin } from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
@@ -21,17 +22,23 @@ import {
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
 const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
+const CARD_PREVIEW_BOARD = [
+  { rank: "A", suit: "h" },
+  { rank: "K", suit: "h" },
+  { rank: "Q", suit: "s" },
+  { rank: "J", suit: "d" },
+  { rank: "T", suit: "c" },
+];
+const CARD_PREVIEW_HOLE = [
+  { rank: "A", suit: "s" },
+  { rank: "9", suit: "h" },
+];
 
 function playerLabel(id: string, youId: string | null, display?: string): string {
   if (id === youId) return "You";
   if (id === HOUSE_PLAYER_ID) return "House";
   const shown = display && display.length > 0 ? display : id;
   return shown.length > 16 ? `${shown.slice(0, 8)}…${shown.slice(-6)}` : shown;
-}
-
-function cardLabel(card: { rank: string; suit: string }): string {
-  const suit = { c: "♣", d: "♦", h: "♥", s: "♠" }[card.suit] ?? card.suit;
-  return `${card.rank}${suit}`;
 }
 
 function shortAddress(addr: string): string {
@@ -78,6 +85,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [handResult, setHandResult] = useState<HandResult | null>(null);
   const [luckyIrish, setLuckyIrish] = useState(false);
   const luckyIrishHandId = useRef<string | null>(null);
+  const [cardPreview, setCardPreview] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -517,6 +525,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (window.location.hash === "#lucky") {
       setLuckyIrish(true);
     }
+    if (window.location.hash === "#cards") {
+      setCardPreview(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -547,6 +558,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
       {error && <div className="banner error">{error}</div>}
       {status && <div className="banner info">{status}</div>}
+
+      {cardPreview && (
+        <section className="panel">
+          <h2>Card size preview</h2>
+          <CardRow label="Board" cards={CARD_PREVIEW_BOARD} size="lg" />
+          <CardRow label="Your hole cards" cards={CARD_PREVIEW_HOLE} size="lg" />
+        </section>
+      )}
 
       <section className="panel">
         <h2>Account</h2>
@@ -719,17 +738,22 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   {formatDatMojos(handResult.potMojos, datToken?.ticker)}
                   {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
                   {handResult.reason === "showdown" && handResult.board && handResult.board.length > 0 && (
-                    <p>Board: {handResult.board.map(cardLabel).join(" ")}</p>
+                    <CardRow label="Board" cards={handResult.board} size="lg" />
                   )}
                   {handResult.reason === "showdown" && (handResult.shown?.length ?? 0) > 0 && (
                     <ul className="showdown-hands">
                       {handResult.shown!.map((shown) => (
                         <li key={shown.playerId}>
-                          <strong>{playerLabel(shown.playerId, playerId, tableSeats.find((s) => s.playerId === shown.playerId)?.displayAddress)}</strong>
-                          <span className="cards"> {shown.holeCards.map(cardLabel).join(" ")}</span>
-                          {" — "}
-                          {handCategoryLabel(shown.category)}
-                          {shown.playerId === handResult.winnerId ? " (winner)" : ""}
+                          <div className="player-meta">
+                            <strong>{playerLabel(shown.playerId, playerId, tableSeats.find((s) => s.playerId === shown.playerId)?.displayAddress)}</strong>
+                            {" — "}
+                            {handCategoryLabel(shown.category)}
+                            {shown.playerId === handResult.winnerId ? " (winner)" : ""}
+                          </div>
+                          <CardRow
+                            cards={shown.holeCards}
+                            size={shown.playerId === playerId ? "lg" : "md"}
+                          />
                         </li>
                       ))}
                     </ul>
@@ -754,16 +778,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 Street: <strong>{hand.street}</strong> · Pot:{" "}
                 <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
               </p>
-              {hand.board.length > 0 && <p>Board: {hand.board.map(cardLabel).join(" ")}</p>}
+              {hand.board.length > 0 && <CardRow label="Board" cards={hand.board} size="lg" />}
               <ul className="players">
                 {hand.players.map((p) => (
                   <li key={p.playerId}>
-                    <strong>{p.playerId === playerId ? "You" : p.playerId === HOUSE_PLAYER_ID ? "House" : p.playerId}</strong>
+                    <div className="player-meta">
+                      <strong>{p.playerId === playerId ? "You" : p.playerId === HOUSE_PLAYER_ID ? "House" : p.playerId}</strong>
+                      {p.folded ? " — folded" : ""}
+                      <span className="stack"> stack {formatDatMojos(p.stackMojos, datToken?.ticker)}</span>
+                    </div>
                     {p.holeCards.length > 0 && (
-                      <span className="cards"> {p.holeCards.map(cardLabel).join(" ")}</span>
+                      <CardRow cards={p.holeCards} size={p.playerId === playerId ? "lg" : "md"} />
                     )}
-                    {p.folded ? " — folded" : ""}
-                    <span className="stack"> stack {formatDatMojos(p.stackMojos, datToken?.ticker)}</span>
                   </li>
                 ))}
               </ul>

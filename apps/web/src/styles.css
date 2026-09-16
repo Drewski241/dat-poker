@@ -198,12 +198,134 @@ button:disabled {
   color: var(--muted);
 }
 
+.players {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+}
+
 .players li {
-  padding: 0.35rem 0;
+  padding: 0.65rem 0;
+  border-top: 1px solid #2d3a4f;
+}
+
+.player-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  align-items: baseline;
 }
 
 .cards {
   color: var(--accent);
+}
+
+.card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.7rem;
+  margin: 0.45rem 0 0.15rem;
+}
+
+.card-row-label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  width: 100%;
+}
+
+.card-row-faces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.playing-card {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4efe3;
+  border: 1px solid #d7d0c0;
+  border-radius: 0.45rem;
+  box-shadow: 0 2px 0 #c9c3b0, 0 6px 14px rgba(0, 0, 0, 0.35);
+  font-weight: 800;
+  line-height: 1;
+  user-select: none;
+}
+
+.playing-card-lg {
+  width: 4.6rem;
+  height: 6.5rem;
+}
+
+.playing-card-md {
+  width: 3.7rem;
+  height: 5.2rem;
+}
+
+.playing-card-sm {
+  width: 2.9rem;
+  height: 4.1rem;
+}
+
+.playing-card-red {
+  color: #c41e3a;
+}
+
+.playing-card-black {
+  color: #161616;
+}
+
+.playing-card-corner {
+  position: absolute;
+  top: 0.28rem;
+  left: 0.32rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+.playing-card-lg .playing-card-rank {
+  font-size: 1.35rem;
+}
+
+.playing-card-md .playing-card-rank {
+  font-size: 1.1rem;
+}
+
+.playing-card-sm .playing-card-rank {
+  font-size: 0.9rem;
+}
+
+.playing-card-mini-suit {
+  font-size: 0.95em;
+}
+
+.playing-card-center {
+  font-size: 2.35rem;
+}
+
+.playing-card-md .playing-card-center {
+  font-size: 1.85rem;
+}
+
+.playing-card-sm .playing-card-center {
+  font-size: 1.45rem;
+}
+
+@media (max-width: 480px) {
+  .playing-card-lg {
+    width: 3.8rem;
+    height: 5.4rem;
+  }
+
+  .playing-card-lg .playing-card-center {
+    font-size: 1.95rem;
+  }
 }
 
 .showdown-hands {
