@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import Fastify from "fastify";
 import { serializeForJson } from "./serialize.js";
 import { resetAccountsForTests, tryRedeemDaily } from "./account-store.js";
-import { registerTableRoutes, resetTablesForTests } from "./routes/tables.js";
+import { registerTableRoutes, resetTablesForTests, returnAllStacksToAccounts } from "./routes/tables.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
 import { registerSessionRoutes } from "./routes/session.js";
@@ -41,6 +41,7 @@ describe("6-max join + daily redeem", () => {
   beforeEach(() => {
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
     process.env.DAT_ACCOUNTS_PATH = "memory";
+    process.env.DAT_LEDGER_PATH = "memory";
     process.env.DAT_SCRYPT_N = "4096";
     resetTablesForTests();
     resetAccountsForTests();
@@ -463,6 +464,45 @@ describe("6-max join + daily redeem", () => {
     const result = JSON.parse(cashed.body);
     expect(result.mode).toBe("ledger");
     expect(BigInt(result.accountMojos)).toBeGreaterThan(0n);
+    await app.close();
+  });
+
+  it("returns a seated stack to the account ledger on restart", async () => {
+    const app = await buildApp();
+    const created = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/auth/register",
+          payload: { username: "keepstack", password: "password1" },
+        })
+      ).body,
+    );
+    const headers = auth(created.token);
+    await app.inject({
+      method: "POST",
+      url: "/v1/wallet/redeem",
+      headers,
+      payload: { playerId: created.playerId },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/v1/tables/join",
+      headers,
+      payload: { playerId: created.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    const { returned } = returnAllStacksToAccounts();
+    expect(returned).toBe(1);
+    const acc = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/wallet/account?address=${encodeURIComponent(created.playerId)}`,
+          headers,
+        })
+      ).body,
+    );
+    expect(acc.balanceMojos).toBe("5000000");
     await app.close();
   });
 });

@@ -1,15 +1,20 @@
 import { describe, expect, it, beforeEach } from "vitest";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   creditAccount,
   debitAccount,
   getAccountBalance,
   hasRedeemedToday,
+  reloadLedgerFromDiskForTests,
   resetAccountsForTests,
   tryRedeemDaily,
 } from "./account-store.js";
 
 describe("account-store", () => {
   beforeEach(() => {
+    process.env.DAT_LEDGER_PATH = "memory";
     resetAccountsForTests();
   });
 
@@ -36,4 +41,17 @@ describe("account-store", () => {
     expect(nextDay.credited).toBe(true);
     expect(nextDay.balance).toBe(10_000_000n);
   });
+
+  it("reloads DAT balances and daily redeem from disk", () => {
+    const file = join(mkdtempSync(join(tmpdir(), "dat-ledger-")), "ledger.json");
+    process.env.DAT_LEDGER_PATH = file;
+    resetAccountsForTests();
+    const noon = new Date("2026-09-16T12:00:00.000Z");
+    tryRedeemDaily("user_persist", 5_000_000n, noon);
+    expect(JSON.parse(readFileSync(file, "utf8")).balances[0].balanceMojos).toBe("5000000");
+    reloadLedgerFromDiskForTests();
+    expect(getAccountBalance("user_persist")).toBe(5_000_000n);
+    expect(hasRedeemedToday("user_persist", noon)).toBe(true);
+  });
 });
+

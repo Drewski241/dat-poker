@@ -143,4 +143,18 @@ describe("NlheTableEngine", () => {
     expect(result?.shown.map((p) => p.playerId).sort()).toEqual(["alice", "dat-poker:house"]);
     expect(result?.shown.find((p) => p.playerId === result.winnerId)?.category).toBeTruthy();
   });
+
+  it("refunds this-hand bets when a hand is aborted for restart", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.startHand("hand-abort");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+    table.abortHandRefundBets();
+    expect(table.isHandInProgress()).toBe(false);
+    expect(table.getPlayerStack("alice")).toBe(5_000_000_000_000n);
+    expect(table.getPlayerStack("bob")).toBe(5_000_000_000_000n);
+  });
 });

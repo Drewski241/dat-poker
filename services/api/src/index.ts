@@ -5,7 +5,9 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import { POKER_VARIANTS } from "@dat-poker/shared";
-import { registerTableRoutes } from "./routes/tables.js";
+import { loadUsers } from "./user-store.js";
+import { loadLedger } from "./account-store.js";
+import { registerTableRoutes, returnAllStacksToAccounts } from "./routes/tables.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
@@ -13,7 +15,6 @@ import { registerWalletRoutes } from "./routes/wallet.js";
 import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerAuthRoutes } from "./routes/auth.js";
-import { loadUsers } from "./user-store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   });
 
   await loadUsers();
+  loadLedger();
 
   registerHealthRoutes(app, chiaClient);
   registerAuthRoutes(app);
@@ -59,6 +61,18 @@ async function main(): Promise<void> {
 
   await app.listen({ port, host });
   app.log.info(`API listening on http://${host}:${port}`);
+
+  app.addHook("onClose", async () => {
+    const { returned } = returnAllStacksToAccounts();
+    app.log.info({ returned }, "returned table stacks to persisted DAT accounts");
+  });
+
+  const stop = (signal: string) => {
+    app.log.info({ signal }, "shutting down");
+    void app.close().then(() => process.exit(0));
+  };
+  process.once("SIGTERM", () => stop("SIGTERM"));
+  process.once("SIGINT", () => stop("SIGINT"));
 }
 
 main().catch((err) => {

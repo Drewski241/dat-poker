@@ -14,7 +14,7 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
       {isBeta && (
         <div className="beta-banner" role="status">
           Closed beta — invited testers only. Software under development, not a
-          public casino. Tables live in memory and reset when the server restarts.
+          public casino. Open tables reset on restart; your account DAT is kept.
         </div>
       )}
       <header className="hero">
@@ -70,8 +70,8 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
             Sage is optional until you withdraw DAT to a wallet.
           </li>
           <li>
-            Server restarts wipe tables and in-game balances. Keep the stakes at test
-            size.
+            Server restarts wipe open tables, but your account DAT (redeemed
+            credits and cashed-out stacks) is kept on the host.
           </li>
           <li>DAT stays in Sage until on-chain escrow is wired. This host does not hold treasury keys.</li>
           <li>

@@ -513,8 +513,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     <div className="app">
       {isBeta && (
         <div className="beta-banner" role="status">
-          Public beta — software under development. Tables live in memory and reset when
-          the server restarts. Dev buy-in is for testing, not real-money settlement.
+          Public beta — software under development. Open tables reset on restart;
+          your account DAT is kept. Dev buy-in is for testing, not real-money settlement.
         </div>
       )}
       <header>

@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { TableConfig } from "@dat-poker/shared";
 import { DAT_TABLE_DEFAULTS, playthroughHandsRequired, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
-import { recordBuyIn, getBuyInRecord } from "../buy-in-store.js";
 import { debitAccount, getAccountBalance, creditAccount } from "../account-store.js";
+import { recordBuyIn, getBuyInRecord, clearBuyIn } from "../buy-in-store.js";
 import { HOUSE_PLAYER_ID } from "../house-id.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { allowIpBucket } from "../ip-rate-limit.js";
@@ -380,6 +380,33 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
 export function getTableEngine(tableId: string): NlheTableEngine | undefined {
   return tables.get(tableId);
+}
+
+/** Move seated stacks back to the persisted ledger (API restart / redeploy). */
+export function returnAllStacksToAccounts(): { returned: number } {
+  let returned = 0;
+  for (const [tableId, table] of tables) {
+    table.abortHandRefundBets();
+    for (const seated of [...table.getSeatedPlayers()]) {
+      if (seated.playerId === HOUSE_PLAYER_ID) {
+        try {
+          table.cashOutPlayer(HOUSE_PLAYER_ID);
+        } catch {
+          /* house already gone */
+        }
+        continue;
+      }
+      try {
+        const cash = table.cashOutPlayer(seated.playerId);
+        creditAccount(seated.playerId, cash.stackMojos);
+        clearBuyIn(tableId, seated.playerId);
+        returned += 1;
+      } catch {
+        /* already standing */
+      }
+    }
+  }
+  return { returned };
 }
 
 export function resetTablesForTests(): void {

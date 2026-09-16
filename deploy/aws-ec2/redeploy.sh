@@ -37,6 +37,10 @@ if [[ ! -f "$INSTALL_ROOT/data/accounts.json" ]]; then
   printf '%s\n' '{"users":[]}' > "$INSTALL_ROOT/data/accounts.json"
   chmod 600 "$INSTALL_ROOT/data/accounts.json"
 fi
+if [[ ! -f "$INSTALL_ROOT/data/ledger.json" ]]; then
+  printf '%s\n' '{"balances":[],"redeemed":[]}' > "$INSTALL_ROOT/data/ledger.json"
+  chmod 600 "$INSTALL_ROOT/data/ledger.json"
+fi
 chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
 systemctl restart dat-poker-api
 if [[ -f /etc/caddy/caddy.env && -f "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" ]]; then

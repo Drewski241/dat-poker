@@ -115,6 +115,19 @@ export class NlheTableEngine {
     return this.hand !== null;
   }
 
+  /** Drop the current hand and put this-hand bets back on stacks (redeploy). */
+  abortHandRefundBets(): void {
+    const h = this.hand;
+    if (!h) return;
+    for (const p of h.players) {
+      if (p.totalBetHandMojos <= 0n) continue;
+      p.stackMojos += p.totalBetHandMojos;
+      this.stacks.set(p.playerId, p.stackMojos);
+    }
+    this.hand = null;
+    this.lastHandResult = null;
+  }
+
   getPlayerStack(playerId: PlayerId): bigint | null {
     if (!this.stacks.has(playerId)) {
       return null;

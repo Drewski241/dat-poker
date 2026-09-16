@@ -5,7 +5,8 @@ Use this after the $20 **Launch an instance using EC2** credit is in **Billing
 
 The beta is a small always-on Amazon Linux box that serves the DAT POKER web
 client and REST API so you can develop the poker software against a public
-URL. Tables are **in memory** — a restart wipes games. Dev buy-in is on.
+URL. Open tables are **in memory** and reset on restart; account DAT (redeem
+and cash-out) is kept in `data/ledger.json`. Dev buy-in is on.
 Keep treasury Sage off this machine ([docs/TREASURY.md](./TREASURY.md)).
 
 This Cloud Agent cannot click Launch in your account.
@@ -181,7 +182,7 @@ sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 ```
 
 Use this feature branch name instead of `main` until it is merged. Restarting
-the API clears in-memory tables.
+the API clears open tables; account DAT stays in `data/ledger.json`.
 
 ## CloudFormation (optional)
 
@@ -435,7 +436,8 @@ Message you can paste:
 > at the 6-max table. Sage is only needed if you want DAT in a wallet. Send notes
 > and screenshots at https://datspiritpoker.com/feedback . Pairing only signs
 > messages — Sage should never send DAT from this site. This is software testing,
-> not a real-money casino. Tables reset if the server restarts.
+> not a real-money casino. Open tables reset if the server restarts; your account
+> DAT is kept.
 
 Keep the group small and trusted. The host is a single `t3.small`, tables are
 in memory, there is no KYC, and DAT does not leave Sage until on-chain escrow
