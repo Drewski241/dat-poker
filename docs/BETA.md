@@ -376,9 +376,14 @@ If www is not ready yet:
 sudo DAT_POKER_DOMAIN=datspiritpoker.com DAT_POKER_WWW=0 bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 ```
 
-If it says DNS is `none`, the grey-cloud A records are not public yet. Wait
-and run `dig` again. Orange proxy (the cloud icon filled in) also breaks
-this — click it until it is grey.
+If Caddy prints `Job for caddy.service failed`, the script now dumps the
+Caddyfile and `journalctl -u caddy`. Pull the fix without a full rebuild:
+
+```bash
+sudo git -C /opt/dat-poker fetch --depth 1 origin cursor/aws-ec2-first-server-6971
+sudo git -C /opt/dat-poker -c advice.detachedHead=false checkout -f FETCH_HEAD
+sudo DAT_POKER_DOMAIN=datspiritpoker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
+```
 
 Add `https://datspiritpoker.com` (and www) to the Reown domain allowlist.
 

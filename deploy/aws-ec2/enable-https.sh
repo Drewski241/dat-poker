@@ -149,7 +149,7 @@ if ! is_sslip "$DOMAIN"; then
   wait_for_dns_a "$DOMAIN" "$PUB_IP"
   if [[ "${DAT_POKER_WWW:-1}" != "0" ]]; then
     wait_for_dns_a "www.$DOMAIN" "$PUB_IP"
-    SITE="$DOMAIN,www.$DOMAIN"
+    SITE="$DOMAIN, www.$DOMAIN"
   fi
 fi
 
@@ -157,6 +157,9 @@ install_caddy
 ensure_caddy_user
 
 cp "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" /etc/caddy/Caddyfile
+# Bake hostnames into the Caddyfile. {$DAT_POKER_SITE} is empty at Caddy
+# parse time unless systemd env is already loaded, which failed start.
+sed -i "s|{\$DAT_POKER_SITE}|${SITE}|g" /etc/caddy/Caddyfile
 cp "$INSTALL_ROOT/deploy/aws-ec2/caddy.service" /etc/systemd/system/caddy.service
 cat > /etc/caddy/caddy.env <<EOF
 DAT_POKER_DOMAIN=${DOMAIN}
@@ -165,15 +168,30 @@ EOF
 chown root:caddy /etc/caddy/Caddyfile /etc/caddy/caddy.env
 chmod 0644 /etc/caddy/Caddyfile
 chmod 0640 /etc/caddy/caddy.env
+echo "Caddyfile site: ${SITE}"
+grep -v '^#' /etc/caddy/Caddyfile | head -n 5
 
 # Caddy needs :80 for Let's Encrypt. nginx keeps the files in WEB_ROOT.
-if systemctl is-active --quiet nginx; then
-  systemctl disable --now nginx
-fi
+systemctl disable --now nginx 2>/dev/null || true
+systemctl disable --now httpd 2>/dev/null || true
+
+dump_caddy_fail() {
+  echo "caddy.service failed" >&2
+  echo "--- Caddyfile ---" >&2
+  cat /etc/caddy/Caddyfile >&2 || true
+  echo "--- listeners ---" >&2
+  (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null || true) | grep -E ':80|:443' >&2 || true
+  systemctl status caddy --no-pager >&2 || true
+  journalctl -u caddy -n 80 --no-pager >&2 || true
+}
 
 systemctl daemon-reload
-systemctl enable --now caddy
-systemctl reload caddy || true
+systemctl reset-failed caddy 2>/dev/null || true
+systemctl enable caddy
+if ! systemctl restart caddy; then
+  dump_caddy_fail
+  exit 1
+fi
 
 ok=0
 for i in $(seq 1 60); do

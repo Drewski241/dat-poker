@@ -1,7 +1,7 @@
-# Public TLS front for DAT POKER. DAT_POKER_SITE comes from systemd env
-# (apex, or "datpoker.com, www.datpoker.com"). ACME HTTP-01 uses :80 —
-# nginx must be stopped so Caddy can bind it. Cloudflare records must be
-# DNS only (grey cloud) so Let's Encrypt reaches this host.
+# Public TLS front for DAT POKER. enable-https.sh replaces {$DAT_POKER_SITE}
+# with real hostnames in /etc/caddy/Caddyfile. ACME HTTP-01 uses :80 — nginx
+# must be stopped so Caddy can bind it. Cloudflare records must be DNS only
+# (grey cloud) so Let's Encrypt reaches this host.
 
 {$DAT_POKER_SITE} {
   encode gzip

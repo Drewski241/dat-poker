@@ -230,6 +230,23 @@ else
   bad "Caddyfile reverse-proxy"
 fi
 
+python3 - <<'PY' && ok "enable-https.sh bakes hostnames into Caddyfile" || bad "Caddyfile hostname bake"
+import os, re, subprocess, tempfile
+from pathlib import Path
+
+root = Path(os.environ["DAT_POKER_EC2_DIR"])
+src = (root / "Caddyfile").read_text()
+assert "{$DAT_POKER_SITE}" in src
+site = "datspiritpoker.com, www.datspiritpoker.com"
+out = src.replace("{$DAT_POKER_SITE}", site)
+assert "datspiritpoker.com, www.datspiritpoker.com {" in out
+assert "{$DAT_POKER_SITE}" not in out
+script = (root / "enable-https.sh").read_text()
+assert r"s|{\$DAT_POKER_SITE}|" in script
+assert "systemctl reset-failed caddy" in script
+print("baked", site)
+PY
+
 if grep -q 'WALLETCONNECT_PROJECT_ID' "$DIR/enable-sage.sh" \
   && grep -q 'DAT_GOVERNANCE_TOKEN_ASSET_ID' "$DIR/enable-sage.sh" \
   && grep -q '64' "$DIR/enable-sage.sh"; then
