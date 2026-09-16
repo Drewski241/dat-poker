@@ -10,6 +10,7 @@ export function AuthPanel({
   const [mode, setMode] = useState<"register" | "login">("register");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
 
   const onSubmit = (event: FormEvent) => {
@@ -56,17 +57,30 @@ export function AuthPanel({
         disabled={busy}
       />
       <label htmlFor="auth-password">Password</label>
-      <input
-        id="auth-password"
-        name="password"
-        type="password"
-        autoComplete={mode === "login" ? "current-password" : "new-password"}
-        required
-        minLength={8}
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        disabled={busy}
-      />
+      <div className="password-field">
+        <input
+          id="auth-password"
+          name="password"
+          type={showPassword ? "text" : "password"}
+          autoComplete={mode === "login" ? "current-password" : "new-password"}
+          required
+          minLength={8}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          disabled={busy}
+        />
+        <button
+          type="button"
+          className="secondary password-toggle"
+          disabled={busy}
+          aria-pressed={showPassword}
+          aria-controls="auth-password"
+          aria-label={showPassword ? "Hide password" : "Show password"}
+          onClick={() => setShowPassword((open) => !open)}
+        >
+          {showPassword ? "Hide" : "Show"}
+        </button>
+      </div>
       {mode === "register" && (
         <>
           <label htmlFor="auth-email">Email (optional)</label>
