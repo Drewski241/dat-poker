@@ -678,7 +678,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <>
               {handResult && (
                 <div className={handResult.winnerId === playerId ? "banner win" : "banner info"}>
-                  <strong>{playerLabel(handResult.winnerId, playerId, tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress)}</strong> wins{" "}
+                  <strong>{playerLabel(handResult.winnerId, playerId, tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress)}</strong>
+                  {handResult.winnerId === playerId ? " win " : " wins "}
                   {formatDatMojos(handResult.potMojos, datToken?.ticker)}
                   {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
                   {handResult.reason === "showdown" && handResult.board && handResult.board.length > 0 && (
