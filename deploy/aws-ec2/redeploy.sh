@@ -32,7 +32,20 @@ pnpm --filter @dat-poker/web build
 rm -rf "${WEB_ROOT:?}/"*
 cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
+mkdir -p "$INSTALL_ROOT/data/feedback"
+chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
 systemctl restart dat-poker-api
+if [[ -f /etc/caddy/caddy.env && -f "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source /etc/caddy/caddy.env
+  set +a
+  if [[ -n "${DAT_POKER_SITE:-}" ]]; then
+    cp "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" /etc/caddy/Caddyfile
+    sed -i "s|{\$DAT_POKER_SITE}|${DAT_POKER_SITE}|g" /etc/caddy/Caddyfile
+    chown root:caddy /etc/caddy/Caddyfile 2>/dev/null || true
+  fi
+fi
 if systemctl is-active --quiet caddy; then
   /usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile \
     || systemctl reload caddy

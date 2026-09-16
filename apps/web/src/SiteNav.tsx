@@ -22,6 +22,9 @@ export function SiteNav({
       <a href={pageToPath("play")} className={page === "play" ? "active" : ""} onClick={go("play")}>
         Play
       </a>
+      <a href={pageToPath("feedback")} className={page === "feedback" ? "active" : ""} onClick={go("feedback")}>
+        Feedback
+      </a>
     </nav>
   );
 }

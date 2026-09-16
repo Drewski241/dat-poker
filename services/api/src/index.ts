@@ -10,6 +10,7 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerFeedbackRoutes } from "./routes/feedback.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -31,7 +32,7 @@ const chiaClient = new ChiaGamingClient({
 });
 
 async function main(): Promise<void> {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: true, trustProxy: true });
   await app.register(cors, { origin: true });
 
   app.addHook("preSerialization", async (_request, _reply, payload) => {
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
 
   registerHealthRoutes(app, chiaClient);
   registerWalletRoutes(app, chiaClient);
+  registerFeedbackRoutes(app);
   registerTableRoutes(app);
   registerHandRoutes(app);
 

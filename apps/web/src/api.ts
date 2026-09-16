@@ -273,4 +273,15 @@ export const api = {
         body: JSON.stringify({ playerId, action, amountMojos }),
       },
     ),
+
+  submitFeedback: (body: {
+    comment: string;
+    contact?: string;
+    page?: string;
+    images?: { name?: string; type?: string; dataBase64: string }[];
+  }) =>
+    request<{ ok: boolean; id: string; imageCount: number; note: string }>("/v1/feedback", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

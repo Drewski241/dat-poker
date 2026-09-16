@@ -78,6 +78,10 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
             size.
           </li>
           <li>DAT stays in Sage until on-chain escrow is wired. This host does not hold treasury keys.</li>
+          <li>
+            Pairing only asks Sage to <strong>sign messages</strong>. The site cannot send DAT or XCH
+            from your wallet.
+          </li>
         </ul>
       </section>
 
@@ -86,6 +90,10 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
           DAT Governance Token on Chia.{" "}
           <a href="/play" onClick={(event) => { event.preventDefault(); onNavigate("play"); }}>
             Open the table
+          </a>
+          {" · "}
+          <a href="/feedback" onClick={(event) => { event.preventDefault(); onNavigate("feedback"); }}>
+            Send feedback
           </a>
           .
         </p>

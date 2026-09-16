@@ -93,7 +93,8 @@ a.cta:hover {
   margin: 0.45rem 0;
 }
 
-.landing footer a {
+.landing footer a,
+.app footer a {
   color: var(--accent);
 }
 
@@ -362,4 +363,29 @@ button.secondary {
   max-height: 4rem;
   overflow: auto;
   word-break: break-all;
+}
+
+.feedback-form label {
+  display: block;
+  margin: 0.85rem 0 0.35rem;
+  font-weight: 600;
+}
+
+.feedback-form textarea,
+.feedback-form input[type="text"] {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #2d3a4f;
+  border-radius: 6px;
+  background: #0f1419;
+  color: var(--text);
+  font: inherit;
+}
+
+.feedback-form textarea {
+  resize: vertical;
+}
+
+.feedback-form input[type="file"] {
+  color: var(--muted);
 }

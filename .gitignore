@@ -9,3 +9,4 @@ coverage
 !.env.treasury.example
 *.log
 .DS_Store
+/data/

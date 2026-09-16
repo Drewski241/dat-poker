@@ -307,6 +307,11 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 7. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
 8. **Deal hand** when at least two seats are filled.
 9. **Withdraw to Sage** is locked until you complete **one hand per DAT token** of that buy-in (1000 DAT buy-in → 1000 hands). The table panel shows play-through progress.
+10. Send notes and screenshots from **https://datspiritpoker.com/feedback**.
+
+Sage pairing **only signs messages**. If Sage asks to send coins or take an
+offer during this beta, reject it and file feedback. Details:
+[docs/SECURITY.md](./SECURITY.md).
 
 If the page is still `http://` you will see a note that Sage needs HTTPS.
 
@@ -329,8 +334,9 @@ chia-gaming’s GitHub WalletConnect path is for the official Chia light
 wallet + Calpoker state channels (`chia_selectCoins`,
 `chia_createOfferForIds`). Sage pairing follows
 [xch-dev/sage-dapp-example](https://github.com/xch-dev/sage-dapp-example)
-(CHIP-0002 methods + `wss://relay.walletconnect.com`). See
-[docs/WALLETCONNECT.md](./WALLETCONNECT.md).
+(CHIP-0002 methods + `wss://relay.walletconnect.com`) and **does not**
+request `chia_send` / `chia_takeOffer`. See
+[docs/WALLETCONNECT.md](./WALLETCONNECT.md) and [docs/SECURITY.md](./SECURITY.md).
 
 Withdraw to Sage needs a **separate treasury host** later
 ([docs/TREASURY.md](./TREASURY.md)). Do not enable Sage RPC on this EC2 box.
@@ -427,8 +433,9 @@ Message you can paste:
 
 > You’re invited to the DAT Poker closed beta. Open https://datspiritpoker.com/ —
 > click Play poker now!, connect Sage, redeem 5000 DAT for today, then buy in
-> at the 6-max table. This is software testing, not a real-money casino.
-> Tables reset if the server restarts.
+> at the 6-max table. Send notes and screenshots at https://datspiritpoker.com/feedback
+> . Pairing only signs messages — Sage should never send DAT from this site.
+> This is software testing, not a real-money casino. Tables reset if the server restarts.
 
 Keep the group small and trusted. The host is a single `t3.small`, tables are
 in memory, there is no KYC, and DAT does not leave Sage until on-chain escrow

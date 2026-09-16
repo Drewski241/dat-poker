@@ -224,8 +224,10 @@ PY
 
 if grep -q 'reverse_proxy 127.0.0.1:4000' "$DIR/Caddyfile" \
   && grep -q 'handle /v1/' "$DIR/Caddyfile" \
-  && grep -q 'DAT_POKER_SITE' "$DIR/Caddyfile"; then
-  ok "Caddyfile proxies /health and /v1 to the API"
+  && grep -q 'DAT_POKER_SITE' "$DIR/Caddyfile" \
+  && grep -q 'Content-Security-Policy' "$DIR/Caddyfile" \
+  && grep -q 'max_size 8MB' "$DIR/Caddyfile"; then
+  ok "Caddyfile proxies /health and /v1 to the API with CSP"
 else
   bad "Caddyfile reverse-proxy"
 fi
@@ -372,8 +374,9 @@ fi
 
 if grep -q 'Play poker now!' "$ROOT/apps/web/src/Landing.tsx" \
   && grep -q 'pathToPage' "$ROOT/apps/web/src/Root.tsx" \
-  && grep -q '/play' "$ROOT/apps/web/src/site-route.ts"; then
-  ok "web client has a public landing site and /play table"
+  && grep -q '/play' "$ROOT/apps/web/src/site-route.ts" \
+  && grep -q '/feedback' "$ROOT/apps/web/src/site-route.ts"; then
+  ok "web client has a public landing site, /play table, and /feedback"
 else
   bad "web landing /play"
 fi
@@ -419,6 +422,30 @@ if [[ -f "$ROOT/.env.beta.example" ]] && grep -q 'DAT_ALLOW_DEV_BUYIN=true' "$RO
   ok ".env.beta.example enables dev buy-in"
 else
   bad ".env.beta.example"
+fi
+
+if grep -q 'registerFeedbackRoutes' "$ROOT/services/api/src/index.ts" \
+  && grep -q 'pathToPage("/feedback")' "$ROOT/apps/web/src/site-route.test.ts"; then
+  ok "tester feedback API and /feedback page"
+else
+  bad "tester feedback"
+fi
+
+if grep -q 'SAGE_SPEND_METHODS' "$ROOT/apps/web/src/wallet/constants.ts" \
+  && ROOT="$ROOT" python3 - <<'PY'
+from pathlib import Path
+import os
+text = Path(os.environ["ROOT"], "apps/web/src/wallet/constants.ts").read_text()
+start = text.index("export const SAGE_WC_METHODS")
+end = text.index("] as const", start)
+block = text[start:end]
+assert "chia_send" not in block, block
+assert "chia_takeOffer" not in block, block
+PY
+then
+  ok "WalletConnect namespaces omit Sage spend RPCs"
+else
+  bad "WalletConnect spend methods"
 fi
 
 echo

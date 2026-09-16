@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { App } from "./App.js";
+import { Feedback } from "./Feedback.js";
 import { Landing } from "./Landing.js";
 import { pageToPath, pathToPage, type SitePage } from "./site-route.js";
 
@@ -22,6 +23,9 @@ export function Root() {
 
   if (page === "play") {
     return <App onNavigate={onNavigate} />;
+  }
+  if (page === "feedback") {
+    return <Feedback onNavigate={onNavigate} />;
   }
   return <Landing onNavigate={onNavigate} />;
 }
