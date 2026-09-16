@@ -246,7 +246,79 @@ assert "{$DAT_POKER_SITE}" not in out
 script = (root / "enable-https.sh").read_text()
 assert r"s|{\$DAT_POKER_SITE}|" in script
 assert "systemctl reset-failed caddy" in script
+assert 'DAT_POKER_SITE="%s"' in script, script[script.index("DAT_POKER_SITE"):script.index("DAT_POKER_SITE")+80]
 print("baked", site)
+PY
+
+python3 - <<'PY' && ok "caddy.env SITE quoting survives bash source; redeploy parses unquoted" || bad "caddy.env SITE quoting"
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+root = Path(os.environ["DAT_POKER_EC2_DIR"])
+redeploy = (root / "redeploy.sh").read_text()
+assert "source /etc/caddy/caddy.env" not in redeploy
+assert "s/^DAT_POKER_SITE=//" in redeploy
+
+unquoted = (
+    "DAT_POKER_DOMAIN=datspiritpoker.com\n"
+    "DAT_POKER_SITE=datspiritpoker.com, www.datspiritpoker.com\n"
+)
+quoted = (
+    "DAT_POKER_DOMAIN=datspiritpoker.com\n"
+    'DAT_POKER_SITE="datspiritpoker.com, www.datspiritpoker.com"\n'
+)
+
+def source_env(text: str):
+    with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+        fh.write(text)
+        path = fh.name
+    try:
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'set -euo pipefail; set -a; source "{path}"; set +a; printf "%s" "$DAT_POKER_SITE"',
+            ],
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        os.unlink(path)
+
+bad_proc = source_env(unquoted)
+assert bad_proc.returncode != 0, "unquoted SITE must fail under set -e"
+assert "command not found" in (bad_proc.stderr + bad_proc.stdout)
+
+good_proc = source_env(quoted)
+assert good_proc.returncode == 0, good_proc.stderr + good_proc.stdout
+assert good_proc.stdout == "datspiritpoker.com, www.datspiritpoker.com", good_proc.stdout
+
+with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+    fh.write(unquoted)
+    path = fh.name
+try:
+    parse = subprocess.run(
+        [
+            "bash",
+            "-c",
+            rf"""
+set -euo pipefail
+raw="$(sed -n 's/^DAT_POKER_SITE=//p' "{path}" | tail -n1 || true)"
+raw="${{raw#\"}}"
+raw="${{raw%\"}}"
+printf '%s' "$raw"
+""",
+        ],
+        capture_output=True,
+        text=True,
+    )
+finally:
+    os.unlink(path)
+assert parse.returncode == 0, parse.stderr + parse.stdout
+assert parse.stdout == "datspiritpoker.com, www.datspiritpoker.com", parse.stdout
+print("quoted source ok; sed recovers unquoted SITE")
 PY
 
 if grep -q 'WALLETCONNECT_PROJECT_ID' "$DIR/enable-sage.sh" \

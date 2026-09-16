@@ -44,20 +44,25 @@ fi
 chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
 systemctl reset-failed dat-poker-api 2>/dev/null || true
 systemctl restart dat-poker-api
-if [[ -f /etc/caddy/caddy.env && -f "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source /etc/caddy/caddy.env
-  set +a
-  if [[ -n "${DAT_POKER_SITE:-}" ]]; then
-    cp "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" /etc/caddy/Caddyfile
-    sed -i "s|{\$DAT_POKER_SITE}|${DAT_POKER_SITE}|g" /etc/caddy/Caddyfile
-    chown root:caddy /etc/caddy/Caddyfile 2>/dev/null || true
-  fi
+# Parse KEY=VALUE; do not `source` caddy.env. An unquoted
+# DAT_POKER_SITE=host, www.host is an assignment plus a command, and
+# `set -e` would abort after the API restart.
+CADDY_SITE=""
+if [[ -f /etc/caddy/caddy.env ]]; then
+  CADDY_SITE="$(sed -n 's/^DAT_POKER_SITE=//p' /etc/caddy/caddy.env | tail -n1 || true)"
+  CADDY_SITE="${CADDY_SITE#\"}"
+  CADDY_SITE="${CADDY_SITE%\"}"
+  CADDY_SITE="${CADDY_SITE#\'}"
+  CADDY_SITE="${CADDY_SITE%\'}"
+fi
+if [[ -n "${CADDY_SITE:-}" && -f "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" ]]; then
+  cp "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" /etc/caddy/Caddyfile
+  sed -i "s|{\$DAT_POKER_SITE}|${CADDY_SITE}|g" /etc/caddy/Caddyfile
+  chown root:caddy /etc/caddy/Caddyfile 2>/dev/null || true
 fi
 if systemctl is-active --quiet caddy; then
   /usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile \
-    || systemctl reload caddy
+    || systemctl reload caddy || true
 elif command -v nginx >/dev/null 2>&1; then
   nginx -s reload || systemctl reload nginx || true
 fi

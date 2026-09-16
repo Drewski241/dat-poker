@@ -184,6 +184,25 @@ sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 Use this feature branch name instead of `main` until it is merged. Restarting
 the API clears open tables; account DAT stays in `data/ledger.json`.
 
+Wait until it prints `beta redeploy ok`. If it dies on
+`www.datspiritpoker.com: command not found`, the API already restarted —
+`/etc/caddy/caddy.env` had an unquoted `DAT_POKER_SITE=host, www.host` and
+bash treated `www.…` as a command. Quote it once, then re-run redeploy:
+
+```bash
+sudo tee /etc/caddy/caddy.env >/dev/null <<'EOF'
+DAT_POKER_DOMAIN=datspiritpoker.com
+DAT_POKER_SITE="datspiritpoker.com, www.datspiritpoker.com"
+EOF
+sudo chown root:caddy /etc/caddy/caddy.env
+sudo chmod 0640 /etc/caddy/caddy.env
+```
+
+Newer `redeploy.sh` parses that file with `sed` instead of `source`, so the
+next pull finishes even if the env file is still unquoted. `curl -sS
+https://datspiritpoker.com/health` is enough to confirm the API; a failed
+Caddy `source` after `systemctl restart` does not mean Play is offline.
+
 ## CloudFormation (optional)
 
 Needs AWS CLI and `CAPABILITY_IAM`:

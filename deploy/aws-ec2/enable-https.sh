@@ -126,8 +126,17 @@ ensure_caddy_user() {
   chown -R caddy:caddy /var/lib/caddy
 }
 
+unquote_env_value() {
+  local v="$1"
+  v="${v#\"}"
+  v="${v%\"}"
+  v="${v#\'}"
+  v="${v%\'}"
+  printf '%s' "$v"
+}
+
 if [[ -z "${DAT_POKER_DOMAIN:-}" && -f /etc/caddy/caddy.env ]]; then
-  DAT_POKER_DOMAIN="$(sed -n 's/^DAT_POKER_DOMAIN=//p' /etc/caddy/caddy.env | tail -n1)"
+  DAT_POKER_DOMAIN="$(unquote_env_value "$(sed -n 's/^DAT_POKER_DOMAIN=//p' /etc/caddy/caddy.env | tail -n1)")"
   if [[ -n "${DAT_POKER_DOMAIN}" ]] && ! is_sslip "$DAT_POKER_DOMAIN"; then
     echo "Keeping existing domain $DAT_POKER_DOMAIN from /etc/caddy/caddy.env"
   else
@@ -161,10 +170,9 @@ cp "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" /etc/caddy/Caddyfile
 # parse time unless systemd env is already loaded, which failed start.
 sed -i "s|{\$DAT_POKER_SITE}|${SITE}|g" /etc/caddy/Caddyfile
 cp "$INSTALL_ROOT/deploy/aws-ec2/caddy.service" /etc/systemd/system/caddy.service
-cat > /etc/caddy/caddy.env <<EOF
-DAT_POKER_DOMAIN=${DOMAIN}
-DAT_POKER_SITE=${SITE}
-EOF
+# Quote SITE. Unquoted `host, www.host` is `DAT_POKER_SITE=host,` plus a
+# command named www.host when bash sources the file (`set -e` then aborts).
+printf 'DAT_POKER_DOMAIN=%s\nDAT_POKER_SITE="%s"\n' "$DOMAIN" "$SITE" > /etc/caddy/caddy.env
 chown root:caddy /etc/caddy/Caddyfile /etc/caddy/caddy.env
 chmod 0644 /etc/caddy/Caddyfile
 chmod 0640 /etc/caddy/caddy.env
