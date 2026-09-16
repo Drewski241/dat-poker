@@ -1,10 +1,18 @@
-import { formatDatMojos } from "@dat-poker/shared";
+import { useEffect, useState } from "react";
+import {
+  betSizePresets,
+  formatDatAmount,
+  formatDatMojos,
+  parseDatTokensToMojos,
+  snapRaiseTo,
+} from "@dat-poker/shared";
 
 export interface BetSliderProps {
   minMojos: bigint;
   maxMojos: bigint;
   stepMojos: bigint;
   valueMojos: bigint;
+  bigBlindMojos: bigint;
   ticker?: string;
   disabled?: boolean;
   label: string;
@@ -25,27 +33,79 @@ export function BetSlider({
   maxMojos,
   stepMojos,
   valueMojos,
-  ticker,
+  bigBlindMojos,
+  ticker = "DAT",
   disabled,
   label,
   onChange,
 }: BetSliderProps) {
+  const [draft, setDraft] = useState(() => formatDatAmount(valueMojos));
   const min = Number(minMojos);
   const max = Number(maxMojos);
   const step = Number(stepMojos);
   const rangeSteps = step > 0 ? Math.max(0, Math.floor((max - min) / step)) : 0;
   const sliderValue = mojosToSlider(minMojos, valueMojos, stepMojos);
+  const presets = betSizePresets(bigBlindMojos, minMojos, maxMojos);
+
+  useEffect(() => {
+    setDraft(formatDatAmount(valueMojos));
+  }, [valueMojos]);
 
   if (maxMojos <= minMojos || rangeSteps === 0) {
     return null;
   }
 
+  const commitDraft = () => {
+    const parsed = parseDatTokensToMojos(draft);
+    if (parsed == null) {
+      setDraft(formatDatAmount(valueMojos));
+      return;
+    }
+    const snapped = snapRaiseTo(parsed, minMojos, maxMojos, stepMojos);
+    onChange(snapped);
+    setDraft(formatDatAmount(snapped));
+  };
+
   return (
     <div className="bet-slider">
       <div className="bet-slider-header">
         <span>{label}</span>
-        <strong>{formatDatMojos(valueMojos.toString(), ticker)}</strong>
+        <label className="bet-amount-field">
+          <span className="visually-hidden">{label} amount</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            className="bet-amount-input"
+            value={draft}
+            disabled={disabled}
+            aria-label={`${label} in ${ticker}`}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitDraft}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitDraft();
+              }
+            }}
+          />
+          <span className="bet-amount-ticker">{ticker}</span>
+        </label>
       </div>
+      {presets.length > 0 && (
+        <div className="bet-presets" role="group" aria-label="Preset bet sizes">
+          {presets.map((amount) => (
+            <button
+              key={amount.toString()}
+              type="button"
+              className={amount === valueMojos ? "bet-preset active" : "bet-preset"}
+              disabled={disabled}
+              onClick={() => onChange(amount)}
+            >
+              {formatDatAmount(amount)}
+            </button>
+          ))}
+        </div>
+      )}
       <input
         type="range"
         className="bet-slider-input"

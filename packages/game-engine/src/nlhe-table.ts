@@ -88,6 +88,14 @@ export class NlheTableEngine {
     return this.config.maxSeats;
   }
 
+  getSmallBlindMojos(): bigint {
+    return this.config.smallBlindMojos;
+  }
+
+  getBigBlindMojos(): bigint {
+    return this.config.bigBlindMojos;
+  }
+
   emptySeatIndex(): number | null {
     for (let i = 0; i < this.config.maxSeats; i++) {
       if (!this.seats.has(i)) return i;

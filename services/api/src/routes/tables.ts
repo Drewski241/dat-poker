@@ -59,6 +59,8 @@ function tableSnapshot(tableId: string, table: NlheTableEngine, viewerId?: strin
     players: table.getActivePlayerCount(),
     humans: humanCount(table),
     handInProgress: table.isHandInProgress(),
+    smallBlindMojos: table.getSmallBlindMojos().toString(),
+    bigBlindMojos: table.getBigBlindMojos().toString(),
     seats: table.getSeatedPlayers().map((s) => {
       const buyIn = getBuyInRecord(tableId, s.playerId);
       const handsRequired = buyIn ? playthroughHandsRequired(buyIn.buyInMojos) : 0;

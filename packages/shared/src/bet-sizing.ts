@@ -52,3 +52,20 @@ export function snapRaiseTo(raw: bigint, min: bigint, max: bigint, step: bigint)
   const steps = (raw - min) / step;
   return min + steps * step;
 }
+
+/** Quick bet chips: 1×–4× BB, clipped to the legal raise-to range. */
+export function betSizePresets(
+  bigBlindMojos: bigint,
+  minRaiseTo: bigint,
+  maxRaiseTo: bigint,
+): bigint[] {
+  if (bigBlindMojos <= 0n) return [];
+  const presets: bigint[] = [];
+  for (const n of [1n, 2n, 3n, 4n]) {
+    const amount = bigBlindMojos * n;
+    if (amount >= minRaiseTo && amount <= maxRaiseTo) {
+      presets.push(amount);
+    }
+  }
+  return presets;
+}

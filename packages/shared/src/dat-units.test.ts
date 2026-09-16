@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   CAT_MOJOS_PER_TOKEN,
+  formatDatAmount,
   formatDatMojos,
+  parseDatTokensToMojos,
   playthroughHandsRequired,
   resolveDatDailyRedeemMojos,
   resolveDatMinBuyInMojos,
@@ -16,6 +18,15 @@ describe("formatDatMojos", () => {
   it("formats fractional DAT", () => {
     expect(formatDatMojos(1500n)).toBe("1.5 DAT");
     expect(formatDatMojos(1n)).toBe("0.001 DAT");
+  });
+
+  it("parses typed DAT amounts to mojos", () => {
+    expect(parseDatTokensToMojos("10")).toBe(10_000n);
+    expect(parseDatTokensToMojos("10 DAT")).toBe(10_000n);
+    expect(parseDatTokensToMojos("1.5")).toBe(1_500n);
+    expect(parseDatTokensToMojos("nope")).toBeNull();
+    expect(formatDatAmount(10_000n)).toBe("10");
+    expect(formatDatAmount(1_500n)).toBe("1.5");
   });
 
   it("uses 1000 mojos per token", () => {

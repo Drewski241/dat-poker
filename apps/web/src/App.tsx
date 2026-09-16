@@ -78,6 +78,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+  const [bigBlindMojos, setBigBlindMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
 
   useEffect(() => {
     void (async () => {
@@ -142,6 +143,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
+    if (t.bigBlindMojos) {
+      try {
+        const bb = BigInt(t.bigBlindMojos);
+        if (bb > 0n) setBigBlindMojos(bb);
+      } catch {
+        /* keep current blinds */
+      }
+    }
     if (t.lastHandResult) setHandResult(t.lastHandResult);
   }, [playerId]);
 
@@ -318,6 +327,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setTableSeats(joined.seats);
       setHand(joined.hand);
       setHandInProgress(joined.handInProgress);
+      if (joined.bigBlindMojos) {
+        try {
+          const bb = BigInt(joined.bigBlindMojos);
+          if (bb > 0n) setBigBlindMojos(bb);
+        } catch {
+          /* keep default blinds */
+        }
+      }
       if (joined.lastHandResult) setHandResult(joined.lastHandResult);
       await refreshAccount(playerId);
       const humans = joined.humans;
@@ -458,12 +475,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const betRange = useMemo(
     () =>
       computeNlheBetRange({
-        bigBlindMojos: DAT_BIG_BLIND_MOJOS,
+        bigBlindMojos,
         currentBetMojos: currentBet,
         myBetThisStreetMojos: myBet,
         myStackMojos: myStack,
       }),
-    [currentBet, myBet, myStack],
+    [bigBlindMojos, currentBet, myBet, myStack],
   );
 
   const actionSeatPlayer =
@@ -752,7 +769,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                         label={betRange.isOpeningBet ? "Bet size" : "Raise to"}
                         minMojos={betRange.minRaiseTo}
                         maxMojos={betRange.maxRaiseTo}
-                        stepMojos={DAT_BIG_BLIND_MOJOS}
+                        stepMojos={bigBlindMojos}
+                        bigBlindMojos={bigBlindMojos}
                         valueMojos={betAmountMojos}
                         ticker={datToken?.ticker}
                         disabled={busy}

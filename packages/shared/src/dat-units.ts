@@ -14,6 +14,25 @@ export function datTokensToMojos(tokens: bigint | number | string): bigint {
   return BigInt(tokens) * CAT_MOJOS_PER_TOKEN;
 }
 
+/** DAT amount for an input box (no ticker), e.g. `10` or `1.5`. */
+export function formatDatAmount(mojos: bigint | string): string {
+  const n = typeof mojos === "string" ? BigInt(mojos) : mojos;
+  const whole = n / CAT_MOJOS_PER_TOKEN;
+  const frac = n % CAT_MOJOS_PER_TOKEN;
+  if (frac === 0n) return whole.toString();
+  return `${whole}.${frac.toString().padStart(3, "0").replace(/0+$/, "")}`;
+}
+
+/** Parse a typed DAT amount (`10`, `10.5`, `10 DAT`) into CAT mojos. */
+export function parseDatTokensToMojos(raw: string): bigint | null {
+  const trimmed = raw.trim().replace(/,/g, "").replace(/\s*DAT\s*$/i, "");
+  if (!trimmed || !/^\d+(\.\d{1,3})?$/.test(trimmed)) {
+    return null;
+  }
+  const [whole, frac = ""] = trimmed.split(".");
+  return BigInt(whole) * CAT_MOJOS_PER_TOKEN + BigInt((frac + "000").slice(0, 3));
+}
+
 /** Default NLHE table stakes when buy-ins are DAT CAT mojos. */
 export const DAT_TABLE_DEFAULTS = {
   minBuyInMojos: 1_000_000n, // 1,000 DAT

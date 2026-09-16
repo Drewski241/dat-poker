@@ -303,6 +303,8 @@ export const api = {
       maxSeats: number;
       humans: number;
       handInProgress: boolean;
+      smallBlindMojos?: string;
+      bigBlindMojos?: string;
       seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;
@@ -322,6 +324,8 @@ export const api = {
       players: number;
       humans?: number;
       handInProgress: boolean;
+      smallBlindMojos?: string;
+      bigBlindMojos?: string;
       seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;

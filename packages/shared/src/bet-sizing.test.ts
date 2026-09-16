@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeNlheBetRange, snapRaiseTo } from "./bet-sizing.js";
+import { computeNlheBetRange, snapRaiseTo, betSizePresets } from "./bet-sizing.js";
 
 describe("computeNlheBetRange", () => {
   const bb = 10_000n;
@@ -33,5 +33,19 @@ describe("computeNlheBetRange", () => {
 describe("snapRaiseTo", () => {
   it("snaps to step increments", () => {
     expect(snapRaiseTo(25_000n, 10_000n, 100_000n, 10_000n)).toBe(20_000n);
+  });
+});
+
+describe("betSizePresets", () => {
+  it("lists 1×–4× BB when BB is 5 DAT", () => {
+    const bb = 5_000n;
+    expect(betSizePresets(bb, bb, 1_000_000n)).toEqual([
+      5_000n, 10_000n, 15_000n, 20_000n,
+    ]);
+  });
+
+  it("omits sizes below the min raise", () => {
+    const bb = 10_000n;
+    expect(betSizePresets(bb, 30_000n, 100_000n)).toEqual([30_000n, 40_000n]);
   });
 });
