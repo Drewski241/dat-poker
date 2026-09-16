@@ -386,7 +386,11 @@ export function getTableEngine(tableId: string): NlheTableEngine | undefined {
 export function returnAllStacksToAccounts(): { returned: number } {
   let returned = 0;
   for (const [tableId, table] of tables) {
-    table.abortHandRefundBets();
+    try {
+      table.abortHandRefundBets();
+    } catch {
+      /* older engine without abort */
+    }
     for (const seated of [...table.getSeatedPlayers()]) {
       if (seated.playerId === HOUSE_PLAYER_ID) {
         try {

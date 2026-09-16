@@ -59,17 +59,21 @@ async function main(): Promise<void> {
     variants: POKER_VARIANTS,
   }));
 
+  app.addHook("onClose", async () => {
+    try {
+      const { returned } = returnAllStacksToAccounts();
+      app.log.info({ returned }, "returned table stacks to persisted DAT accounts");
+    } catch (err) {
+      app.log.error({ err }, "failed to return table stacks on shutdown");
+    }
+  });
+
   await app.listen({ port, host });
   app.log.info(`API listening on http://${host}:${port}`);
 
-  app.addHook("onClose", async () => {
-    const { returned } = returnAllStacksToAccounts();
-    app.log.info({ returned }, "returned table stacks to persisted DAT accounts");
-  });
-
   const stop = (signal: string) => {
     app.log.info({ signal }, "shutting down");
-    void app.close().then(() => process.exit(0));
+    void app.close().finally(() => process.exit(0));
   };
   process.once("SIGTERM", () => stop("SIGTERM"));
   process.once("SIGINT", () => stop("SIGINT"));

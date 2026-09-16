@@ -42,6 +42,7 @@ if [[ ! -f "$INSTALL_ROOT/data/ledger.json" ]]; then
   chmod 600 "$INSTALL_ROOT/data/ledger.json"
 fi
 chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
+systemctl reset-failed dat-poker-api 2>/dev/null || true
 systemctl restart dat-poker-api
 if [[ -f /etc/caddy/caddy.env && -f "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" ]]; then
   set -a
