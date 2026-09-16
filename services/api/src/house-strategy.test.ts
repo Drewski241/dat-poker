@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCard, type Card } from "@dat-poker/game-engine";
-import { chooseHouseAction, estimateHouseStrength, type HouseView } from "./house-strategy.js";
+import { chooseHouseAction, estimateHouseStrength, huPreflopScore, type HouseView } from "./house-strategy.js";
 
 function cards(...s: string[]): Card[] {
   return s.map(parseCard);
@@ -83,14 +83,55 @@ describe("house strategy", () => {
       currentBetMojos: 10_000n,
       betThisStreetMojos: 5_000n,
       potMojos: 15_000n,
+      headsUp: true,
     });
     expect(estimateHouseStrength(v)).toBeGreaterThan(0.9);
     const choice = chooseHouseAction(v, () => 0.5);
     expect(choice.action).toBe("raise");
-    expect(choice.amountMojos).toBeGreaterThanOrEqual(30_000n);
+    expect(choice.amountMojos).toBeGreaterThanOrEqual(25_000n);
   });
 
-  it("folds 72o preflop to a 3-bet", () => {
+  it("raises K9o from the HU small blind instead of folding", () => {
+    const v = view({
+      street: "preflop",
+      holeCards: cards("Kh", "9d"),
+      board: [],
+      currentBetMojos: 10_000n,
+      betThisStreetMojos: 5_000n,
+      potMojos: 15_000n,
+      headsUp: true,
+    });
+    expect(huPreflopScore(v.holeCards[0], v.holeCards[1])).toBeGreaterThan(0.2);
+    expect(chooseHouseAction(v, () => 0.5).action).toBe("raise");
+  });
+
+  it("defends the HU big blind vs a 3x open with Q8o", () => {
+    const v = view({
+      street: "preflop",
+      holeCards: cards("Qh", "8d"),
+      board: [],
+      currentBetMojos: 30_000n,
+      betThisStreetMojos: 10_000n,
+      potMojos: 45_000n,
+      headsUp: true,
+    });
+    expect(chooseHouseAction(v, () => 0.5).action).not.toBe("fold");
+  });
+
+  it("calls a HU min-raise in the big blind with J4s", () => {
+    const v = view({
+      street: "preflop",
+      holeCards: cards("Jh", "4h"),
+      board: [],
+      currentBetMojos: 20_000n,
+      betThisStreetMojos: 10_000n,
+      potMojos: 30_000n,
+      headsUp: true,
+    });
+    expect(chooseHouseAction(v, () => 0.5).action).toBe("call");
+  });
+
+  it("folds 72o preflop to a 4x open heads-up", () => {
     const v = view({
       street: "preflop",
       holeCards: cards("7h", "2d"),
@@ -98,8 +139,9 @@ describe("house strategy", () => {
       currentBetMojos: 40_000n,
       betThisStreetMojos: 5_000n,
       potMojos: 55_000n,
+      headsUp: true,
     });
-    expect(estimateHouseStrength(v)).toBeLessThan(0.2);
+    expect(huPreflopScore(v.holeCards[0], v.holeCards[1])).toBeLessThan(0.16);
     expect(chooseHouseAction(v, () => 0.5).action).toBe("fold");
   });
 

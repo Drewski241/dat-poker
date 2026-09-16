@@ -15,6 +15,7 @@ export function playHouseIfDue(table: NlheTableEngine, random: () => number = Ma
     const opponentsAllIn = hand.players
       .filter((p) => p.playerId !== HOUSE_PLAYER_ID && !p.folded)
       .every((p) => p.allIn);
+    const live = hand.players.filter((p) => !p.folded);
     const choice = chooseHouseAction(
       {
         street: hand.street,
@@ -26,6 +27,7 @@ export function playHouseIfDue(table: NlheTableEngine, random: () => number = Ma
         stackMojos: actor.stackMojos,
         bigBlindMojos: table.getBigBlindMojos(),
         opponentsAllIn,
+        headsUp: live.length === 2,
       },
       random,
     );

@@ -17,6 +17,8 @@ export interface HouseView {
   stackMojos: bigint;
   bigBlindMojos: bigint;
   opponentsAllIn: boolean;
+  /** House vs one live opponent — always true at our 6-max fill seat. */
+  headsUp?: boolean;
 }
 
 export interface HouseChoice {
@@ -50,6 +52,10 @@ export function chooseHouseAction(
 
   const strength = estimateHouseStrength(view);
   const roll = () => clamp01(random());
+
+  if (view.street === "preflop" && view.headsUp) {
+    return headsUpPreflop(view, toCall, roll);
+  }
 
   if (toCall > 0n) {
     return facingBet(view, toCall, strength, roll) ?? { action: "fold", amountMojos: 0n };
@@ -95,6 +101,89 @@ export function estimateHouseStrength(view: HouseView): number {
     } else if (draw === "gutshot") {
       score = Math.min(0.62, score + 0.06);
     }
+  }
+
+  return clamp01(score);
+}
+
+function headsUpPreflop(
+  view: HouseView,
+  toCall: bigint,
+  roll: () => number,
+): HouseChoice {
+  const score = huPreflopScore(view.holeCards[0], view.holeCards[1]);
+  const unraised = view.currentBetMojos <= view.bigBlindMojos;
+  const facingRaise = toCall > 0n && !unraised;
+
+  if (view.opponentsAllIn && toCall <= 0n) {
+    return { action: "check", amountMojos: 0n };
+  }
+
+  if (toCall <= 0n) {
+    // BB option after a complete. Isolate a wide HU range; otherwise check.
+    if (score >= 0.28 && roll() < 0.72) {
+      return preflopOpen(view, true) ?? { action: "check", amountMojos: 0n };
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+
+  if (!facingRaise) {
+    // SB vs posted BB: raise ~80% of hands, fold only junk.
+    if (score >= 0.16) {
+      if (roll() < 0.88) return preflopOpen(view, true) ?? { action: "call", amountMojos: 0n };
+      return { action: "call", amountMojos: 0n };
+    }
+    if (roll() < 0.22) return preflopOpen(view, true) ?? { action: "call", amountMojos: 0n };
+    if (roll() < 0.12) return { action: "call", amountMojos: 0n };
+    return { action: "fold", amountMojos: 0n };
+  }
+
+  const openBb = ratio(view.currentBetMojos, view.bigBlindMojos);
+  let continueAt = 0.14;
+  if (openBb > 4.2) continueAt = 0.34;
+  else if (openBb > 3.2) continueAt = 0.24;
+  else if (openBb > 2.4) continueAt = 0.16;
+  else continueAt = 0.12;
+
+  if (score >= 0.5 || (score >= 0.34 && roll() < 0.38)) {
+    return preflopOpen(view, true) ?? { action: "call", amountMojos: 0n };
+  }
+  if (score >= continueAt) {
+    return { action: "call", amountMojos: 0n };
+  }
+  if (roll() < 0.08 && openBb <= 3.2) {
+    return preflopOpen(view, true) ?? { action: "fold", amountMojos: 0n };
+  }
+  return { action: "fold", amountMojos: 0n };
+}
+
+/** Heads-up hole-card score. Full-ring Chen is too tight for HU. */
+export function huPreflopScore(a: Card, b: Card): number {
+  const va = rankValue(a.rank);
+  const vb = rankValue(b.rank);
+  const high = Math.max(va, vb);
+  const low = Math.min(va, vb);
+  const pair = a.rank === b.rank;
+  const suited = a.suit === b.suit;
+  const gap = high - low - 1;
+
+  if (pair) {
+    return clamp01(0.42 + ((high - 2) / 12) * 0.5);
+  }
+
+  let score = (high / 14) * 0.36 + (low / 14) * 0.18;
+  if (suited) score += 0.14;
+  if (gap === 0) score += 0.09;
+  else if (gap === 1) score += 0.05;
+  else if (gap === 2) score += 0.02;
+  if (high === 14) score += 0.14;
+  else if (high === 13) score += 0.06;
+  else if (high === 12) score += 0.03;
+
+  if (!suited && gap >= 4 && low <= 5 && high <= 12) {
+    score *= 0.42;
+  } else if (!suited && gap >= 3 && high <= 10 && low <= 6) {
+    score *= 0.38;
   }
 
   return clamp01(score);
@@ -207,9 +296,15 @@ function checkedTo(view: HouseView, strength: number, roll: () => number): House
   return { action: "check", amountMojos: 0n };
 }
 
-function preflopOpen(view: HouseView): HouseChoice | null {
+function preflopOpen(view: HouseView, headsUp = false): HouseChoice | null {
   const threeBb = view.bigBlindMojos * 3n;
-  const iso = view.currentBetMojos > 0n ? view.currentBetMojos * 3n : threeBb;
+  const unraised = view.currentBetMojos <= view.bigBlindMojos;
+  const iso =
+    headsUp && unraised
+      ? view.bigBlindMojos * 3n
+      : view.currentBetMojos > 0n
+        ? view.currentBetMojos * 3n
+        : threeBb;
   const range = betRange(view);
   if (!range.canBetOrRaise) {
     return { action: "check", amountMojos: 0n };
