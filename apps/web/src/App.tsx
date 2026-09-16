@@ -405,7 +405,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         {pageIsHttp && (
           <p className="muted">
             Sage WalletConnect needs HTTPS. Open the <code>https://</code> site
-            (for example <code>https://dat-poker.com</code>), not <code>http://</code>
+            (for example <code>https://datspiritpoker.com</code>), not <code>http://</code>
             plus the Elastic IP.
           </p>
         )}

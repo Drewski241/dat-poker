@@ -159,11 +159,11 @@ proc = subprocess.run(
 out = proc.stdout
 assert "https://54-12-34-56.sslip.io/" in out, out
 assert "https://54-12-34-56.sslip.io/play" in out, out
-assert "DAT_POKER_DOMAIN=dat-poker.com" in out, out
+assert "DAT_POKER_DOMAIN=datspiritpoker.com" in out, out
 print(out.strip())
 PY
 
-python3 - <<'PY' && ok "public-url.sh prints https://dat-poker.com/" || bad "public-url.sh dat-poker.com"
+python3 - <<'PY' && ok "public-url.sh prints https://datspiritpoker.com/" || bad "public-url.sh datspiritpoker.com"
 import os
 import subprocess
 from pathlib import Path
@@ -174,11 +174,11 @@ proc = subprocess.run(
     check=True,
     capture_output=True,
     text=True,
-    env={**os.environ, "DAT_POKER_DOMAIN": "dat-poker.com"},
+    env={**os.environ, "DAT_POKER_DOMAIN": "datspiritpoker.com"},
 )
 out = proc.stdout
-assert "https://dat-poker.com/" in out, out
-assert "https://dat-poker.com/play" in out, out
+assert "https://datspiritpoker.com/" in out, out
+assert "https://datspiritpoker.com/play" in out, out
 assert "sslip.io" not in out, out
 print(out.strip())
 PY
@@ -363,7 +363,7 @@ fi
 
 if grep -q 'Invite testers' "$ROOT/docs/BETA.md" \
   && grep -q 'public-url.sh' "$ROOT/docs/BETA.md" \
-  && grep -q 'https://dat-poker.com/' "$ROOT/docs/BETA.md"; then
+  && grep -q 'https://datspiritpoker.com/' "$ROOT/docs/BETA.md"; then
   ok "docs/BETA.md tells you which website URL to share"
 else
   bad "docs/BETA.md invite testers"
@@ -377,7 +377,7 @@ else
 fi
 
 if grep -q 'pageIsHttp' "$ROOT/apps/web/src/App.tsx" \
-  && grep -q 'dat-poker.com' "$ROOT/apps/web/src/App.tsx"; then
+  && grep -q 'datspiritpoker.com' "$ROOT/apps/web/src/App.tsx"; then
   ok "web client warns when Sage is opened over HTTP"
 else
   bad "web HTTP Sage warning"
@@ -385,9 +385,8 @@ fi
 
 if grep -q 'Website address' "$ROOT/docs/BETA.md" \
   && grep -q 'dash.cloudflare.com' "$ROOT/docs/BETA.md" \
-  && grep -q 'DAT_POKER_DOMAIN=dat-poker.com' "$ROOT/docs/BETA.md" \
-  && grep -q 'already taken' "$ROOT/docs/BETA.md"; then
-  ok "docs/BETA.md registers dat-poker.com (datpoker.com is taken)"
+  && grep -q 'DAT_POKER_DOMAIN=datspiritpoker.com' "$ROOT/docs/BETA.md"; then
+  ok "docs/BETA.md points testers at datspiritpoker.com"
 else
   bad "docs/BETA.md website address"
 fi

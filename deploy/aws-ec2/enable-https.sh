@@ -3,11 +3,11 @@
 # Run as root after the HTTP site already works:
 #   sudo bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 #
-# Branded site (buy dat-poker.com — datpoker.com is taken):
-#   sudo DAT_POKER_DOMAIN=dat-poker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
+# Branded site:
+#   sudo DAT_POKER_DOMAIN=datspiritpoker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 #
 # Optional:
-#   DAT_POKER_DOMAIN=dat-poker.com    # DNS A record at the Elastic IP
+#   DAT_POKER_DOMAIN=datspiritpoker.com  # DNS A record at the Elastic IP
 #   DAT_POKER_WWW=0                  # skip www.<domain> cert
 #   DAT_POKER_PUBLIC_IPV4=54.12.34.56
 #   CADDY_VERSION=2.9.1
@@ -54,9 +54,38 @@ dns_a() {
   getent ahostsv4 "$1" 2>/dev/null | awk '{print $1; exit}'
 }
 
+explain_dns_fail() {
+  local host="$1" got="$2"
+  cat >&2 <<EOF
+DNS $host is '${got:-none}', want $PUB_IP.
+
+The certificate step cannot succeed until $DOMAIN has an A record pointing
+at this Elastic IP.
+
+In Cloudflare → Websites → $DOMAIN → DNS → Records:
+  A  @    $PUB_IP   Proxy status DNS only (grey cloud, not orange)
+  A  www  $PUB_IP   Proxy status DNS only (grey cloud)
+
+On the laptop, wait until this prints $PUB_IP:
+
+  dig +short $DOMAIN
+
+Then re-run:
+
+  sudo DAT_POKER_DOMAIN=$DOMAIN bash $0
+
+If www is not ready: DAT_POKER_WWW=0 on that command.
+EOF
+}
+
 wait_for_dns_a() {
   local host="$1" want="$2" tries="${3:-90}"
   local got i
+  got="$(dns_a "$host")"
+  if [[ -z "$got" ]]; then
+    explain_dns_fail "$host" "$got"
+    return 1
+  fi
   for i in $(seq 1 "$tries"); do
     got="$(dns_a "$host")"
     if [[ "$got" == "$want" ]]; then
@@ -65,8 +94,7 @@ wait_for_dns_a() {
     fi
     sleep 2
   done
-  echo "DNS $host is '${got:-none}', want $want" >&2
-  echo "In Cloudflare, set an A record to this Elastic IP with Proxy status DNS only (grey cloud), then wait a minute." >&2
+  explain_dns_fail "$host" "$got"
   return 1
 }
 
@@ -111,8 +139,8 @@ DOMAIN="${DAT_POKER_DOMAIN:-}"
 if [[ -z "$DOMAIN" ]]; then
   DOMAIN="$(ip_to_sslip "$PUB_IP")"
   echo "No DAT_POKER_DOMAIN set; using $DOMAIN (Elastic IP $PUB_IP)"
-  echo "For https://dat-poker.com/ register that name, point A records at $PUB_IP, then re-run:"
-  echo "  sudo DAT_POKER_DOMAIN=dat-poker.com bash $0"
+  echo "For https://datspiritpoker.com/ point Cloudflare A records at $PUB_IP, then re-run:"
+  echo "  sudo DAT_POKER_DOMAIN=datspiritpoker.com bash $0"
 fi
 
 SITE="$DOMAIN"

@@ -18,7 +18,7 @@ the Apache tutorial.
 | `console-user-data.sh` | **Paste this** into Launch instance → User data |
 | `user-data.sh` | Full bootstrap (pulled by the paste snippet) |
 | `redeploy.sh` | `git fetch` + rebuild + restart API on an existing beta host |
-| `enable-https.sh` | Caddy + Let’s Encrypt (`dat-poker.com` or `sslip.io`) so Sage can pair |
+| `enable-https.sh` | Caddy + Let’s Encrypt (`datspiritpoker.com` or `sslip.io`) so Sage can pair |
 | `enable-sage.sh` | Write WalletConnect project ID + DAT asset id, restart API |
 | `Caddyfile` / `caddy.service` | TLS reverse proxy in front of the API + static UI |
 | `landing.html` | Static DAT POKER page used by the nginx kit **before** the SPA build is copied |
