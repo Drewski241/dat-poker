@@ -302,7 +302,7 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 2. Click **Connect Sage (WalletConnect)**.
 3. Scan the QR with Sage (or paste the URI in Sage desktop).
 4. Approve the session in Sage.
-5. Click **Load wallet**.
+5. Click **Load wallet**. Approve the Sage **login** signature (it cannot send coins).
 6. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits).
 7. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
 8. **Deal hand** when at least two seats are filled.

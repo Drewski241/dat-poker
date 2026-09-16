@@ -1,9 +1,26 @@
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
+let authToken: string | null = null;
+
+export function setApiAuthToken(token: string | null): void {
+  authToken = token;
+}
+
+export function getApiAuthToken(): string | null {
+  return authToken;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+  if (authToken && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${authToken}`);
+  }
   const res = await fetch(`${apiBase}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
+    headers,
   });
   const body = (await res.json()) as T & { error?: string };
   if (!res.ok) {
@@ -82,6 +99,7 @@ export interface TableSeat {
   playerId: string;
   seatIndex: number;
   stackMojos: string;
+  displayAddress?: string;
   handsPlayed?: number;
   handsRequired?: number;
   playthroughRemaining?: number;
@@ -115,11 +133,29 @@ export const api = {
   account: (address: string) =>
     request<{
       address: string;
+      playerId?: string;
       balanceMojos: string;
       dailyRedeemMojos: string;
       redeemedToday: boolean;
       nextRedeemAt: string;
     }>(`/v1/wallet/account?address=${encodeURIComponent(address)}`),
+
+  sessionChallenge: (address: string) =>
+    request<{ nonce: string; message: string; expiresAt: string; note?: string }>(
+      `/v1/session/challenge?address=${encodeURIComponent(address)}`,
+    ),
+
+  createSession: (body: { address: string; nonce: string; signature: string; pubkey: string }) =>
+    request<{
+      ok: boolean;
+      token: string;
+      playerId: string;
+      address: string;
+      expiresInSeconds: number;
+    }>("/v1/session", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   redeemMessage: (address: string) =>
     request<{ message: string; utcDate: string; amountMojos: string }>(

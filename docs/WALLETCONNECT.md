@@ -57,8 +57,10 @@ The Vite web client (`apps/web`) implements Sage WalletConnect:
 
 1. Fetch `/v1/wallet/config` on app load.
 2. **Connect Sage** — scan QR with Sage mobile (or paste URI on desktop).
-3. **Load DAT balance** — finds your CAT wallet matching `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
-4. **Buy in & join table** — signs a buy-in intent via `chia_signMessageByAddress`, seats you vs house.
+3. **Load wallet** — reads your address, then Sage signs a login message. The
+   API verifies CHIP-0002 and issues a session token so nobody else can act as
+   you or see your hole cards.
+4. **Buy in & join table** — seats you vs house using the signed session.
 5. **Start hand** — commit-reveal deal; you act when prompted (house auto-plays).
 6. **Withdraw** — cash out table stack to the in-game DAT account. On-chain
    Sage `takeOffer` is **disabled on the game host** so a compromised page

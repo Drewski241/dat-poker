@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { api, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import { SiteNav } from "./SiteNav.js";
@@ -19,10 +19,11 @@ import {
 const HOUSE_PLAYER_ID = "dat-poker:house";
 const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
 
-function playerLabel(id: string, youId: string | null): string {
+function playerLabel(id: string, youId: string | null, display?: string): string {
   if (id === youId) return "You";
   if (id === HOUSE_PLAYER_ID) return "House";
-  return id.length > 16 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
+  const shown = display && display.length > 0 ? display : id;
+  return shown.length > 16 ? `${shown.slice(0, 8)}…${shown.slice(-6)}` : shown;
 }
 
 function cardLabel(card: { rank: string; suit: string }): string {
@@ -190,6 +191,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setAccountMojos(null);
       setRedeemedToday(false);
       setPlayerId(null);
+      setApiAuthToken(null);
     });
 
   const loadDatBalance = () =>
@@ -204,7 +206,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         datToken?.assetId,
       );
       setWalletAddress(address);
-      setPlayerId(address);
+      setStatus("Approve login in Sage — this signs a message and cannot send coins…");
+      const challenge = await api.sessionChallenge(address);
+      const signed = await signRedeemMessage(
+        session,
+        wcConfig.projectId,
+        wcConfig.chainId,
+        challenge.message,
+        address,
+      );
+      const created = await api.createSession({
+        address,
+        nonce: challenge.nonce,
+        signature: signed.signature,
+        pubkey: signed.pubkey,
+      });
+      setApiAuthToken(created.token);
+      setPlayerId(created.playerId);
       setDatBalance(balance.spendable);
       await refreshAccount(address);
     });
@@ -450,8 +468,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           </p>
         )}
         <p className="muted small">
-          Sage pairing only signs messages (CHIP-0002). This site cannot send DAT or XCH
-          from your wallet. Disconnect in Sage after you play if you want.
+          Sage pairing only signs messages (CHIP-0002). Load wallet asks Sage to sign a
+          login. This site cannot send DAT or XCH from your wallet. Disconnect in Sage
+          after you play if you want.
         </p>
         {!wcConfig ? (
           <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage.</p>
@@ -528,7 +547,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   <li key={i}>
                     Seat {i + 1}:{" "}
                     {seated
-                      ? `${playerLabel(seated.playerId, playerId)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}`
+                      ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}`
                       : "empty"}
                   </li>
                 );
@@ -581,7 +600,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <>
               {handResult && (
                 <div className="banner win">
-                  <strong>{playerLabel(handResult.winnerId, playerId)}</strong> wins{" "}
+                  <strong>{playerLabel(handResult.winnerId, playerId, tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress)}</strong> wins{" "}
                   {formatDatMojos(handResult.potMojos, datToken?.ticker)}
                   {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
                 </div>
@@ -667,7 +686,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 </div>
               )}
               {!isMyAction && actionSeatPlayer && (
-                <p className="muted">Waiting for {playerLabel(actionSeatPlayer.playerId, playerId)}…</p>
+                <p className="muted">Waiting for {playerLabel(actionSeatPlayer.playerId, playerId, tableSeats.find((s) => s.playerId === actionSeatPlayer.playerId)?.displayAddress)}…</p>
               )}
             </>
           )}

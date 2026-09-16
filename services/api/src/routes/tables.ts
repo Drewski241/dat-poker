@@ -7,6 +7,8 @@ import { recordBuyIn, getBuyInRecord } from "../buy-in-store.js";
 import { debitAccount, getAccountBalance, creditAccount } from "../account-store.js";
 import { HOUSE_PLAYER_ID } from "../house-id.js";
 import { redactHandForViewer } from "../redact-hand.js";
+import { allowIpBucket } from "../ip-rate-limit.js";
+import { readPlayerSession, requirePlayer, sessionMatchesClaim } from "../player-session.js";
 import {
   type BuyInProof,
   readDatTokenConfig,
@@ -14,7 +16,12 @@ import {
 } from "../wallet-config.js";
 
 const tables = new Map<string, NlheTableEngine>();
+const playerLabels = new Map<string, string>();
 export { HOUSE_PLAYER_ID };
+
+function rememberLabel(playerId: string, displayAddress: string): void {
+  if (displayAddress) playerLabels.set(playerId, displayAddress);
+}
 
 function humanCount(table: NlheTableEngine): number {
   return table.getSeatedPlayers().filter((s) => s.playerId !== HOUSE_PLAYER_ID).length;
@@ -58,6 +65,7 @@ function tableSnapshot(tableId: string, table: NlheTableEngine, viewerId?: strin
       const handsPlayed = table.getHandsPlayed(s.playerId);
       return {
         ...s,
+        displayAddress: playerLabels.get(s.playerId) ?? (s.playerId === HOUSE_PLAYER_ID ? "House" : s.playerId),
         handsPlayed,
         handsRequired,
         playthroughRemaining: Math.max(0, handsRequired - handsPlayed),
@@ -110,6 +118,7 @@ function seatHouseIfNeeded(table: NlheTableEngine, buyInMojos: bigint): void {
 function takeBuyInFromAccountOrProof(params: {
   tableId: string;
   playerId: string;
+  displayAddress: string;
   seatIndex: number;
   buyInMojos: bigint;
   buyInProof?: BuyInProof;
@@ -125,7 +134,7 @@ function takeBuyInFromAccountOrProof(params: {
   if (account >= params.buyInMojos) {
     debitAccount(params.playerId, params.buyInMojos);
     const buyInProof = params.buyInProof ?? {
-      address: params.playerId,
+      address: params.displayAddress,
       message: "account-credit",
       signature: "",
       pubkey: "",
@@ -146,6 +155,7 @@ function takeBuyInFromAccountOrProof(params: {
       seatIndex: params.seatIndex,
       buyInMojos: params.buyInMojos.toString(),
       playerId: params.playerId,
+      address: params.displayAddress,
     });
     if (proofError) {
       return { error: proofError, usedAccount: false };
@@ -162,6 +172,7 @@ function takeBuyInFromAccountOrProof(params: {
       seatIndex: params.seatIndex,
       buyInMojos: params.buyInMojos.toString(),
       playerId: params.playerId,
+      address: params.displayAddress,
     });
     if (proofError) {
       return { error: proofError, usedAccount: false };
@@ -169,7 +180,7 @@ function takeBuyInFromAccountOrProof(params: {
   }
 
   const buyInProof = params.buyInProof ?? {
-    address: params.playerId,
+    address: params.displayAddress,
     message: "",
     signature: "",
     pubkey: "",
@@ -180,13 +191,10 @@ function takeBuyInFromAccountOrProof(params: {
 
 export function registerTableRoutes(app: FastifyInstance): void {
   app.get("/v1/tables", async (req) => {
-    const viewerId =
-      typeof req.query === "object" && req.query && "playerId" in req.query
-        ? String((req.query as { playerId?: string }).playerId ?? "")
-        : "";
+    const session = readPlayerSession(req);
     return {
       tables: [...tables.entries()].map(([tableId, table]) =>
-        tableSnapshot(tableId, table, viewerId || undefined),
+        tableSnapshot(tableId, table, session?.playerId),
       ),
     };
   });
@@ -198,23 +206,30 @@ export function registerTableRoutes(app: FastifyInstance): void {
       bigBlindMojos?: string;
       maxSeats?: number;
     };
-  }>("/v1/tables", async (req) => {
+  }>("/v1/tables", async (req, reply) => {
+    if (!requirePlayer(req, reply)) return;
     const created = createTable(req.body.maxSeats ?? 6);
     return { tableId: created.tableId, config: created.config };
   });
 
   app.post<{
     Body: {
-      playerId: string;
+      playerId?: string;
       buyInMojos?: string;
       buyInProof?: BuyInProof;
       devAck?: boolean;
     };
   }>("/v1/tables/join", async (req, reply) => {
-    const playerId = req.body.playerId;
-    if (!playerId) {
-      return reply.status(400).send({ error: "playerId required" });
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed Sage session" });
     }
+    if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many join requests from this network" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
 
     const existing = findPlayerTable(playerId);
     if (existing) {
@@ -246,6 +261,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const buyIn = takeBuyInFromAccountOrProof({
       tableId: target.tableId,
       playerId,
+      displayAddress: session.displayAddress,
       seatIndex: seat,
       buyInMojos,
       buyInProof: req.body.buyInProof,
@@ -278,29 +294,38 @@ export function registerTableRoutes(app: FastifyInstance): void {
       if (!table) {
         return reply.status(404).send({ error: "Table not found" });
       }
-      return tableSnapshot(req.params.tableId, table, req.query.playerId);
+      const session = readPlayerSession(req);
+      return tableSnapshot(req.params.tableId, table, session?.playerId);
     },
   );
 
   app.post<{
     Params: { tableId: string };
     Body: {
-      playerId: string;
+      playerId?: string;
       seatIndex: number;
       buyInMojos: string;
       buyInProof?: BuyInProof;
       devAck?: boolean;
     };
   }>("/v1/tables/:tableId/seat", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed Sage session" });
+    }
     const table = tables.get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
 
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
     const buyInMojos = BigInt(req.body.buyInMojos);
     const buyIn = takeBuyInFromAccountOrProof({
       tableId: req.params.tableId,
-      playerId: req.body.playerId,
+      playerId,
+      displayAddress: session.displayAddress,
       seatIndex: req.body.seatIndex,
       buyInMojos,
       buyInProof: req.body.buyInProof,
@@ -311,11 +336,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
 
     try {
-      table.seatPlayer(req.body.playerId, req.body.seatIndex, buyInMojos);
+      table.seatPlayer(playerId, req.body.seatIndex, buyInMojos);
       return { ok: true };
     } catch (e) {
       if (buyIn.usedAccount) {
-        creditAccount(req.body.playerId, buyInMojos);
+        creditAccount(playerId, buyInMojos);
       }
       return reply.status(400).send({ error: (e as Error).message });
     }
@@ -325,9 +350,14 @@ export function registerTableRoutes(app: FastifyInstance): void {
     Params: { tableId: string };
     Body: { buyInMojos?: string };
   }>("/v1/tables/:tableId/seat-house", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
     const table = tables.get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
+    }
+    if (!table.hasPlayer(session.playerId)) {
+      return reply.status(403).send({ error: "You are not seated at this table" });
     }
     if (table.hasPlayer(HOUSE_PLAYER_ID)) {
       return { ok: true, playerId: HOUSE_PLAYER_ID };
@@ -352,4 +382,5 @@ export function getTableEngine(tableId: string): NlheTableEngine | undefined {
 
 export function resetTablesForTests(): void {
   tables.clear();
+  playerLabels.clear();
 }

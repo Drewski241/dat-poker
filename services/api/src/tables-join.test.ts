@@ -5,7 +5,11 @@ import { resetAccountsForTests, tryRedeemDaily } from "./account-store.js";
 import { registerTableRoutes, resetTablesForTests } from "./routes/tables.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerSessionRoutes } from "./routes/session.js";
 import { ChiaGamingClient } from "@dat-poker/chia-bridge";
+import { issueTestSession, resetPlayerSessionsForTests } from "./player-session.js";
+import { signChip0002ForTests } from "./chip0002.js";
+import { resetIpRateLimitsForTests } from "./ip-rate-limit.js";
 
 async function buildApp() {
   const app = Fastify();
@@ -19,16 +23,24 @@ async function buildApp() {
     gameUrl: "http://localhost:3000",
     coinsetUrl: "https://coinset.org",
   });
+  registerSessionRoutes(app);
   registerWalletRoutes(app, chia);
   registerTableRoutes(app);
   registerHandRoutes(app);
   return app;
 }
 
+function auth(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
 describe("6-max join + daily redeem", () => {
   beforeEach(() => {
+    process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
     resetTablesForTests();
     resetAccountsForTests();
+    resetPlayerSessionsForTests();
+    resetIpRateLimitsForTests();
     process.env.DAT_ALLOW_DEV_BUYIN = "true";
     process.env.DAT_MIN_BUY_IN_MOJOS = "1000000";
     process.env.DAT_DAILY_REDEEM_MOJOS = "5000000";
@@ -36,11 +48,14 @@ describe("6-max join + daily redeem", () => {
 
   it("redeems 5000 DAT once per day and seats a second human at the same 6-max table", async () => {
     const app = await buildApp();
+    const alice = issueTestSession("xch1alice");
+    const bob = issueTestSession("xch1bob");
 
     const redeemA = await app.inject({
       method: "POST",
       url: "/v1/wallet/redeem",
-      payload: { playerId: "xch1alice", devAck: true },
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, devAck: true },
     });
     expect(redeemA.statusCode).toBe(200);
     expect(JSON.parse(redeemA.body).creditedMojos).toBe("5000000");
@@ -48,14 +63,16 @@ describe("6-max join + daily redeem", () => {
     const redeemAgain = await app.inject({
       method: "POST",
       url: "/v1/wallet/redeem",
-      payload: { playerId: "xch1alice", devAck: true },
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, devAck: true },
     });
     expect(redeemAgain.statusCode).toBe(429);
 
     const joinA = await app.inject({
       method: "POST",
       url: "/v1/tables/join",
-      payload: { playerId: "xch1alice", buyInMojos: "1000000", devAck: true },
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
     });
     expect(joinA.statusCode).toBe(200);
     const tableA = JSON.parse(joinA.body);
@@ -65,11 +82,12 @@ describe("6-max join + daily redeem", () => {
       true,
     );
 
-    tryRedeemDaily("xch1bob", 5_000_000n);
+    tryRedeemDaily(bob.session.playerId, 5_000_000n);
     const joinB = await app.inject({
       method: "POST",
       url: "/v1/tables/join",
-      payload: { playerId: "xch1bob", buyInMojos: "1000000", devAck: true },
+      headers: auth(bob.token),
+      payload: { playerId: bob.session.playerId, buyInMojos: "1000000", devAck: true },
     });
     expect(joinB.statusCode).toBe(200);
     const tableB = JSON.parse(joinB.body);
@@ -82,14 +100,19 @@ describe("6-max join + daily redeem", () => {
     const go = await app.inject({
       method: "POST",
       url: `/v1/tables/${tableB.tableId}/hands/go`,
-      payload: { playerId: "xch1alice" },
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId },
     });
     expect(go.statusCode).toBe(200);
     const dealt = JSON.parse(go.body);
-    const alice = dealt.hand.players.find((p: { playerId: string }) => p.playerId === "xch1alice");
-    const bob = dealt.hand.players.find((p: { playerId: string }) => p.playerId === "xch1bob");
-    expect(alice.holeCards).toHaveLength(2);
-    expect(bob.holeCards).toHaveLength(0);
+    const aliceHand = dealt.hand.players.find(
+      (p: { playerId: string }) => p.playerId === alice.session.playerId,
+    );
+    const bobHand = dealt.hand.players.find(
+      (p: { playerId: string }) => p.playerId === bob.session.playerId,
+    );
+    expect(aliceHand.holeCards).toHaveLength(2);
+    expect(bobHand.holeCards).toHaveLength(0);
 
     await app.close();
   });
@@ -97,25 +120,29 @@ describe("6-max join + daily redeem", () => {
   it("blocks withdraw until one hand per DAT token of buy-in is played", async () => {
     process.env.DAT_MIN_BUY_IN_MOJOS = "1000";
     const app = await buildApp();
-    tryRedeemDaily("xch1carol", 5_000_000n);
+    const carol = issueTestSession("xch1carol");
+    tryRedeemDaily(carol.session.playerId, 5_000_000n);
 
     const joined = JSON.parse(
       (
         await app.inject({
           method: "POST",
           url: "/v1/tables/join",
-          payload: { playerId: "xch1carol", buyInMojos: "1000", devAck: true },
+          headers: auth(carol.token),
+          payload: { playerId: carol.session.playerId, buyInMojos: "1000", devAck: true },
         })
       ).body,
     );
-    expect(joined.seats.find((s: { playerId: string }) => s.playerId === "xch1carol").handsRequired).toBe(
-      1,
-    );
+    expect(
+      joined.seats.find((s: { playerId: string }) => s.playerId === carol.session.playerId)
+        .handsRequired,
+    ).toBe(1);
 
     const blocked = await app.inject({
       method: "POST",
       url: "/v1/wallet/withdraw",
-      payload: { tableId: joined.tableId, playerId: "xch1carol", devAck: true },
+      headers: auth(carol.token),
+      payload: { tableId: joined.tableId, playerId: carol.session.playerId, devAck: true },
     });
     expect(blocked.statusCode).toBe(400);
     expect(JSON.parse(blocked.body).error).toMatch(/Play through/i);
@@ -123,7 +150,8 @@ describe("6-max join + daily redeem", () => {
     const go = await app.inject({
       method: "POST",
       url: `/v1/tables/${joined.tableId}/hands/go`,
-      payload: { playerId: "xch1carol" },
+      headers: auth(carol.token),
+      payload: { playerId: carol.session.playerId },
     });
     expect(go.statusCode).toBe(200);
     let body = JSON.parse(go.body);
@@ -131,13 +159,14 @@ describe("6-max join + daily redeem", () => {
       const actor = body.hand.players.find(
         (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
       );
-      if (!actor || actor.playerId !== "xch1carol") {
+      if (!actor || actor.playerId !== carol.session.playerId) {
         break;
       }
       const act = await app.inject({
         method: "POST",
         url: `/v1/tables/${joined.tableId}/hands/action`,
-        payload: { playerId: "xch1carol", action: "fold" },
+        headers: auth(carol.token),
+        payload: { playerId: carol.session.playerId, action: "fold" },
       });
       body = JSON.parse(act.body);
     }
@@ -146,9 +175,139 @@ describe("6-max join + daily redeem", () => {
     const allowed = await app.inject({
       method: "POST",
       url: "/v1/wallet/withdraw",
-      payload: { tableId: joined.tableId, playerId: "xch1carol", devAck: true },
+      headers: auth(carol.token),
+      payload: { tableId: joined.tableId, playerId: carol.session.playerId, devAck: true },
     });
     expect(allowed.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("rejects unauthenticated redeem, join, and hole-card peeking", async () => {
+    const app = await buildApp();
+    const alice = issueTestSession("xch1alice");
+    const bob = issueTestSession("xch1bob");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    tryRedeemDaily(bob.session.playerId, 5_000_000n);
+
+    const noAuthRedeem = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/redeem",
+      payload: { playerId: "xch1alice", devAck: true },
+    });
+    expect(noAuthRedeem.statusCode).toBe(401);
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/tables/join",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    const joined = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/tables/join",
+          headers: auth(bob.token),
+          payload: { playerId: bob.session.playerId, buyInMojos: "1000000", devAck: true },
+        })
+      ).body,
+    );
+
+    await app.inject({
+      method: "POST",
+      url: `/v1/tables/${joined.tableId}/hands/go`,
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId },
+    });
+
+    const spoofed = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/tables/${joined.tableId}?playerId=${encodeURIComponent(alice.session.playerId)}`,
+        })
+      ).body,
+    );
+    const spoofedAlice = spoofed.hand.players.find(
+      (p: { playerId: string }) => p.playerId === alice.session.playerId,
+    );
+    expect(spoofedAlice.holeCards).toHaveLength(0);
+
+    const bobView = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/tables/${joined.tableId}`,
+          headers: auth(bob.token),
+        })
+      ).body,
+    );
+    const aliceFromBob = bobView.hand.players.find(
+      (p: { playerId: string }) => p.playerId === alice.session.playerId,
+    );
+    const bobFromBob = bobView.hand.players.find(
+      (p: { playerId: string }) => p.playerId === bob.session.playerId,
+    );
+    expect(aliceFromBob.holeCards).toHaveLength(0);
+    expect(bobFromBob.holeCards).toHaveLength(2);
+
+    const stolenAction = await app.inject({
+      method: "POST",
+      url: `/v1/tables/${joined.tableId}/hands/action`,
+      headers: auth(bob.token),
+      payload: { playerId: alice.session.playerId, action: "fold" },
+    });
+    expect(stolenAction.statusCode).toBe(403);
+
+    const stolenJoin = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join",
+      headers: auth(bob.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(stolenJoin.statusCode).toBe(403);
+
+    await app.close();
+  });
+
+  it("issues a session only for a valid CHIP-0002 signature", async () => {
+    const app = await buildApp();
+    const address = "xch1sessiontester";
+    const challenge = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/session/challenge?address=${encodeURIComponent(address)}`,
+        })
+      ).body,
+    );
+    const signed = signChip0002ForTests(new Uint8Array(32).fill(4), challenge.message);
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/session",
+      payload: {
+        address,
+        nonce: challenge.nonce,
+        signature: signed.signature,
+        pubkey: signed.pubkey,
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    const body = JSON.parse(created.body);
+    expect(body.token).toBeTruthy();
+    expect(body.playerId).toMatch(/^pk_/);
+
+    const forged = await app.inject({
+      method: "POST",
+      url: "/v1/session",
+      payload: {
+        address,
+        nonce: challenge.nonce,
+        signature: "00".repeat(96),
+        pubkey: signed.pubkey,
+      },
+    });
+    expect(forged.statusCode).toBe(400);
     await app.close();
   });
 });
