@@ -2,6 +2,7 @@
 # Rebuild DAT POKER on an existing Amazon Linux beta host.
 # Run as root in Session Manager: sudo bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 set -euxo pipefail
+echo "=== DAT POKER redeploy.sh (git pull + rebuild). Wait for: beta redeploy ok ==="
 
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/dat-poker}"
 WEB_ROOT="${WEB_ROOT:-/usr/share/nginx/html}"

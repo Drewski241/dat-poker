@@ -12,6 +12,7 @@
 #   DAT_POKER_PUBLIC_IPV4=54.12.34.56
 #   CADDY_VERSION=2.9.1
 set -euo pipefail
+echo "=== DAT POKER enable-https.sh (Caddy + Let's Encrypt for ${DAT_POKER_DOMAIN:-sslip.io}) ==="
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "run as root: sudo bash $0" >&2
