@@ -333,6 +333,30 @@ button.secondary {
   border-radius: 8px;
 }
 
+.wc-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 8rem;
+  color: var(--muted);
+}
+
+.wc-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--muted);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: wc-spin 0.8s linear infinite;
+}
+
+@keyframes wc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .wc-uri {
   font-size: 0.65rem;
   max-height: 4rem;

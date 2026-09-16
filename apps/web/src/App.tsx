@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
 import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
@@ -9,6 +9,7 @@ import {
   beginWalletConnect,
   disconnectWallet,
   loadPlayerWallet,
+  mapWalletConnectError,
   restoreSession,
   signRedeemMessage,
   signWithdrawMessage,
@@ -42,6 +43,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const [session, setSession] = useState<WcSession | null>(null);
   const [wcUri, setWcUri] = useState<string | null>(null);
+  const [pairingOpen, setPairingOpen] = useState(false);
+  const pairingGen = useRef(0);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [datBalance, setDatBalance] = useState<string | null>(null);
   const [accountMojos, setAccountMojos] = useState<string | null>(null);
@@ -68,9 +71,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         setDatToken(dat);
         if (config.walletConnect) {
           setWcConfig(config.walletConnect);
-          const existing = await restoreSession(config.walletConnect.projectId);
-          if (existing) {
-            setSession(existing);
+          try {
+            const existing = await restoreSession(config.walletConnect.projectId);
+            if (existing) {
+              setSession(existing);
+            }
+          } catch {
+            /* Stale WalletConnect storage must not mark the API offline — Connect Sage still works. */
           }
         }
       } catch {
@@ -123,18 +130,55 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     return () => window.clearInterval(timer);
   }, [tableId, refreshTable]);
 
-  const connectSage = () =>
-    run("Opening WalletConnect…", async () => {
-      if (!wcConfig) throw new Error("WalletConnect not configured on API (.env WALLETCONNECT_PROJECT_ID)");
-      const { uri, approval } = await beginWalletConnect(wcConfig);
-      setWcUri(uri);
+  const cancelPairing = () => {
+    pairingGen.current += 1;
+    setPairingOpen(false);
+    setWcUri(null);
+    setBusy(false);
+    setStatus("");
+  };
+
+  const connectSage = () => {
+    if (!wcConfig) {
+      setError("WalletConnect not configured on API (.env WALLETCONNECT_PROJECT_ID)");
+      return;
+    }
+    const gen = ++pairingGen.current;
+    setBusy(true);
+    setError(null);
+    setWcUri(null);
+    setPairingOpen(true);
+    setStatus("Connecting to WalletConnect…");
+    void (async () => {
       try {
+        const { uri, approval } = await beginWalletConnect({
+          ...wcConfig,
+          onUri: (nextUri) => {
+            if (pairingGen.current !== gen) return;
+            setWcUri(nextUri);
+            setStatus("Scan the QR with Sage…");
+          },
+        });
+        if (pairingGen.current !== gen) return;
+        setWcUri(uri);
+        setStatus("Scan the QR with Sage…");
         const next = await approval();
+        if (pairingGen.current !== gen) return;
         setSession(next);
-      } finally {
+        setPairingOpen(false);
         setWcUri(null);
+        setStatus("");
+      } catch (e) {
+        if (pairingGen.current !== gen) return;
+        setError(mapWalletConnectError(e).message);
+        setPairingOpen(false);
+        setWcUri(null);
+        setStatus("");
+      } finally {
+        if (pairingGen.current === gen) setBusy(false);
       }
-    });
+    })();
+  };
 
   const disconnectSage = () =>
     run("Disconnecting…", async () => {
@@ -630,7 +674,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         </section>
       )}
 
-      {wcUri && <QrConnectModal uri={wcUri} onClose={() => setWcUri(null)} />}
+      {pairingOpen && (
+        <QrConnectModal uri={wcUri} status={status} onClose={cancelPairing} />
+      )}
 
       <footer>
         {isBeta ? (

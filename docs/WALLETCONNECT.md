@@ -77,9 +77,33 @@ pnpm dev:treasury  # terminal 2 — treasury offers for withdraw (see docs/TREAS
 pnpm dev:web    # terminal 3 — open http://localhost:5173
 ```
 
-> **Sage wallet:** Uses CHIP-0002 WalletConnect methods (`chip0002_getAssetBalance`, `chia_getAddress`, `chia_signMessageByAddress`). The Chia reference wallet `chia_logIn` / `chia_getWallets` RPCs are not used.
+### QR did not appear / `Failed to publish custom payload`
 
-> **Note:** Buy-in is **signed authorization + balance check** (Phase 2 alpha). On-chain CAT escrow/spend is planned next; no DAT leaves your wallet until `chia_send` is wired for treasury deposits.
+The QR is only drawn after WalletConnect returns a pairing URI. If
+`client.connect()` cannot publish that proposal to
+`wss://relay.walletconnect.com`, you see the Reown error
+`Failed to publish custom payload … tag:undefined` and the modal never
+gets a URI.
+
+That is a **relay / domain allowlist** failure, not a Sage scan failure.
+
+1. Reown Cloud → project → **Allowed domains** must include the exact
+   origin of the page (`https://datspiritpoker.com` and www).
+2. The web client waits for `relayer.confirmOnlineStateOrThrow()` before
+   `connect()`, drops inactive pairings (chia-gaming `forgetSessions`
+   equivalent), and retries once with `restartTransport`.
+3. Reload `/play` and click **Connect Sage** again.
+
+chia-gaming ([Chia-Network/chia-gaming](https://github.com/Chia-Network/chia-gaming)
+`front-end/src/constants/wallet-connect.ts`) documents WalletConnect for
+the **official Chia wallet** and Calpoker state channels
+(`chia_getWallets`, `chia_selectCoins`, `chia_createOfferForIds`). DAT
+Poker Sage pairing matches
+[xch-dev/sage-dapp-example](https://github.com/xch-dev/sage-dapp-example):
+`SignClient.init({ projectId, relayUrl, metadata })` then
+`client.connect({ requiredNamespaces, optionalNamespaces })` with CHIP-0002
+methods (`chip0002_getAssetBalance`, `chia_getAddress`,
+`chia_signMessageByAddress`).
 
 ## Development vs production
 

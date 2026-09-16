@@ -310,6 +310,28 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 
 If the page is still `http://` you will see a note that Sage needs HTTPS.
 
+If **Connect Sage** stays on “Connecting…” and never shows a QR, or the
+page shows `Failed to publish custom payload` / `tag:undefined`, the
+browser never reached the Reown relay. Fix:
+
+1. [Reown Cloud](https://cloud.reown.com/) → DAT Poker project → **Allowed
+   domains**. Add `https://datspiritpoker.com` and
+   `https://www.datspiritpoker.com` (exact origins, including `https://`).
+2. Reload `/play` and click **Connect Sage** again. The modal should show
+   a spinner, then the QR.
+3. Redeploy the web client so it waits for the relay before publishing:
+
+```bash
+sudo DAT_POKER_REPO_REF=cursor/walletconnect-qr-pairing-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+```
+
+chia-gaming’s GitHub WalletConnect path is for the official Chia light
+wallet + Calpoker state channels (`chia_selectCoins`,
+`chia_createOfferForIds`). Sage pairing follows
+[xch-dev/sage-dapp-example](https://github.com/xch-dev/sage-dapp-example)
+(CHIP-0002 methods + `wss://relay.walletconnect.com`). See
+[docs/WALLETCONNECT.md](./WALLETCONNECT.md).
+
 Withdraw to Sage needs a **separate treasury host** later
 ([docs/TREASURY.md](./TREASURY.md)). Do not enable Sage RPC on this EC2 box.
 
