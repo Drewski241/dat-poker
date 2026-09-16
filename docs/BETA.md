@@ -15,8 +15,8 @@ This Cloud Agent cannot click Launch in your account.
 | Piece | Role |
 |-------|------|
 | `t3.small` (2 GiB) | Room for Node + `pnpm` (prefer this over `t3.micro`) |
-| Elastic IP | Stable `http://EIP/` bookmark |
-| nginx `:80` / Caddy `:443` | Public website (`/` landing, `/play` table) + API |
+| Elastic IP | Stable public IPv4 (point `datpoker.com` here) |
+| nginx `:80` / Caddy `:443` | Public website (`https://datpoker.com/` and `/play`) + API |
 | systemd `dat-poker-api` | NLHE 6-max; house or humans |
 | Daily redeem | 5000 DAT / UTC day into the in-game table account |
 | `VITE_APP_STAGE=beta` | Yellow beta banner on Home and Play |
@@ -244,9 +244,10 @@ for `YOUR-ELASTIC-IP-WITH-DASHES.sslip.io` (example: `54-12-34-56.sslip.io`).
 sudo bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 ```
 
-The script prints `Open https://….sslip.io/`. Bookmark **that** URL (plain
-`https`, no port). That is the website testers visit. The old `http://THAT_IP/`
-bookmark will stop working because nginx is stopped so Caddy can bind port 80.
+The script prints `Open https://….sslip.io/`. Bookmark **that** URL for now
+(plain `https`, no port). The old `http://THAT_IP/` bookmark will stop working
+because nginx is stopped so Caddy can bind port 80. Testers should get
+**https://datpoker.com/** once you [point the domain at this box](#website-address-datpokercom).
 
 If it waits two minutes and fails, EC2 → instance → **Security** tab →
 inbound must include **HTTPS TCP 443** from `0.0.0.0/0` (and HTTP 80 still,
@@ -256,13 +257,6 @@ for the certificate challenge). Then:
 sudo journalctl -u caddy -n 80 --no-pager
 ```
 
-To use a real domain instead: point a DNS **A** record at the Elastic IP,
-wait for DNS, then:
-
-```bash
-sudo DAT_POKER_DOMAIN=poker.example.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
-```
-
 ### 3. WalletConnect Cloud project
 
 1. Open [Reown Cloud](https://cloud.reown.com/) (WalletConnect) in the laptop
@@ -270,7 +264,8 @@ sudo DAT_POKER_DOMAIN=poker.example.com bash /opt/dat-poker/deploy/aws-ec2/enabl
 2. **Create** a project. Name: `DAT Poker beta`.
 3. Copy the **Project ID** (a long hex string).
 4. If the project has a website / domain field, paste
-   `https://YOUR-DASHES.sslip.io` (the same hostname Caddy printed).
+   `https://datpoker.com` (add `https://www.datpoker.com` too). Keep the
+   sslip.io origin until DNS is switched, then you can drop it.
 
 ### 4. Copy the DAT CAT asset ID from Sage
 
@@ -302,8 +297,8 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 
 ### 6. Pair Sage in the laptop browser
 
-1. Open **`https://YOUR-DASHES.sslip.io/`** (not `http://IP`). You should see
-   the DAT Poker website. Click **Play the game** (or open `/play`).
+1. Open **`https://datpoker.com/`** once DNS is pointed here (or the
+   `https://YOUR-DASHES.sslip.io/` bookmark until then). Click **Play the game**.
 2. Click **Connect Sage (WalletConnect)**.
 3. Scan the QR with Sage (or paste the URI in Sage desktop).
 4. Approve the session in Sage.
@@ -318,25 +313,86 @@ If the page is still `http://` you will see a note that Sage needs HTTPS.
 Withdraw to Sage needs a **separate treasury host** later
 ([docs/TREASURY.md](./TREASURY.md)). Do not enable Sage RPC on this EC2 box.
 
+## Website address (datpoker.com)
+
+Testers should open **https://datpoker.com/** — not the Elastic IP and not
+`sslip.io`. `datpoker.com` is already registered (Cloudflare Registrar,
+nameservers `paul.ns.cloudflare.com` / `zoe.ns.cloudflare.com`). Public DNS
+currently points at `49.13.227.46`. Change those A records to this box’s
+Elastic IP.
+
+This Cloud Agent cannot click Cloudflare or AWS for you.
+
+### 1. Copy the Elastic IP
+
+1. [EC2 → Elastic IPs](https://console.aws.amazon.com/ec2/home#Addresses:)
+2. The **Allocated IPv4 address** on the row associated with `dat-poker-beta`
+   is four numbers with dots. Copy it.
+
+### 2. Point Cloudflare at that address
+
+1. Open [Cloudflare Dashboard](https://dash.cloudflare.com/) in the laptop
+   browser. Sign in to the account that owns `datpoker.com`.
+2. Click **datpoker.com**.
+3. Left sidebar: **DNS** → **Records**.
+4. Edit the **A** record whose name is `@` (or `datpoker.com`):
+   - IPv4 address: paste the Elastic IP
+   - Proxy status: **DNS only** (grey cloud, not orange). Orange proxy breaks
+     Let’s Encrypt on this host.
+   - Save
+5. Same for **www** (A record → same Elastic IP → DNS only). If www is
+   missing: **Add record** → A → name `www` → Elastic IP → DNS only → Save.
+
+Wait a minute. On your laptop:
+
+```bash
+dig +short datpoker.com
+dig +short www.datpoker.com
+```
+
+Both should print the Elastic IP, not `49.13.227.46`.
+
+### 3. Get a certificate for datpoker.com
+
+Pull the new scripts, then in Session Manager:
+
+```bash
+sudo DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+sudo DAT_POKER_DOMAIN=datpoker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
+```
+
+The script waits until DNS matches the Elastic IP, then asks Let’s Encrypt
+for `datpoker.com` and `www.datpoker.com`. It prints `Open https://datpoker.com/`.
+
+If www is not ready yet:
+
+```bash
+sudo DAT_POKER_DOMAIN=datpoker.com DAT_POKER_WWW=0 bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
+```
+
+Add `https://datpoker.com` (and www) to the Reown domain allowlist.
+
+Later `enable-https.sh` runs keep `datpoker.com` from `/etc/caddy/caddy.env`
+unless you pass a different `DAT_POKER_DOMAIN`.
+
 ## Invite testers
 
-Share the **website**, not the Elastic IP and not Session Manager.
+Share **https://datpoker.com/** (or `https://www.datpoker.com/`). They click
+**Play the game**.
 
-On the box, print the URL:
+On the box, confirm what Caddy is serving:
 
 ```bash
 bash /opt/dat-poker/deploy/aws-ec2/public-url.sh
 ```
 
-You want something like `https://54-12-34-56.sslip.io/` (your Elastic IP with
-dots turned into dashes). Send testers that Home page. They click **Play the
-game**. If Sage pairing fails, add the same origin to the Reown project domain
-allowlist.
+You want `https://datpoker.com/`. If it still prints `sslip.io`, DNS is not
+switched yet — finish [Website address](#website-address-datpokercom) first.
 
 Message you can paste:
 
-> You’re invited to the DAT Poker closed beta. Open https://YOUR-DASHES.sslip.io/
-> — click Play the game, connect Sage, redeem 5000 DAT for today, then buy in
+> You’re invited to the DAT Poker closed beta. Open https://datpoker.com/ —
+> click Play the game, connect Sage, redeem 5000 DAT for today, then buy in
 > at the 6-max table. This is software testing, not a real-money casino.
 > Tables reset if the server restarts.
 
@@ -344,8 +400,8 @@ Keep the group small and trusted. The host is a single `t3.small`, tables are
 in memory, there is no KYC, and DAT does not leave Sage until on-chain escrow
 exists. Do not post the URL on public forums.
 
-If you associate a **new** Elastic IP, the `sslip.io` hostname changes. Re-run
-`enable-https.sh`, update the Reown allowlist, and send testers the new URL.
+If you associate a **new** Elastic IP, update the Cloudflare A records to the
+new address, then re-run `enable-https.sh` with `DAT_POKER_DOMAIN=datpoker.com`.
 
 Load this landing page onto the box after you push:
 

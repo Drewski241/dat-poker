@@ -159,6 +159,27 @@ proc = subprocess.run(
 out = proc.stdout
 assert "https://54-12-34-56.sslip.io/" in out, out
 assert "https://54-12-34-56.sslip.io/play" in out, out
+assert "DAT_POKER_DOMAIN=datpoker.com" in out, out
+print(out.strip())
+PY
+
+python3 - <<'PY' && ok "public-url.sh prints https://datpoker.com/" || bad "public-url.sh datpoker.com"
+import os
+import subprocess
+from pathlib import Path
+
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "public-url.sh")
+proc = subprocess.run(
+    ["bash", str(script)],
+    check=True,
+    capture_output=True,
+    text=True,
+    env={**os.environ, "DAT_POKER_DOMAIN": "datpoker.com"},
+)
+out = proc.stdout
+assert "https://datpoker.com/" in out, out
+assert "https://datpoker.com/play" in out, out
+assert "sslip.io" not in out, out
 print(out.strip())
 PY
 
@@ -181,8 +202,29 @@ assert proc.stdout.strip() == "54-12-34-56.sslip.io", proc.stdout
 print(proc.stdout.strip())
 PY
 
+python3 - <<'PY' && ok "enable-https.sh wait_for_dns_a resolves localhost" || bad "wait_for_dns_a"
+import os
+import subprocess
+from pathlib import Path
+
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "enable-https.sh").read_text()
+start = script.index("dns_a() {")
+end = script.index("\ninstall_caddy() {")
+fn = script[start:end]
+proc = subprocess.run(
+    ["bash", "-c", fn + "\nwait_for_dns_a localhost 127.0.0.1 5\n"],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+assert proc.returncode == 0, proc.stderr + proc.stdout
+assert "DNS localhost -> 127.0.0.1" in proc.stdout, proc.stdout
+print(proc.stdout.strip())
+PY
+
 if grep -q 'reverse_proxy 127.0.0.1:4000' "$DIR/Caddyfile" \
-  && grep -q 'handle /v1/' "$DIR/Caddyfile"; then
+  && grep -q 'handle /v1/' "$DIR/Caddyfile" \
+  && grep -q 'DAT_POKER_SITE' "$DIR/Caddyfile"; then
   ok "Caddyfile proxies /health and /v1 to the API"
 else
   bad "Caddyfile reverse-proxy"
@@ -321,7 +363,7 @@ fi
 
 if grep -q 'Invite testers' "$ROOT/docs/BETA.md" \
   && grep -q 'public-url.sh' "$ROOT/docs/BETA.md" \
-  && grep -q 'Play the game' "$ROOT/docs/BETA.md"; then
+  && grep -q 'https://datpoker.com/' "$ROOT/docs/BETA.md"; then
   ok "docs/BETA.md tells you which website URL to share"
 else
   bad "docs/BETA.md invite testers"
@@ -335,10 +377,18 @@ else
 fi
 
 if grep -q 'pageIsHttp' "$ROOT/apps/web/src/App.tsx" \
-  && grep -q 'sslip.io' "$ROOT/apps/web/src/App.tsx"; then
+  && grep -q 'datpoker.com' "$ROOT/apps/web/src/App.tsx"; then
   ok "web client warns when Sage is opened over HTTP"
 else
   bad "web HTTP Sage warning"
+fi
+
+if grep -q 'Website address' "$ROOT/docs/BETA.md" \
+  && grep -q 'dash.cloudflare.com' "$ROOT/docs/BETA.md" \
+  && grep -q 'DAT_POKER_DOMAIN=datpoker.com' "$ROOT/docs/BETA.md"; then
+  ok "docs/BETA.md points testers at datpoker.com via Cloudflare DNS"
+else
+  bad "docs/BETA.md datpoker.com"
 fi
 
 if grep -q 'VITE_APP_STAGE' "$ROOT/apps/web/src/App.tsx" \
