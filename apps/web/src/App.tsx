@@ -85,7 +85,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [hand, setHand] = useState<HandState | null>(null);
   const [handResult, setHandResult] = useState<HandResult | null>(null);
   const [bigWin, setBigWin] = useState<BigWinOverlay | null>(null);
-  const luckyIrishHandId = useRef<string | null>(null);
+  const celebratedHandId = useRef<string | null>(null);
   const lastBigWin = useRef<BigWinOverlay | null>(null);
   const [cardPreview, setCardPreview] = useState(false);
   const [status, setStatus] = useState<string>("");
@@ -538,8 +538,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   useEffect(() => {
     if (!handResult || !playerId) return;
     if (!isLuckyIrishWin({ playerId, result: handResult, bigBlindMojos })) return;
-    if (luckyIrishHandId.current === handResult.handId) return;
-    luckyIrishHandId.current = handResult.handId;
+    if (celebratedHandId.current === handResult.handId) return;
+    celebratedHandId.current = handResult.handId;
     const overlay = pickBigWinOverlay(lastBigWin.current);
     lastBigWin.current = overlay;
     setBigWin(overlay);
