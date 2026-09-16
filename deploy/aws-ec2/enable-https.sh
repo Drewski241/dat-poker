@@ -113,4 +113,5 @@ if [[ "$ok" -ne 1 ]]; then
 fi
 
 echo "Open https://${DOMAIN}/ in the laptop browser (not http://IP)."
+echo "Testers land on the website; Play is https://${DOMAIN}/play"
 echo "Static files remain in ${WEB_ROOT}."

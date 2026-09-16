@@ -133,7 +133,7 @@ assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
 assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
-for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh; do
+for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh public-url.sh; do
   [[ -s "$DIR/$f" ]] && ok "$f exists" || bad "$f missing"
 done
 
@@ -141,6 +141,26 @@ bash -n "$DIR/console-user-data.sh" && ok "console-user-data.sh bash syntax" || 
 bash -n "$DIR/redeploy.sh" && ok "redeploy.sh bash syntax" || bad "redeploy.sh bash syntax"
 bash -n "$DIR/enable-https.sh" && ok "enable-https.sh bash syntax" || bad "enable-https.sh bash syntax"
 bash -n "$DIR/enable-sage.sh" && ok "enable-sage.sh bash syntax" || bad "enable-sage.sh bash syntax"
+bash -n "$DIR/public-url.sh" && ok "public-url.sh bash syntax" || bad "public-url.sh bash syntax"
+
+python3 - <<'PY' && ok "public-url.sh prints HTTPS home and /play" || bad "public-url.sh output"
+import os
+import subprocess
+from pathlib import Path
+
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "public-url.sh")
+proc = subprocess.run(
+    ["bash", str(script)],
+    check=True,
+    capture_output=True,
+    text=True,
+    env={**os.environ, "DAT_POKER_DOMAIN": "54-12-34-56.sslip.io"},
+)
+out = proc.stdout
+assert "https://54-12-34-56.sslip.io/" in out, out
+assert "https://54-12-34-56.sslip.io/play" in out, out
+print(out.strip())
+PY
 
 python3 - <<'PY' && ok "enable-https.sh maps Elastic IP to sslip.io" || bad "sslip.io domain helper"
 import os
@@ -282,6 +302,36 @@ if grep -q 'enable-https.sh' "$ROOT/docs/BETA.md" \
   ok "docs/BETA.md covers HTTPS + Sage WalletConnect"
 else
   bad "docs/BETA.md Sage HTTPS"
+fi
+
+if grep -q 'try_files $uri $uri/ /index.html' "$DIR/nginx.conf" \
+  && grep -q 'try_files {path} /index.html' "$DIR/Caddyfile"; then
+  ok "nginx and Caddy fall back to the SPA for /play"
+else
+  bad "SPA try_files for /play"
+fi
+
+if grep -q 'Play the game' "$ROOT/apps/web/src/Landing.tsx" \
+  && grep -q 'pathToPage' "$ROOT/apps/web/src/Root.tsx" \
+  && grep -q '/play' "$ROOT/apps/web/src/site-route.ts"; then
+  ok "web client has a public landing site and /play table"
+else
+  bad "web landing /play"
+fi
+
+if grep -q 'Invite testers' "$ROOT/docs/BETA.md" \
+  && grep -q 'public-url.sh' "$ROOT/docs/BETA.md" \
+  && grep -q 'Play the game' "$ROOT/docs/BETA.md"; then
+  ok "docs/BETA.md tells you which website URL to share"
+else
+  bad "docs/BETA.md invite testers"
+fi
+
+if grep -q 'name="description"' "$ROOT/apps/web/index.html" \
+  && grep -q 'noindex' "$ROOT/apps/web/index.html"; then
+  ok "index.html has share meta tags and noindex for closed beta"
+else
+  bad "index.html meta"
 fi
 
 if grep -q 'pageIsHttp' "$ROOT/apps/web/src/App.tsx" \

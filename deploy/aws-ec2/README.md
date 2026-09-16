@@ -21,7 +21,8 @@ the Apache tutorial.
 | `enable-https.sh` | Caddy + Let’s Encrypt (`sslip.io` or your domain) so Sage can pair |
 | `enable-sage.sh` | Write WalletConnect project ID + DAT asset id, restart API |
 | `Caddyfile` / `caddy.service` | TLS reverse proxy in front of the API + static UI |
-| `landing.html` | Static DAT POKER page used by the nginx kit |
+| `landing.html` | Static DAT POKER page used by the nginx kit **before** the SPA build is copied |
+| `public-url.sh` | Print the HTTPS Home / Play URLs to share with testers |
 | `nginx.conf` | Port 80 → static UI + `/health` and `/v1` to the API |
 | `dat-poker-api.service` | systemd unit for the REST API |
 | `cloudformation.yaml` | Optional first-server stack |

@@ -47,6 +47,9 @@ importers:
       vite:
         specifier: ^6.3.5
         version: 6.4.3(@types/node@22.19.19)(tsx@4.22.4)
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/node@22.19.19)(tsx@4.22.4)
 
   packages/chia-bridge:
     dependencies:

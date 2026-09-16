@@ -16,10 +16,10 @@ This Cloud Agent cannot click Launch in your account.
 |-------|------|
 | `t3.small` (2 GiB) | Room for Node + `pnpm` (prefer this over `t3.micro`) |
 | Elastic IP | Stable `http://EIP/` bookmark |
-| nginx `:80` | Static web UI + `/health` and `/v1` to the API |
+| nginx `:80` / Caddy `:443` | Public website (`/` landing, `/play` table) + API |
 | systemd `dat-poker-api` | NLHE 6-max; house or humans |
 | Daily redeem | 5000 DAT / UTC day into the in-game table account |
-| `VITE_APP_STAGE=beta` | Yellow beta banner in the UI |
+| `VITE_APP_STAGE=beta` | Yellow beta banner on Home and Play |
 | Session Manager | Same browser shell you used for the tutorial (recreate the IAM role) |
 
 Sage WalletConnect needs **HTTPS**. HTTP on the Elastic IP is enough for
@@ -165,8 +165,9 @@ in your IdeaPad terminal.
    curl -sS http://127.0.0.1:4000/health
    ```
 7. On your **laptop** browser (not inside Session Manager), open the bookmark
-   `http://THAT_IP/`. You should see **DAT Poker beta** and the yellow banner.
-   Buy in vs house with **dev buy-in** (no DAT CAT required).
+   `http://THAT_IP/`. You should see the **DAT Poker** website (Home) with
+   **Play the game**. Click that to sit at a table. Buy in vs house with
+   **dev buy-in** (no DAT CAT required) until HTTPS + Sage is on.
 
 If the laptop browser times out but `curl` in Session Manager works, the
 security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
@@ -244,8 +245,8 @@ sudo bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 ```
 
 The script prints `Open https://….sslip.io/`. Bookmark **that** URL (plain
-`https`, no port). The old `http://THAT_IP/` bookmark will stop working
-because nginx is stopped so Caddy can bind port 80.
+`https`, no port). That is the website testers visit. The old `http://THAT_IP/`
+bookmark will stop working because nginx is stopped so Caddy can bind port 80.
 
 If it waits two minutes and fails, EC2 → instance → **Security** tab →
 inbound must include **HTTPS TCP 443** from `0.0.0.0/0` (and HTTP 80 still,
@@ -301,7 +302,8 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 
 ### 6. Pair Sage in the laptop browser
 
-1. Open **`https://YOUR-DASHES.sslip.io/`** (not `http://IP`).
+1. Open **`https://YOUR-DASHES.sslip.io/`** (not `http://IP`). You should see
+   the DAT Poker website. Click **Play the game** (or open `/play`).
 2. Click **Connect Sage (WalletConnect)**.
 3. Scan the QR with Sage (or paste the URI in Sage desktop).
 4. Approve the session in Sage.
@@ -315,6 +317,41 @@ If the page is still `http://` you will see a note that Sage needs HTTPS.
 
 Withdraw to Sage needs a **separate treasury host** later
 ([docs/TREASURY.md](./TREASURY.md)). Do not enable Sage RPC on this EC2 box.
+
+## Invite testers
+
+Share the **website**, not the Elastic IP and not Session Manager.
+
+On the box, print the URL:
+
+```bash
+bash /opt/dat-poker/deploy/aws-ec2/public-url.sh
+```
+
+You want something like `https://54-12-34-56.sslip.io/` (your Elastic IP with
+dots turned into dashes). Send testers that Home page. They click **Play the
+game**. If Sage pairing fails, add the same origin to the Reown project domain
+allowlist.
+
+Message you can paste:
+
+> You’re invited to the DAT Poker closed beta. Open https://YOUR-DASHES.sslip.io/
+> — click Play the game, connect Sage, redeem 5000 DAT for today, then buy in
+> at the 6-max table. This is software testing, not a real-money casino.
+> Tables reset if the server restarts.
+
+Keep the group small and trusted. The host is a single `t3.small`, tables are
+in memory, there is no KYC, and DAT does not leave Sage until on-chain escrow
+exists. Do not post the URL on public forums.
+
+If you associate a **new** Elastic IP, the `sslip.io` hostname changes. Re-run
+`enable-https.sh`, update the Reown allowlist, and send testers the new URL.
+
+Load this landing page onto the box after you push:
+
+```bash
+sudo DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+```
 
 ## Stop spending credits
 

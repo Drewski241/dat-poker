@@ -13,7 +13,8 @@ DAT POKER is a **pnpm monorepo** (Node.js ≥ 20, pnpm 9.15 via `packageManager`
 | REST API (`@dat-poker/api`) | `pnpm dev:api` | `http://localhost:4000` |
 | WebSocket gateway (`@dat-poker/gateway`) | `pnpm dev:gateway` | `ws://localhost:4100/ws` |
 
-Libraries under `packages/*` are built/tested via workspace filters; there is no web client in-repo yet.
+Libraries under `packages/*` are built/tested via workspace filters. The public
+website is `apps/web` (`pnpm dev:web`, `/` landing and `/play` table).
 
 ### Environment
 
