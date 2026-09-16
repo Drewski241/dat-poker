@@ -71,7 +71,7 @@ function sagePlaythroughBlock(table: NlheTableEngine, playerId: string): string 
     return "No DAT is unlocked for withdraw yet. Buy in and complete hands — each hand unlocks 1 DAT.";
   }
   if (view.playthroughRemaining <= 0) {
-    return "No DAT left to withdraw.";
+    return null;
   }
   return `Play through ${view.playthroughRemaining} more hand(s) to unlock DAT (${view.handsPlayed}/${view.handsRequired}). Each completed hand unlocks 1 DAT for withdraw.`;
 }
@@ -316,8 +316,11 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       }
     }
 
-    const withdrawMojos = cashOutToAccount ? stack : unlockedWithdrawMojos(table, playerId);
-    if (!cashOutToAccount && withdrawMojos <= 0n) {
+    const ptNow = getPlaythrough(playerId);
+    const requiredNow = playthroughHandsRequired(ptNow.poolMojos);
+    const fullyUnlocked = requiredNow > 0 && ptNow.handsPlayed >= requiredNow;
+    const withdrawMojos = cashOutToAccount || fullyUnlocked ? stack : unlockedWithdrawMojos(table, playerId);
+    if (!cashOutToAccount && !fullyUnlocked && withdrawMojos <= 0n) {
       return reply.status(400).send({
         error: sagePlaythroughBlock(table, playerId) ?? "Nothing unlocked",
       });
@@ -393,21 +396,18 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     let remainingStack = stack;
     let stillSeated = true;
     try {
-      if (cashOutToAccount) {
+      if (cashOutToAccount || fullyUnlocked) {
         table.cashOutPlayer(playerId);
         remainingStack = 0n;
         stillSeated = false;
+        if (!cashOutToAccount) {
+          clearPlaythrough(playerId);
+        }
       } else {
         const debit = table.debitStack(playerId, withdrawMojos);
         remainingStack = debit.remaining;
         stillSeated = debit.remaining > 0n;
-        const pt = getPlaythrough(playerId);
-        const required = playthroughHandsRequired(pt.poolMojos);
-        if (required > 0 && pt.handsPlayed >= required) {
-          clearPlaythrough(playerId);
-        } else {
-          consumePlaythroughWithdraw(playerId, withdrawMojos);
-        }
+        consumePlaythroughWithdraw(playerId, withdrawMojos);
         if (stillSeated) {
           table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
         }
