@@ -72,6 +72,7 @@ a.cta {
 
 a.cta:hover {
   filter: brightness(1.05);
+  color: #0a0f12;
 }
 
 .how-to,
@@ -86,7 +87,7 @@ a.cta:hover {
   margin: 0.45rem 0;
 }
 
-.landing a {
+.landing footer a {
   color: var(--accent);
 }
 
