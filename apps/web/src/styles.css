@@ -462,3 +462,179 @@ button.secondary {
 .feedback-form input[type="file"] {
   color: var(--muted);
 }
+
+.lucky-irish {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.lucky-irish-rainbow {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 18%;
+  height: 42%;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  background: conic-gradient(
+    from 180deg at 50% 100%,
+    #e74c3c 0deg,
+    #f39c12 40deg,
+    #f1c40f 80deg,
+    #27ae60 120deg,
+    #3498db 160deg,
+    #8e44ad 200deg,
+    transparent 240deg
+  );
+  opacity: 0.35;
+  mask-image: radial-gradient(ellipse at 50% 100%, #000 42%, transparent 70%);
+  animation: lucky-rainbow 4.2s ease-out both;
+}
+
+.lucky-irish-runner {
+  position: absolute;
+  bottom: 12%;
+  left: 0;
+  width: 10rem;
+  animation: lucky-run 4s cubic-bezier(0.22, 0.7, 0.35, 1) both;
+}
+
+.lucky-irish-svg {
+  width: 10rem;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.45));
+}
+
+.lucky-irish-stride {
+  transform-origin: 88px 118px;
+  animation: lucky-stride 0.28s ease-in-out infinite alternate;
+}
+
+.lucky-irish-pot-arm {
+  transform-origin: 100px 88px;
+  animation: lucky-pour 0.7s ease-in-out infinite alternate;
+}
+
+.lucky-irish-spill {
+  position: absolute;
+  right: 0.35rem;
+  top: 6.1rem;
+  width: 1px;
+  height: 1px;
+}
+
+.lucky-coin {
+  position: absolute;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #fff6b5, #ffd24a 45%, #c9a227);
+  box-shadow: inset 0 -1px 0 #8a6d12;
+  animation-name: lucky-coin;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+  animation-fill-mode: forwards;
+}
+
+@keyframes lucky-run {
+  0% {
+    transform: translateX(-12rem) translateY(8px);
+  }
+  12% {
+    transform: translateX(8vw) translateY(-14px);
+  }
+  24% {
+    transform: translateX(22vw) translateY(4px);
+  }
+  40% {
+    transform: translateX(40vw) translateY(-16px);
+  }
+  56% {
+    transform: translateX(58vw) translateY(2px);
+  }
+  72% {
+    transform: translateX(78vw) translateY(-12px);
+  }
+  100% {
+    transform: translateX(112vw) translateY(6px);
+  }
+}
+
+@keyframes lucky-stride {
+  from {
+    transform: rotate(-12deg);
+  }
+  to {
+    transform: rotate(18deg);
+  }
+}
+
+@keyframes lucky-pour {
+  from {
+    transform: rotate(-8deg);
+  }
+  to {
+    transform: rotate(18deg);
+  }
+}
+
+@keyframes lucky-coin {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(0.6) rotate(220deg);
+  }
+}
+
+@keyframes lucky-rainbow {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lucky-irish-runner {
+    animation: lucky-run-static 4.2s ease-out both;
+  }
+
+  .lucky-irish-stride,
+  .lucky-irish-pot-arm,
+  .lucky-coin,
+  .lucky-irish-rainbow {
+    animation: none;
+  }
+
+  .lucky-irish-rainbow {
+    opacity: 0.25;
+  }
+}
+
+@keyframes lucky-run-static {
+  0% {
+    opacity: 0;
+    transform: translateX(calc(50vw - 5rem));
+  }
+  12% {
+    opacity: 1;
+    transform: translateX(calc(50vw - 5rem));
+  }
+  88% {
+    opacity: 1;
+    transform: translateX(calc(50vw - 5rem));
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(calc(50vw - 5rem));
+  }
+}

@@ -3,6 +3,8 @@ import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-po
 import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { AuthPanel } from "./AuthPanel.js";
 import { BetSlider } from "./components/BetSlider.js";
+import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
+import { isLuckyIrishWin } from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import { SiteNav } from "./SiteNav.js";
 import type { SitePage } from "./site-route.js";
@@ -74,6 +76,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [hand, setHand] = useState<HandState | null>(null);
   const [handResult, setHandResult] = useState<HandResult | null>(null);
+  const [luckyIrish, setLuckyIrish] = useState(false);
+  const luckyIrishHandId = useRef<string | null>(null);
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -509,8 +513,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     betRange.canBetOrRaise,
   ]);
 
+  useEffect(() => {
+    if (window.location.hash === "#lucky") {
+      setLuckyIrish(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!handResult || !playerId) return;
+    if (!isLuckyIrishWin({ playerId, result: handResult, bigBlindMojos })) return;
+    if (luckyIrishHandId.current === handResult.handId) return;
+    luckyIrishHandId.current = handResult.handId;
+    setLuckyIrish(true);
+  }, [handResult, playerId, bigBlindMojos]);
+
   return (
     <div className="app">
+      {luckyIrish && <LuckyIrishWin onFinished={() => setLuckyIrish(false)} />}
       {isBeta && (
         <div className="beta-banner" role="status">
           Public beta — software under development. Open tables reset on restart;
