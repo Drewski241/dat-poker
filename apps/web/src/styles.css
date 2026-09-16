@@ -823,6 +823,7 @@ button.secondary {
   width: 7.5rem;
   height: 12.5rem;
   transform-origin: 50% 100%;
+  animation: hunter-knock 0.75s cubic-bezier(0.18, 0.2, 0.45, 1.05) 1.45s both;
 }
 
 .hunter-win-post {
@@ -842,8 +843,6 @@ button.secondary {
   bottom: 4.6rem;
   width: 7.2rem;
   margin-left: -3.6rem;
-  transform-origin: 50% 100%;
-  animation: hunter-knock 0.7s cubic-bezier(0.2, 0.15, 0.45, 1.15) 1.45s both;
 }
 
 .hunter-win-bullseye {
@@ -913,13 +912,13 @@ button.secondary {
 
 @keyframes hunter-knock {
   0% {
-    transform: rotate(0deg) translateY(0);
+    transform: rotate(0deg);
   }
-  28% {
-    transform: rotate(-12deg) translateY(-8px);
+  22% {
+    transform: rotate(-14deg);
   }
   100% {
-    transform: rotate(-78deg) translate(18px, 42px);
+    transform: rotate(82deg) translate(12px, 8px);
   }
 }
 
@@ -954,9 +953,9 @@ button.secondary {
     display: none;
   }
 
-  .hunter-win-target {
+  .hunter-win-target-wrap {
     animation: none;
-    transform: rotate(-78deg) translate(18px, 42px);
+    transform: rotate(82deg) translate(12px, 8px);
   }
 
   .hunter-win-sign {
