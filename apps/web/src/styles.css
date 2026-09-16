@@ -760,3 +760,208 @@ button.secondary {
     transform: translateX(calc(50vw - 5rem));
   }
 }
+
+.hunter-win {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.hunter-win-stage {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 14%;
+  height: 14rem;
+}
+
+.hunter-win-hunter {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 10rem;
+  animation: hunter-step-in 0.45s ease-out both;
+}
+
+.hunter-win-svg {
+  width: 10rem;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.45));
+}
+
+.hunter-win-muzzle {
+  position: absolute;
+  right: 0.15rem;
+  top: 5.15rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff6b5 0%, #f39c12 40%, transparent 70%);
+  opacity: 0;
+  animation: hunter-muzzle 0.35s ease-out 0.42s both;
+}
+
+.hunter-win-shot {
+  position: absolute;
+  left: 9.4rem;
+  top: 5.35rem;
+  width: 1.15rem;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fff 0%, #ffd24a 55%, transparent 100%);
+  box-shadow: 0 0 10px #ffe566;
+  animation: hunter-shot 1.05s cubic-bezier(0.15, 0.7, 0.2, 1) 0.45s both;
+}
+
+.hunter-win-target-wrap {
+  position: absolute;
+  right: 6%;
+  bottom: 0;
+  width: 7.5rem;
+  height: 12.5rem;
+  transform-origin: 50% 100%;
+}
+
+.hunter-win-post {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0.7rem;
+  height: 5.2rem;
+  margin-left: -0.35rem;
+  background: #6b4f2a;
+  border-radius: 3px;
+}
+
+.hunter-win-target {
+  position: absolute;
+  left: 50%;
+  bottom: 4.6rem;
+  width: 7.2rem;
+  margin-left: -3.6rem;
+  transform-origin: 50% 100%;
+  animation: hunter-knock 0.7s cubic-bezier(0.2, 0.15, 0.45, 1.15) 1.45s both;
+}
+
+.hunter-win-bullseye {
+  width: 7.2rem;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.4));
+}
+
+.hunter-win-sign {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%) scale(0.4) rotate(-8deg);
+  opacity: 0;
+  padding: 0.85rem 1.4rem;
+  background: #c9a227;
+  color: #1a1208;
+  font-size: 1.85rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  border-radius: 8px;
+  border: 4px solid #6b4f12;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  animation: hunter-sign 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) 1.85s both;
+}
+
+@keyframes hunter-step-in {
+  from {
+    opacity: 0;
+    transform: translateX(-2.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes hunter-muzzle {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
+@keyframes hunter-shot {
+  0% {
+    opacity: 0;
+    transform: translateX(0) scaleX(0.4);
+  }
+  8% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(calc(100vw - 22rem)) scaleX(1.6);
+  }
+}
+
+@keyframes hunter-knock {
+  0% {
+    transform: rotate(0deg) translateY(0);
+  }
+  28% {
+    transform: rotate(-12deg) translateY(-8px);
+  }
+  100% {
+    transform: rotate(-78deg) translate(18px, 42px);
+  }
+}
+
+@keyframes hunter-sign {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.4) rotate(-12deg);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.08) rotate(3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1) rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hunter-win-hunter,
+  .hunter-win-muzzle,
+  .hunter-win-shot {
+    animation: none;
+  }
+
+  .hunter-win-hunter {
+    opacity: 1;
+  }
+
+  .hunter-win-shot,
+  .hunter-win-muzzle {
+    display: none;
+  }
+
+  .hunter-win-target {
+    animation: none;
+    transform: rotate(-78deg) translate(18px, 42px);
+  }
+
+  .hunter-win-sign {
+    animation: none;
+    opacity: 1;
+    transform: translateX(-50%) scale(1) rotate(0deg);
+  }
+}

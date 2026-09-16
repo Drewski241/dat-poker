@@ -37,3 +37,15 @@ export function isLuckyIrishWin(params: {
   const shown = result.shown?.find((row) => row.playerId === playerId);
   return Boolean(shown && LUCKY_IRISH_CATEGORIES.has(shown.category));
 }
+
+export type BigWinOverlay = "irish" | "hunter";
+
+/** Alternate overlays so consecutive big wins are not the same graphic. */
+export function pickBigWinOverlay(
+  previous: BigWinOverlay | null,
+  random: () => number = Math.random,
+): BigWinOverlay {
+  if (previous === "irish") return "hunter";
+  if (previous === "hunter") return "irish";
+  return random() < 0.5 ? "irish" : "hunter";
+}

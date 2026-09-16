@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLuckyIrishWin, LUCKY_IRISH_POT_BB } from "./lucky-irish.js";
+import { isLuckyIrishWin, LUCKY_IRISH_POT_BB, pickBigWinOverlay } from "./lucky-irish.js";
 import type { HandResult } from "./api.js";
 
 const bb = 10_000n;
@@ -67,5 +67,17 @@ describe("isLuckyIrishWin", () => {
         }),
       }),
     ).toBe(false);
+  });
+});
+
+describe("pickBigWinOverlay", () => {
+  it("alternates hunter and irish after the first pick", () => {
+    expect(pickBigWinOverlay("irish")).toBe("hunter");
+    expect(pickBigWinOverlay("hunter")).toBe("irish");
+  });
+
+  it("picks irish when the first roll is low", () => {
+    expect(pickBigWinOverlay(null, () => 0.1)).toBe("irish");
+    expect(pickBigWinOverlay(null, () => 0.9)).toBe("hunter");
   });
 });
