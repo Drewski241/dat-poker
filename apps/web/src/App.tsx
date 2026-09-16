@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type PlaythroughInfo, type TableSeat, type WithdrawResult } from "./api.js";
 import { AuthPanel } from "./AuthPanel.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { CardRow } from "./components/PlayingCard.js";
@@ -74,6 +74,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [datBalance, setDatBalance] = useState<string | null>(null);
   const [accountMojos, setAccountMojos] = useState<string | null>(null);
+  const [accountPlaythrough, setAccountPlaythrough] = useState<PlaythroughInfo | null>(null);
   const [redeemedToday, setRedeemedToday] = useState(false);
 
   const [tableId, setTableId] = useState<string | null>(null);
@@ -111,6 +112,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             const acc = await api.account(me.playerId);
             setAccountMojos(acc.balanceMojos);
             setRedeemedToday(acc.redeemedToday);
+            setAccountPlaythrough(acc.playthrough ?? null);
           } catch {
             setApiAuthToken(null);
           }
@@ -150,6 +152,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     const acc = await api.account(address);
     setAccountMojos(acc.balanceMojos);
     setRedeemedToday(acc.redeemedToday);
+    setAccountPlaythrough(acc.playthrough ?? null);
   }, []);
 
   const refreshTable = useCallback(async (id: string) => {
@@ -253,6 +256,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setWalletAddress(null);
       setDatBalance(null);
       setAccountMojos(null);
+      setAccountPlaythrough(null);
       setRedeemedToday(false);
       setPlayerId(null);
       setUsername(null);
@@ -387,9 +391,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const myTableSeat = tableSeats.find((s) => s.playerId === playerId);
   const tableStackMojos = myTableSeat?.stackMojos ?? null;
-  const handsPlayed = myTableSeat?.handsPlayed ?? 0;
-  const handsRequired = myTableSeat?.handsRequired ?? 0;
-  const playthroughRemaining = myTableSeat?.playthroughRemaining ?? 0;
+  const handsPlayed = myTableSeat?.handsPlayed ?? accountPlaythrough?.handsPlayed ?? 0;
+  const handsRequired = myTableSeat?.handsRequired ?? accountPlaythrough?.handsRequired ?? 0;
+  const playthroughRemaining = myTableSeat?.playthroughRemaining ?? accountPlaythrough?.playthroughRemaining ?? 0;
+  const unlockedMojos = myTableSeat?.unlockedMojos ?? accountPlaythrough?.unlockedMojos ?? "0";
+  const unlockedDat = (() => {
+    try {
+      return BigInt(unlockedMojos);
+    } catch {
+      return 0n;
+    }
+  })();
 
   const cashOutToAccount = () => {
     if (!tableId || !playerId) return;
@@ -403,10 +415,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         toAccount: true,
       });
       setWithdrawResult(result);
-      setTableId(null);
-      setTableSeats([]);
-      setHand(null);
-      setHandResult(null);
+      if (result.playthrough) setAccountPlaythrough(result.playthrough);
+      if (result.stillSeated) {
+        await refreshTable(tableId);
+      } else {
+        setTableId(null);
+        setTableSeats([]);
+        setHand(null);
+        setHandResult(null);
+      }
       await refreshAccount(playerId);
     });
   };
@@ -419,7 +436,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       if (!seat) {
         throw new Error("You are no longer seated at this table");
       }
-      const stackMojos = seat.stackMojos;
+      const stackMojos = seat.unlockedMojos && BigInt(seat.unlockedMojos) > 0n
+        ? seat.unlockedMojos
+        : seat.stackMojos;
 
       let withdrawProof: BuyInProof | undefined;
       if (!datToken?.devBuyInEnabled && session && wcConfig) {
@@ -457,10 +476,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       }
 
       setWithdrawResult(result);
-      setTableId(null);
-      setTableSeats([]);
-      setHand(null);
-      setHandResult(null);
+      if (result.playthrough) setAccountPlaythrough(result.playthrough);
+      if (result.stillSeated) {
+        await refreshTable(tableId);
+      } else {
+        setTableId(null);
+        setTableSeats([]);
+        setHand(null);
+        setHandResult(null);
+      }
 
       if (session && wcConfig && datToken?.assetId) {
         const { balance } = await loadPlayerWallet(
@@ -551,8 +575,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       {bigWin === "hunter" && <HunterBullseyeWin onFinished={() => setBigWin(null)} />}
       {isBeta && (
         <div className="beta-banner" role="status">
-          Public beta — software under development. Open tables reset on restart;
-          your account DAT is kept. Dev buy-in is for testing, not real-money settlement.
+          Public beta — software under development.           Open tables reset on restart;
+          your account DAT and play-through progress are kept. Dev buy-in is for testing, not real-money settlement.
         </div>
       )}
       <header>
@@ -593,6 +617,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 Table account:{" "}
                 <strong>{formatDatMojos(accountMojos, datToken?.ticker)}</strong>
                 {redeemedToday ? " · daily redeem used" : ""}
+              </p>
+            )}
+            {accountPlaythrough && accountPlaythrough.handsRequired > 0 && !tableId && (
+              <p className="muted small">
+                Play-through: {accountPlaythrough.handsPlayed}/{accountPlaythrough.handsRequired}{" "}
+                hands · {formatDatMojos(accountPlaythrough.unlockedMojos, datToken?.ticker)} unlocked
+                (saved across redeploys)
               </p>
             )}
             <div className="row">
@@ -692,27 +723,26 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             )}
             {tableId && handsRequired > 0 && (
               <p className="muted small">
-                Play-through: {handsPlayed}/{handsRequired} hands (one hand per DAT token of buy-in)
-                {playthroughRemaining > 0 ? ` — ${playthroughRemaining} remaining` : " — met"}
+                Play-through: {handsPlayed}/{handsRequired} hands ·{" "}
+                {formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked (1 hand = 1 DAT)
+                {playthroughRemaining > 0
+                  ? ` — ${playthroughRemaining} remaining`
+                  : " — fully unlocked"}
               </p>
             )}
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">
-                <button
-                  type="button"
-                  disabled={busy || playthroughRemaining > 0}
-                  onClick={cashOutToAccount}
-                >
+                <button type="button" disabled={busy} onClick={cashOutToAccount}>
                   Cash out {formatDatMojos(tableStackMojos, datToken?.ticker)} to account
                 </button>
                 {walletAddress && (
                   <button
                     type="button"
                     className="secondary"
-                    disabled={busy || playthroughRemaining > 0}
+                    disabled={busy || unlockedDat <= 0n}
                     onClick={withdrawToSage}
                   >
-                    Withdraw to Sage
+                    Withdraw {formatDatMojos(unlockedMojos, datToken?.ticker)} to Sage
                   </button>
                 )}
               </div>

@@ -108,6 +108,9 @@ export interface WithdrawResult {
   ok: boolean;
   withdrawalId: string;
   stackMojos: string;
+  remainingStackMojos?: string;
+  stillSeated?: boolean;
+  unlockedMojos?: string;
   originalBuyInMojos: string;
   payoutMojos: string;
   payoutMode: "net" | "full";
@@ -115,7 +118,16 @@ export interface WithdrawResult {
   offer?: string;
   feeMojos: string;
   accountMojos?: string;
+  playthrough?: PlaythroughInfo;
   note: string;
+}
+
+export interface PlaythroughInfo {
+  poolMojos: string;
+  handsPlayed: number;
+  handsRequired: number;
+  unlockedMojos: string;
+  playthroughRemaining: number;
 }
 
 export interface TableSeat {
@@ -126,6 +138,7 @@ export interface TableSeat {
   handsPlayed?: number;
   handsRequired?: number;
   playthroughRemaining?: number;
+  unlockedMojos?: string;
 }
 
 export interface TableConfigResponse {
@@ -161,6 +174,7 @@ export const api = {
       dailyRedeemMojos: string;
       redeemedToday: boolean;
       nextRedeemAt: string;
+      playthrough?: PlaythroughInfo;
     }>(`/v1/wallet/account?address=${encodeURIComponent(address)}`),
 
   sessionChallenge: (address: string) =>

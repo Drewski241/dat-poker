@@ -91,3 +91,38 @@ export function playthroughHandsRequired(buyInMojos: bigint | string): number {
   }
   return Number(n / CAT_MOJOS_PER_TOKEN);
 }
+
+function asMojos(n: bigint | string): bigint {
+  return typeof n === "string" ? BigInt(n) : n;
+}
+
+/** DAT unlocked for withdraw: one whole token per completed hand, capped at the buy-in pool. */
+export function playthroughUnlockedMojos(
+  handsPlayed: number,
+  poolMojos: bigint | string,
+): bigint {
+  const pool = asMojos(poolMojos);
+  if (pool <= 0n || handsPlayed <= 0) {
+    return 0n;
+  }
+  const unlocked = BigInt(handsPlayed) * CAT_MOJOS_PER_TOKEN;
+  return unlocked < pool ? unlocked : pool;
+}
+
+/**
+ * Whole-token DAT a player may withdraw now from a stack (or account).
+ * Partial tokens stay locked with the remaining chips.
+ */
+export function playthroughWithdrawableMojos(
+  handsPlayed: number,
+  poolMojos: bigint | string,
+  heldMojos: bigint | string,
+): bigint {
+  const held = asMojos(heldMojos);
+  const unlocked = playthroughUnlockedMojos(handsPlayed, poolMojos);
+  const capped = unlocked < held ? unlocked : held;
+  if (capped <= 0n) {
+    return 0n;
+  }
+  return (capped / CAT_MOJOS_PER_TOKEN) * CAT_MOJOS_PER_TOKEN;
+}

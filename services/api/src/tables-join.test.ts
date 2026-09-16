@@ -505,4 +505,136 @@ describe("6-max join + daily redeem", () => {
     expect(acc.balanceMojos).toBe("5000000");
     await app.close();
   });
+
+  it("keeps unlocked DAT after a redeploy and lets 2 hands withdraw 2 DAT", async () => {
+    const app = await buildApp();
+    const created = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/auth/register",
+          payload: { username: "playkeep", password: "password1" },
+        })
+      ).body,
+    );
+    const headers = auth(created.token);
+    await app.inject({
+      method: "POST",
+      url: "/v1/wallet/redeem",
+      headers,
+      payload: { playerId: created.playerId },
+    });
+    const joined = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/tables/join",
+          headers,
+          payload: { playerId: created.playerId, buyInMojos: "1000000", devAck: true },
+        })
+      ).body,
+    );
+    const seat0 = joined.seats.find((s: { playerId: string }) => s.playerId === created.playerId);
+    expect(seat0.handsRequired).toBe(1000);
+    expect(seat0.handsPlayed).toBe(0);
+    expect(seat0.unlockedMojos).toBe("0");
+
+    for (let n = 0; n < 2; n++) {
+      const go = await app.inject({
+        method: "POST",
+        url: `/v1/tables/${joined.tableId}/hands/go`,
+        headers,
+        payload: { playerId: created.playerId },
+      });
+      expect(go.statusCode).toBe(200);
+      let body = JSON.parse(go.body);
+      for (let i = 0; i < 20 && body.hand; i++) {
+        const actor = body.hand.players.find(
+          (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
+        );
+        if (!actor || actor.playerId !== created.playerId) {
+          break;
+        }
+        const act = await app.inject({
+          method: "POST",
+          url: `/v1/tables/${joined.tableId}/hands/action`,
+          headers,
+          payload: { playerId: created.playerId, action: "fold" },
+        });
+        body = JSON.parse(act.body);
+      }
+      expect(body.hand).toBeNull();
+    }
+
+    const mid = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/tables/${joined.tableId}`,
+          headers,
+        })
+      ).body,
+    );
+    const seatedMid = mid.seats.find((s: { playerId: string }) => s.playerId === created.playerId);
+    expect(seatedMid.handsPlayed).toBe(2);
+    expect(seatedMid.handsRequired).toBe(1000);
+    expect(seatedMid.unlockedMojos).toBe("2000");
+
+    const { returned } = returnAllStacksToAccounts();
+    expect(returned).toBe(1);
+    resetTablesForTests();
+
+    const acc = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/wallet/account?address=${encodeURIComponent(created.playerId)}`,
+          headers,
+        })
+      ).body,
+    );
+    expect(acc.playthrough.handsPlayed).toBe(2);
+    expect(acc.playthrough.handsRequired).toBe(1000);
+    expect(acc.playthrough.unlockedMojos).toBe("2000");
+
+    const rejoin = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/tables/join",
+          headers,
+          payload: { playerId: created.playerId, buyInMojos: "1000000", devAck: true },
+        })
+      ).body,
+    );
+    const seatedAgain = rejoin.seats.find(
+      (s: { playerId: string }) => s.playerId === created.playerId,
+    );
+    expect(seatedAgain.handsPlayed).toBe(2);
+    expect(seatedAgain.handsRequired).toBe(1000);
+    expect(seatedAgain.unlockedMojos).toBe("2000");
+
+    const withdrawn = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers,
+      payload: { tableId: rejoin.tableId, playerId: created.playerId, devAck: true },
+    });
+    expect(withdrawn.statusCode).toBe(200);
+    const out = JSON.parse(withdrawn.body);
+    expect(out.stackMojos).toBe("2000");
+    expect(out.stillSeated).toBe(true);
+    expect(out.playthrough.handsPlayed).toBe(0);
+    expect(out.playthrough.unlockedMojos).toBe("0");
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers,
+      payload: { tableId: rejoin.tableId, playerId: created.playerId, devAck: true },
+    });
+    expect(blocked.statusCode).toBe(400);
+    expect(JSON.parse(blocked.body).error).toMatch(/Play through/i);
+    await app.close();
+  });
 });

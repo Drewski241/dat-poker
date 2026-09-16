@@ -175,8 +175,50 @@ export class NlheTableEngine {
     return { stackMojos, seatIndex };
   }
 
+  /** Restore persisted play-through after a rejoin / redeploy. */
+  setHandsPlayed(playerId: PlayerId, count: number): void {
+    if (!this.stacks.has(playerId)) {
+      return;
+    }
+    this.handsPlayed.set(playerId, Math.max(0, Math.floor(count)));
+  }
+
   getHandsPlayed(playerId: PlayerId): number {
     return this.handsPlayed.get(playerId) ?? 0;
+  }
+
+  /** Take unlocked DAT off a stack between hands; cash out if the stack hits 0. */
+  debitStack(playerId: PlayerId, mojos: bigint): { remaining: bigint; seatIndex: number } {
+    if (this.hand) {
+      throw new Error("Cannot cash out during an active hand");
+    }
+    if (mojos <= 0n) {
+      throw new Error("Debit must be positive");
+    }
+    const stackMojos = this.stacks.get(playerId);
+    if (stackMojos === undefined) {
+      throw new Error("Player not seated");
+    }
+    if (mojos > stackMojos) {
+      throw new Error("Insufficient stack");
+    }
+    let seatIndex: number | null = null;
+    for (const [idx, seatedId] of this.seats) {
+      if (seatedId === playerId) {
+        seatIndex = idx;
+        break;
+      }
+    }
+    if (seatIndex === null) {
+      throw new Error("Player not seated");
+    }
+    const remaining = stackMojos - mojos;
+    this.stacks.set(playerId, remaining);
+    if (remaining === 0n) {
+      this.cashOutPlayer(playerId);
+      return { remaining: 0n, seatIndex };
+    }
+    return { remaining, seatIndex };
   }
 
   startHand(handId: HandId): { commitHash: string } {

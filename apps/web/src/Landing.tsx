@@ -14,7 +14,8 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
       {isBeta && (
         <div className="beta-banner" role="status">
           Closed beta — invited testers only. Software under development, not a
-          public casino. Open tables reset on restart; your account DAT is kept.
+          public casino. Open tables reset on restart; your account DAT and
+          play-through progress are kept.
         </div>
       )}
       <header className="hero">
@@ -66,12 +67,12 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
         <ul className="notes">
           <li>Share this site only with people you invited. It is not a worldwide launch.</li>
           <li>
-            Default buy-in is 1000 DAT. Cash out to your account after play-through.
-            Sage is optional until you withdraw DAT to a wallet.
+            Default buy-in is 1000 DAT. Each completed hand unlocks 1 DAT to withdraw.
+            Progress is kept across redeploys. Sage is optional until you withdraw DAT to a wallet.
           </li>
           <li>
             Server restarts wipe open tables, but your account DAT (redeemed
-            credits and cashed-out stacks) is kept on the host.
+            credits and cashed-out stacks) and play-through unlocks are kept on the host.
           </li>
           <li>DAT stays in Sage until on-chain escrow is wired. This host does not hold treasury keys.</li>
           <li>

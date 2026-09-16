@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type NlheTableEngine, type PlayerAction } from "@dat-poker/game-engine";
-import { getTableEngine } from "./tables.js";
+import { getTableEngine, persistTablePlaythrough } from "./tables.js";
 import { playHouseIfDue } from "../house-play.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { requirePlayer, sessionMatchesClaim, type PlayerSession } from "../player-session.js";
@@ -59,6 +59,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       }
       table.revealAndDeal();
       playHouseIfDue(table);
+      persistTablePlaythrough(table);
       return {
         ok: true,
         handId,
@@ -97,6 +98,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       try {
         table.revealAndDeal();
         playHouseIfDue(table);
+        persistTablePlaythrough(table);
         return {
           ok: true,
           hand: redactHandForViewer(table.getHandState(), session.playerId),
@@ -119,6 +121,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
       table.applyAction(session.playerId, req.body.action, amount);
       playHouseIfDue(table);
+      persistTablePlaythrough(table);
       return {
         ok: true,
         hand: redactHandForViewer(table.getHandState(), session.playerId),

@@ -85,6 +85,18 @@ describe("NlheTableEngine", () => {
     expect(table.getActivePlayerCount()).toBe(1);
   });
 
+  it("restores hands played and debits a partial stack", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.setHandsPlayed("alice", 50);
+    expect(table.getHandsPlayed("alice")).toBe(50);
+    const debit = table.debitStack("alice", 50_000_000_000n);
+    expect(debit.remaining).toBe(4_950_000_000_000n);
+    expect(table.getPlayerStack("alice")).toBe(4_950_000_000_000n);
+    expect(table.getHandsPlayed("alice")).toBe(50);
+  });
+
   it("rejects cash out during active hand", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

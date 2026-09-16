@@ -21,7 +21,7 @@ is disabled on the game host.
 
 Daily redeem and table stacks are **ledger credits**, not CAT sends. Account
 DAT is stored on the game host (`data/ledger.json`) so a redeploy does not
-wipe testers’ balances. Open tables still reset. Treasury Sage stays on a
+wipe testers’ balances or play-through unlocks. Open tables still reset. Treasury Sage stays on a
 separate machine ([TREASURY.md](./TREASURY.md)).
 
 Testers should still **read Sage prompts**. If Sage ever asks to send coins or
@@ -33,7 +33,9 @@ Play uses a username + password account (`POST /v1/auth/register` /
 `/v1/auth/login`). Passwords are scrypt-hashed. Usernames persist on the
 game host (`data/accounts.json`). In-game DAT balances persist in
 `data/ledger.json`. Open tables still reset when the API restarts; seated
-stacks are returned to the account ledger on a clean shutdown.
+stacks are returned to the account ledger on a clean shutdown. Play-through
+(one completed hand unlocks 1 DAT of the buy-in) is stored on that ledger too,
+so already-unlocked DAT stays withdrawable after a redeploy.
 
 - Hole cards and actions require the account bearer token.
 - Spoofing someone else's username in JSON does not work.

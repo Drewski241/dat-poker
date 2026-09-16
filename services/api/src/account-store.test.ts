@@ -3,14 +3,18 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  applyBuyInPlaythrough,
   creditAccount,
   debitAccount,
   getAccountBalance,
+  getPlaythrough,
   hasRedeemedToday,
   reloadLedgerFromDiskForTests,
   resetAccountsForTests,
+  setPlaythroughHands,
   tryRedeemDaily,
 } from "./account-store.js";
+import { playthroughUnlockedMojos } from "@dat-poker/shared";
 
 describe("account-store", () => {
   beforeEach(() => {
@@ -52,6 +56,29 @@ describe("account-store", () => {
     reloadLedgerFromDiskForTests();
     expect(getAccountBalance("user_persist")).toBe(5_000_000n);
     expect(hasRedeemedToday("user_persist", noon)).toBe(true);
+  });
+
+  it("keeps play-through unlocks across a ledger reload", () => {
+    const file = join(mkdtempSync(join(tmpdir(), "dat-playthrough-")), "ledger.json");
+    process.env.DAT_LEDGER_PATH = file;
+    resetAccountsForTests();
+    creditAccount("user_pt", 5_000_000n);
+    applyBuyInPlaythrough("user_pt", 1_000_000n, true);
+    debitAccount("user_pt", 1_000_000n);
+    setPlaythroughHands("user_pt", 50);
+    const saved = JSON.parse(readFileSync(file, "utf8")).playthrough[0];
+    expect(saved.poolMojos).toBe("1000000");
+    expect(saved.handsPlayed).toBe(50);
+
+    reloadLedgerFromDiskForTests();
+    const pt = getPlaythrough("user_pt");
+    expect(pt.poolMojos).toBe(1_000_000n);
+    expect(pt.handsPlayed).toBe(50);
+    expect(playthroughUnlockedMojos(pt.handsPlayed, pt.poolMojos)).toBe(50_000n);
+
+    const returning = applyBuyInPlaythrough("user_pt", 1_000_000n, true);
+    expect(returning.addedFreshMojos).toBe(0n);
+    expect(getPlaythrough("user_pt").handsPlayed).toBe(50);
   });
 });
 

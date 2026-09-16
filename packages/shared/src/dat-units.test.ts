@@ -5,6 +5,8 @@ import {
   formatDatMojos,
   parseDatTokensToMojos,
   playthroughHandsRequired,
+  playthroughUnlockedMojos,
+  playthroughWithdrawableMojos,
   resolveDatDailyRedeemMojos,
   resolveDatMinBuyInMojos,
 } from "./dat-units.js";
@@ -61,5 +63,21 @@ describe("playthroughHandsRequired", () => {
     expect(playthroughHandsRequired(1_000_000n)).toBe(1000);
     expect(playthroughHandsRequired("2000")).toBe(2);
     expect(playthroughHandsRequired(0n)).toBe(0);
+  });
+});
+
+describe("playthroughUnlockedMojos", () => {
+  it("unlocks one DAT per completed hand, capped at the buy-in", () => {
+    expect(playthroughUnlockedMojos(50, 1_000_000n)).toBe(50_000n);
+    expect(playthroughUnlockedMojos(1000, 1_000_000n)).toBe(1_000_000n);
+    expect(playthroughUnlockedMojos(2000, 1_000_000n)).toBe(1_000_000n);
+    expect(playthroughUnlockedMojos(0, 1_000_000n)).toBe(0n);
+  });
+
+  it("withdraws whole unlocked tokens limited by the chips on hand", () => {
+    expect(playthroughWithdrawableMojos(50, 1_000_000n, 1_000_000n)).toBe(50_000n);
+    expect(playthroughWithdrawableMojos(50, 1_000_000n, 40_000n)).toBe(40_000n);
+    expect(playthroughWithdrawableMojos(50, 1_000_000n, 40_500n)).toBe(40_000n);
+    expect(playthroughWithdrawableMojos(0, 1_000_000n, 1_000_000n)).toBe(0n);
   });
 });

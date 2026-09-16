@@ -4,36 +4,32 @@ import type { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import {
   nextUtcDayIso,
   playthroughHandsRequired,
+  playthroughUnlockedMojos,
+  playthroughWithdrawableMojos,
   resolveDatDailyRedeemMojos,
   utcDateKey,
 } from "@dat-poker/shared";
 import { clearBuyIn, getBuyInRecord, hasBuyIn } from "../buy-in-store.js";
 import {
-  getAccountBalance,
-  hasRedeemedToday,
-  tryRedeemDaily,
+  consumePlaythroughWithdraw,
   creditAccount,
+  getAccountBalance,
+  getPlaythrough,
+  hasRedeemedToday,
+  clearPlaythrough,
+  syncPlaythroughHeld,
+  tryRedeemDaily,
 } from "../account-store.js";
 import {
   computeWithdrawPayout,
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
 } from "../treasury-payout.js";
-import { getTableEngine } from "./tables.js";
+import { getTableEngine, persistTablePlaythrough } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import type { NlheTableEngine } from "@dat-poker/game-engine";
 import { allowIpBucket } from "../ip-rate-limit.js";
 import { requirePlayer, sessionMatchesClaim, sessionTtlSeconds } from "../player-session.js";
-
-function playthroughBlock(table: NlheTableEngine, tableId: string, playerId: string): string | null {
-  const rec = getBuyInRecord(tableId, playerId);
-  const required = rec ? playthroughHandsRequired(rec.buyInMojos) : 0;
-  const played = table.getHandsPlayed(playerId);
-  if (played < required) {
-    return `Play through ${required - played} more hand(s) before withdraw (${played}/${required}). Requirement is one completed hand per DAT token of buy-in.`;
-  }
-  return null;
-}
 import {
   buildBuyInMessage,
   buildRedeemMessage,
@@ -42,6 +38,43 @@ import {
   type WithdrawProof,
   validateWithdrawProof,
 } from "../wallet-config.js";
+
+function playthroughView(playerId: string) {
+  const pt = getPlaythrough(playerId);
+  const handsRequired = playthroughHandsRequired(pt.poolMojos);
+  return {
+    poolMojos: pt.poolMojos.toString(),
+    handsPlayed: pt.handsPlayed,
+    handsRequired,
+    unlockedMojos: playthroughUnlockedMojos(pt.handsPlayed, pt.poolMojos).toString(),
+    playthroughRemaining: Math.max(0, handsRequired - pt.handsPlayed),
+  };
+}
+
+function unlockedWithdrawMojos(table: NlheTableEngine, playerId: string): bigint {
+  const stack = table.getPlayerStack(playerId);
+  if (stack === null) return 0n;
+  const pt = getPlaythrough(playerId);
+  const required = playthroughHandsRequired(pt.poolMojos);
+  if (required > 0 && pt.handsPlayed >= required) {
+    return stack;
+  }
+  return playthroughWithdrawableMojos(pt.handsPlayed, pt.poolMojos, stack);
+}
+
+function sagePlaythroughBlock(table: NlheTableEngine, playerId: string): string | null {
+  persistTablePlaythrough(table);
+  const available = unlockedWithdrawMojos(table, playerId);
+  if (available > 0n) return null;
+  const view = playthroughView(playerId);
+  if (view.handsRequired <= 0) {
+    return "No DAT is unlocked for withdraw yet. Buy in and complete hands — each hand unlocks 1 DAT.";
+  }
+  if (view.playthroughRemaining <= 0) {
+    return "No DAT left to withdraw.";
+  }
+  return `Play through ${view.playthroughRemaining} more hand(s) to unlock DAT (${view.handsPlayed}/${view.handsRequired}). Each completed hand unlocks 1 DAT for withdraw.`;
+}
 
 export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClient): void {
   app.get("/v1/wallet/config", async () => {
@@ -86,6 +119,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     const address = session.playerId;
     const amount = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS);
     const now = new Date();
+    const pt = playthroughView(address);
     return {
       address: session.displayAddress,
       playerId: session.playerId,
@@ -93,6 +127,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       dailyRedeemMojos: amount.toString(),
       redeemedToday: hasRedeemedToday(address, now),
       nextRedeemAt: nextUtcDayIso(now),
+      playthrough: pt,
     };
   });
 
@@ -213,22 +248,24 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     if (stack === null) {
       return reply.status(400).send({ error: "Player not seated at table" });
     }
-    const blocked = playthroughBlock(table, tableId, playerId);
+    persistTablePlaythrough(table);
+    const blocked = sagePlaythroughBlock(table, playerId);
     if (blocked) {
       return reply.status(400).send({ error: blocked });
     }
-    if (stack.toString() !== stackMojos) {
+    const withdrawMojos = unlockedWithdrawMojos(table, playerId);
+    if (stack.toString() !== stackMojos && withdrawMojos.toString() !== stackMojos) {
       return reply.status(400).send({
-        error: `Stack mismatch — refresh table (expected ${stack.toString()} mojos)`,
+        error: `Stack mismatch — refresh table (expected ${withdrawMojos.toString()} unlocked mojos)`,
       });
     }
 
     const message = buildWithdrawMessage({
       tableId,
-      stackMojos,
+      stackMojos: withdrawMojos.toString(),
       address: session.displayAddress,
     });
-    return { message, stackMojos: stack.toString() };
+    return { message, stackMojos: withdrawMojos.toString(), unlockedMojos: withdrawMojos.toString() };
   });
 
   app.post<{
@@ -258,22 +295,33 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     if (table.isHandInProgress()) {
       return reply.status(400).send({ error: "Finish the current hand before withdrawing" });
     }
-    if (hasWithdrawal(tableId, playerId)) {
-      return reply.status(400).send({ error: "Withdrawal already completed for this table session" });
-    }
 
     const stack = table.getPlayerStack(playerId);
     if (stack === null) {
       return reply.status(400).send({ error: "Player not seated at table" });
     }
-    const blocked = playthroughBlock(table, tableId, playerId);
-    if (blocked) {
-      return reply.status(400).send({ error: blocked });
-    }
+    persistTablePlaythrough(table);
 
     const dat = readDatTokenConfig();
     const payoutConfig = readTreasuryPayoutConfig();
     const cashOutToAccount = Boolean(toAccount);
+
+    if (!cashOutToAccount) {
+      if (hasWithdrawal(tableId, playerId)) {
+        return reply.status(400).send({ error: "Withdrawal already completed for this table session" });
+      }
+      const blocked = sagePlaythroughBlock(table, playerId);
+      if (blocked) {
+        return reply.status(400).send({ error: blocked });
+      }
+    }
+
+    const withdrawMojos = cashOutToAccount ? stack : unlockedWithdrawMojos(table, playerId);
+    if (!cashOutToAccount && withdrawMojos <= 0n) {
+      return reply.status(400).send({
+        error: sagePlaythroughBlock(table, playerId) ?? "Nothing unlocked",
+      });
+    }
 
     if (!cashOutToAccount && !dat.devBuyInEnabled) {
       if (!dat.assetId) {
@@ -284,7 +332,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       }
       const proofError = validateWithdrawProof(withdrawProof, {
         tableId,
-        stackMojos: stack.toString(),
+        stackMojos: withdrawMojos.toString(),
         playerId,
         address: session.displayAddress,
       });
@@ -298,7 +346,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       if (dat.assetId && withdrawProof) {
         const proofError = validateWithdrawProof(withdrawProof, {
           tableId,
-          stackMojos: stack.toString(),
+          stackMojos: withdrawMojos.toString(),
           playerId,
           address: session.displayAddress,
         });
@@ -312,18 +360,13 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
 
     const buyInRecord = getBuyInRecord(tableId, playerId);
     const originalBuyInMojos = buyInRecord ? BigInt(buyInRecord.buyInMojos) : stack;
-    const payoutMojos = computeWithdrawPayout(stack, originalBuyInMojos, payoutConfig.payoutMode);
-
-    let cashOut;
-    try {
-      cashOut = table.cashOutPlayer(playerId);
-    } catch (e) {
-      return reply.status(400).send({ error: (e as Error).message });
-    }
+    const payoutMojos = cashOutToAccount
+      ? computeWithdrawPayout(stack, originalBuyInMojos, payoutConfig.payoutMode)
+      : withdrawMojos;
 
     let mode: "ledger" | "offer" = "ledger";
     let offer: string | undefined;
-    let feeMojos = payoutConfig.withdrawFeeMojos;
+    const feeMojos = payoutConfig.withdrawFeeMojos;
 
     if (
       !cashOutToAccount &&
@@ -343,29 +386,71 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
           offer = treasuryOffer;
         }
       } catch (e) {
-        table.seatPlayer(playerId, cashOut.seatIndex, cashOut.stackMojos);
         return reply.status(502).send({ error: (e as Error).message });
       }
     }
 
+    let remainingStack = stack;
+    let stillSeated = true;
+    try {
+      if (cashOutToAccount) {
+        table.cashOutPlayer(playerId);
+        remainingStack = 0n;
+        stillSeated = false;
+      } else {
+        const debit = table.debitStack(playerId, withdrawMojos);
+        remainingStack = debit.remaining;
+        stillSeated = debit.remaining > 0n;
+        const pt = getPlaythrough(playerId);
+        const required = playthroughHandsRequired(pt.poolMojos);
+        if (required > 0 && pt.handsPlayed >= required) {
+          clearPlaythrough(playerId);
+        } else {
+          consumePlaythroughWithdraw(playerId, withdrawMojos);
+        }
+        if (stillSeated) {
+          table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+        }
+      }
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+
+    const credited = cashOutToAccount ? stack : withdrawMojos;
+    const accountMojos = creditAccount(playerId, credited);
+    if (cashOutToAccount) {
+      syncPlaythroughHeld(playerId, accountMojos);
+      clearBuyIn(tableId, playerId);
+    } else if (!stillSeated) {
+      syncPlaythroughHeld(playerId, accountMojos);
+      clearBuyIn(tableId, playerId);
+    } else {
+      syncPlaythroughHeld(playerId, getAccountBalance(playerId) + remainingStack);
+    }
+
     const withdrawalId = randomUUID();
-    recordWithdrawal({
-      withdrawalId,
-      tableId,
-      playerId,
-      stackMojos: cashOut.stackMojos.toString(),
-      originalBuyInMojos: originalBuyInMojos.toString(),
-      payoutMojos: payoutMojos.toString(),
-      mode,
-      createdAt: new Date().toISOString(),
-    });
-    clearBuyIn(tableId, playerId);
-    const accountMojos = creditAccount(playerId, cashOut.stackMojos);
+    if (!stillSeated) {
+      recordWithdrawal({
+        withdrawalId,
+        tableId,
+        playerId,
+        stackMojos: credited.toString(),
+        originalBuyInMojos: originalBuyInMojos.toString(),
+        payoutMojos: payoutMojos.toString(),
+        mode,
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     return {
       ok: true,
       withdrawalId,
-      stackMojos: cashOut.stackMojos.toString(),
+      stackMojos: credited.toString(),
+      remainingStackMojos: remainingStack.toString(),
+      stillSeated,
+      unlockedMojos: cashOutToAccount
+        ? playthroughView(playerId).unlockedMojos
+        : withdrawMojos.toString(),
       originalBuyInMojos: originalBuyInMojos.toString(),
       payoutMojos: payoutMojos.toString(),
       payoutMode: payoutConfig.payoutMode,
@@ -373,12 +458,14 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       offer,
       feeMojos: feeMojos.toString(),
       accountMojos: accountMojos.toString(),
-      note:
-        mode === "ledger"
-          ? payoutMojos > 0n
-            ? "Table stack returned to your DAT account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT."
-            : "Table stack returned to your DAT account."
-          : "Approve the treasury offer in Sage to receive DAT.",
+      playthrough: playthroughView(playerId),
+      note: cashOutToAccount
+        ? "Table stack returned to your DAT account. Play-through progress is kept for the next sit."
+        : mode === "offer"
+          ? "Approve the treasury offer in Sage to receive unlocked DAT."
+          : stillSeated
+            ? "Unlocked DAT returned to your account. Remaining stack stays at the table until you play through more hands."
+            : "Unlocked DAT returned to your DAT account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT.",
     };
   });
 }

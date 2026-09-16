@@ -6,7 +6,8 @@ Use this after the $20 **Launch an instance using EC2** credit is in **Billing
 The beta is a small always-on Amazon Linux box that serves the DAT POKER web
 client and REST API so you can develop the poker software against a public
 URL. Open tables are **in memory** and reset on restart; account DAT (redeem
-and cash-out) is kept in `data/ledger.json`. Dev buy-in is on.
+and cash-out) and play-through progress (hands that already unlocked DAT) are
+kept in `data/ledger.json`. Dev buy-in is on.
 Keep treasury Sage off this machine ([docs/TREASURY.md](./TREASURY.md)).
 
 This Cloud Agent cannot click Launch in your account.
@@ -182,7 +183,7 @@ sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 ```
 
 Use this feature branch name instead of `main` until it is merged. Restarting
-the API clears open tables; account DAT stays in `data/ledger.json`.
+the API clears open tables; account DAT and play-through unlocks stay in `data/ledger.json`.
 
 Wait until it prints `beta redeploy ok`. If it dies on
 `www.datspiritpoker.com: command not found`, the API already restarted —
@@ -323,7 +324,8 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 3. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits we fund).
 4. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
 5. **Deal hand** when at least two seats are filled.
-6. **Cash out to account** after play-through (one hand per DAT token of buy-in).
+6. **Cash out to account** anytime between hands — progress is kept. Each completed
+   hand unlocks 1 DAT; after 50 hands you can withdraw 50 DAT even if 950 remain locked.
 7. **Connect Sage to withdraw DAT** only if you want those credits in a wallet. Approve a
    sign-only pairing (it cannot send coins).
 8. Send notes and screenshots from **https://datspiritpoker.com/feedback**.
