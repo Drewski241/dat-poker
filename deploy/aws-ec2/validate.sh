@@ -370,7 +370,7 @@ else
   bad "SPA try_files for /play"
 fi
 
-if grep -q 'Play the game' "$ROOT/apps/web/src/Landing.tsx" \
+if grep -q 'Play poker now!' "$ROOT/apps/web/src/Landing.tsx" \
   && grep -q 'pathToPage' "$ROOT/apps/web/src/Root.tsx" \
   && grep -q '/play' "$ROOT/apps/web/src/site-route.ts"; then
   ok "web client has a public landing site and /play table"

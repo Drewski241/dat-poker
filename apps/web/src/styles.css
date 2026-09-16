@@ -60,13 +60,19 @@ body {
 }
 
 a.cta {
-  display: inline-block;
-  margin-top: 0.5rem;
-  padding: 0.65rem 1.25rem;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.85rem;
+  padding: 1.1rem 2.25rem;
+  min-height: 3.75rem;
+  min-width: min(100%, 24rem);
+  border-radius: 10px;
   background: var(--accent);
   color: #0a0f12;
-  font-weight: 700;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   text-decoration: none;
 }
 

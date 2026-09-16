@@ -50,7 +50,7 @@ Share this website with invited testers (HTTPS, not the Elastic IP):
 
   ${HOME_URL}
 
-They click Play the game (or open ${PLAY_URL}).
+They click Play poker now! (or open ${PLAY_URL}).
 
 Add ${HOME_URL%/} to the Reown (WalletConnect) domain allowlist if Sage pairing fails.
 EOF

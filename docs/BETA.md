@@ -166,7 +166,7 @@ in your IdeaPad terminal.
    ```
 7. On your **laptop** browser (not inside Session Manager), open the bookmark
    `http://THAT_IP/`. You should see the **DAT Poker** website (Home) with
-   **Play the game**. Click that to sit at a table. Buy in vs house with
+   **Play poker now!**. Click that to sit at a table. Buy in vs house with
    **dev buy-in** (no DAT CAT required) until HTTPS + Sage is on.
 
 If the laptop browser times out but `curl` in Session Manager works, the
@@ -298,7 +298,7 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 ### 6. Pair Sage in the laptop browser
 
 1. Open **`https://datspiritpoker.com/`** after you [point DNS here](#website-address)
-   (or the `https://YOUR-DASHES.sslip.io/` bookmark until then). Click **Play the game**.
+   (or the `https://YOUR-DASHES.sslip.io/` bookmark until then). Click **Play poker now!**.
 2. Click **Connect Sage (WalletConnect)**.
 3. Scan the QR with Sage (or paste the URI in Sage desktop).
 4. Approve the session in Sage.
@@ -390,7 +390,7 @@ Add `https://datspiritpoker.com` (and www) to the Reown domain allowlist.
 ## Invite testers
 
 Share **https://datspiritpoker.com/** (or `https://www.datspiritpoker.com/`).
-They click **Play the game**.
+They click **Play poker now!**.
 
 On the box, confirm what Caddy is serving:
 
@@ -404,7 +404,7 @@ You want `https://datspiritpoker.com/`. If it still prints `sslip.io`, finish
 Message you can paste:
 
 > You’re invited to the DAT Poker closed beta. Open https://datspiritpoker.com/ —
-> click Play the game, connect Sage, redeem 5000 DAT for today, then buy in
+> click Play poker now!, connect Sage, redeem 5000 DAT for today, then buy in
 > at the 6-max table. This is software testing, not a real-money casino.
 > Tables reset if the server restarts.
 

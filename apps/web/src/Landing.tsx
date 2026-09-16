@@ -34,7 +34,7 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
               onNavigate("play");
             }}
           >
-            Play the game
+            Play poker now!
           </a>
         </p>
       </header>
@@ -47,7 +47,7 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
             do not already have it.
           </li>
           <li>
-            Click <strong>Play the game</strong>. Stay on this HTTPS site — WalletConnect
+            Click <strong>Play poker now!</strong> Stay on this HTTPS site — WalletConnect
             will not pair over a raw <code>http://</code> IP.
           </li>
           <li>
