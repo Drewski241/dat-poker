@@ -295,19 +295,18 @@ curl -sS http://127.0.0.1:4000/v1/wallet/status
 
 You want `"walletConnectConfigured": true` and a non-null `assetId`.
 
-### 6. Pair Sage in the laptop browser
+### 6. Play in the laptop browser
 
 1. Open **`https://datspiritpoker.com/`** after you [point DNS here](#website-address)
    (or the `https://YOUR-DASHES.sslip.io/` bookmark until then). Click **Play poker now!**.
-2. Click **Connect Sage (WalletConnect)**.
-3. Scan the QR with Sage (or paste the URI in Sage desktop).
-4. Approve the session in Sage.
-5. Click **Load wallet**. Approve the Sage **login** signature (it cannot send coins).
-6. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits).
-7. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
-8. **Deal hand** when at least two seats are filled.
-9. **Withdraw to Sage** is locked until you complete **one hand per DAT token** of that buy-in (1000 DAT buy-in → 1000 hands). The table panel shows play-through progress.
-10. Send notes and screenshots from **https://datspiritpoker.com/feedback**.
+2. **Create account** (username + password). Sage is not required to play.
+3. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits we fund).
+4. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
+5. **Deal hand** when at least two seats are filled.
+6. **Cash out to account** after play-through (one hand per DAT token of buy-in).
+7. **Connect Sage to withdraw DAT** only if you want those credits in a wallet. Approve a
+   sign-only pairing (it cannot send coins).
+8. Send notes and screenshots from **https://datspiritpoker.com/feedback**.
 
 Sage pairing **only signs messages**. If Sage asks to send coins or take an
 offer during this beta, reject it and file feedback. Details:
@@ -432,10 +431,11 @@ You want `https://datspiritpoker.com/`. If it still prints `sslip.io`, finish
 Message you can paste:
 
 > You’re invited to the DAT Poker closed beta. Open https://datspiritpoker.com/ —
-> click Play poker now!, connect Sage, redeem 5000 DAT for today, then buy in
-> at the 6-max table. Send notes and screenshots at https://datspiritpoker.com/feedback
-> . Pairing only signs messages — Sage should never send DAT from this site.
-> This is software testing, not a real-money casino. Tables reset if the server restarts.
+> click Play poker now!, create an account, redeem 5000 DAT for today, then buy in
+> at the 6-max table. Sage is only needed if you want DAT in a wallet. Send notes
+> and screenshots at https://datspiritpoker.com/feedback . Pairing only signs
+> messages — Sage should never send DAT from this site. This is software testing,
+> not a real-money casino. Tables reset if the server restarts.
 
 Keep the group small and trusted. The host is a single `t3.small`, tables are
 in memory, there is no KYC, and DAT does not leave Sage until on-chain escrow

@@ -56,15 +56,13 @@ Public beta on AWS: [docs/BETA.md](./BETA.md) (HTTPS on `datspiritpoker.com` + R
 The Vite web client (`apps/web`) implements Sage WalletConnect:
 
 1. Fetch `/v1/wallet/config` on app load.
-2. **Connect Sage** — scan QR with Sage mobile (or paste URI on desktop).
-3. **Load wallet** — reads your address, then Sage signs a login message. The
-   API verifies CHIP-0002 and issues a session token so nobody else can act as
-   you or see your hole cards.
-4. **Buy in & join table** — seats you vs house using the signed session.
+2. **Create account / sign in** — username and password. This is the play identity.
+3. **Redeem** funded DAT and **join a table** with the account token. Sage is not required.
+4. **Connect Sage** only to withdraw DAT to a wallet. Scan QR, then **Link Sage address**
+   (CHIP-0002 sign-only). The account id does not change.
 5. **Start hand** — commit-reveal deal; you act when prompted (house auto-plays).
-6. **Withdraw** — cash out table stack to the in-game DAT account. On-chain
-   Sage `takeOffer` is **disabled on the game host** so a compromised page
-   cannot drain testers. See [SECURITY.md](./SECURITY.md) and [TREASURY.md](./TREASURY.md).
+6. **Cash out** table stack to the account. On-chain Sage `takeOffer` is **disabled
+   on the game host**. See [SECURITY.md](./SECURITY.md) and [TREASURY.md](./TREASURY.md).
 
 ### Mainnet test checklist
 

@@ -372,7 +372,9 @@ button.secondary {
 }
 
 .feedback-form textarea,
-.feedback-form input[type="text"] {
+.feedback-form input[type="text"],
+.feedback-form input[type="password"],
+.feedback-form input[type="email"] {
   width: 100%;
   padding: 0.6rem 0.7rem;
   border: 1px solid #2d3a4f;

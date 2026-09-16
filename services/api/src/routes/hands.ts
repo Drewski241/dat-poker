@@ -15,7 +15,7 @@ function seatedPlayer(
   const session = requirePlayer(req, reply);
   if (!session) return null;
   if (!sessionMatchesClaim(session, claimed)) {
-    void reply.status(403).send({ error: "playerId does not match the signed Sage session" });
+    void reply.status(403).send({ error: "playerId does not match the signed-in account" });
     return null;
   }
   if (!table.hasPlayer(session.playerId)) {

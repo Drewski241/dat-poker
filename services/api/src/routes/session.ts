@@ -1,6 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { allowIpBucket } from "../ip-rate-limit.js";
-import { createSessionChallenge, issueSessionFromProof, sessionTtlSeconds } from "../player-session.js";
+import {
+  createSessionChallenge,
+  issueSessionFromProof,
+  linkSageToPlayer,
+  requirePlayer,
+  sessionTtlSeconds,
+} from "../player-session.js";
+import { setUserSageLink } from "../user-store.js";
 
 export function registerSessionRoutes(app: FastifyInstance): void {
   app.get<{ Querystring: { address?: string } }>("/v1/session/challenge", async (req, reply) => {
@@ -47,6 +54,46 @@ export function registerSessionRoutes(app: FastifyInstance): void {
         signature,
         pubkey,
       });
+      return {
+        ok: true,
+        token,
+        playerId: session.playerId,
+        address: session.displayAddress,
+        expiresInSeconds: sessionTtlSeconds(),
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Body: {
+      address?: string;
+      nonce?: string;
+      signature?: string;
+      pubkey?: string;
+    };
+  }>("/v1/session/link", async (req, reply) => {
+    const current = requirePlayer(req, reply);
+    if (!current) return;
+    const ip = req.ip || "unknown";
+    if (!allowIpBucket(ip, "session-link", Date.now(), 40)) {
+      return reply.status(429).send({ error: "Too many Sage link attempts from this network" });
+    }
+    const { address, nonce, signature, pubkey } = req.body ?? {};
+    if (!address || !nonce || !signature || !pubkey) {
+      return reply.status(400).send({ error: "address, nonce, signature, and pubkey required" });
+    }
+    try {
+      const { token, session } = linkSageToPlayer(current, {
+        address,
+        nonce,
+        signature,
+        pubkey,
+      });
+      if (session.playerId.startsWith("user_")) {
+        await setUserSageLink(session.playerId, session.displayAddress, session.pubkey);
+      }
       return {
         ok: true,
         token,

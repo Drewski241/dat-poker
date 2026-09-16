@@ -19,11 +19,11 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
       )}
       <header className="hero">
         <SiteNav page="landing" onNavigate={onNavigate} />
-        <p className="eyebrow">No-limit hold&apos;em · DAT · Sage</p>
+        <p className="eyebrow">No-limit hold&apos;em · DAT · accounts</p>
         <h1>DAT Poker{isBeta ? " beta" : ""}</h1>
         <p className="lede">
-          A website you open in the browser, connect Sage, and sit at a 6-max table.
-          Play the house when you are alone, or another tester when a seat is open.
+          A website you open in the browser. Create an account, redeem funded DAT,
+          and sit at a 6-max table. Connect Sage only if you want DAT in your wallet.
         </p>
         <p>
           <a
@@ -43,24 +43,20 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
         <h2>How to play</h2>
         <ol className="how-to">
           <li>
-            Install <strong>Sage</strong> (Chia wallet) on your phone or desktop if you
-            do not already have it.
-          </li>
-          <li>
-            Click <strong>Play poker now!</strong> Stay on this HTTPS site — WalletConnect
-            will not pair over a raw <code>http://</code> IP.
-          </li>
-          <li>
-            Connect Sage, then <strong>Load wallet</strong>. Scan the QR (or paste the
-            URI in Sage desktop).
+            Click <strong>Play poker now!</strong> and <strong>Create account</strong> (or sign in).
+            You do not need Sage to play.
           </li>
           <li>
             <strong>Redeem 5000 DAT</strong> once per UTC day. That is in-game table
-            credit, not an on-chain CAT send.
+            credit we fund, not an on-chain CAT send.
           </li>
           <li>
             <strong>Buy in &amp; join 6-max</strong>, then deal when two seats are filled.
             Fold, check, call, bet, or raise on your turn.
+          </li>
+          <li>
+            Connect <strong>Sage</strong> later only if you want to withdraw DAT to your
+            wallet. Pairing signs a message and cannot send coins.
           </li>
         </ol>
       </section>
@@ -70,8 +66,8 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
         <ul className="notes">
           <li>Share this site only with people you invited. It is not a worldwide launch.</li>
           <li>
-            Default buy-in is 1000 DAT. Withdraw back to Sage stays locked until you
-            complete one hand per DAT token of that buy-in.
+            Default buy-in is 1000 DAT. Cash out to your account after play-through.
+            Sage is optional until you withdraw DAT to a wallet.
           </li>
           <li>
             Server restarts wipe tables and in-game balances. Keep the stakes at test

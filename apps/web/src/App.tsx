@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { AuthPanel } from "./AuthPanel.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import { SiteNav } from "./SiteNav.js";
@@ -54,6 +55,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
   const [handInProgress, setHandInProgress] = useState(false);
   const [withdrawResult, setWithdrawResult] = useState<WithdrawResult | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [hand, setHand] = useState<HandState | null>(null);
   const [handResult, setHandResult] = useState<HandResult | null>(null);
@@ -65,10 +67,24 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   useEffect(() => {
     void (async () => {
       try {
+        restoreApiAuthToken();
         await api.health();
         setApiOk(true);
         const [config, dat] = await Promise.all([api.walletConfig(), api.datToken()]);
         setDatToken(dat);
+        if (restoreApiAuthToken()) {
+          try {
+            const me = await api.me();
+            setPlayerId(me.playerId);
+            setUsername(me.username);
+            if (me.sageAddress) setWalletAddress(me.sageAddress);
+            const acc = await api.account(me.playerId);
+            setAccountMojos(acc.balanceMojos);
+            setRedeemedToday(acc.redeemedToday);
+          } catch {
+            setApiAuthToken(null);
+          }
+        }
         if (config.walletConnect) {
           setWcConfig(config.walletConnect);
           try {
@@ -181,7 +197,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   };
 
   const disconnectSage = () =>
-    run("Disconnecting…", async () => {
+    run("Disconnecting Sage…", async () => {
+      if (session && wcConfig) {
+        await disconnectWallet(session, wcConfig.projectId);
+      }
+      setSession(null);
+      setWalletAddress(null);
+      setDatBalance(null);
+    });
+
+  const signOut = () =>
+    run("Signing out…", async () => {
       if (session && wcConfig) {
         await disconnectWallet(session, wcConfig.projectId);
       }
@@ -191,14 +217,31 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setAccountMojos(null);
       setRedeemedToday(false);
       setPlayerId(null);
+      setUsername(null);
+      setTableId(null);
+      setTableSeats([]);
+      setHand(null);
+      setHandResult(null);
       setApiAuthToken(null);
     });
 
-  const loadDatBalance = () =>
-    run("Loading wallet…", async () => {
+  const handleAuth = (mode: "register" | "login", fields: { username: string; password: string; email?: string }) => {
+    void run(mode === "register" ? "Creating account…" : "Signing in…", async () => {
+      const result = mode === "register" ? await api.register(fields) : await api.login(fields);
+      setApiAuthToken(result.token);
+      setPlayerId(result.playerId);
+      setUsername(result.username);
+      if (result.sageAddress) setWalletAddress(result.sageAddress);
+      await refreshAccount(result.playerId);
+    });
+  };
+
+  const linkSageWallet = () =>
+    run("Linking Sage…", async () => {
       if (!session || !wcConfig) {
         throw new Error("Connect Sage first");
       }
+      if (!playerId) throw new Error("Sign in first");
       const { balance, address } = await loadPlayerWallet(
         session,
         wcConfig.projectId,
@@ -206,7 +249,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         datToken?.assetId,
       );
       setWalletAddress(address);
-      setStatus("Approve login in Sage — this signs a message and cannot send coins…");
+      setStatus("Approve a withdraw-link signature in Sage — this cannot send coins…");
       const challenge = await api.sessionChallenge(address);
       const signed = await signRedeemMessage(
         session,
@@ -215,47 +258,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         challenge.message,
         address,
       );
-      const created = await api.createSession({
+      const linked = await api.linkSage({
         address,
         nonce: challenge.nonce,
         signature: signed.signature,
         pubkey: signed.pubkey,
       });
-      setApiAuthToken(created.token);
-      setPlayerId(created.playerId);
+      setApiAuthToken(linked.token);
+      setPlayerId(linked.playerId);
       setDatBalance(balance.spendable);
-      await refreshAccount(address);
+      await refreshAccount(linked.playerId);
     });
 
   const redeemDaily = () =>
     run("Redeeming 5000 DAT…", async () => {
-      if (!playerId) throw new Error("Connect Sage and load wallet first");
-      const ticker = datToken?.ticker ?? "DAT";
-      let redeemProof: BuyInProof | undefined;
-      if (session && wcConfig) {
-        const { message, amountMojos } = await api.redeemMessage(playerId);
-        setStatus(`Approve ${formatDatMojos(amountMojos, ticker)} redeem in Sage…`);
-        try {
-          const signed = await signRedeemMessage(
-            session,
-            wcConfig.projectId,
-            wcConfig.chainId,
-            message,
-            playerId,
-          );
-          redeemProof = {
-            address: playerId,
-            message,
-            signature: signed.signature,
-            pubkey: signed.pubkey,
-          };
-        } catch (signErr) {
-          if (!datToken?.devBuyInEnabled) throw signErr;
-        }
-      }
+      if (!playerId) throw new Error("Create an account or sign in first");
       const result = await api.redeem(playerId, {
-        redeemProof,
-        devAck: datToken?.devBuyInEnabled,
+        devAck: datToken?.devBuyInEnabled ?? true,
       });
       setAccountMojos(result.balanceMojos);
       setRedeemedToday(true);
@@ -267,7 +286,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setBusy(true);
     setError(null);
     try {
-      if (!playerId) throw new Error("Connect Sage and load wallet first");
+      if (!playerId) throw new Error("Create an account or sign in first");
       const ticker = datToken?.ticker ?? "DAT";
       const buyIn = datToken?.minBuyInMojos ?? "1000000";
       const account = BigInt(accountMojos ?? "0");
@@ -325,6 +344,26 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const handsPlayed = myTableSeat?.handsPlayed ?? 0;
   const handsRequired = myTableSeat?.handsRequired ?? 0;
   const playthroughRemaining = myTableSeat?.playthroughRemaining ?? 0;
+
+  const cashOutToAccount = () => {
+    if (!tableId || !playerId) return;
+    run("Cashing out…", async () => {
+      await refreshTable(tableId);
+      const seat = (await api.getTable(tableId, playerId)).seats.find((s) => s.playerId === playerId);
+      if (!seat) {
+        throw new Error("You are no longer seated at this table");
+      }
+      const result = await api.withdraw(tableId, playerId, {
+        toAccount: true,
+      });
+      setWithdrawResult(result);
+      setTableId(null);
+      setTableSeats([]);
+      setHand(null);
+      setHandResult(null);
+      await refreshAccount(playerId);
+    });
+  };
 
   const withdrawToSage = () => {
     if (!tableId || !playerId || !walletAddress) return;
@@ -449,7 +488,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       <header>
         {onNavigate && <SiteNav page="play" onNavigate={onNavigate} />}
         <h1>DAT Poker{isBeta ? " beta" : ""}</h1>
-        <p className="tagline">Sage · daily 5000 DAT redeem · 6-max vs house or humans</p>
+        <p className="tagline">Account · daily 5000 DAT · 6-max · Sage only to withdraw</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -459,47 +498,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       {status && <div className="banner info">{status}</div>}
 
       <section className="panel">
-        <h2>Wallet</h2>
-        {pageIsHttp && (
-          <p className="muted">
-            Sage WalletConnect needs HTTPS. Open the <code>https://</code> site
-            (for example <code>https://datspiritpoker.com</code>), not <code>http://</code>
-            plus the Elastic IP.
-          </p>
-        )}
-        <p className="muted small">
-          Sage pairing only signs messages (CHIP-0002). Load wallet asks Sage to sign a
-          login. This site cannot send DAT or XCH from your wallet. Disconnect in Sage
-          after you play if you want.
-        </p>
-        {!wcConfig ? (
-          <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage.</p>
-        ) : !session ? (
-          <button type="button" disabled={busy || !apiOk} onClick={connectSage}>
-            Connect Sage (WalletConnect)
-          </button>
+        <h2>Account</h2>
+        {!playerId ? (
+          <>
+            <p className="muted small">
+              Create an account to redeem funded DAT and sit at a table. You do not need
+              Sage until you want DAT in your wallet.
+            </p>
+            <AuthPanel busy={busy || !apiOk} onAuth={handleAuth} />
+          </>
         ) : (
           <>
-            <p className="ok-text">WalletConnect session active</p>
-            <div className="row">
-              <button type="button" disabled={busy} className="secondary" onClick={loadDatBalance}>
-                Load wallet
-              </button>
-              <button type="button" disabled={busy} className="secondary" onClick={disconnectSage}>
-                Disconnect
-              </button>
-            </div>
-            {walletAddress && (
-              <p className="mono">
-                Address: {shortAddress(walletAddress)}
-                {datBalance != null && (
-                  <>
-                    {" "}
-                    · Sage {datToken?.ticker ?? "DAT"}: {formatDatMojos(datBalance, datToken?.ticker)}
-                  </>
-                )}
-              </p>
-            )}
+            <p className="ok-text">Signed in as {username ?? "player"}</p>
             {accountMojos != null && (
               <p>
                 Table account:{" "}
@@ -515,17 +525,60 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               >
                 Redeem {formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", datToken?.ticker)} today
               </button>
+              <button type="button" disabled={busy} className="secondary" onClick={signOut}>
+                Sign out
+              </button>
             </div>
           </>
         )}
-        {datToken && (
-          <p className="muted small">
-            Network buy-in mode:{" "}
-            {datToken.devBuyInEnabled ? "dev (signed proof optional)" : "mainnet (signed DAT proof required)"}
-            {datToken.assetId && ` · asset ${datToken.assetId.slice(0, 8)}…`}
+      </section>
+
+      {playerId && (
+      <section className="panel">
+        <h2>Withdraw DAT (Sage)</h2>
+        {pageIsHttp && (
+          <p className="muted">
+            Sage WalletConnect needs HTTPS. Open the <code>https://</code> site
+            (for example <code>https://datspiritpoker.com</code>), not <code>http://</code>
+            plus the Elastic IP.
           </p>
         )}
+        <p className="muted small">
+          Pairing only signs a message. This site cannot send DAT or XCH from Sage.
+          Skip this unless you want funded DAT sent to your wallet.
+        </p>
+        {!wcConfig ? (
+          <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage withdraw.</p>
+        ) : !session ? (
+          <button type="button" disabled={busy || !apiOk} onClick={connectSage}>
+            Connect Sage to withdraw DAT
+          </button>
+        ) : (
+          <>
+            <p className="ok-text">Sage paired</p>
+            <div className="row">
+              <button type="button" disabled={busy} className="secondary" onClick={linkSageWallet}>
+                Link Sage address
+              </button>
+              <button type="button" disabled={busy} className="secondary" onClick={disconnectSage}>
+                Disconnect Sage
+              </button>
+            </div>
+            {walletAddress && (
+              <p className="mono">
+                Address: {shortAddress(walletAddress)}
+                {datBalance != null && (
+                  <>
+                    {" "}
+                    · Sage {datToken?.ticker ?? "DAT"}: {formatDatMojos(datBalance, datToken?.ticker)}
+                  </>
+                )}
+              </p>
+            )}
+          </>
+        )}
       </section>
+      )}
 
       <section className="panel">
         <h2>Table</h2>
@@ -570,10 +623,20 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 <button
                   type="button"
                   disabled={busy || playthroughRemaining > 0}
-                  onClick={withdrawToSage}
+                  onClick={cashOutToAccount}
                 >
-                  Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
+                  Cash out {formatDatMojos(tableStackMojos, datToken?.ticker)} to account
                 </button>
+                {walletAddress && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy || playthroughRemaining > 0}
+                    onClick={withdrawToSage}
+                  >
+                    Withdraw to Sage
+                  </button>
+                )}
               </div>
             )}
           </>

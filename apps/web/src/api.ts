@@ -2,8 +2,25 @@ const apiBase = import.meta.env.VITE_API_URL ?? "";
 
 let authToken: string | null = null;
 
+export function restoreApiAuthToken(): string | null {
+  if (authToken) return authToken;
+  try {
+    const stored = sessionStorage.getItem("dat-poker-auth-v1");
+    if (stored) authToken = stored;
+  } catch {
+    /* private browsing */
+  }
+  return authToken;
+}
+
 export function setApiAuthToken(token: string | null): void {
   authToken = token;
+  try {
+    if (token) sessionStorage.setItem("dat-poker-auth-v1", token);
+    else sessionStorage.removeItem("dat-poker-auth-v1");
+  } catch {
+    /* private browsing */
+  }
 }
 
 export function getApiAuthToken(): string | null {
@@ -157,6 +174,56 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  linkSage: (body: { address: string; nonce: string; signature: string; pubkey: string }) =>
+    request<{
+      ok: boolean;
+      token: string;
+      playerId: string;
+      address: string;
+      expiresInSeconds: number;
+    }>("/v1/session/link", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  register: (body: { username: string; password: string; email?: string }) =>
+    request<{
+      ok: boolean;
+      token: string;
+      playerId: string;
+      username: string;
+      email: string;
+      sageLinked: boolean;
+      sageAddress: string;
+    }>("/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  login: (body: { username: string; password: string }) =>
+    request<{
+      ok: boolean;
+      token: string;
+      playerId: string;
+      username: string;
+      email: string;
+      sageLinked: boolean;
+      sageAddress: string;
+    }>("/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  me: () =>
+    request<{
+      ok: boolean;
+      playerId: string;
+      username: string;
+      email: string;
+      sageLinked: boolean;
+      sageAddress: string;
+    }>("/v1/auth/me"),
+
   redeemMessage: (address: string) =>
     request<{ message: string; utcDate: string; amountMojos: string }>(
       `/v1/wallet/redeem/message?address=${encodeURIComponent(address)}`,
@@ -202,7 +269,7 @@ export const api = {
   withdraw: (
     tableId: string,
     playerId: string,
-    options?: { withdrawProof?: WithdrawProof; devAck?: boolean },
+    options?: { withdrawProof?: WithdrawProof; devAck?: boolean; toAccount?: boolean },
   ) =>
     request<WithdrawResult>("/v1/wallet/withdraw", {
       method: "POST",

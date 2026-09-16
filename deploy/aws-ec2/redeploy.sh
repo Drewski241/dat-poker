@@ -33,6 +33,10 @@ rm -rf "${WEB_ROOT:?}/"*
 cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 mkdir -p "$INSTALL_ROOT/data/feedback"
+if [[ ! -f "$INSTALL_ROOT/data/accounts.json" ]]; then
+  printf '%s\n' '{"users":[]}' > "$INSTALL_ROOT/data/accounts.json"
+  chmod 600 "$INSTALL_ROOT/data/accounts.json"
+fi
 chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
 systemctl restart dat-poker-api
 if [[ -f /etc/caddy/caddy.env && -f "$INSTALL_ROOT/deploy/aws-ec2/Caddyfile" ]]; then

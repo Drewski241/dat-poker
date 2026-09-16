@@ -110,7 +110,9 @@ function parseToken(token: string): TokenPayload | null {
   }
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as TokenPayload;
-    if (payload.v !== 1 || !payload.sub || !payload.addr || !payload.pk) return null;
+    if (payload.v !== 1 || !payload.sub || typeof payload.addr !== "string" || typeof payload.pk !== "string") {
+      return null;
+    }
     if (payload.exp < Math.floor(Date.now() / 1000)) return null;
     return payload;
   } catch {
@@ -161,6 +163,33 @@ export function issueSessionFromProof(params: {
   return { token: signSessionToken(session), session };
 }
 
+export function issueAccountSession(user: {
+  id: string;
+  username: string;
+  sageAddress?: string;
+  sagePubkey?: string;
+}): { token: string; session: PlayerSession } {
+  const session: PlayerSession = {
+    playerId: user.id,
+    displayAddress: user.sageAddress || user.username,
+    pubkey: user.sagePubkey ?? "",
+  };
+  return { token: signSessionToken(session), session };
+}
+
+export function linkSageToPlayer(
+  current: PlayerSession,
+  params: { address: string; nonce: string; signature: string; pubkey: string },
+): { token: string; session: PlayerSession } {
+  const issued = issueSessionFromProof(params);
+  const session: PlayerSession = {
+    playerId: current.playerId,
+    displayAddress: issued.session.displayAddress,
+    pubkey: issued.session.pubkey,
+  };
+  return { token: signSessionToken(session), session };
+}
+
 function fakePubkeyForAddress(address: string): string {
   const digest = createHash("sha256").update(address, "utf8").digest("hex");
   return (digest + digest + digest).slice(0, 96);
@@ -199,7 +228,7 @@ export function requirePlayer(req: FastifyRequest, reply: FastifyReply): PlayerS
   const session = readPlayerSession(req);
   if (!session) {
     void reply.status(401).send({
-      error: "Connect Sage and approve the login signature first. This site cannot move coins; it only signs a login.",
+      error: "Create an account or sign in to play. Sage is only needed to withdraw DAT to your wallet.",
     });
     return null;
   }

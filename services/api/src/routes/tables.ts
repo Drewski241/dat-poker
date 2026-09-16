@@ -223,7 +223,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const session = requirePlayer(req, reply);
     if (!session) return;
     if (!sessionMatchesClaim(session, req.body.playerId)) {
-      return reply.status(403).send({ error: "playerId does not match the signed Sage session" });
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
     }
     if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
       return reply.status(429).send({ error: "Too many join requests from this network" });
@@ -312,7 +312,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const session = requirePlayer(req, reply);
     if (!session) return;
     if (!sessionMatchesClaim(session, req.body.playerId)) {
-      return reply.status(403).send({ error: "playerId does not match the signed Sage session" });
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
     }
     const table = tables.get(req.params.tableId);
     if (!table) {

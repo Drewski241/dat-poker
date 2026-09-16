@@ -39,9 +39,7 @@ import {
   buildRedeemMessage,
   buildWithdrawMessage,
   readDatTokenConfig,
-  type RedeemProof,
   type WithdrawProof,
-  validateRedeemProof,
   validateWithdrawProof,
 } from "../wallet-config.js";
 
@@ -83,7 +81,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     const session = requirePlayer(req, reply);
     if (!session) return;
     if (!sessionMatchesClaim(session, req.query.address)) {
-      return reply.status(403).send({ error: "address does not match the signed Sage session" });
+      return reply.status(403).send({ error: "address does not match the signed-in account" });
     }
     const address = session.playerId;
     const amount = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS);
@@ -102,7 +100,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     const session = requirePlayer(req, reply);
     if (!session) return;
     if (!sessionMatchesClaim(session, req.query.address)) {
-      return reply.status(403).send({ error: "address does not match the signed Sage session" });
+      return reply.status(403).send({ error: "address does not match the signed-in account" });
     }
     const address = session.displayAddress;
     const amount = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS);
@@ -120,15 +118,15 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
 
   app.post<{
     Body: {
-      playerId: string;
-      redeemProof?: RedeemProof;
+      playerId?: string;
+      redeemProof?: unknown;
       devAck?: boolean;
     };
   }>("/v1/wallet/redeem", async (req, reply) => {
     const session = requirePlayer(req, reply);
     if (!session) return;
     if (!sessionMatchesClaim(session, req.body.playerId)) {
-      return reply.status(403).send({ error: "playerId does not match the signed Sage session" });
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
     }
     if (!allowIpBucket(req.ip || "unknown", "redeem", Date.now(), 20)) {
       return reply.status(429).send({ error: "Too many redeem attempts from this network" });
@@ -137,32 +135,6 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     const dat = readDatTokenConfig();
     const amount = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS);
     const now = new Date();
-    const utcDate = utcDateKey(now);
-
-    if (!dat.devBuyInEnabled) {
-      if (!req.body.redeemProof) {
-        return reply.status(400).send({ error: "Redeem proof required (approve in Sage)" });
-      }
-      const proofError = validateRedeemProof(req.body.redeemProof, {
-        utcDate,
-        address: session.displayAddress,
-        amountMojos: amount.toString(),
-        playerId,
-      });
-      if (proofError) {
-        return reply.status(400).send({ error: proofError });
-      }
-    } else if (!req.body.devAck && req.body.redeemProof) {
-      const proofError = validateRedeemProof(req.body.redeemProof, {
-        utcDate,
-        address: session.displayAddress,
-        amountMojos: amount.toString(),
-        playerId,
-      });
-      if (proofError) {
-        return reply.status(400).send({ error: proofError });
-      }
-    }
 
     const result = tryRedeemDaily(playerId, amount, now);
     if (!result.credited) {
@@ -204,7 +176,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       return reply.status(400).send({ error: "tableId, seatIndex, and buyInMojos required" });
     }
     if (!sessionMatchesClaim(session, req.query.address)) {
-      return reply.status(403).send({ error: "address does not match the signed Sage session" });
+      return reply.status(403).send({ error: "address does not match the signed-in account" });
     }
     const message = buildBuyInMessage({
       tableId,
@@ -225,7 +197,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       return reply.status(400).send({ error: "tableId and stackMojos required" });
     }
     if (!sessionMatchesClaim(session, req.query.address)) {
-      return reply.status(403).send({ error: "address does not match the signed Sage session" });
+      return reply.status(403).send({ error: "address does not match the signed-in account" });
     }
 
     const table = getTableEngine(tableId);
@@ -265,16 +237,17 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       playerId?: string;
       withdrawProof?: WithdrawProof;
       devAck?: boolean;
+      toAccount?: boolean;
     };
   }>("/v1/wallet/withdraw", async (req, reply) => {
     const session = requirePlayer(req, reply);
     if (!session) return;
-    const { tableId, withdrawProof, devAck } = req.body;
+    const { tableId, withdrawProof, devAck, toAccount } = req.body;
     if (!tableId) {
       return reply.status(400).send({ error: "tableId required" });
     }
     if (!sessionMatchesClaim(session, req.body.playerId)) {
-      return reply.status(403).send({ error: "playerId does not match the signed Sage session" });
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
     }
     const playerId = session.playerId;
 
@@ -300,8 +273,9 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
 
     const dat = readDatTokenConfig();
     const payoutConfig = readTreasuryPayoutConfig();
+    const cashOutToAccount = Boolean(toAccount);
 
-    if (!dat.devBuyInEnabled) {
+    if (!cashOutToAccount && !dat.devBuyInEnabled) {
       if (!dat.assetId) {
         return reply.status(503).send({ error: "DAT token not configured" });
       }
@@ -320,7 +294,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       if (!hasBuyIn(tableId, playerId)) {
         return reply.status(400).send({ error: "No verified buy-in found for this player" });
       }
-    } else if (!devAck) {
+    } else if (!cashOutToAccount && !devAck) {
       if (dat.assetId && withdrawProof) {
         const proofError = validateWithdrawProof(withdrawProof, {
           tableId,
@@ -351,7 +325,12 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     let offer: string | undefined;
     let feeMojos = payoutConfig.withdrawFeeMojos;
 
-    if (payoutMojos > 0n && payoutConfig.treasuryPayoutUrl && dat.assetId) {
+    if (
+      !cashOutToAccount &&
+      payoutMojos > 0n &&
+      payoutConfig.treasuryPayoutUrl &&
+      dat.assetId
+    ) {
       try {
         const treasuryOffer = await requestTreasuryOffer({
           assetId: dat.assetId,

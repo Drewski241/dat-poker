@@ -6,6 +6,8 @@ import { registerTableRoutes, resetTablesForTests } from "./routes/tables.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
 import { registerSessionRoutes } from "./routes/session.js";
+import { registerAuthRoutes } from "./routes/auth.js";
+import { resetUsersForTests } from "./user-store.js";
 import { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import { issueTestSession, resetPlayerSessionsForTests } from "./player-session.js";
 import { signChip0002ForTests } from "./chip0002.js";
@@ -23,6 +25,7 @@ async function buildApp() {
     gameUrl: "http://localhost:3000",
     coinsetUrl: "https://coinset.org",
   });
+  registerAuthRoutes(app);
   registerSessionRoutes(app);
   registerWalletRoutes(app, chia);
   registerTableRoutes(app);
@@ -37,9 +40,12 @@ function auth(token: string) {
 describe("6-max join + daily redeem", () => {
   beforeEach(() => {
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
+    process.env.DAT_ACCOUNTS_PATH = "memory";
+    process.env.DAT_SCRYPT_N = "4096";
     resetTablesForTests();
     resetAccountsForTests();
     resetPlayerSessionsForTests();
+    resetUsersForTests();
     resetIpRateLimitsForTests();
     process.env.DAT_ALLOW_DEV_BUYIN = "true";
     process.env.DAT_MIN_BUY_IN_MOJOS = "1000000";
@@ -308,6 +314,155 @@ describe("6-max join + daily redeem", () => {
       },
     });
     expect(forged.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("lets a username account redeem and join without Sage", async () => {
+    const app = await buildApp();
+    const created = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/auth/register",
+          payload: { username: "betty", password: "password1" },
+        })
+      ).body,
+    );
+    const headers = auth(created.token);
+    const redeem = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/redeem",
+      headers,
+      payload: { playerId: created.playerId },
+    });
+    expect(redeem.statusCode).toBe(200);
+    const join = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join",
+      headers,
+      payload: { playerId: created.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(join.statusCode).toBe(200);
+    const table = JSON.parse(join.body);
+    expect(table.seats.some((s: { playerId: string }) => s.playerId === created.playerId)).toBe(true);
+    await app.close();
+  });
+
+  it("keeps the account playerId when Sage is linked for withdraw", async () => {
+    const app = await buildApp();
+    const created = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/auth/register",
+          payload: { username: "sagewait", password: "password1" },
+        })
+      ).body,
+    );
+    const address = "xch1sagewaitlink";
+    const challenge = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/session/challenge?address=${encodeURIComponent(address)}`,
+        })
+      ).body,
+    );
+    const signed = signChip0002ForTests(new Uint8Array(32).fill(7), challenge.message);
+    const linked = await app.inject({
+      method: "POST",
+      url: "/v1/session/link",
+      headers: auth(created.token),
+      payload: {
+        address,
+        nonce: challenge.nonce,
+        signature: signed.signature,
+        pubkey: signed.pubkey,
+      },
+    });
+    expect(linked.statusCode).toBe(200);
+    const body = JSON.parse(linked.body);
+    expect(body.playerId).toBe(created.playerId);
+    expect(body.address).toBe(address);
+
+    const me = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/v1/auth/me",
+          headers: auth(body.token),
+        })
+      ).body,
+    );
+    expect(me.playerId).toBe(created.playerId);
+    expect(me.sageLinked).toBe(true);
+    expect(me.sageAddress).toBe(address);
+    await app.close();
+  });
+
+  it("cashes a username account out to the table ledger without Sage", async () => {
+    process.env.DAT_MIN_BUY_IN_MOJOS = "1000";
+    const app = await buildApp();
+    const created = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/auth/register",
+          payload: { username: "cashout", password: "password1" },
+        })
+      ).body,
+    );
+    const headers = auth(created.token);
+    await app.inject({
+      method: "POST",
+      url: "/v1/wallet/redeem",
+      headers,
+      payload: { playerId: created.playerId },
+    });
+    const joined = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/tables/join",
+          headers,
+          payload: { playerId: created.playerId, buyInMojos: "1000", devAck: true },
+        })
+      ).body,
+    );
+    const go = await app.inject({
+      method: "POST",
+      url: `/v1/tables/${joined.tableId}/hands/go`,
+      headers,
+      payload: { playerId: created.playerId },
+    });
+    let body = JSON.parse(go.body);
+    for (let i = 0; i < 20 && body.hand; i++) {
+      const actor = body.hand.players.find(
+        (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
+      );
+      if (!actor || actor.playerId !== created.playerId) {
+        break;
+      }
+      const act = await app.inject({
+        method: "POST",
+        url: `/v1/tables/${joined.tableId}/hands/action`,
+        headers,
+        payload: { playerId: created.playerId, action: "fold" },
+      });
+      body = JSON.parse(act.body);
+    }
+    expect(body.hand).toBeNull();
+
+    const cashed = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers,
+      payload: { tableId: joined.tableId, playerId: created.playerId, toAccount: true },
+    });
+    expect(cashed.statusCode).toBe(200);
+    const result = JSON.parse(cashed.body);
+    expect(result.mode).toBe("ledger");
+    expect(BigInt(result.accountMojos)).toBeGreaterThan(0n);
     await app.close();
   });
 });
