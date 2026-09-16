@@ -18,7 +18,7 @@ This Cloud Agent cannot click Launch in your account.
 | `t3.small` (2 GiB) | Room for Node + `pnpm` (prefer this over `t3.micro`) |
 | Elastic IP | Stable public IPv4 (point `datspiritpoker.com` here) |
 | nginx `:80` / Caddy `:443` | Public website (`https://datspiritpoker.com/` and `/play`) + API |
-| systemd `dat-poker-api` | NLHE 6-max; house or humans |
+| systemd `dat-poker-api` | NLHE 6-max; house bot (bets/folds) or humans |
 | Daily redeem | 5000 DAT / UTC day into the in-game table account |
 | `VITE_APP_STAGE=beta` | Yellow beta banner on Home and Play |
 | Session Manager | Same browser shell you used for the tutorial (recreate the IAM role) |

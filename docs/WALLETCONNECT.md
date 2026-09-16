@@ -60,7 +60,9 @@ The Vite web client (`apps/web`) implements Sage WalletConnect:
 3. **Redeem** funded DAT and **join a table** with the account token. Sage is not required.
 4. **Connect Sage** only to withdraw DAT to a wallet. Scan QR, then **Link Sage address**
    (CHIP-0002 sign-only). The account id does not change.
-5. **Start hand** — commit-reveal deal; you act when prompted (house auto-plays).
+5. **Start hand** — commit-reveal deal; you act when prompted. Solo vs house,
+   the house bot bets, raises, and folds from its cards (it is not a check/call
+   station).
 6. **Cash out** table stack to the account. On-chain Sage `takeOffer` is **disabled
    on the game host**. See [SECURITY.md](./SECURITY.md) and [TREASURY.md](./TREASURY.md).
 
