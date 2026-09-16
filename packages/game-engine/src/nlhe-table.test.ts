@@ -35,6 +35,7 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()).toBeNull();
     expect(table.getLastHandResult()?.winnerId).toBe("bob");
     expect(table.getLastHandResult()?.reason).toBe("fold");
+    expect(table.getLastHandResult()?.shown).toEqual([]);
     expect(table.getHandsPlayed("alice")).toBe(1);
     expect(table.getHandsPlayed("bob")).toBe(1);
   });
@@ -111,5 +112,35 @@ describe("NlheTableEngine", () => {
     const actorId = first.players.find((p) => p.seatIndex === first.actionSeat)!.playerId;
     table.applyAction(actorId, "fold");
     expect(table.getHandState()?.players.filter((p) => !p.folded).length).toBe(2);
+  });
+
+  it("reveals remaining hole cards after a showdown", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("dat-poker:house", 1, 5_000_000_000_000n);
+
+    table.startHand("hand-6");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("dat-poker:house", generateServerSeed());
+    table.revealAndDeal();
+
+    for (let i = 0; i < 40; i++) {
+      const hand = table.getHandState();
+      if (!hand || hand.actionSeat == null) break;
+      const actor = hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded);
+      if (!actor) break;
+      const toCall = hand.currentBetMojos - actor.betThisStreetMojos;
+      table.applyAction(actor.playerId, toCall > 0n ? "call" : "check");
+    }
+
+    expect(table.getHandState()).toBeNull();
+    const result = table.getLastHandResult();
+    expect(result?.reason).toBe("showdown");
+    expect(result?.board).toHaveLength(5);
+    expect(result?.shown).toHaveLength(2);
+    expect(result?.shown.every((p) => p.holeCards.length === 2)).toBe(true);
+    expect(result?.shown.some((p) => p.playerId === "dat-poker:house")).toBe(true);
+    expect(result?.shown.map((p) => p.playerId).sort()).toEqual(["alice", "dat-poker:house"]);
+    expect(result?.shown.find((p) => p.playerId === result.winnerId)?.category).toBeTruthy();
   });
 });

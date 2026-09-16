@@ -37,6 +37,21 @@ function shortAddress(addr: string): string {
   return `${addr.slice(0, 8)}…${addr.slice(-6)}`;
 }
 
+function handCategoryLabel(category: string): string {
+  const labels: Record<string, string> = {
+    high_card: "high card",
+    pair: "pair",
+    two_pair: "two pair",
+    three_kind: "three of a kind",
+    straight: "straight",
+    flush: "flush",
+    full_house: "full house",
+    four_kind: "four of a kind",
+    straight_flush: "straight flush",
+  };
+  return labels[category] ?? category.replaceAll("_", " ");
+}
+
 export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = {}) {
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [datToken, setDatToken] = useState<DatTokenInfo | null>(null);
@@ -662,10 +677,31 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           {!hand ? (
             <>
               {handResult && (
-                <div className="banner win">
+                <div className={handResult.winnerId === playerId ? "banner win" : "banner info"}>
                   <strong>{playerLabel(handResult.winnerId, playerId, tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress)}</strong> wins{" "}
                   {formatDatMojos(handResult.potMojos, datToken?.ticker)}
                   {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
+                  {handResult.reason === "showdown" && handResult.board && handResult.board.length > 0 && (
+                    <p>Board: {handResult.board.map(cardLabel).join(" ")}</p>
+                  )}
+                  {handResult.reason === "showdown" && (handResult.shown?.length ?? 0) > 0 && (
+                    <ul className="showdown-hands">
+                      {handResult.shown!.map((shown) => (
+                        <li key={shown.playerId}>
+                          <strong>{playerLabel(shown.playerId, playerId, tableSeats.find((s) => s.playerId === shown.playerId)?.displayAddress)}</strong>
+                          <span className="cards"> {shown.holeCards.map(cardLabel).join(" ")}</span>
+                          {" — "}
+                          {handCategoryLabel(shown.category)}
+                          {shown.playerId === handResult.winnerId ? " (winner)" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {handResult.reason === "fold" && (
+                    <p className="muted small">
+                      No showdown — the last remaining player took the pot without showing cards.
+                    </p>
+                  )}
                 </div>
               )}
               <button type="button" disabled={busy || tableSeats.length < 2} onClick={startHandFlow}>
@@ -686,7 +722,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 {hand.players.map((p) => (
                   <li key={p.playerId}>
                     <strong>{p.playerId === playerId ? "You" : p.playerId === HOUSE_PLAYER_ID ? "House" : p.playerId}</strong>
-                    {p.playerId === playerId && p.holeCards.length > 0 && (
+                    {p.holeCards.length > 0 && (
                       <span className="cards"> {p.holeCards.map(cardLabel).join(" ")}</span>
                     )}
                     {p.folded ? " — folded" : ""}

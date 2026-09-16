@@ -72,6 +72,12 @@ export interface HandResult {
   winnerId: string;
   potMojos: string;
   reason: "fold" | "showdown";
+  board?: { rank: string; suit: string }[];
+  shown?: {
+    playerId: string;
+    holeCards: { rank: string; suit: string }[];
+    category: string;
+  }[];
 }
 
 export interface WalletConnectConfig {

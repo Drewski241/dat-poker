@@ -1,6 +1,6 @@
 import type { HandId, PlayerId, Street, TableConfig } from "@dat-poker/shared";
 import { standardDeck, type Card } from "./card.js";
-import { compareHands, evaluateBestHand } from "./hand-evaluator.js";
+import { compareHands, evaluateBestHand, type HandCategory } from "./hand-evaluator.js";
 import {
   buildShuffleEntropy,
   createCommit,
@@ -11,11 +11,19 @@ import {
 
 export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in";
 
+export interface ShownHand {
+  playerId: PlayerId;
+  holeCards: Card[];
+  category: HandCategory;
+}
+
 export interface HandResult {
   handId: HandId;
   winnerId: PlayerId;
   potMojos: bigint;
   reason: "fold" | "showdown";
+  board: Card[];
+  shown: ShownHand[];
 }
 
 export interface PlayerHandState {
@@ -413,6 +421,12 @@ export class NlheTableEngine {
       winnerId: best.playerId,
       potMojos: h.potMojos,
       reason: "showdown",
+      board: [...h.board],
+      shown: live.map((p) => ({
+        playerId: p.playerId,
+        holeCards: [...p.holeCards],
+        category: evaluateBestHand([...p.holeCards, ...h.board]).category,
+      })),
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;
@@ -428,6 +442,8 @@ export class NlheTableEngine {
       winnerId: winner.playerId,
       potMojos: h.potMojos,
       reason: "fold",
+      board: [...h.board],
+      shown: [],
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;

@@ -206,6 +206,16 @@ button:disabled {
   color: var(--accent);
 }
 
+.showdown-hands {
+  list-style: none;
+  padding: 0.4rem 0 0;
+  margin: 0;
+}
+
+.showdown-hands li {
+  padding: 0.15rem 0;
+}
+
 .stack {
   color: var(--muted);
   font-size: 0.85rem;
