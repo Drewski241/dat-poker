@@ -35,6 +35,8 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()).toBeNull();
     expect(table.getLastHandResult()?.winnerId).toBe("bob");
     expect(table.getLastHandResult()?.reason).toBe("fold");
+    expect(table.getHandsPlayed("alice")).toBe(1);
+    expect(table.getHandsPlayed("bob")).toBe(1);
   });
 
   it("advances to flop after raise and call", () => {

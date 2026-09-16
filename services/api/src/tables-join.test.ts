@@ -93,4 +93,62 @@ describe("6-max join + daily redeem", () => {
 
     await app.close();
   });
+
+  it("blocks withdraw until one hand per DAT token of buy-in is played", async () => {
+    process.env.DAT_MIN_BUY_IN_MOJOS = "1000";
+    const app = await buildApp();
+    tryRedeemDaily("xch1carol", 5_000_000n);
+
+    const joined = JSON.parse(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/tables/join",
+          payload: { playerId: "xch1carol", buyInMojos: "1000", devAck: true },
+        })
+      ).body,
+    );
+    expect(joined.seats.find((s: { playerId: string }) => s.playerId === "xch1carol").handsRequired).toBe(
+      1,
+    );
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      payload: { tableId: joined.tableId, playerId: "xch1carol", devAck: true },
+    });
+    expect(blocked.statusCode).toBe(400);
+    expect(JSON.parse(blocked.body).error).toMatch(/Play through/i);
+
+    const go = await app.inject({
+      method: "POST",
+      url: `/v1/tables/${joined.tableId}/hands/go`,
+      payload: { playerId: "xch1carol" },
+    });
+    expect(go.statusCode).toBe(200);
+    let body = JSON.parse(go.body);
+    for (let i = 0; i < 20 && body.hand; i++) {
+      const actor = body.hand.players.find(
+        (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
+      );
+      if (!actor || actor.playerId !== "xch1carol") {
+        break;
+      }
+      const act = await app.inject({
+        method: "POST",
+        url: `/v1/tables/${joined.tableId}/hands/action`,
+        payload: { playerId: "xch1carol", action: "fold" },
+      });
+      body = JSON.parse(act.body);
+    }
+    expect(body.hand).toBeNull();
+
+    const allowed = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      payload: { tableId: joined.tableId, playerId: "xch1carol", devAck: true },
+    });
+    expect(allowed.statusCode).toBe(200);
+    await app.close();
+  });
 });

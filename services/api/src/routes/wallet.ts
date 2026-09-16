@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import {
   nextUtcDayIso,
+  playthroughHandsRequired,
   resolveDatDailyRedeemMojos,
   utcDateKey,
 } from "@dat-poker/shared";
@@ -20,6 +21,17 @@ import {
 } from "../treasury-payout.js";
 import { getTableEngine } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
+import type { NlheTableEngine } from "@dat-poker/game-engine";
+
+function playthroughBlock(table: NlheTableEngine, tableId: string, playerId: string): string | null {
+  const rec = getBuyInRecord(tableId, playerId);
+  const required = rec ? playthroughHandsRequired(rec.buyInMojos) : 0;
+  const played = table.getHandsPlayed(playerId);
+  if (played < required) {
+    return `Play through ${required - played} more hand(s) before withdraw (${played}/${required}). Requirement is one completed hand per DAT token of buy-in.`;
+  }
+  return null;
+}
 import {
   buildBuyInMessage,
   buildRedeemMessage,
@@ -202,6 +214,10 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     if (stack === null) {
       return reply.status(400).send({ error: "Player not seated at table" });
     }
+    const blocked = playthroughBlock(table, tableId, address);
+    if (blocked) {
+      return reply.status(400).send({ error: blocked });
+    }
     if (stack.toString() !== stackMojos) {
       return reply.status(400).send({
         error: `Stack mismatch — refresh table (expected ${stack.toString()} mojos)`,
@@ -239,6 +255,10 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     const stack = table.getPlayerStack(playerId);
     if (stack === null) {
       return reply.status(400).send({ error: "Player not seated at table" });
+    }
+    const blocked = playthroughBlock(table, tableId, playerId);
+    if (blocked) {
+      return reply.status(400).send({ error: blocked });
     }
 
     const dat = readDatTokenConfig();

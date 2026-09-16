@@ -259,6 +259,9 @@ export function App() {
 
   const myTableSeat = tableSeats.find((s) => s.playerId === playerId);
   const tableStackMojos = myTableSeat?.stackMojos ?? null;
+  const handsPlayed = myTableSeat?.handsPlayed ?? 0;
+  const handsRequired = myTableSeat?.handsRequired ?? 0;
+  const playthroughRemaining = myTableSeat?.playthroughRemaining ?? 0;
 
   const withdrawToSage = () => {
     if (!tableId || !playerId || !walletAddress) return;
@@ -489,9 +492,19 @@ export function App() {
                 <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
               </p>
             )}
+            {tableId && handsRequired > 0 && (
+              <p className="muted small">
+                Play-through: {handsPlayed}/{handsRequired} hands (one hand per DAT token of buy-in)
+                {playthroughRemaining > 0 ? ` — ${playthroughRemaining} remaining` : " — met"}
+              </p>
+            )}
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">
-                <button type="button" disabled={busy} onClick={withdrawToSage}>
+                <button
+                  type="button"
+                  disabled={busy || playthroughRemaining > 0}
+                  onClick={withdrawToSage}
+                >
                   Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
                 </button>
               </div>

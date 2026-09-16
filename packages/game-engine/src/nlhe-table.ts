@@ -51,6 +51,7 @@ export class NlheTableEngine {
   private config: TableConfig;
   private seats: Map<number, PlayerId> = new Map();
   private stacks: Map<PlayerId, bigint> = new Map();
+  private handsPlayed: Map<PlayerId, number> = new Map();
   private hand: TableHandState | null = null;
   private lastHandResult: HandResult | null = null;
 
@@ -70,6 +71,9 @@ export class NlheTableEngine {
     }
     this.seats.set(seatIndex, playerId);
     this.stacks.set(playerId, buyInMojos);
+    if (!this.handsPlayed.has(playerId)) {
+      this.handsPlayed.set(playerId, 0);
+    }
   }
 
   getMaxSeats(): number {
@@ -138,7 +142,12 @@ export class NlheTableEngine {
     }
     this.seats.delete(seatIndex);
     this.stacks.delete(playerId);
+    this.handsPlayed.delete(playerId);
     return { stackMojos, seatIndex };
+  }
+
+  getHandsPlayed(playerId: PlayerId): number {
+    return this.handsPlayed.get(playerId) ?? 0;
   }
 
   startHand(handId: HandId): { commitHash: string } {
@@ -405,6 +414,7 @@ export class NlheTableEngine {
       potMojos: h.potMojos,
       reason: "showdown",
     };
+    this.recordHandPlayed(h);
     h.potMojos = 0n;
     this.hand = null;
   }
@@ -419,7 +429,14 @@ export class NlheTableEngine {
       potMojos: h.potMojos,
       reason: "fold",
     };
+    this.recordHandPlayed(h);
     h.potMojos = 0n;
     this.hand = null;
+  }
+
+  private recordHandPlayed(h: TableHandState): void {
+    for (const p of h.players) {
+      this.handsPlayed.set(p.playerId, (this.handsPlayed.get(p.playerId) ?? 0) + 1);
+    }
   }
 }

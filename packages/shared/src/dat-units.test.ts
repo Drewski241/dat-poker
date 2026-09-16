@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CAT_MOJOS_PER_TOKEN,
   formatDatMojos,
+  playthroughHandsRequired,
   resolveDatDailyRedeemMojos,
   resolveDatMinBuyInMojos,
 } from "./dat-units.js";
@@ -41,5 +42,13 @@ describe("resolveDatDailyRedeemMojos", () => {
   it("defaults to 5000 DAT", () => {
     expect(resolveDatDailyRedeemMojos(undefined)).toBe(5_000_000n);
     expect(resolveDatDailyRedeemMojos("5000000")).toBe(5_000_000n);
+  });
+});
+
+describe("playthroughHandsRequired", () => {
+  it("requires one hand per whole DAT token of buy-in", () => {
+    expect(playthroughHandsRequired(1_000_000n)).toBe(1000);
+    expect(playthroughHandsRequired("2000")).toBe(2);
+    expect(playthroughHandsRequired(0n)).toBe(0);
   });
 });

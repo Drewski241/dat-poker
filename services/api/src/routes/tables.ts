@@ -1,9 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { TableConfig } from "@dat-poker/shared";
-import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
+import { DAT_TABLE_DEFAULTS, playthroughHandsRequired, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
-import { recordBuyIn } from "../buy-in-store.js";
+import { recordBuyIn, getBuyInRecord } from "../buy-in-store.js";
 import { debitAccount, getAccountBalance, creditAccount } from "../account-store.js";
 import { HOUSE_PLAYER_ID } from "../house-id.js";
 import { redactHandForViewer } from "../redact-hand.js";
@@ -52,7 +52,17 @@ function tableSnapshot(tableId: string, table: NlheTableEngine, viewerId?: strin
     players: table.getActivePlayerCount(),
     humans: humanCount(table),
     handInProgress: table.isHandInProgress(),
-    seats: table.getSeatedPlayers(),
+    seats: table.getSeatedPlayers().map((s) => {
+      const buyIn = getBuyInRecord(tableId, s.playerId);
+      const handsRequired = buyIn ? playthroughHandsRequired(buyIn.buyInMojos) : 0;
+      const handsPlayed = table.getHandsPlayed(s.playerId);
+      return {
+        ...s,
+        handsPlayed,
+        handsRequired,
+        playthroughRemaining: Math.max(0, handsRequired - handsPlayed),
+      };
+    }),
     hand: redactHandForViewer(table.getHandState(), viewerId),
     lastHandResult: table.getLastHandResult(),
   };

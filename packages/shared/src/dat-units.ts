@@ -63,3 +63,12 @@ export function nextUtcDayIso(now = new Date()): string {
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
   ).toISOString();
 }
+
+/** Casino-style play-through: one completed hand per whole DAT token of buy-in. */
+export function playthroughHandsRequired(buyInMojos: bigint | string): number {
+  const n = typeof buyInMojos === "string" ? BigInt(buyInMojos) : buyInMojos;
+  if (n <= 0n) {
+    return 0;
+  }
+  return Number(n / CAT_MOJOS_PER_TOKEN);
+}

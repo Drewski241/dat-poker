@@ -82,6 +82,9 @@ export interface TableSeat {
   playerId: string;
   seatIndex: number;
   stackMojos: string;
+  handsPlayed?: number;
+  handsRequired?: number;
+  playthroughRemaining?: number;
 }
 
 export interface TableConfigResponse {
