@@ -13,7 +13,6 @@ import {
   restoreSession,
   signRedeemMessage,
   signWithdrawMessage,
-  takeOffer,
   type WcSession,
 } from "./wallet/chia-wallet.js";
 
@@ -348,13 +347,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         devAck: datToken?.devBuyInEnabled,
       });
 
-      if (result.mode === "offer" && result.offer && session && wcConfig) {
-        if (result.offer.startsWith("mock-offer:")) {
-          setStatus("Mock treasury offer (dev) — skipping Sage takeOffer");
-        } else {
-          setStatus("Accept treasury payout in Sage…");
-          await takeOffer(session, wcConfig.projectId, wcConfig.chainId, result.offer, BigInt(result.feeMojos));
-        }
+      if (result.mode === "offer" && result.offer) {
+        setStatus(
+          "On-chain Sage takeOffer is disabled on this host so DAT cannot leave your wallet. Stack is in your table account.",
+        );
       }
 
       setWithdrawResult(result);
@@ -453,6 +449,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             plus the Elastic IP.
           </p>
         )}
+        <p className="muted small">
+          Sage pairing only signs messages (CHIP-0002). This site cannot send DAT or XCH
+          from your wallet. Disconnect in Sage after you play if you want.
+        </p>
         {!wcConfig ? (
           <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage.</p>
         ) : !session ? (
@@ -683,6 +683,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           <p>
             DAT POKER public beta. Redeem 5000 DAT per UTC day into a table account (not an
             on-chain CAT send). 6-max: play the house or another human on an open seat.
+            {" "}
+            <a href="/feedback" onClick={(e) => { e.preventDefault(); onNavigate?.("feedback"); }}>
+              Send feedback
+            </a>
+            .
           </p>
         ) : (
           <p>

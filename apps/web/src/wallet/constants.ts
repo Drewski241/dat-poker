@@ -4,9 +4,23 @@ import type { CoreTypes, ProposalTypes, SessionTypes } from "@walletconnect/type
 export const WALLETCONNECT_RELAY_URL = "wss://relay.walletconnect.com";
 
 /**
- * Methods we actually call after Sage approves (CHIP-0002 + Sage extras).
- * Kept required so a session that cannot load a DAT balance / sign a buy-in
- * does not look connected.
+ * Spend / offer RPCs that can move coins out of Sage.
+ * The public beta site must never request these. Buy-in and redeem only
+ * sign CHIP-0002 messages; in-game DAT is a ledger, not a CAT send.
+ */
+export const SAGE_SPEND_METHODS = [
+  "chia_send",
+  "chia_createOffer",
+  "chia_takeOffer",
+  "chia_cancelOffer",
+  "chip0002_signCoinSpends",
+  "chip0002_sendTransaction",
+] as const;
+
+/**
+ * Methods we actually call after Sage approves.
+ * Sign-message methods cannot authorize a spend (CHIP-0002 prefixes the
+ * payload with "Chia Signed Message").
  */
 export const SAGE_REQUIRED_METHODS = [
   "chip0002_getPublicKeys",
@@ -14,10 +28,9 @@ export const SAGE_REQUIRED_METHODS = [
   "chip0002_signMessage",
   "chia_getAddress",
   "chia_signMessageByAddress",
-  "chia_takeOffer",
 ] as const;
 
-/** Methods supported by Sage WalletConnect (see xch-dev/sage src/walletconnect/commands.ts). */
+/** Optional extras Sage may grant without spend permission. */
 export const SAGE_WC_METHODS = [
   "chip0002_connect",
   "chip0002_chainId",
@@ -27,9 +40,6 @@ export const SAGE_WC_METHODS = [
   "chip0002_signMessage",
   "chia_getAddress",
   "chia_signMessageByAddress",
-  "chia_send",
-  "chia_createOffer",
-  "chia_takeOffer",
 ] as const;
 
 export function requiredNamespaces(chainId: string): ProposalTypes.RequiredNamespaces {
@@ -42,7 +52,6 @@ export function requiredNamespaces(chainId: string): ProposalTypes.RequiredNames
   };
 }
 
-/** chia-gaming also proposes optional chia methods so wallets can accept a subset. */
 export function optionalNamespaces(chainId: string): ProposalTypes.OptionalNamespaces {
   return {
     chia: {
@@ -51,6 +60,15 @@ export function optionalNamespaces(chainId: string): ProposalTypes.OptionalNames
       events: [],
     },
   };
+}
+
+export function sessionMethodList(session: SessionTypes.Struct): string[] {
+  return session.namespaces?.chia?.methods ?? [];
+}
+
+export function sessionSpendMethods(session: SessionTypes.Struct): string[] {
+  const spend = new Set<string>(SAGE_SPEND_METHODS);
+  return sessionMethodList(session).filter((method) => spend.has(method));
 }
 
 export function dappMetadata(): CoreTypes.Metadata {

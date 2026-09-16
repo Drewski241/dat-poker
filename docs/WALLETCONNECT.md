@@ -60,7 +60,9 @@ The Vite web client (`apps/web`) implements Sage WalletConnect:
 3. **Load DAT balance** — finds your CAT wallet matching `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
 4. **Buy in & join table** — signs a buy-in intent via `chia_signMessageByAddress`, seats you vs house.
 5. **Start hand** — commit-reveal deal; you act when prompted (house auto-plays).
-6. **Withdraw** — cash out table stack; if treasury is configured, accept the DAT offer in Sage. See [TREASURY.md](./TREASURY.md).
+6. **Withdraw** — cash out table stack to the in-game DAT account. On-chain
+   Sage `takeOffer` is **disabled on the game host** so a compromised page
+   cannot drain testers. See [SECURITY.md](./SECURITY.md) and [TREASURY.md](./TREASURY.md).
 
 ### Mainnet test checklist
 
@@ -120,3 +122,4 @@ methods (`chip0002_getAssetBalance`, `chia_getAddress`,
 - [DAT_TOKEN.md](./DAT_TOKEN.md) — DAT Governance Token buy-in architecture
 - [CHIA_INTEGRATION.md](./CHIA_INTEGRATION.md) — chia-gaming modes and network URLs
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — wallet / treasury component in the platform diagram
+- [SECURITY.md](./SECURITY.md) — Sage pairing permissions and beta drain protections

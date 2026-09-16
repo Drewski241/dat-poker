@@ -7,6 +7,7 @@ import {
   dappMetadata,
   optionalNamespaces,
   requiredNamespaces,
+  sessionSpendMethods,
 } from "./constants.js";
 
 let clientPromise: Promise<SignClient> | null = null;
@@ -176,6 +177,11 @@ async function wcRequest<T>(
   timeoutMs = 90_000,
 ): Promise<T> {
   const client = await getSignClient(projectId);
+  if (sessionSpendMethods(session).includes(method) || method === "chia_takeOffer" || method === "chia_send") {
+    throw new Error(
+      "This site does not send or take offers from Sage. DAT stays in your wallet until on-chain escrow exists.",
+    );
+  }
   const request = client.request<T>({
     topic: session.topic,
     chainId,
@@ -297,16 +303,15 @@ export async function signBuyInMessage(
 }
 
 export async function takeOffer(
-  session: WcSession,
-  projectId: string,
-  chainId: string,
-  offer: string,
-  feeMojos = 0n,
+  _session: WcSession,
+  _projectId: string,
+  _chainId: string,
+  _offer: string,
+  _feeMojos = 0n,
 ): Promise<{ success: boolean }> {
-  return wcRequest<{ success: boolean }>(session, projectId, chainId, "chia_takeOffer", {
-    offer,
-    fee: Number(feeMojos),
-  });
+  throw new Error(
+    "On-chain Sage takeOffer is disabled on the game host so a compromised page cannot drain your wallet. Withdraw credits stay in your table account.",
+  );
 }
 
 export async function loadPlayerWallet(
@@ -342,9 +347,22 @@ export const signWithdrawMessage = signBuyInMessage;
 export const signRedeemMessage = signBuyInMessage;
 
 export function restoreSession(projectId: string): Promise<WcSession | undefined> {
-  return getSignClient(projectId).then((client) => {
+  return getSignClient(projectId).then(async (client) => {
     const keys = client.session.keys;
     if (!keys.length) return undefined;
-    return client.session.get(keys[keys.length - 1]);
+    const session = client.session.get(keys[keys.length - 1]);
+    const spends = sessionSpendMethods(session);
+    if (spends.length) {
+      try {
+        await client.disconnect({
+          topic: session.topic,
+          reason: { code: 6000, message: "Spend methods are not allowed on DAT Poker beta" },
+        });
+      } catch {
+        /* still refuse to reuse a spend-capable session */
+      }
+      return undefined;
+    }
+    return session;
   });
 }

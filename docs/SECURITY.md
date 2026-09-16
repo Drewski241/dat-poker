@@ -1,36 +1,54 @@
-# Security
+# Beta security (website + Sage)
 
-## Threat model (summary)
+Closed beta on **https://datspiritpoker.com/**. Goal: testers can pair Sage
+without DAT or XCH leaving the wallet, and operators do not put treasury keys
+on the game host.
 
-| Threat | Mitigation |
-|--------|------------|
-| Server deck bias | Commit-reveal; publish `commitHash` before seeds |
-| Client action spoofing | Server-authoritative validation; signed intents (planned) |
-| Collusion / bots | Table isolation, behavior scoring, CAPTCHA/device attestation |
-| Wallet / key theft | HSM, no hot keys in app servers, withdrawal limits |
-| DDoS | WAF, rate limits, regional absorption |
-| Insider abuse | Audit logs, dual control on treasury |
+## What cannot drain Sage
 
-## Funds handling
+WalletConnect pairing for DAT Poker **only** requests:
 
-1. **Development** — Use chia-gaming simulator only.
-2. **Staging** — Testnet + low stakes; monitor known alpha fund-leak issues.
-3. **Production** — Segregated treasury, multi-sig for large movements, reconciliation jobs.
+- `chia_getAddress`, `chip0002_getPublicKeys`, `chip0002_getAssetBalance`
+- `chia_signMessageByAddress`, `chip0002_signMessage`
 
-## Compliance (planned)
+CHIP-0002 `signMessage` hashes with the `"Chia Signed Message"` prefix, so a
+signed buy-in / redeem / withdraw **text** cannot be reused as a spend.
 
-- Age / geo verification before real-money play
-- AML transaction monitoring
-- Responsible gaming (limits, self-exclusion)
-- Jurisdiction-specific feature flags
+The site **does not request** `chia_send`, `chia_createOffer`,
+`chia_takeOffer`, or `chip0002_signCoinSpends`. Old sessions that still have
+those methods are dropped on page load. On-chain `takeOffer` after withdraw
+is disabled on the game host.
 
-## Audit artifacts
+Daily redeem and table stacks are **in-memory ledger credits**, not CAT
+sends. Treasury Sage stays on a separate machine ([TREASURY.md](./TREASURY.md)).
 
-Each completed hand should retain:
+Testers should still **read Sage prompts**. If Sage ever asks to send coins or
+take an offer during this beta, tap reject and report it on `/feedback`.
 
-- Event log (JSON)
-- `SettlementProof` with `stateRootHash`
-- Optional `chiaTxId`
-- Commit hash + revealed seeds (post-hand)
+## What testers should still know
 
-Retention policies depend on licensing jurisdiction.
+In-game seats use the Chia address as `playerId` **without a login cookie**.
+A closed invite list is the current control. Hole cards on `GET /v1/tables`
+can leak if someone knows your address and table id. Keep the tester group
+small. Cryptographic session binding is the next hardening step.
+
+`DAT_ALLOW_DEV_BUYIN=true` on the public host lets the table work without a
+verified Sage signature. That does not move on-chain DAT.
+
+## Website controls
+
+- HTTPS via Caddy; HTTP-only IP will not pair Sage.
+- Content-Security-Policy, `X-Frame-Options DENY`, nosniff.
+- Feedback images: JPEG/PNG/WebP magic bytes only, stored on disk, **not**
+  served back on the website (no stored XSS).
+- Reown Cloud **Allowed domains** must be exactly
+  `https://datspiritpoker.com` and `https://www.datspiritpoker.com`.
+
+## Operator checklist
+
+1. No `TREASURY_*` or Sage RPC certs on this EC2 box.
+2. Leave `DAT_TREASURY_PAYOUT_URL` empty on the game host.
+3. After pairing changes, testers should **Disconnect** in Sage and scan a
+   new QR so old spend permissions are gone.
+4. Read feedback: `ls /var/lib/dat-poker/feedback` (or `data/feedback` if
+   `DAT_FEEDBACK_DIR` is unset).
