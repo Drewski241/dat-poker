@@ -221,6 +221,18 @@ sudo DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971 bash /opt/dat-poker/dep
 
 Wait until it prints `beta redeploy ok`. In-memory tables reset.
 
+If the log shows `curl: (22) ... 502` and stops, that is the **previous**
+`redeploy.sh` (bash keeps running the file it started with). The build and
+`systemctl restart` usually already finished. Check the API, then continue
+— do not re-run the full rebuild unless `:4000/health` is down:
+
+```bash
+curl -sS http://127.0.0.1:4000/health
+curl -sS http://127.0.0.1/health
+```
+
+You want `{"status":"ok","service":"dat-poker-api"}`. Then go to step 2.
+
 ### 2. Turn on HTTPS (no domain purchase)
 
 The security group already allows **443**. Caddy gets a Let’s Encrypt cert

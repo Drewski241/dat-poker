@@ -12,8 +12,14 @@ export CI=true
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=512}"
 export VITE_APP_STAGE="${DAT_POKER_STAGE:-beta}"
 
-git fetch --depth 1 origin "$REPO_REF"
-git checkout -f FETCH_HEAD
+# bash already loaded this file. After checkout, re-exec so health checks
+# and Caddy/nginx handling come from the fetched script, not the old one.
+if [[ "${DAT_POKER_REDEPLOY_REEXEC:-}" != "1" ]]; then
+  git fetch --depth 1 origin "$REPO_REF"
+  git -c advice.detachedHead=false checkout -f FETCH_HEAD
+  export DAT_POKER_REDEPLOY_REEXEC=1
+  exec bash "$INSTALL_ROOT/deploy/aws-ec2/redeploy.sh"
+fi
 
 corepack enable
 corepack prepare pnpm@9.15.0 --activate

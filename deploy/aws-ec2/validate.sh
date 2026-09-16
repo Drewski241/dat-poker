@@ -85,8 +85,9 @@ print(proc.stdout.strip())
 PY
 
 if grep -q 'seq 1 30' "$DIR/redeploy.sh" \
-  && grep -q 'http://127.0.0.1:4000/health' "$DIR/redeploy.sh"; then
-  ok "redeploy.sh retries API :4000/health after restart"
+  && grep -q 'http://127.0.0.1:4000/health' "$DIR/redeploy.sh" \
+  && grep -q 'DAT_POKER_REDEPLOY_REEXEC' "$DIR/redeploy.sh"; then
+  ok "redeploy.sh re-execs after git checkout and retries :4000/health"
 else
   bad "redeploy.sh API health retry"
 fi
