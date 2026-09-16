@@ -49,6 +49,8 @@ curl -s http://localhost:4000/v1/wallet/dat-token | jq
 
 When `WALLETCONNECT_PROJECT_ID` is unset, `/v1/wallet/config` returns `"walletConnect": null` — the web client should fall back to dev buy-in mode or prompt the operator to configure WalletConnect.
 
+Public beta on AWS: [docs/BETA.md](./BETA.md) (HTTPS via `sslip.io` + Reown Cloud project).
+
 ## Client integration (web)
 
 The Vite web client (`apps/web`) implements Sage WalletConnect:

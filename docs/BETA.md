@@ -21,8 +21,9 @@ This Cloud Agent cannot click Launch in your account.
 | `VITE_APP_STAGE=beta` | Yellow beta banner in the UI |
 | Session Manager | Same browser shell you used for the tutorial (recreate the IAM role) |
 
-Sage WalletConnect needs **HTTPS** and a domain. HTTP on the Elastic IP is
-enough to iterate on tables, hands, and the UI with dev buy-in.
+Sage WalletConnect needs **HTTPS**. HTTP on the Elastic IP is enough for
+dev buy-in. After the site loads, add TLS + a WalletConnect project to pair
+Sage (see [HTTPS + Sage](#https--sage-walletconnect)).
 
 Credits: a `t3.small` in us-east-1 is on the order of **$0.02/hour** (~$15/month)
 plus a few cents of EBS. Set a [cost budget](https://console.aws.amazon.com/billing/home#/budgets) so the $20 is not a surprise bill after it runs out.
@@ -202,14 +203,102 @@ Delete the stack to terminate the instance and release the Elastic IP:
 aws cloudformation delete-stack --stack-name dat-poker-beta
 ```
 
-## Later: HTTPS + Sage
+## HTTPS + Sage (WalletConnect)
 
-1. Point a DNS A record at the Elastic IP.
-2. Put `WALLETCONNECT_PROJECT_ID` in `/opt/dat-poker/.env` and redeploy.
-3. Terminate HTTP-only nginx TLS by installing Caddy or an ACM certificate on
-   port 443 (security group already allows 443).
+Player Sage stays on **your phone or PC**. Do not install Sage or paste
+treasury keys on the EC2 box. Buy-in is still a **signed message + DAT
+balance check** — DAT does not leave Sage until on-chain escrow is wired.
+Default table minimum is **1000 DAT** (1000000 CAT mojos). If you funded
+less, set `DAT_MIN_BUY_IN_MOJOS=1000` (1 DAT) when you run `enable-sage.sh`.
 
-Until then, leave WalletConnect unset; the UI falls back to dev buy-in.
+### 1. Pull the new scripts onto the box
+
+In Session Manager (or the `ec2-user@ip-172-31-…` shell):
+
+```bash
+sudo DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+```
+
+Wait until it prints `beta redeploy ok`. In-memory tables reset.
+
+### 2. Turn on HTTPS (no domain purchase)
+
+The security group already allows **443**. Caddy gets a Let’s Encrypt cert
+for `YOUR-ELASTIC-IP-WITH-DASHES.sslip.io` (example: `54-12-34-56.sslip.io`).
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
+```
+
+The script prints `Open https://….sslip.io/`. Bookmark **that** URL (plain
+`https`, no port). The old `http://THAT_IP/` bookmark will stop working
+because nginx is stopped so Caddy can bind port 80.
+
+If it waits two minutes and fails, EC2 → instance → **Security** tab →
+inbound must include **HTTPS TCP 443** from `0.0.0.0/0` (and HTTP 80 still,
+for the certificate challenge). Then:
+
+```bash
+sudo journalctl -u caddy -n 80 --no-pager
+```
+
+To use a real domain instead: point a DNS **A** record at the Elastic IP,
+wait for DNS, then:
+
+```bash
+sudo DAT_POKER_DOMAIN=poker.example.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
+```
+
+### 3. WalletConnect Cloud project
+
+1. Open [Reown Cloud](https://cloud.reown.com/) (WalletConnect) in the laptop
+   browser. Sign in or create a free account.
+2. **Create** a project. Name: `DAT Poker beta`.
+3. Copy the **Project ID** (a long hex string).
+4. If the project has a website / domain field, paste
+   `https://YOUR-DASHES.sslip.io` (the same hostname Caddy printed).
+
+### 4. Copy the DAT CAT asset ID from Sage
+
+1. Open **Sage** on the device that holds DAT (not the EC2 box).
+2. Open the **DAT** token details.
+3. Copy **Asset ID** (`asset_id`) — **64 hex characters**, no spaces.
+
+### 5. Put those values on the game host
+
+Still in Session Manager. Paste your own values (do not commit them):
+
+```bash
+sudo WALLETCONNECT_PROJECT_ID='paste_project_id' \
+  DAT_GOVERNANCE_TOKEN_ASSET_ID='paste_64_char_asset_id' \
+  bash /opt/dat-poker/deploy/aws-ec2/enable-sage.sh
+```
+
+If you have fewer than 1000 DAT, add `DAT_MIN_BUY_IN_MOJOS=1000` to that
+command (1 DAT). Leave `DAT_ALLOW_DEV_BUYIN=true` so the table still works
+if pairing fails.
+
+Confirm:
+
+```bash
+curl -sS http://127.0.0.1:4000/v1/wallet/status
+```
+
+You want `"walletConnectConfigured": true` and a non-null `assetId`.
+
+### 6. Pair Sage in the laptop browser
+
+1. Open **`https://YOUR-DASHES.sslip.io/`** (not `http://IP`).
+2. Click **Connect Sage (WalletConnect)**.
+3. Scan the QR with Sage (or paste the URI in Sage desktop).
+4. Approve the session in Sage.
+5. Click **Load DAT balance**. You should see your spendable DAT.
+6. **Buy in & join table** — approve the message in Sage if asked.
+
+If the page is still `http://` you will see a note that Sage needs HTTPS.
+
+Withdraw to Sage needs a **separate treasury host** later
+([docs/TREASURY.md](./TREASURY.md)). Do not enable Sage RPC on this EC2 box.
 
 ## Stop spending credits
 

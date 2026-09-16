@@ -85,8 +85,8 @@ print(proc.stdout.strip())
 PY
 
 if grep -q 'seq 1 30' "$DIR/redeploy.sh" \
-  && grep -q 'journalctl -u dat-poker-api' "$DIR/redeploy.sh"; then
-  ok "redeploy.sh retries nginx /health after API restart"
+  && grep -q 'http://127.0.0.1:4000/health' "$DIR/redeploy.sh"; then
+  ok "redeploy.sh retries API :4000/health after restart"
 else
   bad "redeploy.sh API health retry"
 fi
@@ -132,12 +132,48 @@ assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
 assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
-for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh; do
+for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh; do
   [[ -s "$DIR/$f" ]] && ok "$f exists" || bad "$f missing"
 done
 
 bash -n "$DIR/console-user-data.sh" && ok "console-user-data.sh bash syntax" || bad "console-user-data.sh bash syntax"
 bash -n "$DIR/redeploy.sh" && ok "redeploy.sh bash syntax" || bad "redeploy.sh bash syntax"
+bash -n "$DIR/enable-https.sh" && ok "enable-https.sh bash syntax" || bad "enable-https.sh bash syntax"
+bash -n "$DIR/enable-sage.sh" && ok "enable-sage.sh bash syntax" || bad "enable-sage.sh bash syntax"
+
+python3 - <<'PY' && ok "enable-https.sh maps Elastic IP to sslip.io" || bad "sslip.io domain helper"
+import os
+import subprocess
+from pathlib import Path
+
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "enable-https.sh").read_text()
+start = script.index("ip_to_sslip() {")
+end = script.index("\n}", start) + 2
+fn = script[start:end]
+proc = subprocess.run(
+    ["bash", "-c", fn + '\nip_to_sslip 54.12.34.56\n'],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+assert proc.stdout.strip() == "54-12-34-56.sslip.io", proc.stdout
+print(proc.stdout.strip())
+PY
+
+if grep -q 'reverse_proxy 127.0.0.1:4000' "$DIR/Caddyfile" \
+  && grep -q 'handle /v1/' "$DIR/Caddyfile"; then
+  ok "Caddyfile proxies /health and /v1 to the API"
+else
+  bad "Caddyfile reverse-proxy"
+fi
+
+if grep -q 'WALLETCONNECT_PROJECT_ID' "$DIR/enable-sage.sh" \
+  && grep -q 'DAT_GOVERNANCE_TOKEN_ASSET_ID' "$DIR/enable-sage.sh" \
+  && grep -q '64' "$DIR/enable-sage.sh"; then
+  ok "enable-sage.sh writes WalletConnect + 64-char CAT asset id"
+else
+  bad "enable-sage.sh env keys"
+fi
 
 if grep -q 'raw.githubusercontent.com/Drewski241/dat-poker' "$DIR/console-user-data.sh"; then
   ok "console-user-data.sh fetches user-data.sh from GitHub"
@@ -237,6 +273,21 @@ if [[ -f "$ROOT/docs/BETA.md" ]] && grep -q 'Elastic IP' "$ROOT/docs/BETA.md"; t
   ok "docs/BETA.md covers the public beta host"
 else
   bad "docs/BETA.md"
+fi
+
+if grep -q 'enable-https.sh' "$ROOT/docs/BETA.md" \
+  && grep -q 'cloud.reown.com' "$ROOT/docs/BETA.md" \
+  && grep -q 'DAT_GOVERNANCE_TOKEN_ASSET_ID' "$ROOT/docs/BETA.md"; then
+  ok "docs/BETA.md covers HTTPS + Sage WalletConnect"
+else
+  bad "docs/BETA.md Sage HTTPS"
+fi
+
+if grep -q 'pageIsHttp' "$ROOT/apps/web/src/App.tsx" \
+  && grep -q 'sslip.io' "$ROOT/apps/web/src/App.tsx"; then
+  ok "web client warns when Sage is opened over HTTP"
+else
+  bad "web HTTP Sage warning"
 fi
 
 if grep -q 'VITE_APP_STAGE' "$ROOT/apps/web/src/App.tsx" \

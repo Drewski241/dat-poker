@@ -342,6 +342,7 @@ export function App() {
 
   const appStage = import.meta.env.VITE_APP_STAGE;
   const isBeta = appStage === "beta";
+  const pageIsHttp = typeof window !== "undefined" && window.location.protocol === "http:";
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const currentBet = BigInt(hand?.currentBetMojos ?? 0);
@@ -408,6 +409,12 @@ export function App() {
 
       <section className="panel">
         <h2>Wallet</h2>
+        {pageIsHttp && (
+          <p className="muted">
+            Sage WalletConnect needs HTTPS. Open the <code>https://…sslip.io</code> bookmark,
+            not <code>http://</code> plus the Elastic IP.
+          </p>
+        )}
         {!wcConfig ? (
           <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage.</p>
         ) : !session ? (

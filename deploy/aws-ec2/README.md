@@ -18,6 +18,9 @@ the Apache tutorial.
 | `console-user-data.sh` | **Paste this** into Launch instance → User data |
 | `user-data.sh` | Full bootstrap (pulled by the paste snippet) |
 | `redeploy.sh` | `git fetch` + rebuild + restart API on an existing beta host |
+| `enable-https.sh` | Caddy + Let’s Encrypt (`sslip.io` or your domain) so Sage can pair |
+| `enable-sage.sh` | Write WalletConnect project ID + DAT asset id, restart API |
+| `Caddyfile` / `caddy.service` | TLS reverse proxy in front of the API + static UI |
 | `landing.html` | Static DAT POKER page used by the nginx kit |
 | `nginx.conf` | Port 80 → static UI + `/health` and `/v1` to the API |
 | `dat-poker-api.service` | systemd unit for the REST API |

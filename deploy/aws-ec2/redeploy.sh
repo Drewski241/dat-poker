@@ -26,12 +26,17 @@ rm -rf "${WEB_ROOT:?}/"*
 cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 systemctl restart dat-poker-api
-nginx -s reload || systemctl reload nginx
+if systemctl is-active --quiet caddy; then
+  /usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile \
+    || systemctl reload caddy
+elif command -v nginx >/dev/null 2>&1; then
+  nginx -s reload || systemctl reload nginx || true
+fi
 
 ok=0
 for i in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1/health >/dev/null 2>&1; then
-    echo "API healthy after ${i}s via nginx /health"
+  if curl -fsS http://127.0.0.1:4000/health >/dev/null 2>&1; then
+    echo "API healthy after ${i}s at :4000/health"
     ok=1
     break
   fi
