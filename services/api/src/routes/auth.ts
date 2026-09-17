@@ -19,8 +19,22 @@ import {
   resolveIpCountry,
   type PlayAttestation,
 } from "../play-compliance.js";
+import { assertTermsAccepted, getCurrentTermsDocument } from "../terms-of-service.js";
+import { recordTermsAcceptance } from "../terms-acceptance-store.js";
 
-type AuthComplianceBody = PlayAttestation;
+type AuthComplianceBody = PlayAttestation & {
+  termsAccepted?: boolean;
+  termsVersion?: string;
+};
+
+async function enforceTermsAndRecord(playerId: string, body: AuthComplianceBody | undefined): Promise<void> {
+  assertTermsAccepted({
+    termsAccepted: body?.termsAccepted,
+    termsVersion: body?.termsVersion,
+  });
+  const terms = await getCurrentTermsDocument();
+  await recordTermsAcceptance(playerId, terms.version);
+}
 
 function readAttestation(body: AuthComplianceBody | undefined): PlayAttestation {
   return {
@@ -31,7 +45,7 @@ function readAttestation(body: AuthComplianceBody | undefined): PlayAttestation 
 }
 
 function complianceErrorStatus(message: string): 400 | 403 {
-  return /not available|Bot check|country|legally allowed|Complete the bot|network location/i.test(
+  return /not available|Bot check|country|legally allowed|Complete the bot|network location|Terms and Conditions|Terms have been updated/i.test(
     message,
   )
     ? 403
@@ -48,6 +62,11 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     const countryCode = resolveIpCountry(req);
     return { ok: true, countryCode };
   });
+
+  app.get("/v1/auth/terms", async () => {
+    const terms = await getCurrentTermsDocument();
+    return { ok: true, ...terms };
+  });
   app.post<{
     Body: AuthComplianceBody & { username?: string; password?: string; email?: string };
   }>("/v1/auth/register", async (req, reply) => {
@@ -60,8 +79,14 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     const email = req.body?.email ?? "";
     try {
       const eligibility = await assertPlayCompliance(req, readAttestation(req.body));
+      assertTermsAccepted({
+        termsAccepted: req.body?.termsAccepted,
+        termsVersion: req.body?.termsVersion,
+      });
       const user = await registerUser({ username, password, email });
       await recordPlayEligibility(user.id, eligibility.countryCode);
+      const terms = await getCurrentTermsDocument();
+      await recordTermsAcceptance(user.id, terms.version);
       return {
         ok: true,
         needsEmailVerification: true,
@@ -86,6 +111,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
       const user = await verifyEmailWithCode(req.body?.username ?? "", req.body?.code ?? "");
       await recordPlayEligibility(user.id, eligibility.countryCode);
       const { token, session } = issueAccountSession(user);
+      await enforceTermsAndRecord(session.playerId, req.body);
       return {
         ok: true,
         message: "Email verified. You are signed in.",
@@ -130,6 +156,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
       const user = await loginUser(req.body?.username ?? "", req.body?.password ?? "");
       await recordPlayEligibility(user.id, eligibility.countryCode);
       const { token, session } = issueAccountSession(user);
+      await enforceTermsAndRecord(session.playerId, req.body);
       return {
         ok: true,
         token,

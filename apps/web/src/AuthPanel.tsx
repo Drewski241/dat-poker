@@ -7,6 +7,8 @@ export type PlayComplianceInput = {
   countryCode: string;
   ageConfirmed: boolean;
   turnstileToken?: string;
+  termsAccepted: boolean;
+  termsVersion: string;
 };
 
 function PasswordField({
@@ -96,11 +98,21 @@ export function AuthPanel({
   const [countryCode, setCountryCode] = useState("US");
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [termsVersion, setTermsVersion] = useState("");
+  const [termsContent, setTermsContent] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   useEffect(() => {
     void (async () => {
       try {
-        const [req, geo] = await Promise.all([api.playRequirements(), api.geoHint()]);
+        const [req, geo, terms] = await Promise.all([
+          api.playRequirements(),
+          api.geoHint(),
+          api.terms(),
+        ]);
+        setTermsVersion(terms.version);
+        setTermsContent(terms.content);
         setComplianceRequired(req.complianceRequired);
         setMinAge(req.minAge);
         setTurnstileSiteKey(req.turnstileSiteKey);
@@ -116,8 +128,21 @@ export function AuthPanel({
   const onTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
 
   const buildCompliance = (): PlayComplianceInput | null => {
+    if (!termsVersion) {
+      setLocalError("Terms are still loading — try again in a moment");
+      return null;
+    }
+    if (!termsAccepted) {
+      setLocalError("Accept the Terms and Conditions to continue");
+      return null;
+    }
     if (!complianceRequired) {
-      return { countryCode: countryCode || "US", ageConfirmed: true };
+      return {
+        countryCode: countryCode || "US",
+        ageConfirmed: true,
+        termsAccepted: true,
+        termsVersion,
+      };
     }
     if (!countryCode) {
       setLocalError("Select the country where you are located");
@@ -135,6 +160,8 @@ export function AuthPanel({
       countryCode,
       ageConfirmed: true,
       turnstileToken: turnstileToken ?? undefined,
+      termsAccepted: true,
+      termsVersion,
     };
   };
 
@@ -311,6 +338,31 @@ export function AuthPanel({
               onExpire={onTurnstileExpire}
             />
           )}
+        </fieldset>
+      )}
+      {(mode === "register" || mode === "login" || mode === "verify") && termsVersion && (
+        <fieldset className="compliance-fieldset">
+          <legend>Terms and Conditions</legend>
+          <div className="row">
+            <button type="button" className="linkish" disabled={busy} onClick={() => setTermsOpen((o) => !o)}>
+              {termsOpen ? "Hide" : "View"} full terms (v{termsVersion})
+            </button>
+          </div>
+          {termsOpen && (
+            <pre className="terms-preview" aria-label="Terms and Conditions">
+              {termsContent}
+            </pre>
+          )}
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+              disabled={busy}
+            />
+            I have read and accept the Terms and Conditions (version {termsVersion}). Your acceptance is kept on
+            file and must be renewed when terms change or after the retention period.
+          </label>
         </fieldset>
       )}
       <label htmlFor="auth-username">Username</label>

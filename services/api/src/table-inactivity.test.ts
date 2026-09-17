@@ -71,6 +71,7 @@ describe("inactive player unseat", () => {
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
     process.env.DAT_EMAIL_MODE = "memory";
     process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
+    process.env.DAT_TERMS_ACCEPTANCE_PATH = "memory";
     resetTablesForTests();
     resetAccountsForTests();
     resetUsersForTests();

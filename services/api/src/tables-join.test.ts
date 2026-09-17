@@ -71,6 +71,7 @@ describe("6-max join + daily redeem", () => {
     process.env.DAT_SCRYPT_N = "4096";
     process.env.DAT_EMAIL_MODE = "memory";
     process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
+    process.env.DAT_TERMS_ACCEPTANCE_PATH = "memory";
     resetMailOutboxForTests();
     resetTablesForTests();
     resetAccountsForTests();

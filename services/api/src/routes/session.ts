@@ -9,6 +9,8 @@ import {
 } from "../player-session.js";
 import { recordPlayEligibility, setUserSageLink } from "../user-store.js";
 import { assertPlayCompliance, type PlayAttestation } from "../play-compliance.js";
+import { assertTermsAccepted, getCurrentTermsDocument } from "../terms-of-service.js";
+import { recordTermsAcceptance } from "../terms-acceptance-store.js";
 
 export function registerSessionRoutes(app: FastifyInstance): void {
   app.get<{ Querystring: { address?: string } }>("/v1/session/challenge", async (req, reply) => {
@@ -38,14 +40,25 @@ export function registerSessionRoutes(app: FastifyInstance): void {
       nonce?: string;
       signature?: string;
       pubkey?: string;
+      termsAccepted?: boolean;
+      termsVersion?: string;
     };
   }>("/v1/session", async (req, reply) => {
     const ip = req.ip || "unknown";
     if (!allowIpBucket(ip, "session-create", Date.now(), 40)) {
       return reply.status(429).send({ error: "Too many login attempts from this network" });
     }
-    const { address, nonce, signature, pubkey, countryCode, ageConfirmed, turnstileToken } =
-      req.body ?? {};
+    const {
+      address,
+      nonce,
+      signature,
+      pubkey,
+      countryCode,
+      ageConfirmed,
+      turnstileToken,
+      termsAccepted,
+      termsVersion,
+    } = req.body ?? {};
     if (!address || !nonce || !signature || !pubkey) {
       return reply.status(400).send({ error: "address, nonce, signature, and pubkey required" });
     }
@@ -62,6 +75,9 @@ export function registerSessionRoutes(app: FastifyInstance): void {
         pubkey,
       });
       await recordPlayEligibility(session.playerId, eligibility.countryCode);
+      assertTermsAccepted({ termsAccepted, termsVersion });
+      const terms = await getCurrentTermsDocument();
+      await recordTermsAcceptance(session.playerId, terms.version);
       return {
         ok: true,
         token,
@@ -71,7 +87,7 @@ export function registerSessionRoutes(app: FastifyInstance): void {
       };
     } catch (e) {
       const msg = (e as Error).message;
-      const status = /not available|Bot check|country|legally allowed|Complete the bot|network location/i.test(
+      const status = /not available|Bot check|country|legally allowed|Complete the bot|network location|Terms and Conditions|Terms have been updated/i.test(
         msg,
       )
         ? 403

@@ -666,6 +666,18 @@ button.secondary {
   min-height: 65px;
 }
 
+.terms-preview {
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  background: var(--panel-bg, rgba(0, 0, 0, 0.2));
+  border-radius: 6px;
+}
+
 .feedback-form label {
   display: block;
   margin: 0.85rem 0 0.35rem;

@@ -319,6 +319,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       countryCode: string;
       ageConfirmed: boolean;
       turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
     },
   ) => {
     void run(mode === "register" ? "Creating account…" : "Signing in…", async () => {
@@ -333,6 +335,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           countryCode: fields.countryCode,
           ageConfirmed: fields.ageConfirmed,
           turnstileToken: fields.turnstileToken,
+          termsAccepted: fields.termsAccepted,
+          termsVersion: fields.termsVersion,
         });
         setVerificationPending({ username: registered.username, email: registered.email });
         setStatus(registered.message ?? "Check your email for a verification code.");
@@ -344,6 +348,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         countryCode: fields.countryCode,
         ageConfirmed: fields.ageConfirmed,
         turnstileToken: fields.turnstileToken,
+        termsAccepted: fields.termsAccepted,
+        termsVersion: fields.termsVersion,
       });
       if (!result.token) {
         throw new Error("Sign-in failed");
@@ -363,6 +369,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     countryCode: string;
     ageConfirmed: boolean;
     turnstileToken?: string;
+    termsAccepted: boolean;
+    termsVersion: string;
   }) => {
     setBusy(true);
     setError(null);

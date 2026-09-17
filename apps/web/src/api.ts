@@ -211,6 +211,15 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  terms: () =>
+    request<{
+      ok: boolean;
+      version: string;
+      effectiveDate: string;
+      acceptanceValidDays: number;
+      content: string;
+    }>("/v1/auth/terms"),
+
   playRequirements: () =>
     request<{
       ok: boolean;
@@ -230,6 +239,8 @@ export const api = {
       countryCode: string;
       ageConfirmed: boolean;
       turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
     },
   ) =>
     request<{
@@ -255,6 +266,8 @@ export const api = {
       countryCode: string;
       ageConfirmed: boolean;
       turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
     },
   ) =>
     request<{
@@ -285,6 +298,8 @@ export const api = {
       countryCode: string;
       ageConfirmed: boolean;
       turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
     },
   ) =>
     request<{

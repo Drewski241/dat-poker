@@ -43,6 +43,8 @@ describe("player accounts", () => {
     process.env.DAT_EMAIL_MODE = "memory";
     process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
     process.env.DAT_BLOCKED_COUNTRY_CODES = "CU,IR";
+    process.env.DAT_TERMS_VERSION = "2026-09-17";
+    process.env.DAT_TERMS_ACCEPTANCE_PATH = "memory";
     resetUsersForTests();
     resetPlayerSessionsForTests();
     resetIpRateLimitsForTests();
@@ -118,6 +120,36 @@ describe("player accounts", () => {
       headers: authComplianceHeaders(),
     });
     expect(bad.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects sign-in when terms are not accepted or version is stale", async () => {
+    const app = await buildApp();
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: {
+        username: "termsuser",
+        password: "password1",
+        email: "terms@example.com",
+        ...authCompliancePayload(),
+      },
+      headers: authComplianceHeaders(),
+    });
+    await verifyNewAccount(app, "termsuser", "terms@example.com");
+
+    const badVersion = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {
+        username: "termsuser",
+        password: "password1",
+        ...authCompliancePayload(),
+        termsVersion: "old-version",
+      },
+      headers: authComplianceHeaders(),
+    });
+    expect(badVersion.statusCode).toBe(403);
     await app.close();
   });
 
