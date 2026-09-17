@@ -10,11 +10,17 @@ import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
   actionSecondsRemaining,
+  autoActionOnTimeout,
   PLAYER_ACTION_LIMIT_MS,
   shouldShowSloth,
   turnTimerKey,
 } from "./player-turn-timer.js";
-import { isLuckyIrishWin, pickBigWinOverlay, type BigWinOverlay } from "./lucky-irish.js";
+import {
+  isLuckyIrishWin,
+  pickBigWinOverlay,
+  readStoredBigWinOverlay,
+  type BigWinOverlay,
+} from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import { SiteNav } from "./SiteNav.js";
 import type { SitePage } from "./site-route.js";
@@ -99,13 +105,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [handResult, setHandResult] = useState<HandResult | null>(null);
   const [bigWin, setBigWin] = useState<BigWinOverlay | null>(null);
   const celebratedHandId = useRef<string | null>(null);
-  const lastBigWin = useRef<BigWinOverlay | null>(null);
+  const lastBigWin = useRef<BigWinOverlay | null>(readStoredBigWinOverlay());
+  const handForTimerRef = useRef(hand);
+  const playerIdForTimerRef = useRef(playerId);
   const [cardPreview, setCardPreview] = useState(false);
   const [slothPreview, setSlothPreview] = useState(false);
   const [turnElapsedMs, setTurnElapsedMs] = useState(0);
   const turnTimeoutFiredRef = useRef<string | null>(null);
   const sendActionRef = useRef<(action: PlayerAction, amountMojos?: string) => void>(() => {});
-  const canCheckRef = useRef(false);
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -637,8 +644,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const showSlothReminder =
     slothPreview || (isMyAction && shouldShowSloth(turnElapsedMs, true));
 
+  handForTimerRef.current = hand;
+  playerIdForTimerRef.current = playerId;
   sendActionRef.current = sendAction;
-  canCheckRef.current = canCheck;
 
   useEffect(() => {
     if (!isMyAction || !hand) {
@@ -656,7 +664,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     const actionTimer = window.setTimeout(() => {
       if (turnTimeoutFiredRef.current === key) return;
       turnTimeoutFiredRef.current = key;
-      sendActionRef.current(canCheckRef.current ? "check" : "fold");
+      const h = handForTimerRef.current;
+      const pid = playerIdForTimerRef.current;
+      if (!h || !pid) return;
+      sendActionRef.current(autoActionOnTimeout(h, pid));
     }, PLAYER_ACTION_LIMIT_MS);
     return () => {
       window.clearInterval(tick);

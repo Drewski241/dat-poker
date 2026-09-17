@@ -40,12 +40,32 @@ export function isLuckyIrishWin(params: {
 
 export type BigWinOverlay = "irish" | "hunter";
 
-/** Alternate overlays so consecutive big wins are not the same graphic. */
-export function pickBigWinOverlay(
-  previous: BigWinOverlay | null,
-  random: () => number = Math.random,
-): BigWinOverlay {
-  if (previous === "irish") return "hunter";
-  if (previous === "hunter") return "irish";
-  return random() < 0.5 ? "irish" : "hunter";
+const BIG_WIN_STORAGE_KEY = "dat-poker:last-big-win-overlay";
+
+export function readStoredBigWinOverlay(): BigWinOverlay | null {
+  if (typeof sessionStorage === "undefined") return null;
+  try {
+    const value = sessionStorage.getItem(BIG_WIN_STORAGE_KEY);
+    if (value === "irish" || value === "hunter") return value;
+  } catch {
+    /* private mode / blocked storage */
+  }
+  return null;
+}
+
+export function storeBigWinOverlay(overlay: BigWinOverlay): void {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.setItem(BIG_WIN_STORAGE_KEY, overlay);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Strictly alternate overlays (irish → hunter → irish …), persisted per browser tab. */
+export function pickBigWinOverlay(previous: BigWinOverlay | null): BigWinOverlay {
+  const last = previous ?? readStoredBigWinOverlay();
+  const next: BigWinOverlay = last === "irish" ? "hunter" : "irish";
+  storeBigWinOverlay(next);
+  return next;
 }

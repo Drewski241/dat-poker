@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   actionSecondsRemaining,
   actionTimedOut,
+  autoActionOnTimeout,
   PLAYER_ACTION_LIMIT_MS,
   shouldShowSloth,
   SLOTH_APPEAR_DELAY_MS,
@@ -32,5 +33,25 @@ describe("player turn timer", () => {
   it("marks timeout at 30 seconds", () => {
     expect(actionTimedOut(29_999)).toBe(false);
     expect(actionTimedOut(30_000)).toBe(true);
+  });
+
+  it("auto-checks when matched; auto-folds when facing a bet", () => {
+    const hand = {
+      currentBetMojos: "10000",
+      players: [
+        { playerId: "you", betThisStreetMojos: "10000" },
+        { playerId: "house", betThisStreetMojos: "10000" },
+      ],
+    };
+    expect(autoActionOnTimeout(hand, "you")).toBe("check");
+
+    const facingBet = {
+      currentBetMojos: "30000",
+      players: [
+        { playerId: "you", betThisStreetMojos: "10000" },
+        { playerId: "house", betThisStreetMojos: "30000" },
+      ],
+    };
+    expect(autoActionOnTimeout(facingBet, "you")).toBe("fold");
   });
 });

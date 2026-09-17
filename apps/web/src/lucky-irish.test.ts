@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { isLuckyIrishWin, LUCKY_IRISH_POT_BB, pickBigWinOverlay } from "./lucky-irish.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  isLuckyIrishWin,
+  LUCKY_IRISH_POT_BB,
+  pickBigWinOverlay,
+} from "./lucky-irish.js";
 import type { HandResult } from "./api.js";
 
 const bb = 10_000n;
@@ -71,13 +75,26 @@ describe("isLuckyIrishWin", () => {
 });
 
 describe("pickBigWinOverlay", () => {
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+    });
+  });
+
   it("alternates hunter and irish after the first pick", () => {
     expect(pickBigWinOverlay("irish")).toBe("hunter");
     expect(pickBigWinOverlay("hunter")).toBe("irish");
   });
 
-  it("picks irish when the first roll is low", () => {
-    expect(pickBigWinOverlay(null, () => 0.1)).toBe("irish");
-    expect(pickBigWinOverlay(null, () => 0.9)).toBe("hunter");
+  it("starts with irish when there is no prior overlay", () => {
+    expect(pickBigWinOverlay(null)).toBe("irish");
+    expect(pickBigWinOverlay(null)).toBe("hunter");
   });
 });

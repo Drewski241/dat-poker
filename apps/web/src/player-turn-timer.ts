@@ -24,3 +24,21 @@ export function turnTimerKey(hand: {
 }): string {
   return `${hand.handId}:${hand.actionSeat}:${hand.street}:${hand.currentBetMojos}`;
 }
+
+/** Auto-check when free to check; auto-fold only when facing a bet. */
+export function autoActionOnTimeout(
+  hand: {
+    currentBetMojos: string;
+    players: { playerId: string; betThisStreetMojos: string }[];
+  },
+  playerId: string,
+): "check" | "fold" {
+  const me = hand.players.find((p) => p.playerId === playerId);
+  if (!me) return "fold";
+  try {
+    const toCall = BigInt(hand.currentBetMojos) - BigInt(me.betThisStreetMojos);
+    return toCall <= 0n ? "check" : "fold";
+  } catch {
+    return "fold";
+  }
+}
