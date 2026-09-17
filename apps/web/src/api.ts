@@ -211,7 +211,27 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  register: (body: { username: string; password: string; email: string }) =>
+  playRequirements: () =>
+    request<{
+      ok: boolean;
+      complianceRequired: boolean;
+      turnstileSiteKey: string;
+      minAge: number;
+      blockedCountryCodes: string[];
+    }>("/v1/auth/play-requirements"),
+
+  geoHint: () => request<{ ok: boolean; countryCode: string | null }>("/v1/auth/geo-hint"),
+
+  register: (
+    body: {
+      username: string;
+      password: string;
+      email: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+    },
+  ) =>
     request<{
       ok: boolean;
       needsEmailVerification?: boolean;
@@ -228,7 +248,15 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  verifyEmail: (body: { username: string; code: string }) =>
+  verifyEmail: (
+    body: {
+      username: string;
+      code: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+    },
+  ) =>
     request<{
       ok: boolean;
       message: string;
@@ -250,7 +278,15 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  login: (body: { username: string; password: string }) =>
+  login: (
+    body: {
+      username: string;
+      password: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+    },
+  ) =>
     request<{
       ok: boolean;
       token: string;

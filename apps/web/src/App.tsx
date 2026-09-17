@@ -310,7 +310,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setApiAuthToken(null);
     });
 
-  const handleAuth = (mode: "register" | "login", fields: { username: string; password: string; email?: string }) => {
+  const handleAuth = (
+    mode: "register" | "login",
+    fields: {
+      username: string;
+      password: string;
+      email?: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+    },
+  ) => {
     void run(mode === "register" ? "Creating account…" : "Signing in…", async () => {
       if (mode === "register") {
         if (!fields.email?.trim()) {
@@ -320,12 +330,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           username: fields.username,
           password: fields.password,
           email: fields.email.trim(),
+          countryCode: fields.countryCode,
+          ageConfirmed: fields.ageConfirmed,
+          turnstileToken: fields.turnstileToken,
         });
         setVerificationPending({ username: registered.username, email: registered.email });
         setStatus(registered.message ?? "Check your email for a verification code.");
         return;
       }
-      const result = await api.login(fields);
+      const result = await api.login({
+        username: fields.username,
+        password: fields.password,
+        countryCode: fields.countryCode,
+        ageConfirmed: fields.ageConfirmed,
+        turnstileToken: fields.turnstileToken,
+      });
       if (!result.token) {
         throw new Error("Sign-in failed");
       }
@@ -338,7 +357,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     });
   };
 
-  const handleVerifyEmail = async (fields: { username: string; code: string }) => {
+  const handleVerifyEmail = async (fields: {
+    username: string;
+    code: string;
+    countryCode: string;
+    ageConfirmed: boolean;
+    turnstileToken?: string;
+  }) => {
     setBusy(true);
     setError(null);
     setStatus("Verifying email…");

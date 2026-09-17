@@ -1,4 +1,13 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { api } from "./api.js";
+import { PLAY_COUNTRY_OPTIONS } from "./play-countries.js";
+import { TurnstileWidget } from "./components/TurnstileWidget.js";
+
+export type PlayComplianceInput = {
+  countryCode: string;
+  ageConfirmed: boolean;
+  turnstileToken?: string;
+};
 
 function PasswordField({
   id,
@@ -60,8 +69,11 @@ export function AuthPanel({
 }: {
   busy: boolean;
   verificationPending?: { username: string; email: string } | null;
-  onAuth: (mode: "register" | "login", fields: { username: string; password: string; email?: string }) => void;
-  onVerifyEmail: (fields: { username: string; code: string }) => Promise<void>;
+  onAuth: (
+    mode: "register" | "login",
+    fields: { username: string; password: string; email?: string } & PlayComplianceInput,
+  ) => void;
+  onVerifyEmail: (fields: { username: string; code: string } & PlayComplianceInput) => Promise<void>;
   onResendVerification: (fields: { username: string; email: string }) => Promise<{ message: string }>;
   onForgot: (fields: { username: string; email: string }) => Promise<{
     message: string;
@@ -78,6 +90,53 @@ export function AuthPanel({
   const [resetEmailSent, setResetEmailSent] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localInfo, setLocalInfo] = useState<string | null>(null);
+  const [complianceRequired, setComplianceRequired] = useState(false);
+  const [minAge, setMinAge] = useState(18);
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
+  const [countryCode, setCountryCode] = useState("US");
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [req, geo] = await Promise.all([api.playRequirements(), api.geoHint()]);
+        setComplianceRequired(req.complianceRequired);
+        setMinAge(req.minAge);
+        setTurnstileSiteKey(req.turnstileSiteKey);
+        if (geo.countryCode && PLAY_COUNTRY_OPTIONS.some((c) => c.code === geo.countryCode)) {
+          setCountryCode(geo.countryCode);
+        }
+      } catch {
+        /* API offline — server will enforce when back */
+      }
+    })();
+  }, []);
+
+  const onTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
+
+  const buildCompliance = (): PlayComplianceInput | null => {
+    if (!complianceRequired) {
+      return { countryCode: countryCode || "US", ageConfirmed: true };
+    }
+    if (!countryCode) {
+      setLocalError("Select the country where you are located");
+      return null;
+    }
+    if (!ageConfirmed) {
+      setLocalError(`Confirm you are at least ${minAge} and allowed to play where you live`);
+      return null;
+    }
+    if (turnstileSiteKey && !turnstileToken) {
+      setLocalError("Complete the bot check");
+      return null;
+    }
+    return {
+      countryCode,
+      ageConfirmed: true,
+      turnstileToken: turnstileToken ?? undefined,
+    };
+  };
 
   useEffect(() => {
     if (!verificationPending) return;
@@ -103,9 +162,15 @@ export function AuthPanel({
     setLocalError(null);
     if (mode === "verify") {
       setLocalError(null);
+      const compliance = buildCompliance();
+      if (!compliance) return;
       void (async () => {
         try {
-          await onVerifyEmail({ username: username.trim(), code: verifyCode.trim() });
+          await onVerifyEmail({
+            username: username.trim(),
+            code: verifyCode.trim(),
+            ...compliance,
+          });
         } catch (e) {
           setLocalError((e as Error).message);
         }
@@ -121,10 +186,13 @@ export function AuthPanel({
       setLocalError("Email is required");
       return;
     }
+    const compliance = buildCompliance();
+    if (!compliance) return;
     onAuth(mode, {
       username: username.trim(),
       password,
       email: email.trim() || undefined,
+      ...compliance,
     });
   };
 
@@ -207,6 +275,44 @@ export function AuthPanel({
           Reset password
         </button>
       </div>
+      {(mode === "register" || mode === "login" || mode === "verify") && complianceRequired && (
+        <fieldset className="compliance-fieldset">
+          <legend>Eligibility</legend>
+          <label htmlFor="auth-country">Country (where you are now)</label>
+          <select
+            id="auth-country"
+            name="countryCode"
+            required
+            value={countryCode}
+            onChange={(e) => setCountryCode(e.target.value)}
+            disabled={busy}
+          >
+            {PLAY_COUNTRY_OPTIONS.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={ageConfirmed}
+              onChange={(e) => setAgeConfirmed(e.target.checked)}
+              disabled={busy}
+            />
+            I am at least {minAge}, not a bot, and I am legally allowed to play real-money poker where I
+            am located.
+          </label>
+          {turnstileSiteKey && (
+            <TurnstileWidget
+              siteKey={turnstileSiteKey}
+              disabled={busy}
+              onToken={setTurnstileToken}
+              onExpire={onTurnstileExpire}
+            />
+          )}
+        </fieldset>
+      )}
       <label htmlFor="auth-username">Username</label>
       <input
         id="auth-username"
