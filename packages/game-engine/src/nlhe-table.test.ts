@@ -40,6 +40,55 @@ describe("NlheTableEngine", () => {
     expect(table.getHandsPlayed("bob")).toBe(1);
   });
 
+  it("heads-up: after a raise the other player must act before the street advances", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+
+    table.startHand("hand-bet-response");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const pre = table.getHandState()!;
+    expect(pre.actionSeat).toBe(0);
+    const raiseTo = pre.currentBetMojos + config.bigBlindMojos;
+    table.applyAction("alice", "raise", raiseTo);
+
+    const afterRaise = table.getHandState()!;
+    expect(afterRaise.street).toBe("preflop");
+    expect(afterRaise.actionSeat).toBe(1);
+    expect(afterRaise.players.find((p) => p.playerId === "bob")!.betThisStreetMojos).toBeLessThan(
+      afterRaise.currentBetMojos,
+    );
+  });
+
+  it("three-way: limps to the big blind leave the BB an option to act", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 2, 5_000_000_000_000n);
+    table.seatPlayer("carol", 5, 5_000_000_000_000n);
+
+    table.startHand("hand-bb-option");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.submitPlayerSeed("carol", generateServerSeed());
+    table.revealAndDeal();
+
+    const pre = table.getHandState()!;
+    expect(pre.actionSeat).toBe(0);
+    table.applyAction("alice", "call");
+    table.applyAction("bob", "call");
+
+    const afterLimp = table.getHandState()!;
+    expect(afterLimp.street).toBe("preflop");
+    expect(afterLimp.actionSeat).toBe(5);
+    expect(afterLimp.players.find((p) => p.seatIndex === 5)!.actedThisStreet).toBe(false);
+
+    table.applyAction("carol", "check");
+    expect(table.getHandState()?.street).toBe("flop");
+  });
+
   it("advances to flop after raise and call", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

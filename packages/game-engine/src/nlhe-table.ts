@@ -35,6 +35,8 @@ export interface PlayerHandState {
   totalBetHandMojos: bigint;
   folded: boolean;
   allIn: boolean;
+  /** Voluntary action (check/call/fold/bet/raise) completed this betting round. */
+  actedThisStreet: boolean;
 }
 
 export interface TableHandState {
@@ -252,6 +254,7 @@ export class NlheTableEngine {
       totalBetHandMojos: 0n,
       folded: false,
       allIn: false,
+      actedThisStreet: false,
     }));
 
     this.hand = {
@@ -321,6 +324,8 @@ export class NlheTableEngine {
       throw new Error("Player cannot act");
     }
 
+    const currentBetBefore = h.currentBetMojos;
+
     switch (action) {
       case "fold":
         player.folded = true;
@@ -357,6 +362,8 @@ export class NlheTableEngine {
       default:
         throw new Error(`Unknown action: ${action}`);
     }
+
+    this.recordActionOnStreet(h, player, currentBetBefore);
 
     h.seq++;
 
@@ -450,7 +457,23 @@ export class NlheTableEngine {
   private bettingRoundComplete(h: TableHandState): boolean {
     const contenders = h.players.filter((p) => !p.folded && !p.allIn);
     if (contenders.length === 0) return true;
-    return contenders.every((p) => p.betThisStreetMojos === h.currentBetMojos);
+    return contenders.every(
+      (p) => p.betThisStreetMojos === h.currentBetMojos && p.actedThisStreet,
+    );
+  }
+
+  private recordActionOnStreet(
+    h: TableHandState,
+    actor: PlayerHandState,
+    currentBetBefore: bigint,
+  ): void {
+    actor.actedThisStreet = true;
+    if (h.currentBetMojos > currentBetBefore) {
+      for (const p of h.players) {
+        if (p.playerId === actor.playerId || p.folded || p.allIn) continue;
+        p.actedThisStreet = false;
+      }
+    }
   }
 
   private advanceActionSeat(h: TableHandState, fromPlayerId: PlayerId): void {
@@ -465,6 +488,7 @@ export class NlheTableEngine {
   private advanceStreet(h: TableHandState): void {
     for (const p of h.players) {
       p.betThisStreetMojos = 0n;
+      p.actedThisStreet = false;
     }
     h.currentBetMojos = 0n;
 
@@ -487,10 +511,7 @@ export class NlheTableEngine {
     for (let i = 0; i < count; i++) {
       h.board.push(this.draw(h));
     }
-    h.actionSeat =
-      h.players.length === 2
-        ? h.bigBlindSeat
-        : this.firstActiveSeatClockwise(h, h.dealerSeat);
+    h.actionSeat = this.firstActiveSeatClockwise(h, h.dealerSeat);
     h.seq++;
   }
 
