@@ -56,3 +56,4 @@ Connect to `ws://localhost:4100/ws`, wait for `connected`, send `{"type":"ping"}
 - In-memory table state: restarting `pnpm dev:api` clears all tables.
 - `DAT_ALLOW_DEV_BUYIN=true` in `.env.example` allows dev buy-ins without a configured `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
 - Player accounts require a **verified email**. Configure `DAT_SMTP_*` (or `DAT_EMAIL_MODE=log` for local dev) so verification and password-reset codes are emailed instead of returned in API responses.
+- Seated humans who stop polling/acting are **unseated between hands** after `DAT_PLAYER_INACTIVE_UNSEAT_MS` (default 2 minutes); stacks return to the in-game account ledger. Active clients refresh the table every ~2s while seated.
