@@ -6,6 +6,7 @@ import { BetSlider } from "./components/BetSlider.js";
 import { CardRow } from "./components/PlayingCard.js";
 import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
 import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
+import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import { describeLiveHand } from "./live-hand.js";
 import { isLuckyIrishWin, pickBigWinOverlay, type BigWinOverlay } from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
@@ -91,6 +92,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const celebratedHandId = useRef<string | null>(null);
   const lastBigWin = useRef<BigWinOverlay | null>(null);
   const [cardPreview, setCardPreview] = useState(false);
+  const [slothPreview, setSlothPreview] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -580,8 +582,22 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     me && me.holeCards.length > 0 ? describeLiveHand(me.holeCards, hand?.board ?? []) : null;
 
   useEffect(() => {
-    document.title = isBeta ? "DAT Poker beta" : "DAT Poker";
-  }, [isBeta]);
+    const base = isBeta ? "DAT Poker beta" : "DAT Poker";
+    if (!isMyAction) {
+      document.title = base;
+      return;
+    }
+    document.title = `Your turn! · ${base}`;
+    let showCue = true;
+    const t = window.setInterval(() => {
+      showCue = !showCue;
+      document.title = showCue ? `Your turn! · ${base}` : base;
+    }, 900);
+    return () => {
+      window.clearInterval(t);
+      document.title = base;
+    };
+  }, [isBeta, isMyAction]);
 
   useEffect(() => {
     if (!isMyAction || !betRange.canBetOrRaise) return;
@@ -608,6 +624,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (window.location.hash === "#cards") {
       setCardPreview(true);
     }
+    if (window.location.hash === "#sloth") {
+      setSlothPreview(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -624,6 +643,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     <div className="app">
       {bigWin === "irish" && <LuckyIrishWin onFinished={() => setBigWin(null)} />}
       {bigWin === "hunter" && <HunterBullseyeWin onFinished={() => setBigWin(null)} />}
+      {(isMyAction || slothPreview) && <YourTurnSloth />}
       {isBeta && (
         <div className="beta-banner" role="status">
           Public beta — software under development.           Open tables reset on restart;
@@ -899,7 +919,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 ))}
               </ul>
               {isMyAction && (
-                <div className="actions">
+                <div className="actions your-turn">
                   <span>Your action</span>
                   <button
                     type="button"
