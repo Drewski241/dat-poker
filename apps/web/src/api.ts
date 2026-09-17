@@ -399,6 +399,34 @@ export const api = {
       body: JSON.stringify({ buyInMojos }),
     }),
 
+  rebuyTable: (
+    tableId: string,
+    playerId: string,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<{
+      ok: boolean;
+      rebuy: boolean;
+      tableId: string;
+      maxSeats: number;
+      humans: number;
+      handInProgress: boolean;
+      smallBlindMojos?: string;
+      bigBlindMojos?: string;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      dealerButtonSeat?: number | null;
+    }>(`/v1/tables/${tableId}/rebuy`, {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        buyInMojos,
+        ...options,
+      }),
+    }),
+
   setSitOut: (tableId: string, playerId: string, sittingOut: boolean) =>
     request<{
       ok: boolean;

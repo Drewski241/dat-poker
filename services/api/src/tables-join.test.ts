@@ -2,7 +2,12 @@ import { describe, expect, it, beforeEach } from "vitest";
 import Fastify from "fastify";
 import { serializeForJson } from "./serialize.js";
 import { resetAccountsForTests, tryRedeemDaily } from "./account-store.js";
-import { registerTableRoutes, resetTablesForTests, returnAllStacksToAccounts } from "./routes/tables.js";
+import {
+  getTableEngine,
+  registerTableRoutes,
+  resetTablesForTests,
+  returnAllStacksToAccounts,
+} from "./routes/tables.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
 import { registerSessionRoutes } from "./routes/session.js";
@@ -727,6 +732,39 @@ describe("6-max join + daily redeem", () => {
     });
     expect(blocked.statusCode).toBe(400);
     expect(JSON.parse(blocked.body).error).toMatch(/Play through/i);
+    await app.close();
+  });
+
+  it("rebuys at the same table when the stack is zero", async () => {
+    const app = await buildApp();
+    const alice = issueTestSession("xch1alice-rebuy");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+
+    const join = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(join.statusCode).toBe(200);
+    const { tableId } = JSON.parse(join.body);
+
+    const table = getTableEngine(tableId);
+    expect(table).toBeDefined();
+    const internal = table as unknown as { stacks: Map<string, bigint> };
+    internal.stacks.set(alice.session.playerId, 0n);
+
+    const rebuy = await app.inject({
+      method: "POST",
+      url: `/v1/tables/${tableId}/rebuy`,
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(rebuy.statusCode).toBe(200);
+    const body = JSON.parse(rebuy.body);
+    expect(body.rebuy).toBe(true);
+    const me = body.seats.find((s: { playerId: string }) => s.playerId === alice.session.playerId);
+    expect(me.stackMojos).toBe("1000000");
     await app.close();
   });
 });

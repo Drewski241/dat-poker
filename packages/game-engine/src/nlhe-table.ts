@@ -95,6 +95,25 @@ export class NlheTableEngine {
     }
   }
 
+  /** Reload a busted stack between hands (player stays in the same seat). */
+  rebuyStack(playerId: PlayerId, buyInMojos: bigint): void {
+    if (this.hand) {
+      throw new Error("Cannot rebuy during an active hand");
+    }
+    if (!this.stacks.has(playerId)) {
+      throw new Error("Player not seated");
+    }
+    const stack = this.stacks.get(playerId) ?? 0n;
+    if (stack > 0n) {
+      throw new Error("Rebuy is only available when your table stack is zero");
+    }
+    if (buyInMojos < this.config.minBuyInMojos || buyInMojos > this.config.maxBuyInMojos) {
+      throw new Error("Buy-in out of range");
+    }
+    this.stacks.set(playerId, buyInMojos);
+    this.sittingOut.delete(playerId);
+  }
+
   setSittingOut(playerId: PlayerId, sittingOut: boolean): void {
     if (!this.stacks.has(playerId)) {
       throw new Error("Player not seated");
