@@ -1,13 +1,16 @@
 export const YOUR_TURN_COPY = "It's your turn! No Rush!";
 
-export function YourTurnSloth() {
+export function YourTurnSloth({ secondsLeft }: { secondsLeft?: number }) {
   return (
     <aside className="your-turn-sloth" role="status" aria-live="assertive">
       <div className="your-turn-sloth-art">
         <SlothSvg />
         <p className="your-turn-sign">
           <strong>It&apos;s your turn!</strong>
-          <span>No Rush!</span>
+          <span>
+            No Rush!
+            {secondsLeft != null && secondsLeft > 0 ? ` · ${secondsLeft}s left` : ""}
+          </span>
         </p>
       </div>
     </aside>

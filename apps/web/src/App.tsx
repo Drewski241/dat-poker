@@ -8,6 +8,12 @@ import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
 import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import { describeLiveHand } from "./live-hand.js";
+import {
+  actionSecondsRemaining,
+  PLAYER_ACTION_LIMIT_MS,
+  shouldShowSloth,
+  turnTimerKey,
+} from "./player-turn-timer.js";
 import { isLuckyIrishWin, pickBigWinOverlay, type BigWinOverlay } from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import { SiteNav } from "./SiteNav.js";
@@ -109,6 +115,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const lastBigWin = useRef<BigWinOverlay | null>(null);
   const [cardPreview, setCardPreview] = useState(false);
   const [slothPreview, setSlothPreview] = useState(false);
+  const [turnElapsedMs, setTurnElapsedMs] = useState(0);
+  const turnTimeoutFiredRef = useRef<string | null>(null);
+  const sendActionRef = useRef<(action: PlayerAction, amountMojos?: string) => void>(() => {});
+  const canCheckRef = useRef(false);
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -615,10 +625,40 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const isMyAction = actionSeatPlayer?.playerId === playerId;
   const liveHandLabel =
     me && me.holeCards.length > 0 ? describeLiveHand(me.holeCards, hand?.board ?? []) : null;
+  const actionSecondsLeft = actionSecondsRemaining(turnElapsedMs);
+  const showSlothReminder =
+    slothPreview || (isMyAction && shouldShowSloth(turnElapsedMs, true));
+
+  sendActionRef.current = sendAction;
+  canCheckRef.current = canCheck;
+
+  useEffect(() => {
+    if (!isMyAction || !hand) {
+      setTurnElapsedMs(0);
+      turnTimeoutFiredRef.current = null;
+      return;
+    }
+    const key = turnTimerKey(hand);
+    turnTimeoutFiredRef.current = null;
+    const started = Date.now();
+    setTurnElapsedMs(0);
+    const tick = window.setInterval(() => {
+      setTurnElapsedMs(Date.now() - started);
+    }, 200);
+    const actionTimer = window.setTimeout(() => {
+      if (turnTimeoutFiredRef.current === key) return;
+      turnTimeoutFiredRef.current = key;
+      sendActionRef.current(canCheckRef.current ? "check" : "fold");
+    }, PLAYER_ACTION_LIMIT_MS);
+    return () => {
+      window.clearInterval(tick);
+      window.clearTimeout(actionTimer);
+    };
+  }, [isMyAction, hand?.handId, hand?.actionSeat, hand?.street, hand?.currentBetMojos]);
 
   useEffect(() => {
     const base = isBeta ? "DAT Poker beta" : "DAT Poker";
-    if (!isMyAction) {
+    if (!isMyAction || !shouldShowSloth(turnElapsedMs, true)) {
       document.title = base;
       return;
     }
@@ -632,7 +672,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       window.clearInterval(t);
       document.title = base;
     };
-  }, [isBeta, isMyAction]);
+  }, [isBeta, isMyAction, turnElapsedMs]);
 
   useEffect(() => {
     if (!isMyAction || !betRange.canBetOrRaise) return;
@@ -678,7 +718,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     <div className="app">
       {bigWin === "irish" && <LuckyIrishWin onFinished={() => setBigWin(null)} />}
       {bigWin === "hunter" && <HunterBullseyeWin onFinished={() => setBigWin(null)} />}
-      {(isMyAction || slothPreview) && <YourTurnSloth />}
+      {showSlothReminder && (
+        <YourTurnSloth secondsLeft={slothPreview ? undefined : actionSecondsLeft} />
+      )}
       {isBeta && (
         <div className="beta-banner" role="status">
           Public beta — software under development.           Open tables reset on restart;
@@ -962,7 +1004,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               {isMyAction && (
                 <div className="actions your-turn">
                   <div className="action-bar-top">
-                    <span className="action-bar-label">Your action</span>
+                    <span className="action-bar-label">
+                      Your action · {actionSecondsLeft}s
+                    </span>
                     <div className="action-buttons-row">
                       <button
                         type="button"
