@@ -7,7 +7,13 @@ import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
 import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
 import { SuperheroFlyWin } from "./components/SuperheroFlyWin.js";
 import { TableRoom } from "./components/TableRoom.js";
-import { YourTurnSloth } from "./components/YourTurnSloth.js";
+import { YourTurnReminder } from "./components/YourTurnReminder.js";
+import {
+  parseYourTurnCueHash,
+  pickYourTurnCue,
+  readStoredYourTurnCue,
+  type YourTurnCue,
+} from "./your-turn-cue.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
   actionSecondsRemaining,
@@ -110,7 +116,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const handForTimerRef = useRef(hand);
   const playerIdForTimerRef = useRef(playerId);
   const [cardPreview, setCardPreview] = useState(false);
-  const [slothPreview, setSlothPreview] = useState(false);
+  const [turnCuePreview, setTurnCuePreview] = useState<YourTurnCue | null>(null);
+  const [activeTurnCue, setActiveTurnCue] = useState<YourTurnCue>("sloth");
+  const lastTurnCue = useRef<YourTurnCue | null>(readStoredYourTurnCue());
+  const turnCueKeyRef = useRef<string | null>(null);
   const [turnElapsedMs, setTurnElapsedMs] = useState(0);
   const turnTimeoutFiredRef = useRef<string | null>(null);
   const sendActionRef = useRef<(action: PlayerAction, amountMojos?: string) => void>(() => {});
@@ -673,8 +682,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const liveHandLabel =
     me && me.holeCards.length > 0 ? describeLiveHand(me.holeCards, hand?.board ?? []) : null;
   const actionSecondsLeft = actionSecondsRemaining(turnElapsedMs);
-  const showSlothReminder =
-    slothPreview || (isMyAction && shouldShowSloth(turnElapsedMs, true));
+  const showTurnReminder =
+    turnCuePreview != null || (isMyAction && shouldShowSloth(turnElapsedMs, true));
 
   handForTimerRef.current = hand;
   playerIdForTimerRef.current = playerId;
@@ -705,6 +714,19 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       window.clearInterval(tick);
       window.clearTimeout(actionTimer);
     };
+  }, [isMyAction, hand?.handId, hand?.actionSeat, hand?.street, hand?.currentBetMojos]);
+
+  useEffect(() => {
+    if (!isMyAction || !hand) {
+      turnCueKeyRef.current = null;
+      return;
+    }
+    const key = turnTimerKey(hand);
+    if (turnCueKeyRef.current === key) return;
+    turnCueKeyRef.current = key;
+    const cue = pickYourTurnCue(lastTurnCue.current);
+    lastTurnCue.current = cue;
+    setActiveTurnCue(cue);
   }, [isMyAction, hand?.handId, hand?.actionSeat, hand?.street, hand?.currentBetMojos]);
 
   useEffect(() => {
@@ -753,8 +775,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (window.location.hash === "#cards") {
       setCardPreview(true);
     }
-    if (window.location.hash === "#sloth") {
-      setSlothPreview(true);
+    const turnPreview = parseYourTurnCueHash(window.location.hash);
+    if (turnPreview) {
+      setTurnCuePreview(turnPreview);
     }
   }, []);
 
@@ -794,8 +817,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       {bigWin === "irish" && <LuckyIrishWin onFinished={() => setBigWin(null)} />}
       {bigWin === "hunter" && <HunterBullseyeWin onFinished={() => setBigWin(null)} />}
       {bigWin === "hero" && <SuperheroFlyWin onFinished={() => setBigWin(null)} />}
-      {showSlothReminder && (
-        <YourTurnSloth secondsLeft={slothPreview ? undefined : actionSecondsLeft} />
+      {showTurnReminder && (
+        <YourTurnReminder
+          cue={turnCuePreview ?? activeTurnCue}
+          secondsLeft={turnCuePreview != null ? undefined : actionSecondsLeft}
+        />
       )}
       {isBeta && !atTableRoom && (
         <div className="beta-banner" role="status">

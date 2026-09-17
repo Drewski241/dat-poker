@@ -1298,25 +1298,62 @@ button.linkish:hover {
   }
 }
 
-.your-turn-sloth {
+.your-turn-cue {
   position: fixed;
-  right: 0.35rem;
-  top: 22%;
   z-index: 150;
   pointer-events: none;
   width: 13.5rem;
   filter: drop-shadow(0 10px 16px rgba(0, 0, 0, 0.45));
 }
 
-.your-turn-sloth-art {
-  position: relative;
-  animation: your-turn-sway 3.6s ease-in-out infinite;
+.your-turn-cue--right {
+  right: 0.35rem;
+  top: 22%;
 }
 
-.your-turn-sloth-svg {
+.your-turn-cue--left {
+  left: 0.35rem;
+  top: 22%;
+}
+
+.your-turn-cue--bottom-right {
+  right: 0.35rem;
+  bottom: 26%;
+  top: auto;
+  width: 11rem;
+}
+
+.your-turn-cue-art {
+  position: relative;
+  animation:
+    your-turn-slide-in 0.55s cubic-bezier(0.22, 1.1, 0.32, 1) both,
+    your-turn-sway 3.6s ease-in-out 0.55s infinite;
+}
+
+.your-turn-cue--left .your-turn-cue-art {
+  animation:
+    your-turn-slide-in-left 0.55s cubic-bezier(0.22, 1.1, 0.32, 1) both,
+    your-turn-sway 3.6s ease-in-out 0.55s infinite;
+}
+
+.your-turn-cue--bottom-right .your-turn-cue-art {
+  animation:
+    your-turn-slide-in-up 0.55s cubic-bezier(0.22, 1.1, 0.32, 1) both,
+    your-turn-chips-bob 2.4s ease-in-out 0.55s infinite;
+}
+
+.your-turn-cue-svg {
   width: 13.5rem;
   height: auto;
   display: block;
+}
+
+.your-turn-cue--bottom-right .your-turn-cue-svg {
+  width: 11rem;
+}
+
+.your-turn-chips-stack {
+  transform-origin: center bottom;
 }
 
 .your-turn-sloth-lids {
@@ -1382,6 +1419,63 @@ button.linkish:hover {
   }
 }
 
+@keyframes your-turn-slide-in {
+  from {
+    transform: translateX(115%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes your-turn-slide-in-left {
+  from {
+    transform: translateX(-115%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes your-turn-slide-in-up {
+  from {
+    transform: translateY(115%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes your-turn-chips-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes your-turn-terrier-zap {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.your-turn-terrier-zap {
+  animation: your-turn-terrier-zap 0.45s ease-in-out infinite;
+}
+
 @keyframes your-turn-sway {
   0%,
   100% {
@@ -1404,15 +1498,43 @@ button.linkish:hover {
   }
 }
 
+.your-turn-cue--left .your-turn-sign {
+  left: auto;
+  right: -0.35rem;
+}
+
+.your-turn-cue--bottom-right .your-turn-sign {
+  left: 50%;
+  top: auto;
+  bottom: -0.25rem;
+  transform: translateX(-50%) rotate(-2deg);
+  min-width: 7rem;
+}
+
 @media (max-width: 900px) {
-  .your-turn-sloth {
+  .your-turn-cue--right {
     top: 4.75rem;
     right: 0;
     width: 8.5rem;
   }
 
-  .your-turn-sloth-svg {
+  .your-turn-cue--left {
+    top: 4.75rem;
+    left: 0;
     width: 8.5rem;
+  }
+
+  .your-turn-cue--bottom-right {
+    bottom: 22%;
+    width: 8rem;
+  }
+
+  .your-turn-cue-svg {
+    width: 8.5rem;
+  }
+
+  .your-turn-cue--bottom-right .your-turn-cue-svg {
+    width: 8rem;
   }
 
   .your-turn-sign {
@@ -1941,9 +2063,10 @@ html.play-table-screen body {
 
 @media (prefers-reduced-motion: reduce) {
   .actions.your-turn,
-  .your-turn-sloth-art,
+  .your-turn-cue-art,
   .your-turn-sign,
-  .your-turn-sloth-lids {
+  .your-turn-sloth-lids,
+  .your-turn-terrier-zap {
     animation: none;
   }
 
