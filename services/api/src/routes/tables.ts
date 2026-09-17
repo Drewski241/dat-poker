@@ -91,6 +91,7 @@ function tableSnapshot(tableId: string, table: NlheTableEngine, viewerId?: strin
     }),
     hand: redactHandForViewer(table.getHandState(), viewerId),
     lastHandResult: table.getLastHandResult(),
+    dealerButtonSeat: table.getDealerButtonSeat(),
   };
 }
 

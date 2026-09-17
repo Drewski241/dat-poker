@@ -38,6 +38,21 @@ const CARD_PREVIEW_HOLE = [
 ];
 const CARD_PREVIEW_HAND = describeLiveHand(CARD_PREVIEW_HOLE, CARD_PREVIEW_BOARD);
 
+function seatPositionLabel(
+  seatIndex: number,
+  hand: HandState | null,
+  dealerButtonSeat: number | null,
+): string {
+  if (hand) {
+    if (hand.dealerSeat === seatIndex) return " · dealer";
+    if (hand.smallBlindSeat === seatIndex) return " · small blind";
+    if (hand.bigBlindSeat === seatIndex) return " · big blind";
+    return "";
+  }
+  if (dealerButtonSeat === seatIndex) return " · dealer (next hand)";
+  return "";
+}
+
 function playerLabel(id: string, youId: string | null, display?: string): string {
   if (id === youId) return "You";
   if (id === HOUSE_PLAYER_ID) return "House";
@@ -82,6 +97,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const [tableId, setTableId] = useState<string | null>(null);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
+  const [dealerButtonSeat, setDealerButtonSeat] = useState<number | null>(null);
   const [handInProgress, setHandInProgress] = useState(false);
   const [withdrawResult, setWithdrawResult] = useState<WithdrawResult | null>(null);
   const [username, setUsername] = useState<string | null>(null);
@@ -98,6 +114,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [error, setError] = useState<string | null>(null);
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
   const [bigBlindMojos, setBigBlindMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+  const [smallBlindMojos, setSmallBlindMojos] = useState<bigint>(DAT_TABLE_DEFAULTS.smallBlindMojos);
 
   useEffect(() => {
     void (async () => {
@@ -164,6 +181,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
+    setDealerButtonSeat(t.dealerButtonSeat ?? null);
+    if (t.smallBlindMojos) {
+      try {
+        const sb = BigInt(t.smallBlindMojos);
+        if (sb > 0n) setSmallBlindMojos(sb);
+      } catch {
+        /* keep current blinds */
+      }
+    }
     if (t.bigBlindMojos) {
       try {
         const bb = BigInt(t.bigBlindMojos);
@@ -396,6 +422,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setTableSeats(joined.seats);
       setHand(joined.hand);
       setHandInProgress(joined.handInProgress);
+      setDealerButtonSeat(joined.dealerButtonSeat ?? null);
+      if (joined.smallBlindMojos) {
+        try {
+          const sb = BigInt(joined.smallBlindMojos);
+          if (sb > 0n) setSmallBlindMojos(sb);
+        } catch {
+          /* keep default blinds */
+        }
+      }
       if (joined.bigBlindMojos) {
         try {
           const bb = BigInt(joined.bigBlindMojos);
@@ -791,7 +826,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   <li key={i}>
                     Seat {i + 1}:{" "}
                     {seated
-                      ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}`
+                      ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}${seatPositionLabel(i, hand, dealerButtonSeat)}`
                       : "empty"}
                   </li>
                 );
@@ -898,6 +933,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 Street: <strong>{hand.street}</strong> · Pot:{" "}
                 <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
               </p>
+              <p className="hand-blinds-line">
+                Dealer seat {hand.dealerSeat + 1} · SB seat {hand.smallBlindSeat + 1} · BB seat{" "}
+                {hand.bigBlindSeat + 1} · blinds{" "}
+                <strong>{formatDatMojos(smallBlindMojos.toString(), datToken?.ticker)}</strong> /{" "}
+                <strong>{formatDatMojos(bigBlindMojos.toString(), datToken?.ticker)}</strong>
+              </p>
               {liveHandLabel && (
                 <p className="live-hand">
                   Your hand: <strong>{liveHandLabel}</strong>
@@ -920,26 +961,51 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               </ul>
               {isMyAction && (
                 <div className="actions your-turn">
-                  <span>Your action</span>
-                  <button
-                    type="button"
-                    className="primary-bet"
-                    disabled={busy}
-                    onClick={() => sendAction("fold")}
-                  >
-                    fold
-                  </button>
-                  {canCheck ? (
-                    <button type="button" disabled={busy} onClick={() => sendAction("check")}>
-                      check
-                    </button>
-                  ) : (
-                    <button type="button" disabled={busy} onClick={() => sendAction("call")}>
-                      call {formatDatMojos(toCall.toString(), datToken?.ticker)}
-                    </button>
-                  )}
+                  <div className="action-bar-top">
+                    <span className="action-bar-label">Your action</span>
+                    <div className="action-buttons-row">
+                      <button
+                        type="button"
+                        className="primary-bet"
+                        disabled={busy}
+                        onClick={() => sendAction("fold")}
+                      >
+                        fold
+                      </button>
+                      {canCheck ? (
+                        <button type="button" disabled={busy} onClick={() => sendAction("check")}>
+                          check
+                        </button>
+                      ) : (
+                        <button type="button" disabled={busy} onClick={() => sendAction("call")}>
+                          call {formatDatMojos(toCall.toString(), datToken?.ticker)}
+                        </button>
+                      )}
+                      {betRange.canBetOrRaise && (
+                        <button
+                          type="button"
+                          className="primary-bet action-bet-submit"
+                          disabled={busy}
+                          onClick={() =>
+                            sendAction(
+                              betRange.isOpeningBet ? "bet" : "raise",
+                              betAmountMojos.toString(),
+                            )
+                          }
+                        >
+                          {betRange.isOpeningBet ? "bet" : "raise to"}{" "}
+                          {formatDatMojos(betAmountMojos.toString(), datToken?.ticker)}
+                        </button>
+                      )}
+                      {myStack > 0n && (
+                        <button type="button" disabled={busy} onClick={() => sendAction("all-in")}>
+                          all-in
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   {betRange.canBetOrRaise && (
-                    <>
+                    <div className="action-bet-panel">
                       <BetSlider
                         label={betRange.isOpeningBet ? "Bet size" : "Raise to"}
                         minMojos={betRange.minRaiseTo}
@@ -951,30 +1017,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                         disabled={busy}
                         onChange={setBetAmountMojos}
                       />
-                      <button
-                        type="button"
-                        className="primary-bet"
-                        disabled={busy}
-                        onClick={() =>
-                          sendAction(
-                            betRange.isOpeningBet ? "bet" : "raise",
-                            betAmountMojos.toString(),
-                          )
-                        }
-                      >
-                        {betRange.isOpeningBet ? "bet" : "raise to"}{" "}
-                        {formatDatMojos(betAmountMojos.toString(), datToken?.ticker)}
-                      </button>
-                    </>
-                  )}
-                  {myStack > 0n && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => sendAction("all-in")}
-                    >
-                      all-in
-                    </button>
+                    </div>
                   )}
                 </div>
               )}

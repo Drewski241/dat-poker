@@ -63,6 +63,9 @@ export interface HandState {
   board: { rank: string; suit: string }[];
   potMojos: string;
   currentBetMojos: string;
+  dealerSeat: number;
+  smallBlindSeat: number;
+  bigBlindSeat: number;
   actionSeat: number | null;
   players: HandPlayer[];
 }
@@ -345,6 +348,7 @@ export const api = {
       seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;
+      dealerButtonSeat?: number | null;
     }>("/v1/tables/join", {
       method: "POST",
       body: JSON.stringify({
@@ -366,6 +370,7 @@ export const api = {
       seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;
+      dealerButtonSeat?: number | null;
     }>(`/v1/tables/${tableId}${playerId ? `?playerId=${encodeURIComponent(playerId)}` : ""}`),
 
   seatPlayer: (

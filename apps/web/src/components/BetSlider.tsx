@@ -68,8 +68,41 @@ export function BetSlider({
 
   return (
     <div className="bet-slider">
-      <div className="bet-slider-header">
-        <span>{label}</span>
+      <span className="bet-slider-label">{label}</span>
+      <input
+        type="range"
+        className="bet-slider-input"
+        min={0}
+        max={rangeSteps}
+        step={1}
+        value={Math.min(sliderValue, rangeSteps)}
+        disabled={disabled}
+        aria-label={`${label} slider`}
+        onChange={(e) => {
+          const next = sliderToMojos(minMojos, Number(e.target.value), stepMojos);
+          onChange(next > maxMojos ? maxMojos : next);
+        }}
+      />
+      <div className="bet-slider-bounds">
+        <span>{formatDatMojos(minMojos.toString(), ticker)}</span>
+        <span>{formatDatMojos(maxMojos.toString(), ticker)}</span>
+      </div>
+      <div className="bet-presets-row">
+        {presets.length > 0 && (
+          <div className="bet-presets" role="group" aria-label="Preset bet sizes">
+            {presets.map((amount) => (
+              <button
+                key={amount.toString()}
+                type="button"
+                className={amount === valueMojos ? "bet-preset active" : "bet-preset"}
+                disabled={disabled}
+                onClick={() => onChange(amount)}
+              >
+                {formatDatAmount(amount)}
+              </button>
+            ))}
+          </div>
+        )}
         <label className="bet-amount-field">
           <span className="visually-hidden">{label} amount</span>
           <input
@@ -90,38 +123,6 @@ export function BetSlider({
           />
           <span className="bet-amount-ticker">{ticker}</span>
         </label>
-      </div>
-      {presets.length > 0 && (
-        <div className="bet-presets" role="group" aria-label="Preset bet sizes">
-          {presets.map((amount) => (
-            <button
-              key={amount.toString()}
-              type="button"
-              className={amount === valueMojos ? "bet-preset active" : "bet-preset"}
-              disabled={disabled}
-              onClick={() => onChange(amount)}
-            >
-              {formatDatAmount(amount)}
-            </button>
-          ))}
-        </div>
-      )}
-      <input
-        type="range"
-        className="bet-slider-input"
-        min={0}
-        max={rangeSteps}
-        step={1}
-        value={Math.min(sliderValue, rangeSteps)}
-        disabled={disabled}
-        onChange={(e) => {
-          const next = sliderToMojos(minMojos, Number(e.target.value), stepMojos);
-          onChange(next > maxMojos ? maxMojos : next);
-        }}
-      />
-      <div className="bet-slider-bounds">
-        <span>{formatDatMojos(minMojos.toString(), ticker)}</span>
-        <span>{formatDatMojos(maxMojos.toString(), ticker)}</span>
       </div>
     </div>
   );
