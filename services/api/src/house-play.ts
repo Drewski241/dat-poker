@@ -26,6 +26,7 @@ export function playHouseIfDue(table: NlheTableEngine, random: () => number = Ma
         betThisStreetMojos: actor.betThisStreetMojos,
         stackMojos: actor.stackMojos,
         bigBlindMojos: table.getBigBlindMojos(),
+        lastRaiseIncrementMojos: hand.lastRaiseIncrementMojos,
         opponentsAllIn,
         headsUp: live.length === 2,
       },

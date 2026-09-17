@@ -13,6 +13,7 @@ function view(partial: Partial<HouseView> & Pick<HouseView, "holeCards" | "board
     betThisStreetMojos: 0n,
     stackMojos: 1_000_000n,
     bigBlindMojos: 10_000n,
+    lastRaiseIncrementMojos: 10_000n,
     opponentsAllIn: false,
     ...partial,
   };

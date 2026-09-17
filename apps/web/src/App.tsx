@@ -600,6 +600,16 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const canCheck = toCall <= 0n;
   const myStack = BigInt(me?.stackMojos ?? 0);
 
+  const lastRaiseIncrement = useMemo(() => {
+    if (!hand?.lastRaiseIncrementMojos) return bigBlindMojos;
+    try {
+      const inc = BigInt(hand.lastRaiseIncrementMojos);
+      return inc > 0n ? inc : bigBlindMojos;
+    } catch {
+      return bigBlindMojos;
+    }
+  }, [hand?.lastRaiseIncrementMojos, bigBlindMojos]);
+
   const betRange = useMemo(
     () =>
       computeNlheBetRange({
@@ -607,8 +617,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         currentBetMojos: currentBet,
         myBetThisStreetMojos: myBet,
         myStackMojos: myStack,
+        lastRaiseIncrementMojos: lastRaiseIncrement,
       }),
-    [bigBlindMojos, currentBet, myBet, myStack],
+    [bigBlindMojos, currentBet, myBet, myStack, lastRaiseIncrement],
   );
 
   const actionSeatPlayer =

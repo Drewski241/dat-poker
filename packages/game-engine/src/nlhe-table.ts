@@ -46,6 +46,8 @@ export interface TableHandState {
   board: Card[];
   potMojos: bigint;
   currentBetMojos: bigint;
+  /** Min raise increment on this street (last bet/raise size, at least BB). */
+  lastRaiseIncrementMojos: bigint;
   dealerSeat: number;
   smallBlindSeat: number;
   bigBlindSeat: number;
@@ -264,6 +266,7 @@ export class NlheTableEngine {
       board: [],
       potMojos: 0n,
       currentBetMojos: 0n,
+      lastRaiseIncrementMojos: this.config.bigBlindMojos,
       dealerSeat,
       smallBlindSeat: dealerSeat,
       bigBlindSeat: dealerSeat,
@@ -345,9 +348,15 @@ export class NlheTableEngine {
         if (amountMojos <= h.currentBetMojos) {
           throw new Error("Raise must exceed current bet");
         }
+        const maxTo = player.betThisStreetMojos + player.stackMojos;
+        const minRaiseTo = h.currentBetMojos + h.lastRaiseIncrementMojos;
+        if (amountMojos < minRaiseTo && amountMojos < maxTo) {
+          throw new Error("Raise must be at least the size of the last bet or raise");
+        }
         const add = amountMojos - player.betThisStreetMojos;
         this.charge(player, h, add);
         h.currentBetMojos = player.betThisStreetMojos;
+        this.updateLastRaiseIncrement(h, currentBetBefore);
         break;
       }
       case "all-in": {
@@ -357,6 +366,7 @@ export class NlheTableEngine {
         if (player.betThisStreetMojos > h.currentBetMojos) {
           h.currentBetMojos = player.betThisStreetMojos;
         }
+        this.updateLastRaiseIncrement(h, currentBetBefore);
         break;
       }
       default:
@@ -462,6 +472,15 @@ export class NlheTableEngine {
     );
   }
 
+  private updateLastRaiseIncrement(h: TableHandState, currentBetBefore: bigint): void {
+    const newBet = h.currentBetMojos;
+    if (newBet <= currentBetBefore) return;
+    const increment = newBet - currentBetBefore;
+    if (increment >= h.lastRaiseIncrementMojos) {
+      h.lastRaiseIncrementMojos = increment;
+    }
+  }
+
   private recordActionOnStreet(
     h: TableHandState,
     actor: PlayerHandState,
@@ -491,6 +510,7 @@ export class NlheTableEngine {
       p.actedThisStreet = false;
     }
     h.currentBetMojos = 0n;
+    h.lastRaiseIncrementMojos = this.config.bigBlindMojos;
 
     const next: Record<Street, Street | "showdown"> = {
       preflop: "flop",

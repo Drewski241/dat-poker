@@ -63,6 +63,7 @@ export interface HandState {
   board: { rank: string; suit: string }[];
   potMojos: string;
   currentBetMojos: string;
+  lastRaiseIncrementMojos?: string;
   dealerSeat: number;
   smallBlindSeat: number;
   bigBlindSeat: number;

@@ -11,8 +11,11 @@ export function computeNlheBetRange(params: {
   currentBetMojos: bigint;
   myBetThisStreetMojos: bigint;
   myStackMojos: bigint;
+  /** Last bet/raise increment on this street; defaults to BB. */
+  lastRaiseIncrementMojos?: bigint;
 }): NlheBetRange {
   const { bigBlindMojos, currentBetMojos, myBetThisStreetMojos, myStackMojos } = params;
+  const lastRaiseIncrementMojos = params.lastRaiseIncrementMojos ?? bigBlindMojos;
   const maxRaiseTo = myBetThisStreetMojos + myStackMojos;
 
   if (myStackMojos <= 0n || maxRaiseTo <= 0n) {
@@ -34,7 +37,7 @@ export function computeNlheBetRange(params: {
     };
   }
 
-  const minRaiseToRaw = currentBetMojos + bigBlindMojos;
+  const minRaiseToRaw = currentBetMojos + lastRaiseIncrementMojos;
   const minRaiseTo = minRaiseToRaw > maxRaiseTo ? maxRaiseTo : minRaiseToRaw;
 
   return {

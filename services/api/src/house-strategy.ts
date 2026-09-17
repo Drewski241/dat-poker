@@ -16,6 +16,7 @@ export interface HouseView {
   betThisStreetMojos: bigint;
   stackMojos: bigint;
   bigBlindMojos: bigint;
+  lastRaiseIncrementMojos: bigint;
   opponentsAllIn: boolean;
   /** House vs one live opponent — always true at our 6-max fill seat. */
   headsUp?: boolean;
@@ -344,6 +345,7 @@ function betRange(view: HouseView) {
     currentBetMojos: view.currentBetMojos,
     myBetThisStreetMojos: view.betThisStreetMojos,
     myStackMojos: view.stackMojos,
+    lastRaiseIncrementMojos: view.lastRaiseIncrementMojos,
   });
 }
 

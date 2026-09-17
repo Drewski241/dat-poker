@@ -23,10 +23,23 @@ describe("computeNlheBetRange", () => {
       currentBetMojos: 20_000n,
       myBetThisStreetMojos: 0n,
       myStackMojos: 1_000_000n,
+      lastRaiseIncrementMojos: 10_000n,
     });
     expect(range.isOpeningBet).toBe(false);
     expect(range.minRaiseTo).toBe(30_000n);
     expect(range.maxRaiseTo).toBe(1_000_000n);
+  });
+
+  it("min re-raise after a 300 bet is 600", () => {
+    const bet = 300_000n;
+    const range = computeNlheBetRange({
+      bigBlindMojos: 100_000n,
+      currentBetMojos: bet,
+      myBetThisStreetMojos: 0n,
+      myStackMojos: 10_000_000n,
+      lastRaiseIncrementMojos: bet,
+    });
+    expect(range.minRaiseTo).toBe(600_000n);
   });
 });
 

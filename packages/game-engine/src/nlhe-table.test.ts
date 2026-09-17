@@ -40,6 +40,45 @@ describe("NlheTableEngine", () => {
     expect(table.getHandsPlayed("bob")).toBe(1);
   });
 
+  it("enforces min raise equal to the last bet increment", () => {
+    const small: TableConfig = {
+      ...config,
+      smallBlindMojos: 50_000n,
+      bigBlindMojos: 100_000n,
+      minBuyInMojos: 5_000_000n,
+      maxBuyInMojos: 50_000_000n,
+    };
+    const table = new NlheTableEngine(small);
+    table.seatPlayer("alice", 0, 10_000_000n);
+    table.seatPlayer("bob", 1, 10_000_000n);
+    table.startHand("hand-min-raise");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    let state = table.getHandState()!;
+    const actor = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(actor.playerId, "call");
+    state = table.getHandState()!;
+    const bb = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(bb.playerId, "check");
+
+    state = table.getHandState()!;
+    expect(state.street).toBe("flop");
+    const flopActor = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    const betTo = 300_000n;
+    table.applyAction(flopActor.playerId, "bet", betTo);
+
+    state = table.getHandState()!;
+    expect(state.currentBetMojos).toBe(betTo);
+    expect(state.lastRaiseIncrementMojos).toBe(betTo);
+
+    const raiser = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    expect(() => table.applyAction(raiser.playerId, "raise", 500_000n)).toThrow(/last bet or raise/i);
+    table.applyAction(raiser.playerId, "raise", 600_000n);
+    expect(table.getHandState()?.currentBetMojos).toBe(600_000n);
+  });
+
   it("heads-up: after a raise the other player must act before the street advances", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

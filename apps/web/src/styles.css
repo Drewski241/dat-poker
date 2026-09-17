@@ -1512,7 +1512,8 @@ html.play-table-screen body {
 
 .table-room-hero.your-turn {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(61, 214, 140, 0.25);
+  outline: 2px solid var(--accent);
+  animation: your-turn-flash 1.15s ease-in-out infinite;
 }
 
 .table-room-hero-meta {
@@ -1654,8 +1655,8 @@ html.play-table-screen body {
 
 .app--table-room .actions.your-turn {
   padding: 0.35rem 0.4rem;
-  animation: none;
-  outline-width: 1px;
+  outline-width: 2px;
+  animation: your-turn-flash 1.15s ease-in-out infinite;
 }
 
 .app--table-room .action-bar-label {
