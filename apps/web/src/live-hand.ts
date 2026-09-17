@@ -1,4 +1,5 @@
-import { describeBestMadeHand, parseCard } from "@dat-poker/game-engine";
+import { parseCard } from "@dat-poker/game-engine/card";
+import { describeBestMadeHand } from "@dat-poker/game-engine/hand-evaluator";
 
 export function describeLiveHand(
   hole: { rank: string; suit: string }[],
