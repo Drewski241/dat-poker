@@ -28,6 +28,22 @@ import {
   readDatTokenConfig,
   validateBuyInProof,
 } from "../wallet-config.js";
+import {
+  clearPlayerActivity,
+  getLastPlayerActivity,
+  inactiveUnseatMs,
+  touchPlayerActivity,
+} from "../player-activity.js";
+
+export interface UnseatedInactivePlayer {
+  playerId: string;
+  stackMojos: string;
+  inactiveForMs: number;
+}
+
+export interface UnseatInactiveResult {
+  unseated: UnseatedInactivePlayer[];
+}
 
 const tables = new Map<string, NlheTableEngine>();
 const playerLabels = new Map<string, string>();
@@ -66,7 +82,74 @@ function createTable(maxSeats = 6): { tableId: string; table: NlheTableEngine; c
   return { tableId: id, table, config };
 }
 
-function tableSnapshot(tableId: string, table: NlheTableEngine, viewerId?: string) {
+function defaultHouseBuyIn(): bigint {
+  const dat = readDatTokenConfig();
+  return resolveDatMinBuyInMojos(dat.minBuyInMojos);
+}
+
+/**
+ * Remove human players who have not polled or acted recently. Only runs between hands;
+ * stacks are returned to the in-game account ledger (same as voluntary leave).
+ */
+export function unseatInactivePlayers(
+  tableId: string,
+  table: NlheTableEngine,
+  nowMs: number,
+): UnseatInactiveResult {
+  const unseated: UnseatedInactivePlayer[] = [];
+  if (table.isHandInProgress()) {
+    return { unseated };
+  }
+  const threshold = inactiveUnseatMs();
+  persistTablePlaythrough(table);
+  for (const seated of [...table.getSeatedPlayers()]) {
+    if (seated.playerId === HOUSE_PLAYER_ID) continue;
+    const last = getLastPlayerActivity(seated.playerId);
+    if (last === undefined) {
+      touchPlayerActivity(seated.playerId, nowMs);
+      continue;
+    }
+    const inactiveForMs = nowMs - last;
+    if (inactiveForMs < threshold) continue;
+    try {
+      const cash = table.cashOutPlayer(seated.playerId);
+      creditAccount(seated.playerId, cash.stackMojos);
+      syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId));
+      clearBuyIn(tableId, seated.playerId);
+      clearPlayerActivity(seated.playerId);
+      unseated.push({
+        playerId: seated.playerId,
+        stackMojos: cash.stackMojos.toString(),
+        inactiveForMs,
+      });
+    } catch {
+      /* already unseated or hand started */
+    }
+  }
+  if (unseated.length > 0) {
+    seatHouseIfNeeded(table, defaultHouseBuyIn());
+  }
+  return { unseated };
+}
+
+function maintainTable(
+  tableId: string,
+  table: NlheTableEngine,
+  viewerId?: string,
+): UnseatInactiveResult {
+  const nowMs = Date.now();
+  if (viewerId && table.hasPlayer(viewerId)) {
+    touchPlayerActivity(viewerId, nowMs);
+  }
+  return unseatInactivePlayers(tableId, table, nowMs);
+}
+
+function tableSnapshot(
+  tableId: string,
+  table: NlheTableEngine,
+  viewerId?: string,
+  maintenance?: UnseatInactiveResult,
+) {
   return {
     tableId,
     maxSeats: table.getMaxSeats(),
@@ -92,6 +175,9 @@ function tableSnapshot(tableId: string, table: NlheTableEngine, viewerId?: strin
     hand: redactHandForViewer(table.getHandState(), viewerId),
     lastHandResult: table.getLastHandResult(),
     dealerButtonSeat: table.getDealerButtonSeat(),
+    ...(maintenance && maintenance.unseated.length > 0
+      ? { unseatedInactive: maintenance.unseated }
+      : {}),
   };
 }
 
@@ -222,9 +308,10 @@ export function registerTableRoutes(app: FastifyInstance): void {
   app.get("/v1/tables", async (req) => {
     const session = readPlayerSession(req);
     return {
-      tables: [...tables.entries()].map(([tableId, table]) =>
-        tableSnapshot(tableId, table, session?.playerId),
-      ),
+      tables: [...tables.entries()].map(([tableId, table]) => {
+        const maintenance = maintainTable(tableId, table, session?.playerId);
+        return tableSnapshot(tableId, table, session?.playerId, maintenance);
+      }),
     };
   });
 
@@ -262,10 +349,12 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
     const existing = findPlayerTable(playerId);
     if (existing) {
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(existing.tableId, existing.table, playerId);
       return {
         ok: true,
         joinedExisting: true,
-        ...tableSnapshot(existing.tableId, existing.table, playerId),
+        ...tableSnapshot(existing.tableId, existing.table, playerId, maintenance),
       };
     }
 
@@ -303,11 +392,13 @@ export function registerTableRoutes(app: FastifyInstance): void {
     try {
       target.table.seatPlayer(playerId, seat, buyInMojos);
       target.table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
       seatHouseIfNeeded(target.table, buyInMojos);
+      const maintenance = maintainTable(target.tableId, target.table, playerId);
       return {
         ok: true,
         joinedExisting: false,
-        ...tableSnapshot(target.tableId, target.table, playerId),
+        ...tableSnapshot(target.tableId, target.table, playerId, maintenance),
       };
     } catch (e) {
       if (buyIn.usedAccount) {
@@ -328,7 +419,32 @@ export function registerTableRoutes(app: FastifyInstance): void {
         return reply.status(404).send({ error: "Table not found" });
       }
       const session = readPlayerSession(req);
-      return tableSnapshot(req.params.tableId, table, session?.playerId);
+      const maintenance = maintainTable(req.params.tableId, table, session?.playerId);
+      return tableSnapshot(req.params.tableId, table, session?.playerId, maintenance);
+    },
+  );
+
+  app.post<{ Params: { tableId: string }; Body: { playerId?: string } }>(
+    "/v1/tables/:tableId/seats/unseat-inactive",
+    async (req, reply) => {
+      const session = requirePlayer(req, reply);
+      if (!session) return;
+      if (!sessionMatchesClaim(session, req.body?.playerId)) {
+        return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+      }
+      const table = tables.get(req.params.tableId);
+      if (!table) {
+        return reply.status(404).send({ error: "Table not found" });
+      }
+      if (!table.hasPlayer(session.playerId)) {
+        return reply.status(403).send({ error: "You are not seated at this table" });
+      }
+      touchPlayerActivity(session.playerId);
+      const maintenance = unseatInactivePlayers(req.params.tableId, table, Date.now());
+      return {
+        ok: true,
+        ...tableSnapshot(req.params.tableId, table, session.playerId, maintenance),
+      };
     },
   );
 
@@ -371,6 +487,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     try {
       table.seatPlayer(playerId, req.body.seatIndex, buyInMojos);
       table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
       return { ok: true };
     } catch (e) {
       if (buyIn.usedAccount) {
@@ -449,6 +566,7 @@ export function returnAllStacksToAccounts(): { returned: number } {
         creditAccount(seated.playerId, cash.stackMojos);
         syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId));
         clearBuyIn(tableId, seated.playerId);
+        clearPlayerActivity(seated.playerId);
         returned += 1;
       } catch {
         /* already standing */

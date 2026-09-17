@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type NlheTableEngine, type PlayerAction } from "@dat-poker/game-engine";
-import { getTableEngine, persistTablePlaythrough } from "./tables.js";
+import { getTableEngine, persistTablePlaythrough, unseatInactivePlayers } from "./tables.js";
+import { touchPlayerActivity } from "../player-activity.js";
 import { playHouseIfDue } from "../house-play.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { requirePlayer, sessionMatchesClaim, type PlayerSession } from "../player-session.js";
@@ -22,6 +23,7 @@ function seatedPlayer(
     void reply.status(403).send({ error: "You are not seated at this table" });
     return null;
   }
+  touchPlayerActivity(session.playerId);
   return session;
 }
 
@@ -122,6 +124,9 @@ export function registerHandRoutes(app: FastifyInstance): void {
       table.applyAction(session.playerId, req.body.action, amount);
       playHouseIfDue(table);
       persistTablePlaythrough(table);
+      if (!table.isHandInProgress()) {
+        unseatInactivePlayers(req.params.tableId, table, Date.now());
+      }
       return {
         ok: true,
         hand: redactHandForViewer(table.getHandState(), session.playerId),
