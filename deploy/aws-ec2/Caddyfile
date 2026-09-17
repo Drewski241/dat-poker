@@ -1,10 +1,20 @@
 # Public TLS front for DAT POKER. enable-https.sh replaces {$DAT_POKER_SITE}
 # with real hostnames in /etc/caddy/Caddyfile. ACME HTTP-01 uses :80 — nginx
 # must be stopped so Caddy can bind it. Cloudflare records must be DNS only
-# (grey cloud) so Let's Encrypt reaches this host.
+# (grey cloud) so Let’s Encrypt reaches this host.
 
 {$DAT_POKER_SITE} {
   encode gzip
+  request_body {
+    max_size 8MB
+  }
+  header {
+    X-Content-Type-Options nosniff
+    X-Frame-Options DENY
+    Referrer-Policy strict-origin-when-cross-origin
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; connect-src 'self' wss://relay.walletconnect.com https://relay.walletconnect.com https://*.walletconnect.com https://*.walletconnect.org https://*.reown.com wss://*.walletconnect.com wss://*.reown.com"
+  }
 
   handle /health* {
     reverse_proxy 127.0.0.1:4000

@@ -5,7 +5,9 @@ Use this after the $20 **Launch an instance using EC2** credit is in **Billing
 
 The beta is a small always-on Amazon Linux box that serves the DAT POKER web
 client and REST API so you can develop the poker software against a public
-URL. Tables are **in memory** — a restart wipes games. Dev buy-in is on.
+URL. Open tables are **in memory** and reset on restart; account DAT (redeem
+and cash-out) and play-through progress (hands that already unlocked DAT) are
+kept in `data/ledger.json`. Dev buy-in is on.
 Keep treasury Sage off this machine ([docs/TREASURY.md](./TREASURY.md)).
 
 This Cloud Agent cannot click Launch in your account.
@@ -17,7 +19,7 @@ This Cloud Agent cannot click Launch in your account.
 | `t3.small` (2 GiB) | Room for Node + `pnpm` (prefer this over `t3.micro`) |
 | Elastic IP | Stable public IPv4 (point `datspiritpoker.com` here) |
 | nginx `:80` / Caddy `:443` | Public website (`https://datspiritpoker.com/` and `/play`) + API |
-| systemd `dat-poker-api` | NLHE 6-max; house or humans |
+| systemd `dat-poker-api` | NLHE 6-max; house bot (bets/folds) or humans |
 | Daily redeem | 5000 DAT / UTC day into the in-game table account |
 | `VITE_APP_STAGE=beta` | Yellow beta banner on Home and Play |
 | Session Manager | Same browser shell you used for the tutorial (recreate the IAM role) |
@@ -174,14 +176,45 @@ security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
 
 ## Redeploy after you push code
 
-In Session Manager:
+In **Session Manager** on the beta instance (`dat-poker-beta`):
 
 ```bash
-sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+sudo DAT_POKER_REPO_REF=cursor/beta-all-updates-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 ```
 
-Use this feature branch name instead of `main` until it is merged. Restarting
-the API clears in-memory tables.
+That branch tip includes the current beta stack: WalletConnect/Sage fixes, sit-out
+and play vs house, your-turn cues, big-win overlays (5–12), short-stack all-in
+refunds, house reseat after bust, table rebuy, and email verification + password
+reset via SMTP. Use `main` instead after those PRs are merged.
+
+On the instance, set in `/opt/dat-poker/.env` (see `.env.beta.example`):
+
+- `DAT_PUBLIC_APP_URL=https://datspiritpoker.com` (verification and reset links)
+- `DAT_SMTP_HOST`, `DAT_SMTP_PORT`, `DAT_SMTP_USER`, `DAT_SMTP_PASS`, `DAT_SMTP_FROM`
+- Do **not** set `DAT_EMAIL_DEV=true` in production (emails go out via SMTP; reset codes are not returned in API responses)
+
+Restarting the API clears **in-memory tables**; account DAT, play-through, and
+ledger data stay under `/opt/dat-poker/data/` (`ledger.json`, `accounts.json`).
+Feedback stays in `/opt/dat-poker/data/feedback/`.
+
+Wait until it prints `beta redeploy ok`. If it dies on
+`www.datspiritpoker.com: command not found`, the API already restarted —
+`/etc/caddy/caddy.env` had an unquoted `DAT_POKER_SITE=host, www.host` and
+bash treated `www.…` as a command. Quote it once, then re-run redeploy:
+
+```bash
+sudo tee /etc/caddy/caddy.env >/dev/null <<'EOF'
+DAT_POKER_DOMAIN=datspiritpoker.com
+DAT_POKER_SITE="datspiritpoker.com, www.datspiritpoker.com"
+EOF
+sudo chown root:caddy /etc/caddy/caddy.env
+sudo chmod 0640 /etc/caddy/caddy.env
+```
+
+Newer `redeploy.sh` parses that file with `sed` instead of `source`, so the
+next pull finishes even if the env file is still unquoted. `curl -sS
+https://datspiritpoker.com/health` is enough to confirm the API; a failed
+Caddy `source` after `systemctl restart` does not mean Play is offline.
 
 ## CloudFormation (optional)
 
@@ -295,20 +328,49 @@ curl -sS http://127.0.0.1:4000/v1/wallet/status
 
 You want `"walletConnectConfigured": true` and a non-null `assetId`.
 
-### 6. Pair Sage in the laptop browser
+### 6. Play in the laptop browser
 
 1. Open **`https://datspiritpoker.com/`** after you [point DNS here](#website-address)
    (or the `https://YOUR-DASHES.sslip.io/` bookmark until then). Click **Play poker now!**.
-2. Click **Connect Sage (WalletConnect)**.
-3. Scan the QR with Sage (or paste the URI in Sage desktop).
-4. Approve the session in Sage.
-5. Click **Load wallet**.
-6. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits).
-7. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
-8. **Deal hand** when at least two seats are filled.
-9. **Withdraw to Sage** is locked until you complete **one hand per DAT token** of that buy-in (1000 DAT buy-in → 1000 hands). The table panel shows play-through progress.
+2. **Create account** (username + password). Add an email if you want to reset
+   a forgotten password. Sage is not required to play.
+3. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits we fund).
+4. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
+5. **Deal hand** when at least two seats are filled.
+6. **Cash out to account** anytime between hands — progress is kept. Each completed
+   hand unlocks 1 DAT; after 50 hands you can withdraw 50 DAT even if 950 remain locked.
+7. **Connect Sage to withdraw DAT** only if you want those credits in a wallet. Approve a
+   sign-only pairing (it cannot send coins).
+8. Send notes and screenshots from **https://datspiritpoker.com/feedback**.
+
+Sage pairing **only signs messages**. If Sage asks to send coins or take an
+offer during this beta, reject it and file feedback. Details:
+[docs/SECURITY.md](./SECURITY.md).
 
 If the page is still `http://` you will see a note that Sage needs HTTPS.
+
+If **Connect Sage** stays on “Connecting…” and never shows a QR, or the
+page shows `Failed to publish custom payload` / `tag:undefined`, the
+browser never reached the Reown relay. Fix:
+
+1. [Reown Cloud](https://cloud.reown.com/) → DAT Poker project → **Allowed
+   domains**. Add `https://datspiritpoker.com` and
+   `https://www.datspiritpoker.com` (exact origins, including `https://`).
+2. Reload `/play` and click **Connect Sage** again. The modal should show
+   a spinner, then the QR.
+3. Redeploy the web client so it waits for the relay before publishing:
+
+```bash
+sudo DAT_POKER_REPO_REF=cursor/walletconnect-qr-pairing-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+```
+
+chia-gaming’s GitHub WalletConnect path is for the official Chia light
+wallet + Calpoker state channels (`chia_selectCoins`,
+`chia_createOfferForIds`). Sage pairing follows
+[xch-dev/sage-dapp-example](https://github.com/xch-dev/sage-dapp-example)
+(CHIP-0002 methods + `wss://relay.walletconnect.com`) and **does not**
+request `chia_send` / `chia_takeOffer`. See
+[docs/WALLETCONNECT.md](./WALLETCONNECT.md) and [docs/SECURITY.md](./SECURITY.md).
 
 Withdraw to Sage needs a **separate treasury host** later
 ([docs/TREASURY.md](./TREASURY.md)). Do not enable Sage RPC on this EC2 box.
@@ -404,9 +466,12 @@ You want `https://datspiritpoker.com/`. If it still prints `sslip.io`, finish
 Message you can paste:
 
 > You’re invited to the DAT Poker closed beta. Open https://datspiritpoker.com/ —
-> click Play poker now!, connect Sage, redeem 5000 DAT for today, then buy in
-> at the 6-max table. This is software testing, not a real-money casino.
-> Tables reset if the server restarts.
+> click Play poker now!, create an account, redeem 5000 DAT for today, then buy in
+> at the 6-max table. Sage is only needed if you want DAT in a wallet. Send notes
+> and screenshots at https://datspiritpoker.com/feedback . Pairing only signs
+> messages — Sage should never send DAT from this site. This is software testing,
+> not a real-money casino. Open tables reset if the server restarts; your account
+> DAT is kept.
 
 Keep the group small and trusted. The host is a single `t3.small`, tables are
 in memory, there is no KYC, and DAT does not leave Sage until on-chain escrow

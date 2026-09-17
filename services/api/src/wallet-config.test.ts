@@ -16,7 +16,7 @@ describe("validateBuyInProof", () => {
     playerId: "xch1abc",
   };
 
-  it("accepts balance attestation without signature when balance suffices", () => {
+  it("rejects balance attestation without a Sage signature", () => {
     const message = buildBuyInMessage({
       tableId: params.tableId,
       seatIndex: params.seatIndex,
@@ -34,7 +34,7 @@ describe("validateBuyInProof", () => {
         },
         params,
       ),
-    ).toBeNull();
+    ).toContain("signature");
   });
 
   it("rejects missing signature when balance is insufficient", () => {

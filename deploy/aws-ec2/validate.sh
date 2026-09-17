@@ -224,8 +224,10 @@ PY
 
 if grep -q 'reverse_proxy 127.0.0.1:4000' "$DIR/Caddyfile" \
   && grep -q 'handle /v1/' "$DIR/Caddyfile" \
-  && grep -q 'DAT_POKER_SITE' "$DIR/Caddyfile"; then
-  ok "Caddyfile proxies /health and /v1 to the API"
+  && grep -q 'DAT_POKER_SITE' "$DIR/Caddyfile" \
+  && grep -q 'Content-Security-Policy' "$DIR/Caddyfile" \
+  && grep -q 'max_size 8MB' "$DIR/Caddyfile"; then
+  ok "Caddyfile proxies /health and /v1 to the API with CSP"
 else
   bad "Caddyfile reverse-proxy"
 fi
@@ -244,7 +246,79 @@ assert "{$DAT_POKER_SITE}" not in out
 script = (root / "enable-https.sh").read_text()
 assert r"s|{\$DAT_POKER_SITE}|" in script
 assert "systemctl reset-failed caddy" in script
+assert 'DAT_POKER_SITE="%s"' in script, script[script.index("DAT_POKER_SITE"):script.index("DAT_POKER_SITE")+80]
 print("baked", site)
+PY
+
+python3 - <<'PY' && ok "caddy.env SITE quoting survives bash source; redeploy parses unquoted" || bad "caddy.env SITE quoting"
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+root = Path(os.environ["DAT_POKER_EC2_DIR"])
+redeploy = (root / "redeploy.sh").read_text()
+assert "source /etc/caddy/caddy.env" not in redeploy
+assert "s/^DAT_POKER_SITE=//" in redeploy
+
+unquoted = (
+    "DAT_POKER_DOMAIN=datspiritpoker.com\n"
+    "DAT_POKER_SITE=datspiritpoker.com, www.datspiritpoker.com\n"
+)
+quoted = (
+    "DAT_POKER_DOMAIN=datspiritpoker.com\n"
+    'DAT_POKER_SITE="datspiritpoker.com, www.datspiritpoker.com"\n'
+)
+
+def source_env(text: str):
+    with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+        fh.write(text)
+        path = fh.name
+    try:
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                f'set -euo pipefail; set -a; source "{path}"; set +a; printf "%s" "$DAT_POKER_SITE"',
+            ],
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        os.unlink(path)
+
+bad_proc = source_env(unquoted)
+assert bad_proc.returncode != 0, "unquoted SITE must fail under set -e"
+assert "command not found" in (bad_proc.stderr + bad_proc.stdout)
+
+good_proc = source_env(quoted)
+assert good_proc.returncode == 0, good_proc.stderr + good_proc.stdout
+assert good_proc.stdout == "datspiritpoker.com, www.datspiritpoker.com", good_proc.stdout
+
+with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+    fh.write(unquoted)
+    path = fh.name
+try:
+    parse = subprocess.run(
+        [
+            "bash",
+            "-c",
+            rf"""
+set -euo pipefail
+raw="$(sed -n 's/^DAT_POKER_SITE=//p' "{path}" | tail -n1 || true)"
+raw="${{raw#\"}}"
+raw="${{raw%\"}}"
+printf '%s' "$raw"
+""",
+        ],
+        capture_output=True,
+        text=True,
+    )
+finally:
+    os.unlink(path)
+assert parse.returncode == 0, parse.stderr + parse.stdout
+assert parse.stdout == "datspiritpoker.com, www.datspiritpoker.com", parse.stdout
+print("quoted source ok; sed recovers unquoted SITE")
 PY
 
 if grep -q 'WALLETCONNECT_PROJECT_ID' "$DIR/enable-sage.sh" \
@@ -372,8 +446,9 @@ fi
 
 if grep -q 'Play poker now!' "$ROOT/apps/web/src/Landing.tsx" \
   && grep -q 'pathToPage' "$ROOT/apps/web/src/Root.tsx" \
-  && grep -q '/play' "$ROOT/apps/web/src/site-route.ts"; then
-  ok "web client has a public landing site and /play table"
+  && grep -q '/play' "$ROOT/apps/web/src/site-route.ts" \
+  && grep -q '/feedback' "$ROOT/apps/web/src/site-route.ts"; then
+  ok "web client has a public landing site, /play table, and /feedback"
 else
   bad "web landing /play"
 fi
@@ -419,6 +494,30 @@ if [[ -f "$ROOT/.env.beta.example" ]] && grep -q 'DAT_ALLOW_DEV_BUYIN=true' "$RO
   ok ".env.beta.example enables dev buy-in"
 else
   bad ".env.beta.example"
+fi
+
+if grep -q 'registerFeedbackRoutes' "$ROOT/services/api/src/index.ts" \
+  && grep -q 'pathToPage("/feedback")' "$ROOT/apps/web/src/site-route.test.ts"; then
+  ok "tester feedback API and /feedback page"
+else
+  bad "tester feedback"
+fi
+
+if grep -q 'SAGE_SPEND_METHODS' "$ROOT/apps/web/src/wallet/constants.ts" \
+  && ROOT="$ROOT" python3 - <<'PY'
+from pathlib import Path
+import os
+text = Path(os.environ["ROOT"], "apps/web/src/wallet/constants.ts").read_text()
+start = text.index("export const SAGE_WC_METHODS")
+end = text.index("] as const", start)
+block = text[start:end]
+assert "chia_send" not in block, block
+assert "chia_takeOffer" not in block, block
+PY
+then
+  ok "WalletConnect namespaces omit Sage spend RPCs"
+else
+  bad "WalletConnect spend methods"
 fi
 
 echo
