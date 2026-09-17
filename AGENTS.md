@@ -55,7 +55,7 @@ Connect to `ws://localhost:4100/ws`, wait for `connected`, send `{"type":"ping"}
 - Buy-in amounts are **CAT mojos** (1000 mojos = 1 DAT). Default min buy-in is `1000000` (1000 DAT). Do not use XCH-scale values like `2000000000000`.
 - In-memory table state: restarting `pnpm dev:api` clears all tables.
 - `DAT_ALLOW_DEV_BUYIN=true` in `.env.example` allows dev buy-ins without a configured `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
-- Player accounts require a **verified email**. Configure `DAT_SMTP_*` (or `DAT_EMAIL_MODE=log` for local dev) so verification and password-reset codes are emailed instead of returned in API responses.
+- Player accounts require a **verified email** (code emailed, user enters code — no per-tester AWS setup). Configure `DAT_SMTP_*` with SES **production** or Resend/SendGrid so any inbox can receive mail; SES **sandbox** only delivers to pre-verified addresses.
 - Seated humans who stop polling/acting are **unseated between hands** after `DAT_PLAYER_INACTIVE_UNSEAT_MS` (default 2 minutes); stacks return to the in-game account ledger. Active clients refresh the table every ~2s while seated.
 - **Terms and Conditions** — `GET /v1/auth/terms`; players must accept `DAT_TERMS_VERSION` on register/login/verify (stored in `DAT_TERMS_ACCEPTANCE_PATH` for `DAT_TERMS_ACCEPTANCE_DAYS`, then re-acceptance is required). Bump `DAT_TERMS_VERSION` when terms change.
 - **Legacy accounts (no email)** — `POST /v1/auth/email/add` with username, password, and email sends a verification code; or edit `DAT_ACCOUNTS_PATH` on the host for one-off fixes.
