@@ -10,6 +10,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@dat-poker/game-engine':
+        specifier: workspace:*
+        version: link:../../packages/game-engine
       '@dat-poker/shared':
         specifier: workspace:*
         version: link:../../packages/shared

@@ -6,6 +6,7 @@ import { BetSlider } from "./components/BetSlider.js";
 import { CardRow } from "./components/PlayingCard.js";
 import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
 import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
+import { describeLiveHand } from "./live-hand.js";
 import { isLuckyIrishWin, pickBigWinOverlay, type BigWinOverlay } from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import { SiteNav } from "./SiteNav.js";
@@ -34,6 +35,7 @@ const CARD_PREVIEW_HOLE = [
   { rank: "A", suit: "s" },
   { rank: "9", suit: "h" },
 ];
+const CARD_PREVIEW_HAND = describeLiveHand(CARD_PREVIEW_HOLE, CARD_PREVIEW_BOARD);
 
 function playerLabel(id: string, youId: string | null, display?: string): string {
   if (id === youId) return "You";
@@ -574,6 +576,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       : null;
 
   const isMyAction = actionSeatPlayer?.playerId === playerId;
+  const liveHandLabel =
+    me && me.holeCards.length > 0 ? describeLiveHand(me.holeCards, hand?.board ?? []) : null;
 
   useEffect(() => {
     document.title = isBeta ? "DAT Poker beta" : "DAT Poker";
@@ -643,6 +647,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           <h2>Card size preview</h2>
           <CardRow label="Board" cards={CARD_PREVIEW_BOARD} size="lg" />
           <CardRow label="Your hole cards" cards={CARD_PREVIEW_HOLE} size="lg" />
+          {CARD_PREVIEW_HAND && (
+            <p className="live-hand">
+              Your hand: <strong>{CARD_PREVIEW_HAND}</strong>
+            </p>
+          )}
         </section>
       )}
 
@@ -869,6 +878,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 Street: <strong>{hand.street}</strong> · Pot:{" "}
                 <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
               </p>
+              {liveHandLabel && (
+                <p className="live-hand">
+                  Your hand: <strong>{liveHandLabel}</strong>
+                </p>
+              )}
               {hand.board.length > 0 && <CardRow label="Board" cards={hand.board} size="lg" />}
               <ul className="players">
                 {hand.players.map((p) => (
@@ -887,7 +901,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               {isMyAction && (
                 <div className="actions">
                   <span>Your action</span>
-                  <button type="button" disabled={busy} onClick={() => sendAction("fold")}>
+                  <button
+                    type="button"
+                    className="primary-bet"
+                    disabled={busy}
+                    onClick={() => sendAction("fold")}
+                  >
                     fold
                   </button>
                   {canCheck ? (

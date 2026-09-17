@@ -12,6 +12,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@dat-poker/game-engine": "workspace:*",
     "@dat-poker/shared": "workspace:*",
     "@walletconnect/sign-client": "^2.21.0",
     "@walletconnect/types": "^2.21.0",
