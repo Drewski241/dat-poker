@@ -45,6 +45,8 @@ export interface TableHandState {
   potMojos: bigint;
   currentBetMojos: bigint;
   dealerSeat: number;
+  smallBlindSeat: number;
+  bigBlindSeat: number;
   actionSeat: number | null;
   players: PlayerHandState[];
   commitHash: string;
@@ -62,6 +64,8 @@ export class NlheTableEngine {
   private handsPlayed: Map<PlayerId, number> = new Map();
   private hand: TableHandState | null = null;
   private lastHandResult: HandResult | null = null;
+  /** Dealer button seat between hands; moves one occupied seat clockwise after each hand. */
+  private buttonSeat: number | null = null;
 
   constructor(config: TableConfig) {
     this.config = config;
@@ -233,6 +237,11 @@ export class NlheTableEngine {
     const serverSeed = generateServerSeed();
     const { commitHash } = createCommit(serverSeed);
     const seated = [...this.seats.entries()].sort((a, b) => a[0] - b[0]);
+    const occupiedSeats = seated.map(([seatIndex]) => seatIndex);
+    if (this.buttonSeat == null || !this.seats.has(this.buttonSeat)) {
+      this.buttonSeat = occupiedSeats[0];
+    }
+    const dealerSeat = this.buttonSeat;
 
     const players: PlayerHandState[] = seated.map(([seatIndex, playerId]) => ({
       playerId,
@@ -252,8 +261,10 @@ export class NlheTableEngine {
       board: [],
       potMojos: 0n,
       currentBetMojos: 0n,
-      dealerSeat: seated[0][0],
-      actionSeat: seated[0][0],
+      dealerSeat,
+      smallBlindSeat: dealerSeat,
+      bigBlindSeat: dealerSeat,
+      actionSeat: dealerSeat,
       players,
       commitHash,
       serverSeed,
@@ -369,6 +380,14 @@ export class NlheTableEngine {
     return this.lastHandResult ? structuredClone(this.lastHandResult) : null;
   }
 
+  /** Seat index of the dealer button for the next hand (or current hand while dealt). */
+  getDealerButtonSeat(): number | null {
+    if (this.hand) {
+      return this.hand.dealerSeat;
+    }
+    return this.buttonSeat;
+  }
+
   private requireHand(): TableHandState {
     if (!this.hand) throw new Error("No active hand");
     return this.hand;
@@ -382,14 +401,31 @@ export class NlheTableEngine {
   }
 
   private postBlinds(h: TableHandState): void {
-    const ordered = [...h.players].sort((a, b) => a.seatIndex - b.seatIndex);
-    const sb = ordered[0];
-    const bb = ordered[1] ?? ordered[0];
-
+    const seats = this.occupiedSeatIndices(h);
+    const dealer = h.dealerSeat;
+    let sbSeat: number;
+    let bbSeat: number;
+    if (h.players.length === 2) {
+      sbSeat = dealer;
+      bbSeat = this.nextOccupiedSeatClockwise(seats, dealer);
+    } else {
+      sbSeat = this.nextOccupiedSeatClockwise(seats, dealer);
+      bbSeat = this.nextOccupiedSeatClockwise(seats, sbSeat);
+    }
+    const sb = this.playerAtSeat(h, sbSeat);
+    const bb = this.playerAtSeat(h, bbSeat);
+    if (!sb || !bb) {
+      throw new Error("Could not assign blinds");
+    }
+    h.smallBlindSeat = sbSeat;
+    h.bigBlindSeat = bbSeat;
     this.charge(sb, h, this.config.smallBlindMojos);
     this.charge(bb, h, this.config.bigBlindMojos);
     h.currentBetMojos = bb.betThisStreetMojos;
-    h.actionSeat = ordered[2]?.seatIndex ?? ordered[0].seatIndex;
+    h.actionSeat =
+      h.players.length === 2
+        ? sbSeat
+        : this.nextOccupiedSeatClockwise(seats, bbSeat);
   }
 
   private charge(player: PlayerHandState, h: TableHandState, amount: bigint): void {
@@ -418,20 +454,12 @@ export class NlheTableEngine {
   }
 
   private advanceActionSeat(h: TableHandState, fromPlayerId: PlayerId): void {
-    const ordered = [...h.players].sort((a, b) => a.seatIndex - b.seatIndex);
-    const fromIdx = ordered.findIndex((p) => p.playerId === fromPlayerId);
-    if (fromIdx === -1) {
+    const from = this.getPlayer(h, fromPlayerId);
+    try {
+      h.actionSeat = this.firstActiveSeatClockwise(h, from.seatIndex);
+    } catch {
       h.actionSeat = null;
-      return;
     }
-    for (let i = 1; i <= ordered.length; i++) {
-      const next = ordered[(fromIdx + i) % ordered.length];
-      if (!next.folded && !next.allIn) {
-        h.actionSeat = next.seatIndex;
-        return;
-      }
-    }
-    h.actionSeat = null;
   }
 
   private advanceStreet(h: TableHandState): void {
@@ -459,7 +487,10 @@ export class NlheTableEngine {
     for (let i = 0; i < count; i++) {
       h.board.push(this.draw(h));
     }
-    h.actionSeat = h.dealerSeat;
+    h.actionSeat =
+      h.players.length === 2
+        ? h.bigBlindSeat
+        : this.firstActiveSeatClockwise(h, h.dealerSeat);
     h.seq++;
   }
 
@@ -493,7 +524,7 @@ export class NlheTableEngine {
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;
-    this.hand = null;
+    this.finishHand();
   }
 
   private awardToWinner(h: TableHandState): void {
@@ -510,7 +541,63 @@ export class NlheTableEngine {
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;
+    this.finishHand();
+  }
+
+  private finishHand(): void {
+    this.rotateButton();
     this.hand = null;
+  }
+
+  private rotateButton(): void {
+    const seats = this.occupiedTableSeats();
+    if (seats.length === 0) {
+      this.buttonSeat = null;
+      return;
+    }
+    const current = this.buttonSeat ?? seats[0];
+    this.buttonSeat = this.nextOccupiedSeatClockwise(seats, current);
+  }
+
+  private occupiedTableSeats(): number[] {
+    return [...this.seats.keys()].sort((a, b) => a - b);
+  }
+
+  private occupiedSeatIndices(h: TableHandState): number[] {
+    return h.players.map((p) => p.seatIndex).sort((a, b) => a - b);
+  }
+
+  /** Next occupied seat clockwise (excluding fromSeat itself). */
+  private nextOccupiedSeatClockwise(seats: number[], fromSeat: number): number {
+    const max = this.config.maxSeats;
+    let seat = fromSeat;
+    for (let step = 0; step < max; step++) {
+      seat = (seat + 1) % max;
+      if (seats.includes(seat)) {
+        return seat;
+      }
+    }
+    throw new Error("No occupied seat");
+  }
+
+  private playerAtSeat(h: TableHandState, seatIndex: number): PlayerHandState | undefined {
+    return h.players.find((p) => p.seatIndex === seatIndex);
+  }
+
+  /** First active player clockwise after fromSeat (skips fromSeat). */
+  private firstActiveSeatClockwise(h: TableHandState, fromSeat: number): number {
+    const seats = this.occupiedSeatIndices(h);
+    const max = this.config.maxSeats;
+    let seat = fromSeat;
+    for (let step = 0; step < max; step++) {
+      seat = (seat + 1) % max;
+      if (!seats.includes(seat)) continue;
+      const p = this.playerAtSeat(h, seat);
+      if (p && !p.folded && !p.allIn) {
+        return seat;
+      }
+    }
+    throw new Error("No active player");
   }
 
   private recordHandPlayed(h: TableHandState): void {

@@ -156,6 +156,84 @@ describe("NlheTableEngine", () => {
     expect(result?.shown.find((p) => p.playerId === result.winnerId)?.category).toBeTruthy();
   });
 
+  it("posts small and big blind relative to the dealer button", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 2, 5_000_000_000_000n);
+    table.seatPlayer("carol", 5, 5_000_000_000_000n);
+
+    table.startHand("hand-blinds");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.submitPlayerSeed("carol", generateServerSeed());
+    table.revealAndDeal();
+
+    const state = table.getHandState()!;
+    expect(state.dealerSeat).toBe(0);
+    expect(state.smallBlindSeat).toBe(2);
+    expect(state.bigBlindSeat).toBe(5);
+    expect(state.actionSeat).toBe(0);
+    const sb = state.players.find((p) => p.seatIndex === 2)!;
+    const bb = state.players.find((p) => p.seatIndex === 5)!;
+    expect(sb.betThisStreetMojos).toBe(config.smallBlindMojos);
+    expect(bb.betThisStreetMojos).toBe(config.bigBlindMojos);
+    expect(state.currentBetMojos).toBe(config.bigBlindMojos);
+  });
+
+  it("rotates the dealer button clockwise after each completed hand", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.seatPlayer("carol", 2, 5_000_000_000_000n);
+
+    table.startHand("hand-d1");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.submitPlayerSeed("carol", generateServerSeed());
+    table.revealAndDeal();
+    expect(table.getHandState()?.dealerSeat).toBe(0);
+
+    const firstActor = table.getHandState()!.players.find(
+      (p) => p.seatIndex === table.getHandState()!.actionSeat,
+    )!.playerId;
+    table.applyAction(firstActor, "fold");
+    const secondActor = table.getHandState()!.players.find(
+      (p) => p.seatIndex === table.getHandState()!.actionSeat,
+    )!.playerId;
+    table.applyAction(secondActor, "fold");
+    expect(table.getHandState()).toBeNull();
+
+    table.startHand("hand-d2");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.submitPlayerSeed("carol", generateServerSeed());
+    table.revealAndDeal();
+    expect(table.getHandState()?.dealerSeat).toBe(1);
+  });
+
+  it("heads-up: dealer posts small blind and acts first preflop", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+
+    table.startHand("hand-hu");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const state = table.getHandState()!;
+    expect(state.dealerSeat).toBe(0);
+    expect(state.smallBlindSeat).toBe(0);
+    expect(state.bigBlindSeat).toBe(1);
+    expect(state.actionSeat).toBe(0);
+    expect(state.players.find((p) => p.seatIndex === 0)!.betThisStreetMojos).toBe(
+      config.smallBlindMojos,
+    );
+    expect(state.players.find((p) => p.seatIndex === 1)!.betThisStreetMojos).toBe(
+      config.bigBlindMojos,
+    );
+  });
+
   it("refunds this-hand bets when a hand is aborted for restart", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);
