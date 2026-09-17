@@ -55,6 +55,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       const handId = randomUUID();
       const { commitHash } = table.startHand(handId);
       for (const seated of table.getSeatedPlayers()) {
+        if (seated.sittingOut) continue;
         table.submitPlayerSeed(seated.playerId, generateServerSeed());
       }
       table.revealAndDeal();

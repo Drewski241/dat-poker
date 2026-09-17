@@ -227,6 +227,27 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   }, [hand, handInProgress]);
 
+  useEffect(() => {
+    if (!tableId || !playerId || hand || handInProgress) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await api.setSitOut(tableId, playerId, !tableFocusMode);
+        if (cancelled) return;
+        setTableSeats(res.seats);
+        setHand(res.hand);
+        setHandInProgress(res.handInProgress);
+        if (res.lastHandResult) setHandResult(res.lastHandResult);
+        setDealerButtonSeat(res.dealerButtonSeat ?? null);
+      } catch {
+        /* ignore while toggling lobby / table */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tableFocusMode, tableId, playerId, hand, handInProgress]);
+
   const cancelPairing = () => {
     pairingGen.current += 1;
     setPairingOpen(false);
@@ -474,6 +495,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       const dealt = await api.goHand(tableId, playerId);
       setHand(dealt.hand);
       if (dealt.lastHandResult) setHandResult(dealt.lastHandResult);
+      await refreshTable(tableId);
+    });
+  };
+
+  const seatHouseFlow = () => {
+    if (!tableId) return;
+    run("Seating house…", async () => {
+      const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      await api.seatHouse(tableId, buyIn);
       await refreshTable(tableId);
     });
   };
@@ -733,6 +763,19 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setBigWin(overlay);
   }, [handResult, playerId, bigBlindMojos]);
 
+  const hasHouse = tableSeats.some((s) => s.playerId === HOUSE_PLAYER_ID);
+  const activeHumans = tableSeats.filter(
+    (s) => s.playerId !== HOUSE_PLAYER_ID && !s.sittingOut,
+  );
+  const canSeatHouse = Boolean(
+    tableId &&
+      !hand &&
+      !handInProgress &&
+      !hasHouse &&
+      activeHumans.length === 1 &&
+      activeHumans[0]?.playerId === playerId,
+  );
+
   const atTableRoom = Boolean(tableId && tableFocusMode && playerId);
 
   useEffect(() => {
@@ -781,6 +824,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onBetAmountChange={setBetAmountMojos}
             onSendAction={sendAction}
             onStartHand={startHandFlow}
+            onSeatHouse={seatHouseFlow}
+            canSeatHouse={canSeatHouse}
             onOpenLobby={() => setTableFocusMode(false)}
             playerLabel={playerLabel}
             seatPositionLabel={seatPositionLabel}
@@ -945,7 +990,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   <li key={i}>
                     Seat {i + 1}:{" "}
                     {seated
-                      ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}${seatPositionLabel(i, hand, dealerButtonSeat)}`
+                      ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}${seated.sittingOut && seated.playerId !== HOUSE_PLAYER_ID ? " · sitting out" : ""}${seatPositionLabel(i, hand, dealerButtonSeat)}`
                       : "empty"}
                   </li>
                 );
@@ -965,6 +1010,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   ? ` — ${playthroughRemaining} remaining`
                   : " — fully unlocked"}
               </p>
+            )}
+            {tableId && !hand && !handInProgress && myTableSeat?.sittingOut && (
+              <p className="muted small">You are sitting out — return to the table to play hands.</p>
+            )}
+            {tableId && !hand && !handInProgress && canSeatHouse && (
+              <button type="button" disabled={busy} onClick={seatHouseFlow}>
+                Play vs house (opponent sitting out)
+              </button>
             )}
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">

@@ -53,6 +53,74 @@ describe("6-max join + daily redeem", () => {
     process.env.DAT_DAILY_REDEEM_MOJOS = "5000000";
   });
 
+  it("lets the active player seat the house when the other human is sitting out", async () => {
+    const app = await buildApp();
+    const alice = issueTestSession("xch1alice");
+    const bob = issueTestSession("xch1bob");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    tryRedeemDaily(bob.session.playerId, 5_000_000n);
+
+    const joinA = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(joinA.statusCode).toBe(200);
+    const tableId = JSON.parse(joinA.body).tableId;
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/tables/join",
+      headers: auth(bob.token),
+      payload: { playerId: bob.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+
+    const afterBob = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/tables/${tableId}`,
+          headers: auth(alice.token),
+        })
+      ).body,
+    );
+    expect(afterBob.seats.some((s: { playerId: string }) => s.playerId === "dat-poker:house")).toBe(
+      false,
+    );
+
+    const bobSitOut = await app.inject({
+      method: "POST",
+      url: `/v1/tables/${tableId}/sit-out`,
+      headers: auth(bob.token),
+      payload: { playerId: bob.session.playerId, sittingOut: true },
+    });
+    expect(bobSitOut.statusCode).toBe(200);
+    expect(JSON.parse(bobSitOut.body).activeHumans).toBe(1);
+
+    const seatHouse = await app.inject({
+      method: "POST",
+      url: `/v1/tables/${tableId}/seat-house`,
+      headers: auth(alice.token),
+      payload: { buyInMojos: "1000000" },
+    });
+    expect(seatHouse.statusCode).toBe(200);
+
+    const go = await app.inject({
+      method: "POST",
+      url: `/v1/tables/${tableId}/hands/go`,
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId },
+    });
+    expect(go.statusCode).toBe(200);
+    const dealt = JSON.parse(go.body);
+    expect(dealt.hand.players.map((p: { playerId: string }) => p.playerId).sort()).toEqual(
+      [alice.session.playerId, "dat-poker:house"].sort(),
+    );
+
+    await app.close();
+  });
+
   it("redeems 5000 DAT once per day and seats a second human at the same 6-max table", async () => {
     const app = await buildApp();
     const alice = issueTestSession("xch1alice");
@@ -162,22 +230,34 @@ describe("6-max join + daily redeem", () => {
     });
     expect(go.statusCode).toBe(200);
     let body = JSON.parse(go.body);
-    for (let i = 0; i < 20 && body.hand; i++) {
-      const actor = body.hand.players.find(
-        (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
-      );
-      if (!actor || actor.playerId !== carol.session.playerId) {
-        break;
+    if (body.hand) {
+      for (let i = 0; i < 20 && body.hand; i++) {
+        const actor = body.hand.players.find(
+          (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
+        );
+        if (!actor || actor.playerId !== carol.session.playerId || actor.allIn) {
+          break;
+        }
+        const act = await app.inject({
+          method: "POST",
+          url: `/v1/tables/${joined.tableId}/hands/action`,
+          headers: auth(carol.token),
+          payload: { playerId: carol.session.playerId, action: "fold" },
+        });
+        expect(act.statusCode).toBe(200);
+        body = JSON.parse(act.body);
       }
-      const act = await app.inject({
-        method: "POST",
-        url: `/v1/tables/${joined.tableId}/hands/action`,
-        headers: auth(carol.token),
-        payload: { playerId: carol.session.playerId, action: "fold" },
-      });
-      body = JSON.parse(act.body);
     }
-    expect(body.hand).toBeNull();
+    const settled = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/tables/${joined.tableId}`,
+          headers: auth(carol.token),
+        })
+      ).body,
+    );
+    expect(settled.handInProgress).toBe(false);
 
     const allowed = await app.inject({
       method: "POST",
@@ -437,22 +517,34 @@ describe("6-max join + daily redeem", () => {
       payload: { playerId: created.playerId },
     });
     let body = JSON.parse(go.body);
-    for (let i = 0; i < 20 && body.hand; i++) {
-      const actor = body.hand.players.find(
-        (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
-      );
-      if (!actor || actor.playerId !== created.playerId) {
-        break;
+    if (body.hand) {
+      for (let i = 0; i < 20 && body.hand; i++) {
+        const actor = body.hand.players.find(
+          (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
+        );
+        if (!actor || actor.playerId !== created.playerId || actor.allIn) {
+          break;
+        }
+        const act = await app.inject({
+          method: "POST",
+          url: `/v1/tables/${joined.tableId}/hands/action`,
+          headers,
+          payload: { playerId: created.playerId, action: "fold" },
+        });
+        expect(act.statusCode).toBe(200);
+        body = JSON.parse(act.body);
       }
-      const act = await app.inject({
-        method: "POST",
-        url: `/v1/tables/${joined.tableId}/hands/action`,
-        headers,
-        payload: { playerId: created.playerId, action: "fold" },
-      });
-      body = JSON.parse(act.body);
     }
-    expect(body.hand).toBeNull();
+    const settled = JSON.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/v1/tables/${joined.tableId}`,
+          headers,
+        })
+      ).body,
+    );
+    expect(settled.handInProgress).toBe(false);
 
     const cashed = await app.inject({
       method: "POST",
