@@ -38,4 +38,22 @@ describe("syncHouseSeating", () => {
     expect(table.getPlayerStack(HOUSE_PLAYER_ID)).toBe(buyIn);
     expect(table.activeSeatedPlayers()).toHaveLength(2);
   });
+
+  it("reseats the house when it is still seated at zero stack", () => {
+    const table = new NlheTableEngine(tableConfig());
+    table.seatPlayer("alice", 0, buyIn);
+    table.seatPlayer(HOUSE_PLAYER_ID, 1, buyIn);
+
+    const internal = table as unknown as { stacks: Map<string, bigint> };
+    internal.stacks.set(HOUSE_PLAYER_ID, 0n);
+
+    expect(table.hasPlayer(HOUSE_PLAYER_ID)).toBe(true);
+    expect(table.getPlayerStack(HOUSE_PLAYER_ID)).toBe(0n);
+
+    syncHouseSeating(table, buyIn);
+
+    expect(table.hasPlayer(HOUSE_PLAYER_ID)).toBe(true);
+    expect(table.getPlayerStack(HOUSE_PLAYER_ID)).toBe(buyIn);
+    expect(table.activeSeatedPlayers()).toHaveLength(2);
+  });
 });

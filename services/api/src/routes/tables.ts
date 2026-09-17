@@ -160,13 +160,17 @@ export function syncHouseSeating(table: NlheTableEngine, buyInMojos: bigint): vo
       if (stack > 0n) {
         return;
       }
-    } else {
-      const seat = table.emptySeatIndex();
-      if (seat === null) {
-        return;
+      try {
+        table.cashOutPlayer(HOUSE_PLAYER_ID);
+      } catch {
+        /* busted mid-reconcile */
       }
-      table.seatPlayer(HOUSE_PLAYER_ID, seat, buyInMojos);
     }
+    const seat = table.emptySeatIndex();
+    if (seat === null) {
+      return;
+    }
+    table.seatPlayer(HOUSE_PLAYER_ID, seat, buyInMojos);
     return;
   }
   /* Multiple humans seated but fewer than two active: house is opt-in via seat-house. */
