@@ -33,8 +33,11 @@ public_ipv4() {
 }
 
 if [[ -z "${DAT_POKER_DOMAIN:-}" && -f /etc/caddy/caddy.env ]]; then
-  # shellcheck disable=SC1091
   DAT_POKER_DOMAIN="$(sed -n 's/^DAT_POKER_DOMAIN=//p' /etc/caddy/caddy.env | tail -n1)"
+  DAT_POKER_DOMAIN="${DAT_POKER_DOMAIN#\"}"
+  DAT_POKER_DOMAIN="${DAT_POKER_DOMAIN%\"}"
+  DAT_POKER_DOMAIN="${DAT_POKER_DOMAIN#\'}"
+  DAT_POKER_DOMAIN="${DAT_POKER_DOMAIN%\'}"
 fi
 
 if [[ -z "${DAT_POKER_DOMAIN:-}" ]]; then

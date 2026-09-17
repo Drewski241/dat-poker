@@ -1,0 +1,344 @@
+import type { DatTokenInfo, HandResult, HandState, PlayerAction, TableSeat } from "../api.js";
+import { computeNlheBetRange, formatDatMojos } from "@dat-poker/shared";
+import { BetSlider } from "./BetSlider.js";
+import { CardRow, PlayingCard } from "./PlayingCard.js";
+
+const HOUSE_PLAYER_ID = "dat-poker:house";
+
+type Props = {
+  datToken: DatTokenInfo | null;
+  playerId: string;
+  tableSeats: TableSeat[];
+  dealerButtonSeat: number | null;
+  tableStackMojos: string | null;
+  hand: HandState | null;
+  handResult: HandResult | null;
+  handInProgress: boolean;
+  smallBlindMojos: bigint;
+  bigBlindMojos: bigint;
+  busy: boolean;
+  liveHandLabel: string | null;
+  isMyAction: boolean;
+  actionSecondsLeft: number;
+  canCheck: boolean;
+  toCall: bigint;
+  betRange: ReturnType<typeof computeNlheBetRange>;
+  betAmountMojos: bigint;
+  myStack: bigint;
+  onBetAmountChange: (v: bigint) => void;
+  onSendAction: (action: PlayerAction, amountMojos?: string) => void;
+  onStartHand: () => void;
+  onOpenLobby: () => void;
+  playerLabel: (id: string, youId: string | null, display?: string) => string;
+  seatPositionLabel: (seatIndex: number, hand: HandState | null, dealerButtonSeat: number | null) => string;
+};
+
+export function TableRoom({
+  datToken,
+  playerId,
+  tableSeats,
+  dealerButtonSeat,
+  tableStackMojos,
+  hand,
+  handResult,
+  handInProgress,
+  smallBlindMojos: _smallBlindMojos,
+  bigBlindMojos,
+  busy,
+  liveHandLabel,
+  isMyAction,
+  actionSecondsLeft,
+  canCheck,
+  toCall,
+  betRange,
+  betAmountMojos,
+  myStack,
+  onBetAmountChange,
+  onSendAction,
+  onStartHand,
+  onOpenLobby,
+  playerLabel,
+  seatPositionLabel,
+}: Props) {
+  const actionSeatPlayer =
+    hand?.actionSeat != null
+      ? hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded)
+      : null;
+
+  const canStepToLobby = !hand && !handInProgress;
+
+  const me = hand?.players.find((p) => p.playerId === playerId);
+  const opponents = hand?.players.filter((p) => p.playerId !== playerId) ?? [];
+
+  return (
+    <div
+      className={`table-room ${hand ? "table-room-in-hand" : "table-room-between-hands"}${hand && isMyAction ? " table-room-has-actions" : ""}`}
+    >
+      <header className="table-room-header">
+        <div className="table-room-header-main">
+          <h1 className="table-room-title">
+            6-max
+            {tableStackMojos && (
+              <>
+                {" "}
+                ·{" "}
+                <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
+              </>
+            )}
+          </h1>
+        </div>
+        <button
+          type="button"
+          className="secondary table-room-lobby-btn"
+          disabled={busy || !canStepToLobby}
+          title={canStepToLobby ? "Account, withdraw, leave table" : "Finish or wait for the hand to end"}
+          onClick={onOpenLobby}
+        >
+          Lobby
+        </button>
+      </header>
+
+      {!hand && (
+        <div className="table-room-seats" aria-label="Seats">
+          {Array.from({ length: 6 }, (_, i) => {
+            const seated = tableSeats.find((s) => s.seatIndex === i);
+            return (
+              <div
+                key={i}
+                className={`table-room-seat ${seated ? "occupied" : "empty"}`}
+              >
+                <span className="table-room-seat-num">{i + 1}</span>
+                {seated ? (
+                  <>
+                    <span className="table-room-seat-name">
+                      {playerLabel(seated.playerId, playerId, seated.displayAddress)}
+                    </span>
+                    <span className="table-room-seat-stack">
+                      {formatDatMojos(seated.stackMojos, datToken?.ticker)}
+                    </span>
+                    <span className="table-room-seat-role">
+                      {seatPositionLabel(i, hand, dealerButtonSeat).replace(/^ · /, "")}
+                    </span>
+                  </>
+                ) : (
+                  <span className="table-room-seat-empty">Empty</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <main className={`table-room-main ${hand ? "table-room-main-in-hand" : "table-room-main-between"}`}>
+        {!hand ? (
+          <div className="table-room-between">
+            {handResult && (
+              <div
+                className={
+                  handResult.winnerId === playerId
+                    ? "table-room-result table-room-result-win"
+                    : "table-room-result"
+                }
+              >
+                <p className="table-room-result-line">
+                  <strong>
+                    {playerLabel(
+                      handResult.winnerId,
+                      playerId,
+                      tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress,
+                    )}
+                  </strong>
+                  {handResult.winnerId === playerId ? " win " : " wins "}
+                  {formatDatMojos(handResult.potMojos, datToken?.ticker)}
+                  {handResult.reason === "showdown" ? " · showdown" : " · fold"}
+                </p>
+                {handResult.reason === "showdown" && (handResult.board?.length ?? 0) > 0 && (
+                  <CardRow cards={handResult.board!} size="sm" />
+                )}
+                {handResult.reason === "showdown" && (handResult.shown?.length ?? 0) > 0 && (
+                  <div className="table-room-showdown-strip">
+                    {handResult.shown!.map((shown) => (
+                      <div key={shown.playerId} className="table-room-showdown-entry">
+                        <span className="table-room-showdown-name">
+                          {playerLabel(
+                            shown.playerId,
+                            playerId,
+                            tableSeats.find((s) => s.playerId === shown.playerId)?.displayAddress,
+                          )}
+                          {shown.playerId === handResult.winnerId ? " ★" : ""}
+                        </span>
+                        <CardRow cards={shown.holeCards} size="sm" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              className="table-room-deal-btn"
+              disabled={busy || tableSeats.length < 2}
+              onClick={onStartHand}
+            >
+              {handResult ? "New hand" : "Deal hand"}
+            </button>
+          </div>
+        ) : (
+          <section className="table-room-felt" aria-label="Hand">
+            <div className="table-room-hand-meta">
+              <p className="table-room-street-pot">
+                <strong>{hand.street}</strong> · Pot{" "}
+                <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
+                <span className="hand-blinds-line">
+                  {" "}
+                  · D{hand.dealerSeat + 1} SB{hand.smallBlindSeat + 1} BB{hand.bigBlindSeat + 1}
+                </span>
+              </p>
+            </div>
+
+            <div className="table-room-board">
+              <span className="card-row-label">Board</span>
+              <div className="table-room-board-cards">
+                {Array.from({ length: 5 }, (_, i) => {
+                  const card = hand.board[i];
+                  return card ? (
+                    <PlayingCard key={`b-${i}`} card={card} size="md" />
+                  ) : (
+                    <span
+                      key={`b-empty-${i}`}
+                      className="playing-card playing-card-md playing-card-slot"
+                      aria-hidden="true"
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            <ul className="table-room-opponents">
+              {opponents.map((p) => {
+                const acting = hand.actionSeat === p.seatIndex && !p.folded;
+                return (
+                  <li
+                    key={p.playerId}
+                    className={`table-room-opponent ${p.folded ? "folded" : ""} ${acting ? "acting" : ""}`}
+                  >
+                    <div className="table-room-opponent-meta">
+                      <strong>
+                        {p.playerId === HOUSE_PLAYER_ID
+                          ? "House"
+                          : playerLabel(
+                              p.playerId,
+                              playerId,
+                              tableSeats.find((s) => s.playerId === p.playerId)?.displayAddress,
+                            )}
+                      </strong>
+                      {p.folded ? " · folded" : ""}
+                      {acting ? " · acting" : ""}
+                      <span className="stack">{formatDatMojos(p.stackMojos, datToken?.ticker)}</span>
+                    </div>
+                    {p.holeCards.length > 0 && !p.folded && (
+                      <CardRow cards={p.holeCards} size="sm" />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+
+            {me && (
+              <div className={`table-room-hero ${isMyAction ? "your-turn" : ""}`}>
+                <div className="table-room-hero-meta">
+                  <strong>You</strong>
+                  <span className="stack">{formatDatMojos(me.stackMojos, datToken?.ticker)}</span>
+                  {liveHandLabel && (
+                    <span className="live-hand table-room-live-hand">
+                      · <strong>{liveHandLabel}</strong>
+                    </span>
+                  )}
+                </div>
+                {me.holeCards.length > 0 && <CardRow cards={me.holeCards} size="md" />}
+              </div>
+            )}
+
+            {!isMyAction && actionSeatPlayer && (
+              <p className="muted table-room-wait">
+                Waiting for{" "}
+                {playerLabel(
+                  actionSeatPlayer.playerId,
+                  playerId,
+                  tableSeats.find((s) => s.playerId === actionSeatPlayer.playerId)?.displayAddress,
+                )}
+                …
+              </p>
+            )}
+          </section>
+        )}
+      </main>
+
+      {hand && isMyAction && (
+        <footer className="table-room-actions">
+          <div className="actions your-turn">
+            <div className="action-bar-top">
+              <span className="action-bar-label">Your action · {actionSecondsLeft}s</span>
+              <div className="action-buttons-row">
+                <button
+                  type="button"
+                  className="primary-bet"
+                  disabled={busy}
+                  onClick={() => onSendAction("fold")}
+                >
+                  fold
+                </button>
+                {canCheck ? (
+                  <button type="button" disabled={busy} onClick={() => onSendAction("check")}>
+                    check
+                  </button>
+                ) : (
+                  <button type="button" disabled={busy} onClick={() => onSendAction("call")}>
+                    call {formatDatMojos(toCall.toString(), datToken?.ticker)}
+                  </button>
+                )}
+                {betRange.canBetOrRaise && (
+                  <button
+                    type="button"
+                    className="primary-bet action-bet-submit"
+                    disabled={busy}
+                    onClick={() =>
+                      onSendAction(
+                        betRange.isOpeningBet ? "bet" : "raise",
+                        betAmountMojos.toString(),
+                      )
+                    }
+                  >
+                    {betRange.isOpeningBet ? "bet" : "raise to"}{" "}
+                    {formatDatMojos(betAmountMojos.toString(), datToken?.ticker)}
+                  </button>
+                )}
+                {myStack > 0n && (
+                  <button type="button" disabled={busy} onClick={() => onSendAction("all-in")}>
+                    all-in
+                  </button>
+                )}
+              </div>
+            </div>
+            {betRange.canBetOrRaise && (
+              <div className="action-bet-panel">
+                <BetSlider
+                  label={betRange.isOpeningBet ? "Bet size" : "Raise to"}
+                  minMojos={betRange.minRaiseTo}
+                  maxMojos={betRange.maxRaiseTo}
+                  stepMojos={bigBlindMojos}
+                  bigBlindMojos={bigBlindMojos}
+                  valueMojos={betAmountMojos}
+                  ticker={datToken?.ticker}
+                  disabled={busy}
+                  onChange={onBetAmountChange}
+                  compact
+                />
+              </div>
+            )}
+          </div>
+        </footer>
+      )}
+    </div>
+  );
+}

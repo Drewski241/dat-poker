@@ -1,12 +1,28 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { TableConfig } from "@dat-poker/shared";
-import { DAT_TABLE_DEFAULTS, playthroughHandsRequired, resolveDatMinBuyInMojos } from "@dat-poker/shared";
+import {
+  DAT_TABLE_DEFAULTS,
+  playthroughHandsRequired,
+  playthroughUnlockedMojos,
+  resolveDatMinBuyInMojos,
+} from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
-import { recordBuyIn, getBuyInRecord } from "../buy-in-store.js";
-import { debitAccount, getAccountBalance, creditAccount } from "../account-store.js";
+import {
+  applyBuyInPlaythrough,
+  creditAccount,
+  debitAccount,
+  getAccountBalance,
+  getPlaythrough,
+  reducePlaythroughPool,
+  setPlaythroughHands,
+  syncPlaythroughHeld,
+} from "../account-store.js";
+import { recordBuyIn, clearBuyIn } from "../buy-in-store.js";
 import { HOUSE_PLAYER_ID } from "../house-id.js";
 import { redactHandForViewer } from "../redact-hand.js";
+import { allowIpBucket } from "../ip-rate-limit.js";
+import { readPlayerSession, requirePlayer, sessionMatchesClaim } from "../player-session.js";
 import {
   type BuyInProof,
   readDatTokenConfig,
@@ -14,7 +30,12 @@ import {
 } from "../wallet-config.js";
 
 const tables = new Map<string, NlheTableEngine>();
+const playerLabels = new Map<string, string>();
 export { HOUSE_PLAYER_ID };
+
+function rememberLabel(playerId: string, displayAddress: string): void {
+  if (displayAddress) playerLabels.set(playerId, displayAddress);
+}
 
 function humanCount(table: NlheTableEngine): number {
   return table.getSeatedPlayers().filter((s) => s.playerId !== HOUSE_PLAYER_ID).length;
@@ -52,19 +73,25 @@ function tableSnapshot(tableId: string, table: NlheTableEngine, viewerId?: strin
     players: table.getActivePlayerCount(),
     humans: humanCount(table),
     handInProgress: table.isHandInProgress(),
+    smallBlindMojos: table.getSmallBlindMojos().toString(),
+    bigBlindMojos: table.getBigBlindMojos().toString(),
     seats: table.getSeatedPlayers().map((s) => {
-      const buyIn = getBuyInRecord(tableId, s.playerId);
-      const handsRequired = buyIn ? playthroughHandsRequired(buyIn.buyInMojos) : 0;
-      const handsPlayed = table.getHandsPlayed(s.playerId);
+      const pt = s.playerId === HOUSE_PLAYER_ID ? { poolMojos: 0n, handsPlayed: 0 } : getPlaythrough(s.playerId);
+      const handsRequired = playthroughHandsRequired(pt.poolMojos);
+      const handsPlayed = s.playerId === HOUSE_PLAYER_ID ? table.getHandsPlayed(s.playerId) : pt.handsPlayed;
+      const unlockedMojos = playthroughUnlockedMojos(handsPlayed, pt.poolMojos);
       return {
         ...s,
+        displayAddress: playerLabels.get(s.playerId) ?? (s.playerId === HOUSE_PLAYER_ID ? "House" : s.playerId),
         handsPlayed,
         handsRequired,
         playthroughRemaining: Math.max(0, handsRequired - handsPlayed),
+        unlockedMojos: unlockedMojos.toString(),
       };
     }),
     hand: redactHandForViewer(table.getHandState(), viewerId),
     lastHandResult: table.getLastHandResult(),
+    dealerButtonSeat: table.getDealerButtonSeat(),
   };
 }
 
@@ -110,50 +137,61 @@ function seatHouseIfNeeded(table: NlheTableEngine, buyInMojos: bigint): void {
 function takeBuyInFromAccountOrProof(params: {
   tableId: string;
   playerId: string;
+  displayAddress: string;
   seatIndex: number;
   buyInMojos: bigint;
   buyInProof?: BuyInProof;
   devAck?: boolean;
-}): { error: string | null; usedAccount: boolean } {
+}): { error: string | null; usedAccount: boolean; addedFreshMojos: bigint } {
   const dat = readDatTokenConfig();
   const minBuyIn = resolveDatMinBuyInMojos(dat.minBuyInMojos);
   if (params.buyInMojos < minBuyIn) {
-    return { error: `Buy-in below minimum (${minBuyIn.toString()} mojos)`, usedAccount: false };
+    return { error: `Buy-in below minimum (${minBuyIn.toString()} mojos)`, usedAccount: false, addedFreshMojos: 0n };
   }
 
   const account = getAccountBalance(params.playerId);
   if (account >= params.buyInMojos) {
+    const { addedFreshMojos } = applyBuyInPlaythrough(params.playerId, params.buyInMojos, true);
     debitAccount(params.playerId, params.buyInMojos);
     const buyInProof = params.buyInProof ?? {
-      address: params.playerId,
+      address: params.displayAddress,
       message: "account-credit",
       signature: "",
       pubkey: "",
     };
     recordBuyIn(params.tableId, params.playerId, buyInProof, params.buyInMojos.toString());
-    return { error: null, usedAccount: true };
+    return { error: null, usedAccount: true, addedFreshMojos };
   }
 
   if (!dat.devBuyInEnabled) {
     if (!dat.assetId) {
-      return { error: "DAT token not configured", usedAccount: false };
+      return { error: "DAT token not configured", usedAccount: false, addedFreshMojos: 0n };
     }
     if (!params.buyInProof) {
-      return { error: "Redeem daily DAT or provide a wallet buy-in proof", usedAccount: false };
+      return {
+        error: "Redeem daily DAT or provide a wallet buy-in proof",
+        usedAccount: false,
+        addedFreshMojos: 0n,
+      };
     }
     const proofError = validateBuyInProof(params.buyInProof, {
       tableId: params.tableId,
       seatIndex: params.seatIndex,
       buyInMojos: params.buyInMojos.toString(),
       playerId: params.playerId,
+      address: params.displayAddress,
     });
     if (proofError) {
-      return { error: proofError, usedAccount: false };
+      return { error: proofError, usedAccount: false, addedFreshMojos: 0n };
     }
     if (params.buyInProof.datBalanceMojos) {
       const balance = BigInt(params.buyInProof.datBalanceMojos);
       if (balance < params.buyInMojos) {
-        return { error: "Insufficient DAT — redeem 5000 DAT / day or fund Sage", usedAccount: false };
+        return {
+          error: "Insufficient DAT — redeem 5000 DAT / day or fund Sage",
+          usedAccount: false,
+          addedFreshMojos: 0n,
+        };
       }
     }
   } else if (!params.devAck && dat.assetId && params.buyInProof) {
@@ -162,31 +200,30 @@ function takeBuyInFromAccountOrProof(params: {
       seatIndex: params.seatIndex,
       buyInMojos: params.buyInMojos.toString(),
       playerId: params.playerId,
+      address: params.displayAddress,
     });
     if (proofError) {
-      return { error: proofError, usedAccount: false };
+      return { error: proofError, usedAccount: false, addedFreshMojos: 0n };
     }
   }
 
   const buyInProof = params.buyInProof ?? {
-    address: params.playerId,
+    address: params.displayAddress,
     message: "",
     signature: "",
     pubkey: "",
   };
+  const { addedFreshMojos } = applyBuyInPlaythrough(params.playerId, params.buyInMojos, false);
   recordBuyIn(params.tableId, params.playerId, buyInProof, params.buyInMojos.toString());
-  return { error: null, usedAccount: false };
+  return { error: null, usedAccount: false, addedFreshMojos };
 }
 
 export function registerTableRoutes(app: FastifyInstance): void {
   app.get("/v1/tables", async (req) => {
-    const viewerId =
-      typeof req.query === "object" && req.query && "playerId" in req.query
-        ? String((req.query as { playerId?: string }).playerId ?? "")
-        : "";
+    const session = readPlayerSession(req);
     return {
       tables: [...tables.entries()].map(([tableId, table]) =>
-        tableSnapshot(tableId, table, viewerId || undefined),
+        tableSnapshot(tableId, table, session?.playerId),
       ),
     };
   });
@@ -198,23 +235,30 @@ export function registerTableRoutes(app: FastifyInstance): void {
       bigBlindMojos?: string;
       maxSeats?: number;
     };
-  }>("/v1/tables", async (req) => {
+  }>("/v1/tables", async (req, reply) => {
+    if (!requirePlayer(req, reply)) return;
     const created = createTable(req.body.maxSeats ?? 6);
     return { tableId: created.tableId, config: created.config };
   });
 
   app.post<{
     Body: {
-      playerId: string;
+      playerId?: string;
       buyInMojos?: string;
       buyInProof?: BuyInProof;
       devAck?: boolean;
     };
   }>("/v1/tables/join", async (req, reply) => {
-    const playerId = req.body.playerId;
-    if (!playerId) {
-      return reply.status(400).send({ error: "playerId required" });
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
     }
+    if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many join requests from this network" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
 
     const existing = findPlayerTable(playerId);
     if (existing) {
@@ -246,6 +290,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const buyIn = takeBuyInFromAccountOrProof({
       tableId: target.tableId,
       playerId,
+      displayAddress: session.displayAddress,
       seatIndex: seat,
       buyInMojos,
       buyInProof: req.body.buyInProof,
@@ -257,6 +302,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
     try {
       target.table.seatPlayer(playerId, seat, buyInMojos);
+      target.table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
       seatHouseIfNeeded(target.table, buyInMojos);
       return {
         ok: true,
@@ -266,6 +312,9 @@ export function registerTableRoutes(app: FastifyInstance): void {
     } catch (e) {
       if (buyIn.usedAccount) {
         creditAccount(playerId, buyInMojos);
+      }
+      if (buyIn.addedFreshMojos > 0n) {
+        reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
       }
       return reply.status(400).send({ error: (e as Error).message });
     }
@@ -278,29 +327,38 @@ export function registerTableRoutes(app: FastifyInstance): void {
       if (!table) {
         return reply.status(404).send({ error: "Table not found" });
       }
-      return tableSnapshot(req.params.tableId, table, req.query.playerId);
+      const session = readPlayerSession(req);
+      return tableSnapshot(req.params.tableId, table, session?.playerId);
     },
   );
 
   app.post<{
     Params: { tableId: string };
     Body: {
-      playerId: string;
+      playerId?: string;
       seatIndex: number;
       buyInMojos: string;
       buyInProof?: BuyInProof;
       devAck?: boolean;
     };
   }>("/v1/tables/:tableId/seat", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
     const table = tables.get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
 
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
     const buyInMojos = BigInt(req.body.buyInMojos);
     const buyIn = takeBuyInFromAccountOrProof({
       tableId: req.params.tableId,
-      playerId: req.body.playerId,
+      playerId,
+      displayAddress: session.displayAddress,
       seatIndex: req.body.seatIndex,
       buyInMojos,
       buyInProof: req.body.buyInProof,
@@ -311,11 +369,15 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
 
     try {
-      table.seatPlayer(req.body.playerId, req.body.seatIndex, buyInMojos);
+      table.seatPlayer(playerId, req.body.seatIndex, buyInMojos);
+      table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
       return { ok: true };
     } catch (e) {
       if (buyIn.usedAccount) {
-        creditAccount(req.body.playerId, buyInMojos);
+        creditAccount(playerId, buyInMojos);
+      }
+      if (buyIn.addedFreshMojos > 0n) {
+        reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
       }
       return reply.status(400).send({ error: (e as Error).message });
     }
@@ -325,9 +387,14 @@ export function registerTableRoutes(app: FastifyInstance): void {
     Params: { tableId: string };
     Body: { buyInMojos?: string };
   }>("/v1/tables/:tableId/seat-house", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
     const table = tables.get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
+    }
+    if (!table.hasPlayer(session.playerId)) {
+      return reply.status(403).send({ error: "You are not seated at this table" });
     }
     if (table.hasPlayer(HOUSE_PLAYER_ID)) {
       return { ok: true, playerId: HOUSE_PLAYER_ID };
@@ -350,6 +417,48 @@ export function getTableEngine(tableId: string): NlheTableEngine | undefined {
   return tables.get(tableId);
 }
 
+export function persistTablePlaythrough(table: NlheTableEngine): void {
+  for (const seated of table.getSeatedPlayers()) {
+    if (seated.playerId === HOUSE_PLAYER_ID) continue;
+    setPlaythroughHands(seated.playerId, table.getHandsPlayed(seated.playerId));
+    syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId) + seated.stackMojos);
+  }
+}
+
+/** Move seated stacks back to the persisted ledger (API restart / redeploy). */
+export function returnAllStacksToAccounts(): { returned: number } {
+  let returned = 0;
+  for (const [tableId, table] of tables) {
+    try {
+      table.abortHandRefundBets();
+    } catch {
+      /* older engine without abort */
+    }
+    persistTablePlaythrough(table);
+    for (const seated of [...table.getSeatedPlayers()]) {
+      if (seated.playerId === HOUSE_PLAYER_ID) {
+        try {
+          table.cashOutPlayer(HOUSE_PLAYER_ID);
+        } catch {
+          /* house already gone */
+        }
+        continue;
+      }
+      try {
+        const cash = table.cashOutPlayer(seated.playerId);
+        creditAccount(seated.playerId, cash.stackMojos);
+        syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId));
+        clearBuyIn(tableId, seated.playerId);
+        returned += 1;
+      } catch {
+        /* already standing */
+      }
+    }
+  }
+  return { returned };
+}
+
 export function resetTablesForTests(): void {
   tables.clear();
+  playerLabels.clear();
 }

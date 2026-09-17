@@ -1,36 +1,163 @@
 import SignClient from "@walletconnect/sign-client";
 import {
-  DAPP_METADATA,
+  WALLETCONNECT_RELAY_URL,
   type AssetBalance,
   type SignMessageResult,
   type WcSession,
+  dappMetadata,
+  optionalNamespaces,
   requiredNamespaces,
+  sessionSpendMethods,
 } from "./constants.js";
 
 let clientPromise: Promise<SignClient> | null = null;
+
+const RELAYER_WAIT_MS = 12_000;
+
+type DisplayUriClient = {
+  on(event: "display_uri", listener: (uri: string) => void): void;
+  off(event: "display_uri", listener: (uri: string) => void): void;
+};
+
+export function resetSignClient(): void {
+  clientPromise = null;
+}
+
+export function mapWalletConnectError(err: unknown): Error {
+  const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "https://datspiritpoker.com";
+  const publishFailed =
+    lower.includes("publish") ||
+    lower.includes("tag:undefined") ||
+    lower.includes("socket stalled") ||
+    lower.includes("relay") ||
+    lower.includes("websocket");
+  if (publishFailed) {
+    return new Error(
+      `${raw} WalletConnect could not publish the pairing to the Reown relay, so no QR was created. In Reown Cloud → your DAT Poker project → Allowed domains, add ${origin} (and https://www.datspiritpoker.com if you use www), then click Connect Sage again.`,
+    );
+  }
+  return err instanceof Error ? err : new Error(raw);
+}
+
+async function waitForRelayer(client: SignClient, timeoutMs = RELAYER_WAIT_MS): Promise<void> {
+  const relayer = client.core.relayer;
+  if (relayer.connected) return;
+
+  const ready = (async () => {
+    if (!relayer.connected && !relayer.connecting) {
+      await relayer.transportOpen(WALLETCONNECT_RELAY_URL);
+    }
+    await relayer.confirmOnlineStateOrThrow();
+  })();
+
+  await Promise.race([
+    ready,
+    new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            "WalletConnect relay timed out before a QR could be created. Check that this site is on the Reown Cloud domain allowlist, then try again.",
+          ),
+        );
+      }, timeoutMs);
+      void ready.finally(() => clearTimeout(timer));
+    }),
+  ]);
+}
+
+async function dropInactivePairings(client: SignClient): Promise<void> {
+  const pairings = client.core.pairing.getPairings();
+  await Promise.all(
+    pairings
+      .filter((pairing) => !pairing.active)
+      .map(async (pairing) => {
+        try {
+          await client.core.pairing.disconnect({ topic: pairing.topic });
+        } catch {
+          /* leftover IndexedDB pairings from a failed QR attempt */
+        }
+      }),
+  );
+}
 
 export async function getSignClient(projectId: string): Promise<SignClient> {
   if (!clientPromise) {
     clientPromise = SignClient.init({
       projectId,
-      metadata: DAPP_METADATA,
-    });
+      metadata: dappMetadata(),
+      relayUrl: WALLETCONNECT_RELAY_URL,
+    })
+      .then(async (client) => {
+        await waitForRelayer(client);
+        return client;
+      })
+      .catch((err: unknown) => {
+        clientPromise = null;
+        throw mapWalletConnectError(err);
+      });
   }
-  return clientPromise;
+  const client = await clientPromise;
+  await waitForRelayer(client);
+  return client;
+}
+
+async function proposeSession(
+  client: SignClient,
+  chainId: string,
+  onUri?: (uri: string) => void,
+): Promise<{ uri: string; approval: () => Promise<WcSession> }> {
+  let uriFromEvent: string | undefined;
+  const onDisplayUri = (uri: string) => {
+    uriFromEvent = uri;
+    onUri?.(uri);
+  };
+  const events = client as unknown as DisplayUriClient;
+  events.on("display_uri", onDisplayUri);
+  try {
+    const { uri, approval } = await client.connect({
+      requiredNamespaces: requiredNamespaces(chainId),
+      optionalNamespaces: optionalNamespaces(chainId),
+    });
+    const pairingUri = uri ?? uriFromEvent;
+    if (!pairingUri) {
+      throw new Error("WalletConnect did not return a pairing URI");
+    }
+    onUri?.(pairingUri);
+    return { uri: pairingUri, approval };
+  } finally {
+    events.off("display_uri", onDisplayUri);
+  }
 }
 
 export async function beginWalletConnect(params: {
   projectId: string;
   chainId: string;
+  onUri?: (uri: string) => void;
 }): Promise<{ uri: string; approval: () => Promise<WcSession> }> {
   const client = await getSignClient(params.projectId);
-  const { uri, approval } = await client.connect({
-    requiredNamespaces: requiredNamespaces(params.chainId),
-  });
-  if (!uri) {
-    throw new Error("WalletConnect did not return a pairing URI");
+  await dropInactivePairings(client);
+
+  try {
+    return await proposeSession(client, params.chainId, params.onUri);
+  } catch (first) {
+    try {
+      await client.core.relayer.restartTransport(WALLETCONNECT_RELAY_URL);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await waitForRelayer(client);
+      return await proposeSession(client, params.chainId, params.onUri);
+    } catch (second) {
+      resetSignClient();
+      throw mapWalletConnectError(second instanceof Error ? second : first);
+    }
   }
-  return { uri, approval };
 }
 
 export async function disconnectWallet(session: WcSession, projectId: string): Promise<void> {
@@ -50,6 +177,11 @@ async function wcRequest<T>(
   timeoutMs = 90_000,
 ): Promise<T> {
   const client = await getSignClient(projectId);
+  if (sessionSpendMethods(session).includes(method) || method === "chia_takeOffer" || method === "chia_send") {
+    throw new Error(
+      "This site does not send or take offers from Sage. DAT stays in your wallet until on-chain escrow exists.",
+    );
+  }
   const request = client.request<T>({
     topic: session.topic,
     chainId,
@@ -171,16 +303,15 @@ export async function signBuyInMessage(
 }
 
 export async function takeOffer(
-  session: WcSession,
-  projectId: string,
-  chainId: string,
-  offer: string,
-  feeMojos = 0n,
+  _session: WcSession,
+  _projectId: string,
+  _chainId: string,
+  _offer: string,
+  _feeMojos = 0n,
 ): Promise<{ success: boolean }> {
-  return wcRequest<{ success: boolean }>(session, projectId, chainId, "chia_takeOffer", {
-    offer,
-    fee: Number(feeMojos),
-  });
+  throw new Error(
+    "On-chain Sage takeOffer is disabled on the game host so a compromised page cannot drain your wallet. Withdraw credits stay in your table account.",
+  );
 }
 
 export async function loadPlayerWallet(
@@ -216,9 +347,22 @@ export const signWithdrawMessage = signBuyInMessage;
 export const signRedeemMessage = signBuyInMessage;
 
 export function restoreSession(projectId: string): Promise<WcSession | undefined> {
-  return getSignClient(projectId).then((client) => {
+  return getSignClient(projectId).then(async (client) => {
     const keys = client.session.keys;
     if (!keys.length) return undefined;
-    return client.session.get(keys[keys.length - 1]);
+    const session = client.session.get(keys[keys.length - 1]);
+    const spends = sessionSpendMethods(session);
+    if (spends.length) {
+      try {
+        await client.disconnect({
+          topic: session.topic,
+          reason: { code: 6000, message: "Spend methods are not allowed on DAT Poker beta" },
+        });
+      } catch {
+        /* still refuse to reuse a spend-capable session */
+      }
+      return undefined;
+    }
+    return session;
   });
 }

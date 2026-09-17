@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeNlheBetRange, snapRaiseTo } from "./bet-sizing.js";
+import { computeNlheBetRange, snapRaiseTo, betSizePresets } from "./bet-sizing.js";
 
 describe("computeNlheBetRange", () => {
   const bb = 10_000n;
@@ -23,15 +23,42 @@ describe("computeNlheBetRange", () => {
       currentBetMojos: 20_000n,
       myBetThisStreetMojos: 0n,
       myStackMojos: 1_000_000n,
+      lastRaiseIncrementMojos: 10_000n,
     });
     expect(range.isOpeningBet).toBe(false);
     expect(range.minRaiseTo).toBe(30_000n);
     expect(range.maxRaiseTo).toBe(1_000_000n);
+  });
+
+  it("min re-raise after a 300 bet is 600", () => {
+    const bet = 300_000n;
+    const range = computeNlheBetRange({
+      bigBlindMojos: 100_000n,
+      currentBetMojos: bet,
+      myBetThisStreetMojos: 0n,
+      myStackMojos: 10_000_000n,
+      lastRaiseIncrementMojos: bet,
+    });
+    expect(range.minRaiseTo).toBe(600_000n);
   });
 });
 
 describe("snapRaiseTo", () => {
   it("snaps to step increments", () => {
     expect(snapRaiseTo(25_000n, 10_000n, 100_000n, 10_000n)).toBe(20_000n);
+  });
+});
+
+describe("betSizePresets", () => {
+  it("lists 1×–4× BB when BB is 5 DAT", () => {
+    const bb = 5_000n;
+    expect(betSizePresets(bb, bb, 1_000_000n)).toEqual([
+      5_000n, 10_000n, 15_000n, 20_000n,
+    ]);
+  });
+
+  it("omits sizes below the min raise", () => {
+    const bb = 10_000n;
+    expect(betSizePresets(bb, 30_000n, 100_000n)).toEqual([30_000n, 40_000n]);
   });
 });
