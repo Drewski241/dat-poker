@@ -1,7 +1,7 @@
 import type { DatTokenInfo, HandResult, HandState, PlayerAction, TableSeat } from "../api.js";
 import { computeNlheBetRange, formatDatMojos } from "@dat-poker/shared";
 import { BetSlider } from "./BetSlider.js";
-import { CardRow } from "./PlayingCard.js";
+import { CardRow, PlayingCard } from "./PlayingCard.js";
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
 
@@ -43,7 +43,7 @@ export function TableRoom({
   hand,
   handResult,
   handInProgress,
-  smallBlindMojos,
+  smallBlindMojos: _smallBlindMojos,
   bigBlindMojos,
   busy,
   liveHandLabel,
@@ -69,8 +69,11 @@ export function TableRoom({
 
   const canStepToLobby = !hand && !handInProgress;
 
+  const me = hand?.players.find((p) => p.playerId === playerId);
+  const opponents = hand?.players.filter((p) => p.playerId !== playerId) ?? [];
+
   return (
-    <div className="table-room">
+    <div className={`table-room ${hand ? "table-room-in-hand" : ""}`}>
       <header className="table-room-header">
         <div className="table-room-header-main">
           <h1 className="table-room-title">6-max table</h1>
@@ -92,43 +95,38 @@ export function TableRoom({
         </button>
       </header>
 
-      <div className="table-room-seats" aria-label="Seats">
-        {Array.from({ length: 6 }, (_, i) => {
-          const seated = tableSeats.find((s) => s.seatIndex === i);
-          const inHand = hand?.players.find((p) => p.seatIndex === i);
-          const acting = hand?.actionSeat === i && inHand && !inHand.folded;
-          return (
-            <div
-              key={i}
-              className={`table-room-seat ${seated ? "occupied" : "empty"} ${acting ? "acting" : ""} ${inHand?.folded ? "folded" : ""}`}
-            >
-              <span className="table-room-seat-num">{i + 1}</span>
-              {seated ? (
-                <>
-                  <span className="table-room-seat-name">
-                    {playerLabel(seated.playerId, playerId, seated.displayAddress)}
-                  </span>
-                  <span className="table-room-seat-stack">
-                    {formatDatMojos(
-                      inHand?.stackMojos ?? seated.stackMojos,
-                      datToken?.ticker,
-                    )}
-                  </span>
-                  <span className="table-room-seat-role">
-                    {seatPositionLabel(i, hand, dealerButtonSeat).replace(/^ · /, "")}
-                    {acting ? " · acting" : ""}
-                    {inHand?.folded ? " · folded" : ""}
-                  </span>
-                </>
-              ) : (
-                <span className="table-room-seat-empty">Empty</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {!hand && (
+        <div className="table-room-seats" aria-label="Seats">
+          {Array.from({ length: 6 }, (_, i) => {
+            const seated = tableSeats.find((s) => s.seatIndex === i);
+            return (
+              <div
+                key={i}
+                className={`table-room-seat ${seated ? "occupied" : "empty"}`}
+              >
+                <span className="table-room-seat-num">{i + 1}</span>
+                {seated ? (
+                  <>
+                    <span className="table-room-seat-name">
+                      {playerLabel(seated.playerId, playerId, seated.displayAddress)}
+                    </span>
+                    <span className="table-room-seat-stack">
+                      {formatDatMojos(seated.stackMojos, datToken?.ticker)}
+                    </span>
+                    <span className="table-room-seat-role">
+                      {seatPositionLabel(i, hand, dealerButtonSeat).replace(/^ · /, "")}
+                    </span>
+                  </>
+                ) : (
+                  <span className="table-room-seat-empty">Empty</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-      <main className="table-room-main">
+      <main className={`table-room-main ${hand ? "table-room-main-in-hand" : "table-room-main-between"}`}>
         {!hand ? (
           <div className="table-room-between">
             {handResult && (
@@ -189,53 +187,81 @@ export function TableRoom({
             </p>
           </div>
         ) : (
-          <>
+          <section className="table-room-felt" aria-label="Hand">
             <div className="table-room-hand-meta">
-              <p>
+              <p className="table-room-street-pot">
                 <strong>{hand.street}</strong> · Pot{" "}
                 <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
-              </p>
-              <p className="hand-blinds-line">
-                D{hand.dealerSeat + 1} · SB{hand.smallBlindSeat + 1} · BB{hand.bigBlindSeat + 1} ·{" "}
-                {formatDatMojos(smallBlindMojos.toString(), datToken?.ticker)} /{" "}
-                {formatDatMojos(bigBlindMojos.toString(), datToken?.ticker)}
+                <span className="hand-blinds-line">
+                  {" "}
+                  · D{hand.dealerSeat + 1} SB{hand.smallBlindSeat + 1} BB{hand.bigBlindSeat + 1}
+                </span>
               </p>
             </div>
-            {liveHandLabel && (
-              <p className="live-hand table-room-live-hand">
-                Your hand: <strong>{liveHandLabel}</strong>
-              </p>
-            )}
-            {hand.board.length > 0 && (
-              <CardRow label="Board" cards={hand.board} size="lg" />
-            )}
-            <ul className="players table-room-players">
-              {hand.players.map((p) => (
-                <li key={p.playerId} className={p.playerId === playerId ? "you" : ""}>
-                  <div className="player-meta">
-                    <strong>
-                      {p.playerId === playerId
-                        ? "You"
-                        : p.playerId === HOUSE_PLAYER_ID
+
+            <div className="table-room-board">
+              <span className="card-row-label">Board</span>
+              <div className="table-room-board-cards">
+                {Array.from({ length: 5 }, (_, i) => {
+                  const card = hand.board[i];
+                  return card ? (
+                    <PlayingCard key={`b-${i}`} card={card} size="md" />
+                  ) : (
+                    <span
+                      key={`b-empty-${i}`}
+                      className="playing-card playing-card-md playing-card-slot"
+                      aria-hidden="true"
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            <ul className="table-room-opponents">
+              {opponents.map((p) => {
+                const acting = hand.actionSeat === p.seatIndex && !p.folded;
+                return (
+                  <li
+                    key={p.playerId}
+                    className={`table-room-opponent ${p.folded ? "folded" : ""} ${acting ? "acting" : ""}`}
+                  >
+                    <div className="table-room-opponent-meta">
+                      <strong>
+                        {p.playerId === HOUSE_PLAYER_ID
                           ? "House"
                           : playerLabel(
                               p.playerId,
                               playerId,
                               tableSeats.find((s) => s.playerId === p.playerId)?.displayAddress,
                             )}
-                    </strong>
-                    {p.folded ? " — folded" : ""}
-                    <span className="stack">
-                      {" "}
-                      {formatDatMojos(p.stackMojos, datToken?.ticker)}
-                    </span>
-                  </div>
-                  {p.holeCards.length > 0 && (
-                    <CardRow cards={p.holeCards} size={p.playerId === playerId ? "lg" : "md"} />
-                  )}
-                </li>
-              ))}
+                      </strong>
+                      {p.folded ? " · folded" : ""}
+                      {acting ? " · acting" : ""}
+                      <span className="stack">{formatDatMojos(p.stackMojos, datToken?.ticker)}</span>
+                    </div>
+                    {p.holeCards.length > 0 && !p.folded && (
+                      <CardRow cards={p.holeCards} size="sm" />
+                    )}
+                  </li>
+                );
+              })}
             </ul>
+
+            {me && (
+              <div className={`table-room-hero ${isMyAction ? "your-turn" : ""}`}>
+                <div className="table-room-hero-meta">
+                  <strong>You</strong>
+                  <span className="stack">{formatDatMojos(me.stackMojos, datToken?.ticker)}</span>
+                  {liveHandLabel && (
+                    <span className="live-hand table-room-live-hand">
+                      · <strong>{liveHandLabel}</strong>
+                    </span>
+                  )}
+                </div>
+                {me.holeCards.length > 0 && <CardRow cards={me.holeCards} size="lg" />}
+              </div>
+            )}
+
             {!isMyAction && actionSeatPlayer && (
               <p className="muted table-room-wait">
                 Waiting for{" "}
@@ -247,7 +273,7 @@ export function TableRoom({
                 …
               </p>
             )}
-          </>
+          </section>
         )}
       </main>
 
