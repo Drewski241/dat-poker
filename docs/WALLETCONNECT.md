@@ -49,16 +49,22 @@ curl -s http://localhost:4000/v1/wallet/dat-token | jq
 
 When `WALLETCONNECT_PROJECT_ID` is unset, `/v1/wallet/config` returns `"walletConnect": null` — the web client should fall back to dev buy-in mode or prompt the operator to configure WalletConnect.
 
+Public beta on AWS: [docs/BETA.md](./BETA.md) (HTTPS on `datspiritpoker.com` + Reown Cloud project).
+
 ## Client integration (web)
 
 The Vite web client (`apps/web`) implements Sage WalletConnect:
 
 1. Fetch `/v1/wallet/config` on app load.
-2. **Connect Sage** — scan QR with Sage mobile (or paste URI on desktop).
-3. **Load DAT balance** — finds your CAT wallet matching `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
-4. **Buy in & join table** — signs a buy-in intent via `chia_signMessageByAddress`, seats you vs house.
-5. **Start hand** — commit-reveal deal; you act when prompted (house auto-plays).
-6. **Withdraw** — cash out table stack; if treasury is configured, accept the DAT offer in Sage. See [TREASURY.md](./TREASURY.md).
+2. **Create account / sign in** — username and password. This is the play identity.
+3. **Redeem** funded DAT and **join a table** with the account token. Sage is not required.
+4. **Connect Sage** only to withdraw DAT to a wallet. Scan QR, then **Link Sage address**
+   (CHIP-0002 sign-only). The account id does not change.
+5. **Start hand** — commit-reveal deal; you act when prompted. Solo vs house,
+   the house bot bets, raises, and folds from its cards (it is not a check/call
+   station).
+6. **Cash out** table stack to the account. On-chain Sage `takeOffer` is **disabled
+   on the game host**. See [SECURITY.md](./SECURITY.md) and [TREASURY.md](./TREASURY.md).
 
 ### Mainnet test checklist
 
@@ -75,9 +81,33 @@ pnpm dev:treasury  # terminal 2 — treasury offers for withdraw (see docs/TREAS
 pnpm dev:web    # terminal 3 — open http://localhost:5173
 ```
 
-> **Sage wallet:** Uses CHIP-0002 WalletConnect methods (`chip0002_getAssetBalance`, `chia_getAddress`, `chia_signMessageByAddress`). The Chia reference wallet `chia_logIn` / `chia_getWallets` RPCs are not used.
+### QR did not appear / `Failed to publish custom payload`
 
-> **Note:** Buy-in is **signed authorization + balance check** (Phase 2 alpha). On-chain CAT escrow/spend is planned next; no DAT leaves your wallet until `chia_send` is wired for treasury deposits.
+The QR is only drawn after WalletConnect returns a pairing URI. If
+`client.connect()` cannot publish that proposal to
+`wss://relay.walletconnect.com`, you see the Reown error
+`Failed to publish custom payload … tag:undefined` and the modal never
+gets a URI.
+
+That is a **relay / domain allowlist** failure, not a Sage scan failure.
+
+1. Reown Cloud → project → **Allowed domains** must include the exact
+   origin of the page (`https://datspiritpoker.com` and www).
+2. The web client waits for `relayer.confirmOnlineStateOrThrow()` before
+   `connect()`, drops inactive pairings (chia-gaming `forgetSessions`
+   equivalent), and retries once with `restartTransport`.
+3. Reload `/play` and click **Connect Sage** again.
+
+chia-gaming ([Chia-Network/chia-gaming](https://github.com/Chia-Network/chia-gaming)
+`front-end/src/constants/wallet-connect.ts`) documents WalletConnect for
+the **official Chia wallet** and Calpoker state channels
+(`chia_getWallets`, `chia_selectCoins`, `chia_createOfferForIds`). DAT
+Poker Sage pairing matches
+[xch-dev/sage-dapp-example](https://github.com/xch-dev/sage-dapp-example):
+`SignClient.init({ projectId, relayUrl, metadata })` then
+`client.connect({ requiredNamespaces, optionalNamespaces })` with CHIP-0002
+methods (`chip0002_getAssetBalance`, `chia_getAddress`,
+`chia_signMessageByAddress`).
 
 ## Development vs production
 
@@ -94,3 +124,4 @@ pnpm dev:web    # terminal 3 — open http://localhost:5173
 - [DAT_TOKEN.md](./DAT_TOKEN.md) — DAT Governance Token buy-in architecture
 - [CHIA_INTEGRATION.md](./CHIA_INTEGRATION.md) — chia-gaming modes and network URLs
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — wallet / treasury component in the platform diagram
+- [SECURITY.md](./SECURITY.md) — Sage pairing permissions and beta drain protections

@@ -5,6 +5,9 @@ coverage
 .env
 .env.*
 !.env.example
+!.env.beta.example
 !.env.treasury.example
 *.log
 .DS_Store
+/data/
+services/api/data/
