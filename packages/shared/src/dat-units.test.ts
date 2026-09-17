@@ -7,8 +7,11 @@ import {
   playthroughHandsRequired,
   playthroughUnlockedMojos,
   playthroughWithdrawableMojos,
+  redeemCooldownRemainingMs,
   resolveDatDailyRedeemMojos,
   resolveDatMinBuyInMojos,
+  nextRedeemAtIso,
+  DAT_DAILY_REDEEM_COOLDOWN_MS,
 } from "./dat-units.js";
 
 describe("formatDatMojos", () => {
@@ -79,5 +82,15 @@ describe("playthroughUnlockedMojos", () => {
     expect(playthroughWithdrawableMojos(50, 1_000_000n, 40_000n)).toBe(40_000n);
     expect(playthroughWithdrawableMojos(50, 1_000_000n, 40_500n)).toBe(40_000n);
     expect(playthroughWithdrawableMojos(0, 1_000_000n, 1_000_000n)).toBe(0n);
+  });
+});
+
+describe("daily redeem cooldown", () => {
+  it("blocks until 24 hours after the last redeem", () => {
+    const last = "2026-09-16T12:00:00.000Z";
+    const t0 = Date.parse(last);
+    expect(redeemCooldownRemainingMs(last, t0 + 1000)).toBe(DAT_DAILY_REDEEM_COOLDOWN_MS - 1000);
+    expect(redeemCooldownRemainingMs(last, t0 + DAT_DAILY_REDEEM_COOLDOWN_MS)).toBe(0);
+    expect(nextRedeemAtIso(last, t0 + 1000)).toBe(new Date(t0 + DAT_DAILY_REDEEM_COOLDOWN_MS).toISOString());
   });
 });

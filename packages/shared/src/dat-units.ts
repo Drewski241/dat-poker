@@ -59,8 +59,11 @@ export function resolveDatMinBuyInMojos(raw: string | undefined): bigint {
   return value;
 }
 
-/** Beta faucet: 5,000 DAT per UTC day credited to the in-game account. */
+/** Beta faucet: 5,000 DAT credited to the in-game account once per cooldown window. */
 export const DAT_DAILY_REDEEM_MOJOS = 5_000_000n;
+
+/** Minimum time between daily redeems (rolling window, not UTC midnight). */
+export const DAT_DAILY_REDEEM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 export function resolveDatDailyRedeemMojos(raw: string | undefined): bigint {
   if (!raw?.trim()) {
@@ -81,6 +84,28 @@ export function nextUtcDayIso(now = new Date()): string {
   return new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
   ).toISOString();
+}
+
+export function redeemCooldownRemainingMs(
+  lastRedeemAtIso: string | undefined,
+  nowMs = Date.now(),
+  cooldownMs = DAT_DAILY_REDEEM_COOLDOWN_MS,
+): number {
+  if (!lastRedeemAtIso) return 0;
+  const last = Date.parse(lastRedeemAtIso);
+  if (!Number.isFinite(last)) return 0;
+  const remaining = cooldownMs - (nowMs - last);
+  return remaining > 0 ? remaining : 0;
+}
+
+export function nextRedeemAtIso(
+  lastRedeemAtIso: string | undefined,
+  nowMs = Date.now(),
+  cooldownMs = DAT_DAILY_REDEEM_COOLDOWN_MS,
+): string | null {
+  const remaining = redeemCooldownRemainingMs(lastRedeemAtIso, nowMs, cooldownMs);
+  if (remaining <= 0) return null;
+  return new Date(nowMs + remaining).toISOString();
 }
 
 /** Casino-style play-through: one completed hand per whole DAT token of buy-in. */

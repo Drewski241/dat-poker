@@ -29,7 +29,7 @@ describe("account-store", () => {
     expect(getAccountBalance("xch1a")).toBe(4_000_000n);
   });
 
-  it("allows one 5000 DAT redeem per UTC day", () => {
+  it("allows one 5000 DAT redeem per 24-hour window", () => {
     const noon = new Date("2026-09-16T12:00:00.000Z");
     const first = tryRedeemDaily("xch1a", 5_000_000n, noon);
     expect(first.credited).toBe(true);
@@ -41,9 +41,15 @@ describe("account-store", () => {
     expect(again.alreadyRedeemed).toBe(true);
     expect(again.balance).toBe(5_000_000n);
 
-    const nextDay = tryRedeemDaily("xch1a", 5_000_000n, new Date("2026-09-17T00:00:00.000Z"));
-    expect(nextDay.credited).toBe(true);
-    expect(nextDay.balance).toBe(10_000_000n);
+    const beforeCooldown = new Date("2026-09-17T00:00:00.000Z");
+    expect(hasRedeemedToday("xch1a", beforeCooldown)).toBe(true);
+    const blocked = tryRedeemDaily("xch1a", 5_000_000n, beforeCooldown);
+    expect(blocked.credited).toBe(false);
+
+    const afterCooldown = new Date("2026-09-17T12:00:01.000Z");
+    const second = tryRedeemDaily("xch1a", 5_000_000n, afterCooldown);
+    expect(second.credited).toBe(true);
+    expect(second.balance).toBe(10_000_000n);
   });
 
   it("reloads DAT balances and daily redeem from disk", () => {
@@ -56,6 +62,7 @@ describe("account-store", () => {
     reloadLedgerFromDiskForTests();
     expect(getAccountBalance("user_persist")).toBe(5_000_000n);
     expect(hasRedeemedToday("user_persist", noon)).toBe(true);
+    expect(JSON.parse(readFileSync(file, "utf8")).redeemed[0].lastRedeemAt).toBe(noon.toISOString());
   });
 
   it("keeps play-through unlocks across a ledger reload", () => {

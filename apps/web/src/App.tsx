@@ -400,6 +400,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
       setAccountMojos(result.balanceMojos);
       setRedeemedToday(true);
+      await refreshAccount(playerId);
       setStatus(result.note);
     });
 
@@ -837,7 +838,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               <p>
                 Table account:{" "}
                 <strong>{formatDatMojos(accountMojos, datToken?.ticker)}</strong>
-                {redeemedToday ? " · daily redeem used" : ""}
+                {redeemedToday ? " · redeem available in 24h" : ""}
               </p>
             )}
             {accountPlaythrough && accountPlaythrough.handsRequired > 0 && !tableId && (

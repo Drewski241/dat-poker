@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import {
-  nextUtcDayIso,
   playthroughHandsRequired,
   playthroughUnlockedMojos,
   playthroughWithdrawableMojos,
@@ -17,6 +16,7 @@ import {
   getPlaythrough,
   hasRedeemedToday,
   clearPlaythrough,
+  nextRedeemAvailableAt,
   syncPlaythroughHeld,
   tryRedeemDaily,
 } from "../account-store.js";
@@ -126,7 +126,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       balanceMojos: getAccountBalance(address).toString(),
       dailyRedeemMojos: amount.toString(),
       redeemedToday: hasRedeemedToday(address, now),
-      nextRedeemAt: nextUtcDayIso(now),
+      nextRedeemAt: nextRedeemAvailableAt(address, now),
       playthrough: pt,
     };
   });
@@ -174,9 +174,9 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     const result = tryRedeemDaily(playerId, amount, now);
     if (!result.credited) {
       return reply.status(429).send({
-        error: "Already redeemed 5000 DAT today. Come back after UTC midnight.",
+        error: "Already redeemed 5000 DAT. Wait 24 hours between redeems.",
         balanceMojos: result.balance.toString(),
-        nextRedeemAt: nextUtcDayIso(now),
+        nextRedeemAt: nextRedeemAvailableAt(playerId, now),
       });
     }
     return {
@@ -184,7 +184,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       creditedMojos: amount.toString(),
       balanceMojos: result.balance.toString(),
       ticker: dat.ticker,
-      nextRedeemAt: nextUtcDayIso(now),
+      nextRedeemAt: nextRedeemAvailableAt(playerId, now),
       note: "In-game table credits (beta faucet). DAT CAT does not leave a treasury wallet on this host.",
     };
   });

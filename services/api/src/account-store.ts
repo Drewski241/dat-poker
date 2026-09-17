@@ -1,9 +1,19 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { CAT_MOJOS_PER_TOKEN, playthroughHandsRequired, utcDateKey } from "@dat-poker/shared";
+import { fileURLToPath } from "node:url";
+import {
+  CAT_MOJOS_PER_TOKEN,
+  DAT_DAILY_REDEEM_COOLDOWN_MS,
+  nextRedeemAtIso,
+  playthroughHandsRequired,
+  redeemCooldownRemainingMs,
+} from "@dat-poker/shared";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const balances = new Map<string, bigint>();
-const redeemedUtcDay = new Map<string, string>();
+/** ISO timestamp of last successful daily redeem per player. */
+const lastRedeemAt = new Map<string, string>();
 const playthrough = new Map<string, { poolMojos: bigint; handsPlayed: number }>();
 let loaded = false;
 
@@ -12,11 +22,15 @@ export interface PlaythroughState {
   handsPlayed: number;
 }
 
+function defaultLedgerPath(): string {
+  return resolve(__dirname, "../../../data/ledger.json");
+}
+
 function ledgerPath(): string | null {
   const raw = process.env.DAT_LEDGER_PATH?.trim();
   if (raw === "memory") return null;
   if (raw) return resolve(raw);
-  return resolve(process.cwd(), "data/ledger.json");
+  return defaultLedgerPath();
 }
 
 function persist(): void {
@@ -29,9 +43,9 @@ function persist(): void {
         playerId,
         balanceMojos: mojos.toString(),
       })),
-      redeemed: [...redeemedUtcDay.entries()].map(([playerId, utcDay]) => ({
+      redeemed: [...lastRedeemAt.entries()].map(([playerId, redeemedAt]) => ({
         playerId,
-        utcDay,
+        lastRedeemAt: redeemedAt,
       })),
       playthrough: [...playthrough.entries()].map(([playerId, row]) => ({
         playerId,
@@ -45,6 +59,24 @@ function persist(): void {
   writeFileSync(path, body, { encoding: "utf8", mode: 0o600 });
 }
 
+function migrateLegacyRedeemRow(row: {
+  playerId?: string;
+  lastRedeemAt?: string;
+  utcDay?: string;
+}): { playerId: string; lastRedeemAt: string } | null {
+  if (!row.playerId) return null;
+  if (row.lastRedeemAt) {
+    return { playerId: row.playerId, lastRedeemAt: row.lastRedeemAt };
+  }
+  if (row.utcDay) {
+    return {
+      playerId: row.playerId,
+      lastRedeemAt: new Date(`${row.utcDay}T12:00:00.000Z`).toISOString(),
+    };
+  }
+  return null;
+}
+
 export function loadLedger(): void {
   if (loaded) return;
   loaded = true;
@@ -53,7 +85,7 @@ export function loadLedger(): void {
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as {
       balances?: { playerId?: string; balanceMojos?: string }[];
-      redeemed?: { playerId?: string; utcDay?: string }[];
+      redeemed?: { playerId?: string; lastRedeemAt?: string; utcDay?: string }[];
       playthrough?: { playerId?: string; poolMojos?: string; handsPlayed?: number }[];
     };
     for (const row of parsed.balances ?? []) {
@@ -65,8 +97,9 @@ export function loadLedger(): void {
       }
     }
     for (const row of parsed.redeemed ?? []) {
-      if (row.playerId && row.utcDay) {
-        redeemedUtcDay.set(row.playerId, row.utcDay);
+      const migrated = migrateLegacyRedeemRow(row);
+      if (migrated) {
+        lastRedeemAt.set(migrated.playerId, migrated.lastRedeemAt);
       }
     }
     for (const row of parsed.playthrough ?? []) {
@@ -114,13 +147,23 @@ export function debitAccount(address: string, amount: bigint): bigint {
   return next;
 }
 
-export function redeemKey(address: string, now = new Date()): string {
-  return `${address}:${utcDateKey(now)}`;
+export function getLastRedeemAt(playerId: string): string | undefined {
+  loadLedger();
+  return lastRedeemAt.get(playerId);
 }
 
-export function hasRedeemedToday(address: string, now = new Date()): boolean {
+export function redeemCooldownMs(playerId: string, nowMs = Date.now()): number {
   loadLedger();
-  return redeemedUtcDay.get(address) === utcDateKey(now);
+  return redeemCooldownRemainingMs(lastRedeemAt.get(playerId), nowMs, DAT_DAILY_REDEEM_COOLDOWN_MS);
+}
+
+export function hasRedeemedToday(playerId: string, now = new Date()): boolean {
+  return redeemCooldownMs(playerId, now.getTime()) > 0;
+}
+
+export function nextRedeemAvailableAt(playerId: string, now = new Date()): string | null {
+  loadLedger();
+  return nextRedeemAtIso(lastRedeemAt.get(playerId), now.getTime(), DAT_DAILY_REDEEM_COOLDOWN_MS);
 }
 
 export function tryRedeemDaily(
@@ -132,7 +175,7 @@ export function tryRedeemDaily(
   if (hasRedeemedToday(address, now)) {
     return { credited: false, balance: getAccountBalance(address), alreadyRedeemed: true };
   }
-  redeemedUtcDay.set(address, utcDateKey(now));
+  lastRedeemAt.set(address, now.toISOString());
   const balance = creditAccount(address, amount);
   return { credited: true, balance, alreadyRedeemed: false };
 }
@@ -228,7 +271,7 @@ export function clearPlaythrough(playerId: string): void {
 /** Test helper — not used in production routes. */
 export function resetAccountsForTests(): void {
   balances.clear();
-  redeemedUtcDay.clear();
+  lastRedeemAt.clear();
   playthrough.clear();
   loaded = true;
 }
@@ -236,7 +279,7 @@ export function resetAccountsForTests(): void {
 /** Test helper — drop memory and read the current DAT_LEDGER_PATH file again. */
 export function reloadLedgerFromDiskForTests(): void {
   balances.clear();
-  redeemedUtcDay.clear();
+  lastRedeemAt.clear();
   playthrough.clear();
   loaded = false;
   loadLedger();
