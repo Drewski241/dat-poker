@@ -465,6 +465,69 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
   app.post<{
     Params: { tableId: string };
+    Body: {
+      playerId?: string;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+    };
+  }>("/v1/tables/:tableId/rebuy", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    const table = tables.get(req.params.tableId);
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+    const playerId = session.playerId;
+    if (!table.hasPlayer(playerId)) {
+      return reply.status(403).send({ error: "You are not seated at this table" });
+    }
+    const seated = table.getSeatedPlayers().find((s) => s.playerId === playerId);
+    if (!seated) {
+      return reply.status(400).send({ error: "You are not seated at this table" });
+    }
+
+    const dat = readDatTokenConfig();
+    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: req.params.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: seated.seatIndex,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      return reply.status(400).send({ error: buyIn.error });
+    }
+
+    try {
+      table.rebuyStack(playerId, buyInMojos);
+      table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      syncHouseSeating(table, resolveDatMinBuyInMojos(dat.minBuyInMojos));
+      persistTablePlaythrough(table);
+      return {
+        ok: true,
+        rebuy: true,
+        ...tableSnapshot(req.params.tableId, table, playerId),
+      };
+    } catch (e) {
+      if (buyIn.usedAccount) {
+        creditAccount(playerId, buyInMojos);
+      }
+      if (buyIn.addedFreshMojos > 0n) {
+        reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+      }
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Params: { tableId: string };
     Body: { playerId?: string; sittingOut: boolean };
   }>("/v1/tables/:tableId/sit-out", async (req, reply) => {
     const session = requirePlayer(req, reply);

@@ -441,49 +441,69 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setStatus(result.note);
     });
 
+  const minBuyInMojos = datToken?.minBuyInMojos ?? "1000000";
+
+  const assertCanFundBuyIn = () => {
+    if (!playerId) throw new Error("Create an account or sign in first");
+    const ticker = datToken?.ticker ?? "DAT";
+    const account = BigInt(accountMojos ?? "0");
+    const sage = BigInt(datBalance ?? "0");
+    if (account < BigInt(minBuyInMojos) && sage < BigInt(minBuyInMojos) && !datToken?.devBuyInEnabled) {
+      throw new Error(
+        `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`,
+      );
+    }
+  };
+
+  const applyJoinedTableState = (joined: {
+    tableId: string;
+    seats: TableSeat[];
+    hand: HandState | null;
+    handInProgress: boolean;
+    dealerButtonSeat?: number | null;
+    smallBlindMojos?: string;
+    bigBlindMojos?: string;
+    lastHandResult: HandResult | null;
+    humans?: number;
+  }) => {
+    setTableId(joined.tableId);
+    setTableSeats(joined.seats);
+    setHand(joined.hand);
+    setHandInProgress(joined.handInProgress);
+    setDealerButtonSeat(joined.dealerButtonSeat ?? null);
+    if (joined.smallBlindMojos) {
+      try {
+        const sb = BigInt(joined.smallBlindMojos);
+        if (sb > 0n) setSmallBlindMojos(sb);
+      } catch {
+        /* keep default blinds */
+      }
+    }
+    if (joined.bigBlindMojos) {
+      try {
+        const bb = BigInt(joined.bigBlindMojos);
+        if (bb > 0n) setBigBlindMojos(bb);
+      } catch {
+        /* keep default blinds */
+      }
+    }
+    if (joined.lastHandResult) setHandResult(joined.lastHandResult);
+  };
+
   const joinTable = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      if (!playerId) throw new Error("Create an account or sign in first");
-      const ticker = datToken?.ticker ?? "DAT";
-      const buyIn = datToken?.minBuyInMojos ?? "1000000";
-      const account = BigInt(accountMojos ?? "0");
-      const sage = BigInt(datBalance ?? "0");
-      if (account < BigInt(buyIn) && sage < BigInt(buyIn) && !datToken?.devBuyInEnabled) {
-        throw new Error(`Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`);
-      }
-
+      assertCanFundBuyIn();
       setStatus("Joining 6-max table…");
-      const joined = await api.joinTable(playerId, buyIn, {
+      const joined = await api.joinTable(playerId!, minBuyInMojos, {
         devAck: datToken?.devBuyInEnabled,
       });
-      setTableId(joined.tableId);
       setTableFocusMode(true);
-      setTableSeats(joined.seats);
-      setHand(joined.hand);
-      setHandInProgress(joined.handInProgress);
-      setDealerButtonSeat(joined.dealerButtonSeat ?? null);
-      if (joined.smallBlindMojos) {
-        try {
-          const sb = BigInt(joined.smallBlindMojos);
-          if (sb > 0n) setSmallBlindMojos(sb);
-        } catch {
-          /* keep default blinds */
-        }
-      }
-      if (joined.bigBlindMojos) {
-        try {
-          const bb = BigInt(joined.bigBlindMojos);
-          if (bb > 0n) setBigBlindMojos(bb);
-        } catch {
-          /* keep default blinds */
-        }
-      }
-      if (joined.lastHandResult) setHandResult(joined.lastHandResult);
-      await refreshAccount(playerId);
-      const humans = joined.humans;
+      applyJoinedTableState(joined);
+      await refreshAccount(playerId!);
+      const humans = joined.humans ?? 0;
       setStatus(
         humans >= 2
           ? "Seated with another player. Deal when everyone is ready."
@@ -495,6 +515,20 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setBusy(false);
       setStatus("");
     }
+  };
+
+  const rebuyAtTable = () => {
+    if (!tableId || !playerId) return;
+    run("Buying in…", async () => {
+      assertCanFundBuyIn();
+      const rebought = await api.rebuyTable(tableId, playerId, minBuyInMojos, {
+        devAck: datToken?.devBuyInEnabled,
+      });
+      applyJoinedTableState(rebought);
+      await refreshAccount(playerId);
+      setHandResult(null);
+      setStatus("Buy-in added — deal when ready.");
+    });
   };
 
   const startHandFlow = () => {
@@ -529,6 +563,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const myTableSeat = tableSeats.find((s) => s.playerId === playerId);
   const tableStackMojos = myTableSeat?.stackMojos ?? null;
+  const tableStackIsZero = (() => {
+    try {
+      return BigInt(tableStackMojos ?? "1") <= 0n;
+    } catch {
+      return false;
+    }
+  })();
+  const canRebuyAtTable = Boolean(
+    tableId &&
+      playerId &&
+      !hand &&
+      !handInProgress &&
+      datToken?.buyInReady &&
+      tableStackIsZero,
+  );
   const handsPlayed = myTableSeat?.handsPlayed ?? accountPlaythrough?.handsPlayed ?? 0;
   const handsRequired = myTableSeat?.handsRequired ?? accountPlaythrough?.handsRequired ?? 0;
   const playthroughRemaining = myTableSeat?.playthroughRemaining ?? accountPlaythrough?.playthroughRemaining ?? 0;
@@ -850,6 +899,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onStartHand={startHandFlow}
             onSeatHouse={seatHouseFlow}
             canSeatHouse={canSeatHouse}
+            canRebuy={canRebuyAtTable}
+            onRebuy={rebuyAtTable}
+            rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => setTableFocusMode(false)}
             playerLabel={playerLabel}
             seatPositionLabel={seatPositionLabel}
@@ -995,17 +1047,37 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       )}
 
       <section className="panel">
-        <h2>{tableId ? "Leave table" : "Table"}</h2>
+        <h2>{tableId ? "Table" : "Table"}</h2>
         {!tableId ? (
           <button
             type="button"
             disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
             onClick={() => void joinTable()}
           >
-            Buy in &amp; join 6-max ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+            Buy in &amp; join 6-max ({formatDatMojos(minBuyInMojos, datToken?.ticker)})
           </button>
         ) : (
           <>
+            {canRebuyAtTable && (
+              <>
+                <p className="muted small">
+                  Your table stack is empty. Buy in again to keep your seat, or cash out from lobby
+                  when you have chips.
+                </p>
+                <div className="row">
+                  <button
+                    type="button"
+                    disabled={busy || !apiOk || !datToken?.buyInReady}
+                    onClick={rebuyAtTable}
+                  >
+                    Buy in again ({formatDatMojos(minBuyInMojos, datToken?.ticker)})
+                  </button>
+                  <button type="button" className="secondary" disabled={busy} onClick={() => setTableFocusMode(true)}>
+                    Return to table
+                  </button>
+                </div>
+              </>
+            )}
             <p className="mono">Table ID: {tableId}</p>
             <ol className="seat-list">
               {Array.from({ length: 6 }, (_, i) => {

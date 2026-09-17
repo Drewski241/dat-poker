@@ -30,6 +30,9 @@ type Props = {
   onStartHand: () => void;
   onSeatHouse: () => void;
   canSeatHouse: boolean;
+  canRebuy: boolean;
+  onRebuy: () => void;
+  rebuyLabel: string;
   onOpenLobby: () => void;
   playerLabel: (id: string, youId: string | null, display?: string) => string;
   seatPositionLabel: (seatIndex: number, hand: HandState | null, dealerButtonSeat: number | null) => string;
@@ -60,6 +63,9 @@ export function TableRoom({
   onStartHand,
   onSeatHouse,
   canSeatHouse,
+  canRebuy,
+  onRebuy,
+  rebuyLabel,
   onOpenLobby,
   playerLabel,
   seatPositionLabel,
@@ -203,6 +209,16 @@ export function TableRoom({
                 )}
               </div>
             )}
+            {canRebuy && (
+              <button
+                type="button"
+                className="table-room-deal-btn table-room-rebuy-btn"
+                disabled={busy}
+                onClick={onRebuy}
+              >
+                Buy in again ({rebuyLabel})
+              </button>
+            )}
             {canSeatHouse && (
               <button
                 type="button"
@@ -213,17 +229,19 @@ export function TableRoom({
                 Play vs house
               </button>
             )}
-            <button
-              type="button"
-              className="table-room-deal-btn"
-              disabled={busy || !canAttemptDeal}
-              onClick={onStartHand}
-            >
-              {handResult ? "New hand" : "Deal hand"}
-            </button>
-            {!canDeal && playerBusted && (
+            {!canRebuy && (
+              <button
+                type="button"
+                className="table-room-deal-btn"
+                disabled={busy || !canAttemptDeal}
+                onClick={onStartHand}
+              >
+                {handResult ? "New hand" : "Deal hand"}
+              </button>
+            )}
+            {!canDeal && playerBusted && !canRebuy && (
               <p className="muted small table-room-wait-opponent">
-                You&apos;re out of chips at this table. Open Lobby to buy in again or cash out to your account.
+                You&apos;re out of chips. Redeem DAT in Lobby if needed, then buy in again.
               </p>
             )}
             {!canDeal && !playerBusted && houseNeedsReload && (
