@@ -38,7 +38,9 @@ export function isLuckyIrishWin(params: {
   return Boolean(shown && LUCKY_IRISH_CATEGORIES.has(shown.category));
 }
 
-export type BigWinOverlay = "irish" | "hunter";
+export type BigWinOverlay = "irish" | "hunter" | "hero";
+
+const BIG_WIN_CYCLE: BigWinOverlay[] = ["irish", "hunter", "hero"];
 
 const BIG_WIN_STORAGE_KEY = "dat-poker:last-big-win-overlay";
 
@@ -46,7 +48,7 @@ export function readStoredBigWinOverlay(): BigWinOverlay | null {
   if (typeof sessionStorage === "undefined") return null;
   try {
     const value = sessionStorage.getItem(BIG_WIN_STORAGE_KEY);
-    if (value === "irish" || value === "hunter") return value;
+    if (value === "irish" || value === "hunter" || value === "hero") return value;
   } catch {
     /* private mode / blocked storage */
   }
@@ -62,10 +64,11 @@ export function storeBigWinOverlay(overlay: BigWinOverlay): void {
   }
 }
 
-/** Strictly alternate overlays (irish → hunter → irish …), persisted per browser tab. */
+/** Strictly cycle overlays (irish → hunter → hero → …), persisted per browser tab. */
 export function pickBigWinOverlay(previous: BigWinOverlay | null): BigWinOverlay {
   const last = previous ?? readStoredBigWinOverlay();
-  const next: BigWinOverlay = last === "irish" ? "hunter" : "irish";
+  const idx = last ? BIG_WIN_CYCLE.indexOf(last) : -1;
+  const next = BIG_WIN_CYCLE[(idx + 1) % BIG_WIN_CYCLE.length]!;
   storeBigWinOverlay(next);
   return next;
 }
