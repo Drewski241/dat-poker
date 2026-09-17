@@ -1213,29 +1213,76 @@ button.linkish:hover {
   }
 }
 
+html.play-table-screen,
+html.play-table-screen body {
+  overflow: hidden;
+  height: 100%;
+  max-height: 100dvh;
+  overscroll-behavior: none;
+}
+
 .app--table-room {
+  --tr-card-board: clamp(2.35rem, 9vmin, 3.7rem);
+  --tr-card-board-h: clamp(3.3rem, 13vmin, 5.2rem);
+  --tr-card-hero: clamp(2.75rem, 11vmin, 4.6rem);
+  --tr-card-hero-h: clamp(3.9rem, 15vmin, 6.5rem);
   max-width: none;
   width: 100%;
   height: 100dvh;
   max-height: 100dvh;
   margin: 0;
-  padding: 0.65rem 0.75rem 0.5rem;
+  padding: 0.45rem 0.55rem 0.35rem;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+  touch-action: manipulation;
 }
 
 .app--table-room .table-room-banner {
-  margin: 0 0 0.4rem;
-  flex-shrink: 0;
+  position: absolute;
+  top: 0.25rem;
+  left: 0.55rem;
+  right: 0.55rem;
+  z-index: 20;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.78rem;
+  pointer-events: none;
 }
 
 .table-room {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "header"
+    "main"
+    "actions";
+  gap: 0.25rem;
+  overflow: hidden;
+}
+
+.table-room-header {
+  grid-area: header;
+}
+
+.table-room-main,
+.table-room-main-in-hand,
+.table-room-main-between {
+  grid-area: main;
+}
+
+.table-room-actions {
+  grid-area: actions;
+}
+
+.table-room-in-hand:not(.table-room-has-actions) {
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "header"
+    "main";
 }
 
 .table-room-header {
@@ -1248,17 +1295,12 @@ button.linkish:hover {
 
 .table-room-title {
   margin: 0;
-  font-size: 1.15rem;
-  color: var(--accent);
-}
-
-.table-room-stack {
-  margin: 0.15rem 0 0;
-  font-size: 0.9rem;
+  font-size: clamp(0.85rem, 3.5vmin, 1.05rem);
   color: var(--muted);
+  font-weight: 600;
 }
 
-.table-room-stack strong {
+.table-room-title strong {
   color: var(--text);
 }
 
@@ -1266,23 +1308,25 @@ button.linkish:hover {
   flex-shrink: 0;
 }
 
-.table-room-seats {
+.table-room-between-hands .table-room-seats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.35rem;
-  flex-shrink: 0;
+  gap: 0.25rem;
+  grid-area: main;
+  align-self: start;
+  max-height: 28vh;
 }
 
 .table-room-seat {
   background: var(--panel);
   border-radius: 6px;
-  padding: 0.35rem 0.45rem;
-  font-size: 0.72rem;
-  line-height: 1.25;
-  min-height: 3.1rem;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.65rem;
+  line-height: 1.2;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.05rem;
 }
 
 .table-room-seat.empty {
@@ -1320,21 +1364,34 @@ button.linkish:hover {
   font-size: 0.65rem;
 }
 
+.table-room-between-hands {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "header"
+    "seats"
+    "main"
+    "actions";
+}
+
+.table-room-between-hands .table-room-seats {
+  grid-area: seats;
+}
+
 .table-room-main-between {
-  flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 0.35rem 0.15rem;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
+  padding: 0.1rem 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .table-room-main-in-hand {
-  flex: 1;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 0.15rem 0;
+  padding: 0;
 }
 
 .table-room-in-hand .table-room-header {
@@ -1344,9 +1401,9 @@ button.linkish:hover {
 .table-room-felt {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  gap: 0.2rem;
   overflow: hidden;
 }
 
@@ -1376,8 +1433,20 @@ button.linkish:hover {
   flex-wrap: nowrap;
   justify-content: center;
   align-items: center;
-  gap: 0.35rem;
-  overflow: visible;
+  gap: clamp(0.2rem, 1.2vmin, 0.35rem);
+  overflow: hidden;
+}
+
+.app--table-room .table-room-board-cards .playing-card-md,
+.app--table-room .table-room-board-cards .playing-card-slot {
+  width: var(--tr-card-board);
+  height: var(--tr-card-board-h);
+  flex-shrink: 1;
+}
+
+.app--table-room .table-room-hero .playing-card-md {
+  width: var(--tr-card-hero);
+  height: var(--tr-card-hero-h);
 }
 
 .playing-card-slot {
@@ -1394,22 +1463,20 @@ button.linkish:hover {
   list-style: none;
   margin: 0;
   padding: 0;
-  flex: 1;
   min-height: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  align-content: center;
   justify-content: center;
-  gap: 0.45rem 0.65rem;
-  overflow: visible;
+  gap: 0.25rem 0.35rem;
+  overflow: hidden;
 }
 
 .table-room-opponent {
-  flex: 1 1 8.5rem;
-  max-width: 11rem;
   background: var(--panel);
-  border-radius: 8px;
-  padding: 0.35rem 0.45rem;
+  border-radius: 6px;
+  padding: 0.2rem 0.3rem;
+  min-width: 0;
 }
 
 .table-room-opponent.acting {
@@ -1421,9 +1488,12 @@ button.linkish:hover {
 }
 
 .table-room-opponent-meta {
-  font-size: 0.78rem;
-  margin-bottom: 0.2rem;
-  line-height: 1.3;
+  font-size: clamp(0.62rem, 2.5vmin, 0.75rem);
+  margin-bottom: 0.1rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .table-room-opponent-meta .stack {
@@ -1435,8 +1505,8 @@ button.linkish:hover {
 .table-room-hero {
   flex-shrink: 0;
   background: rgba(61, 214, 140, 0.08);
-  border-radius: 10px;
-  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  padding: 0.25rem 0.35rem;
   border: 1px solid #2d3a4f;
 }
 
@@ -1447,11 +1517,19 @@ button.linkish:hover {
 
 .table-room-hero-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: baseline;
-  gap: 0.35rem 0.5rem;
-  font-size: 0.85rem;
-  margin-bottom: 0.25rem;
+  gap: 0.25rem 0.4rem;
+  font-size: clamp(0.72rem, 2.8vmin, 0.85rem);
+  margin-bottom: 0.1rem;
+  overflow: hidden;
+}
+
+.table-room-hero-meta .live-hand {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .table-room-hero-meta .stack {
@@ -1507,41 +1585,113 @@ button.linkish:hover {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.65rem;
-  padding: 0.25rem 0;
+  gap: 0.35rem;
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .table-room-deal-btn {
   width: 100%;
-  padding: 0.85rem 1rem;
-  font-size: 1.05rem;
-}
-
-.table-room-hint {
-  margin: 0;
-  text-align: center;
+  padding: 0.55rem 0.75rem;
+  font-size: clamp(0.9rem, 3.5vmin, 1rem);
+  flex-shrink: 0;
 }
 
 .table-room-result {
-  margin-bottom: 0;
+  margin: 0;
+  padding: 0.35rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(61, 214, 140, 0.1);
+  overflow: hidden;
+}
+
+.table-room-result-win {
+  background: rgba(61, 214, 140, 0.18);
+}
+
+.table-room-result-line {
+  margin: 0 0 0.25rem;
+  font-size: clamp(0.78rem, 3vmin, 0.9rem);
+  text-align: center;
+}
+
+.table-room-showdown-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 0.35rem;
+  overflow: hidden;
+}
+
+.table-room-showdown-entry {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 50%;
+}
+
+.table-room-showdown-name {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .table-room-actions {
   flex-shrink: 0;
-  max-height: 42vh;
-  overflow-y: auto;
-  padding-top: 0.35rem;
+  overflow: hidden;
+  padding-top: 0.2rem;
   border-top: 1px solid #2d3a4f;
   background: var(--bg);
-  -webkit-overflow-scrolling: touch;
-}
-
-.table-room-in-hand .table-room-actions {
-  max-height: 38vh;
 }
 
 .table-room-actions .actions {
   margin-top: 0;
+}
+
+.app--table-room .actions.your-turn {
+  padding: 0.35rem 0.4rem;
+  animation: none;
+  outline-width: 1px;
+}
+
+.app--table-room .action-bar-label {
+  font-size: clamp(0.75rem, 2.8vmin, 0.85rem);
+  flex: 0 1 auto;
+  margin-bottom: 0;
+}
+
+.app--table-room .action-buttons-row button {
+  padding: 0.32rem 0.5rem;
+  font-size: clamp(0.72rem, 2.6vmin, 0.85rem);
+}
+
+.app--table-room .bet-slider-compact {
+  padding: 0.35rem 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.app--table-room .bet-slider-compact .bet-slider-input {
+  margin: 0.15rem 0;
+}
+
+.app--table-room .bet-slider-compact .bet-presets-row {
+  margin-top: 0.25rem;
+  gap: 0.25rem;
+}
+
+.app--table-room .bet-slider-compact .bet-preset {
+  min-width: 2.25rem;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.72rem;
+}
+
+.app--table-room .bet-slider-compact .bet-amount-input {
+  width: 3.25rem;
+  font-size: 0.85rem;
 }
 
 .seated-return h2 {
@@ -1556,20 +1706,17 @@ button.linkish:hover {
   }
 }
 
-@media (max-height: 700px) {
-  .app--table-room .table-room-hero .playing-card-lg {
-    width: 3.85rem;
-    height: 5.45rem;
+@media (max-height: 640px) {
+  .app--table-room {
+    --tr-card-board: clamp(2rem, 8vmin, 2.75rem);
+    --tr-card-board-h: clamp(2.85rem, 11vmin, 3.9rem);
+    --tr-card-hero: clamp(2.35rem, 9vmin, 3.5rem);
+    --tr-card-hero-h: clamp(3.3rem, 12vmin, 5rem);
+    padding: 0.3rem 0.4rem 0.25rem;
   }
 
-  .app--table-room .table-room-board-cards .playing-card-md {
-    width: 3.1rem;
-    height: 4.35rem;
-  }
-
-  .app--table-room .table-room-board-cards .playing-card-slot {
-    width: 3.1rem;
-    height: 4.35rem;
+  .table-room-between-hands .table-room-seats {
+    max-height: 22vh;
   }
 }
 

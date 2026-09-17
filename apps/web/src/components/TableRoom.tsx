@@ -31,7 +31,6 @@ type Props = {
   onOpenLobby: () => void;
   playerLabel: (id: string, youId: string | null, display?: string) => string;
   seatPositionLabel: (seatIndex: number, hand: HandState | null, dealerButtonSeat: number | null) => string;
-  handCategoryLabel: (category: string) => string;
 };
 
 export function TableRoom({
@@ -60,7 +59,6 @@ export function TableRoom({
   onOpenLobby,
   playerLabel,
   seatPositionLabel,
-  handCategoryLabel,
 }: Props) {
   const actionSeatPlayer =
     hand?.actionSeat != null
@@ -73,16 +71,21 @@ export function TableRoom({
   const opponents = hand?.players.filter((p) => p.playerId !== playerId) ?? [];
 
   return (
-    <div className={`table-room ${hand ? "table-room-in-hand" : ""}`}>
+    <div
+      className={`table-room ${hand ? "table-room-in-hand" : "table-room-between-hands"}${hand && isMyAction ? " table-room-has-actions" : ""}`}
+    >
       <header className="table-room-header">
         <div className="table-room-header-main">
-          <h1 className="table-room-title">6-max table</h1>
-          {tableStackMojos && (
-            <p className="table-room-stack">
-              Stack{" "}
-              <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
-            </p>
-          )}
+          <h1 className="table-room-title">
+            6-max
+            {tableStackMojos && (
+              <>
+                {" "}
+                ·{" "}
+                <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
+              </>
+            )}
+          </h1>
         </div>
         <button
           type="button"
@@ -132,45 +135,42 @@ export function TableRoom({
             {handResult && (
               <div
                 className={
-                  handResult.winnerId === playerId ? "banner win table-room-result" : "banner info table-room-result"
+                  handResult.winnerId === playerId
+                    ? "table-room-result table-room-result-win"
+                    : "table-room-result"
                 }
               >
-                <strong>
-                  {playerLabel(
-                    handResult.winnerId,
-                    playerId,
-                    tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress,
-                  )}
-                </strong>
-                {handResult.winnerId === playerId ? " win " : " wins "}
-                {formatDatMojos(handResult.potMojos, datToken?.ticker)}
-                {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
-                {handResult.reason === "showdown" && handResult.board && handResult.board.length > 0 && (
-                  <CardRow label="Board" cards={handResult.board} size="lg" />
+                <p className="table-room-result-line">
+                  <strong>
+                    {playerLabel(
+                      handResult.winnerId,
+                      playerId,
+                      tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress,
+                    )}
+                  </strong>
+                  {handResult.winnerId === playerId ? " win " : " wins "}
+                  {formatDatMojos(handResult.potMojos, datToken?.ticker)}
+                  {handResult.reason === "showdown" ? " · showdown" : " · fold"}
+                </p>
+                {handResult.reason === "showdown" && (handResult.board?.length ?? 0) > 0 && (
+                  <CardRow cards={handResult.board!} size="sm" />
                 )}
                 {handResult.reason === "showdown" && (handResult.shown?.length ?? 0) > 0 && (
-                  <ul className="showdown-hands">
+                  <div className="table-room-showdown-strip">
                     {handResult.shown!.map((shown) => (
-                      <li key={shown.playerId}>
-                        <div className="player-meta">
-                          <strong>
-                            {playerLabel(
-                              shown.playerId,
-                              playerId,
-                              tableSeats.find((s) => s.playerId === shown.playerId)?.displayAddress,
-                            )}
-                          </strong>
-                          {" — "}
-                          {handCategoryLabel(shown.category)}
-                          {shown.playerId === handResult.winnerId ? " (winner)" : ""}
-                        </div>
-                        <CardRow
-                          cards={shown.holeCards}
-                          size={shown.playerId === playerId ? "lg" : "md"}
-                        />
-                      </li>
+                      <div key={shown.playerId} className="table-room-showdown-entry">
+                        <span className="table-room-showdown-name">
+                          {playerLabel(
+                            shown.playerId,
+                            playerId,
+                            tableSeats.find((s) => s.playerId === shown.playerId)?.displayAddress,
+                          )}
+                          {shown.playerId === handResult.winnerId ? " ★" : ""}
+                        </span>
+                        <CardRow cards={shown.holeCards} size="sm" />
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 )}
               </div>
             )}
@@ -182,9 +182,6 @@ export function TableRoom({
             >
               {handResult ? "New hand" : "Deal hand"}
             </button>
-            <p className="muted small table-room-hint">
-              House fills empty seats. Use Lobby between hands for account &amp; withdraw.
-            </p>
           </div>
         ) : (
           <section className="table-room-felt" aria-label="Hand">
@@ -258,7 +255,7 @@ export function TableRoom({
                     </span>
                   )}
                 </div>
-                {me.holeCards.length > 0 && <CardRow cards={me.holeCards} size="lg" />}
+                {me.holeCards.length > 0 && <CardRow cards={me.holeCards} size="md" />}
               </div>
             )}
 
@@ -335,6 +332,7 @@ export function TableRoom({
                   ticker={datToken?.ticker}
                   disabled={busy}
                   onChange={onBetAmountChange}
+                  compact
                 />
               </div>
             )}

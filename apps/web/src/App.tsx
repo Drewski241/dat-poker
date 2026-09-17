@@ -71,21 +71,6 @@ function shortAddress(addr: string): string {
   return `${addr.slice(0, 8)}…${addr.slice(-6)}`;
 }
 
-function handCategoryLabel(category: string): string {
-  const labels: Record<string, string> = {
-    high_card: "high card",
-    pair: "pair",
-    two_pair: "two pair",
-    three_kind: "three of a kind",
-    straight: "straight",
-    flush: "flush",
-    full_house: "full house",
-    four_kind: "four of a kind",
-    straight_flush: "straight flush",
-  };
-  return labels[category] ?? category.replaceAll("_", " ");
-}
-
 export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = {}) {
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [datToken, setDatToken] = useState<DatTokenInfo | null>(null);
@@ -725,6 +710,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const atTableRoom = Boolean(tableId && tableFocusMode && playerId);
 
+  useEffect(() => {
+    if (!atTableRoom) return;
+    document.documentElement.classList.add("play-table-screen");
+    return () => document.documentElement.classList.remove("play-table-screen");
+  }, [atTableRoom]);
+
   return (
     <div className={`app ${atTableRoom ? "app--table-room" : "app--lobby"}`}>
       {bigWin === "irish" && <LuckyIrishWin onFinished={() => setBigWin(null)} />}
@@ -768,7 +759,6 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onOpenLobby={() => setTableFocusMode(false)}
             playerLabel={playerLabel}
             seatPositionLabel={seatPositionLabel}
-            handCategoryLabel={handCategoryLabel}
           />
         </>
       ) : (

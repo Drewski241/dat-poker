@@ -17,6 +17,8 @@ export interface BetSliderProps {
   disabled?: boolean;
   label: string;
   onChange: (mojos: bigint) => void;
+  /** Tighter layout for the fixed-viewport table screen. */
+  compact?: boolean;
 }
 
 function mojosToSlider(min: bigint, value: bigint, step: bigint): number {
@@ -38,6 +40,7 @@ export function BetSlider({
   disabled,
   label,
   onChange,
+  compact,
 }: BetSliderProps) {
   const [draft, setDraft] = useState(() => formatDatAmount(valueMojos));
   const min = Number(minMojos);
@@ -67,8 +70,8 @@ export function BetSlider({
   };
 
   return (
-    <div className="bet-slider">
-      <span className="bet-slider-label">{label}</span>
+    <div className={compact ? "bet-slider bet-slider-compact" : "bet-slider"}>
+      {!compact && <span className="bet-slider-label">{label}</span>}
       <input
         type="range"
         className="bet-slider-input"
@@ -83,10 +86,12 @@ export function BetSlider({
           onChange(next > maxMojos ? maxMojos : next);
         }}
       />
-      <div className="bet-slider-bounds">
-        <span>{formatDatMojos(minMojos.toString(), ticker)}</span>
-        <span>{formatDatMojos(maxMojos.toString(), ticker)}</span>
-      </div>
+      {!compact && (
+        <div className="bet-slider-bounds">
+          <span>{formatDatMojos(minMojos.toString(), ticker)}</span>
+          <span>{formatDatMojos(maxMojos.toString(), ticker)}</span>
+        </div>
+      )}
       <div className="bet-presets-row">
         {presets.length > 0 && (
           <div className="bet-presets" role="group" aria-label="Preset bet sizes">
