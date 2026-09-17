@@ -176,14 +176,19 @@ security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
 
 ## Redeploy after you push code
 
-In Session Manager:
+In **Session Manager** on the beta instance (`dat-poker-beta`):
 
 ```bash
-sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+sudo DAT_POKER_REPO_REF=cursor/beta-all-updates-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 ```
 
-Use this feature branch name instead of `main` until it is merged. Restarting
-the API clears open tables; account DAT and play-through unlocks stay in `data/ledger.json`.
+That branch tip includes the current beta stack: WalletConnect/Sage fixes, sit-out
+and play vs house, your-turn cues, big-win overlays (5–12), short-stack all-in
+refunds, and house reseat after bust. Use `main` instead after those PRs are merged.
+
+Restarting the API clears **in-memory tables**; account DAT, play-through, and
+ledger data stay under `/opt/dat-poker/data/` (`ledger.json`, `accounts.json`).
+Feedback stays in `/opt/dat-poker/data/feedback/`.
 
 Wait until it prints `beta redeploy ok`. If it dies on
 `www.datspiritpoker.com: command not found`, the API already restarted —
