@@ -3,9 +3,7 @@ import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-po
 import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type PlaythroughInfo, type TableSeat, type WithdrawResult } from "./api.js";
 import { AuthPanel, ChangePasswordForm } from "./AuthPanel.js";
 import { CardRow } from "./components/PlayingCard.js";
-import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
-import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
-import { SuperheroFlyWin } from "./components/SuperheroFlyWin.js";
+import { BigWinOverlayHost } from "./components/BigWinOverlayHost.js";
 import { TableRoom } from "./components/TableRoom.js";
 import { YourTurnReminder } from "./components/YourTurnReminder.js";
 import {
@@ -24,6 +22,7 @@ import {
 } from "./player-turn-timer.js";
 import {
   isLuckyIrishWin,
+  parseBigWinPreviewHash,
   pickBigWinOverlay,
   readStoredBigWinOverlay,
   type BigWinOverlay,
@@ -763,14 +762,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   ]);
 
   useEffect(() => {
-    if (window.location.hash === "#lucky") {
-      setBigWin("irish");
-    }
-    if (window.location.hash === "#hunter") {
-      setBigWin("hunter");
-    }
-    if (window.location.hash === "#hero") {
-      setBigWin("hero");
+    const bigWinPreview = parseBigWinPreviewHash(window.location.hash);
+    if (bigWinPreview) {
+      setBigWin(bigWinPreview);
     }
     if (window.location.hash === "#cards") {
       setCardPreview(true);
@@ -814,9 +808,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   return (
     <div className={`app ${atTableRoom ? "app--table-room" : "app--lobby"}`}>
-      {bigWin === "irish" && <LuckyIrishWin onFinished={() => setBigWin(null)} />}
-      {bigWin === "hunter" && <HunterBullseyeWin onFinished={() => setBigWin(null)} />}
-      {bigWin === "hero" && <SuperheroFlyWin onFinished={() => setBigWin(null)} />}
+      {bigWin && <BigWinOverlayHost overlay={bigWin} onFinished={() => setBigWin(null)} />}
       {showTurnReminder && (
         <YourTurnReminder
           cue={turnCuePreview ?? activeTurnCue}
