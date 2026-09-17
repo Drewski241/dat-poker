@@ -211,16 +211,41 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  register: (body: { username: string; password: string; email?: string }) =>
+  register: (body: { username: string; password: string; email: string }) =>
     request<{
       ok: boolean;
+      needsEmailVerification?: boolean;
+      message?: string;
+      token?: string;
+      playerId: string;
+      username: string;
+      email: string;
+      emailVerified: boolean;
+      sageLinked: boolean;
+      sageAddress: string;
+    }>("/v1/auth/register", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  verifyEmail: (body: { username: string; code: string }) =>
+    request<{
+      ok: boolean;
+      message: string;
       token: string;
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
-    }>("/v1/auth/register", {
+    }>("/v1/auth/email/verify", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  resendVerificationEmail: (body: { username: string; email: string }) =>
+    request<{ ok: boolean; message: string }>("/v1/auth/email/resend", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -232,6 +257,7 @@ export const api = {
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
     }>("/v1/auth/login", {
@@ -245,6 +271,7 @@ export const api = {
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
     }>("/v1/auth/me"),
@@ -253,7 +280,6 @@ export const api = {
     request<{
       ok: boolean;
       message: string;
-      resetCode?: string;
       expiresInSeconds?: number;
     }>("/v1/auth/password/forgot", {
       method: "POST",

@@ -118,6 +118,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [error, setError] = useState<string | null>(null);
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
   const [bigBlindMojos, setBigBlindMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+  const [verificationPending, setVerificationPending] = useState<{ username: string; email: string } | null>(
+    null,
+  );
   const [smallBlindMojos, setSmallBlindMojos] = useState<bigint>(DAT_TABLE_DEFAULTS.smallBlindMojos);
 
   useEffect(() => {
@@ -309,7 +312,24 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const handleAuth = (mode: "register" | "login", fields: { username: string; password: string; email?: string }) => {
     void run(mode === "register" ? "Creating account…" : "Signing in…", async () => {
-      const result = mode === "register" ? await api.register(fields) : await api.login(fields);
+      if (mode === "register") {
+        if (!fields.email?.trim()) {
+          throw new Error("Email is required");
+        }
+        const registered = await api.register({
+          username: fields.username,
+          password: fields.password,
+          email: fields.email.trim(),
+        });
+        setVerificationPending({ username: registered.username, email: registered.email });
+        setStatus(registered.message ?? "Check your email for a verification code.");
+        return;
+      }
+      const result = await api.login(fields);
+      if (!result.token) {
+        throw new Error("Sign-in failed");
+      }
+      setVerificationPending(null);
       setApiAuthToken(result.token);
       setPlayerId(result.playerId);
       setUsername(result.username);
@@ -318,10 +338,45 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     });
   };
 
+  const handleVerifyEmail = async (fields: { username: string; code: string }) => {
+    setBusy(true);
+    setError(null);
+    setStatus("Verifying email…");
+    try {
+      const result = await api.verifyEmail(fields);
+      setVerificationPending(null);
+      setApiAuthToken(result.token);
+      setPlayerId(result.playerId);
+      setUsername(result.username);
+      if (result.sageAddress) setWalletAddress(result.sageAddress);
+      await refreshAccount(result.playerId);
+      setStatus(result.message);
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const handleResendVerification = async (fields: { username: string; email: string }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      return await api.resendVerificationEmail(fields);
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleForgot = async (fields: { username: string; email: string }) => {
     setBusy(true);
     setError(null);
-    setStatus("Requesting reset code…");
+    setStatus("Sending reset email…");
     try {
       const result = await api.forgotPassword(fields);
       setStatus(result.message);
@@ -839,7 +894,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             </p>
             <AuthPanel
               busy={busy || !apiOk}
+              verificationPending={verificationPending}
               onAuth={handleAuth}
+              onVerifyEmail={handleVerifyEmail}
+              onResendVerification={handleResendVerification}
               onForgot={handleForgot}
               onReset={handleReset}
             />

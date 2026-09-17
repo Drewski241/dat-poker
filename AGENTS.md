@@ -55,3 +55,4 @@ Connect to `ws://localhost:4100/ws`, wait for `connected`, send `{"type":"ping"}
 - Buy-in amounts are **CAT mojos** (1000 mojos = 1 DAT). Default min buy-in is `1000000` (1000 DAT). Do not use XCH-scale values like `2000000000000`.
 - In-memory table state: restarting `pnpm dev:api` clears all tables.
 - `DAT_ALLOW_DEV_BUYIN=true` in `.env.example` allows dev buy-ins without a configured `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
+- Player accounts require a **verified email**. Configure `DAT_SMTP_*` (or `DAT_EMAIL_MODE=log` for local dev) so verification and password-reset codes are emailed instead of returned in API responses.

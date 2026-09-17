@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 function PasswordField({
   id,
@@ -52,41 +52,73 @@ function PasswordField({
 export function AuthPanel({
   busy,
   onAuth,
+  onVerifyEmail,
+  onResendVerification,
   onForgot,
   onReset,
+  verificationPending,
 }: {
   busy: boolean;
+  verificationPending?: { username: string; email: string } | null;
   onAuth: (mode: "register" | "login", fields: { username: string; password: string; email?: string }) => void;
+  onVerifyEmail: (fields: { username: string; code: string }) => Promise<void>;
+  onResendVerification: (fields: { username: string; email: string }) => Promise<{ message: string }>;
   onForgot: (fields: { username: string; email: string }) => Promise<{
-    resetCode?: string;
     message: string;
   }>;
   onReset: (fields: { username: string; resetCode: string; password: string }) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<"register" | "login" | "reset">("register");
+  const [mode, setMode] = useState<"register" | "login" | "verify" | "reset">("register");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [email, setEmail] = useState("");
   const [resetCode, setResetCode] = useState("");
-  const [issuedCode, setIssuedCode] = useState<string | null>(null);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [resetEmailSent, setResetEmailSent] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [localInfo, setLocalInfo] = useState<string | null>(null);
 
-  const switchMode = (next: "register" | "login" | "reset") => {
+  useEffect(() => {
+    if (!verificationPending) return;
+    setUsername(verificationPending.username);
+    setEmail(verificationPending.email);
+    setMode("verify");
+    setLocalInfo("Check your email for a verification code.");
+  }, [verificationPending]);
+
+  const switchMode = (next: "register" | "login" | "verify" | "reset") => {
     setMode(next);
     setPassword("");
     setConfirm("");
     setResetCode("");
-    setIssuedCode(null);
+    setVerifyCode("");
+    setResetEmailSent(false);
     setLocalError(null);
+    setLocalInfo(null);
   };
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     setLocalError(null);
+    if (mode === "verify") {
+      setLocalError(null);
+      void (async () => {
+        try {
+          await onVerifyEmail({ username: username.trim(), code: verifyCode.trim() });
+        } catch (e) {
+          setLocalError((e as Error).message);
+        }
+      })();
+      return;
+    }
     if (mode === "reset") {
-      if (issuedCode || resetCode.trim()) submitNewPassword();
-      else requestCode();
+      if (resetEmailSent && resetCode.trim()) submitNewPassword();
+      else if (!resetEmailSent) requestResetEmail();
+      return;
+    }
+    if (mode === "register" && !email.trim()) {
+      setLocalError("Email is required");
       return;
     }
     onAuth(mode, {
@@ -96,13 +128,27 @@ export function AuthPanel({
     });
   };
 
-  const requestCode = () => {
+  const requestResetEmail = () => {
     setLocalError(null);
+    setLocalInfo(null);
     void (async () => {
       try {
         const result = await onForgot({ username: username.trim(), email: email.trim() });
-        setIssuedCode(result.resetCode ?? null);
-        if (result.resetCode) setResetCode(result.resetCode);
+        setResetEmailSent(true);
+        setLocalInfo(result.message);
+      } catch (e) {
+        setLocalError((e as Error).message);
+      }
+    })();
+  };
+
+  const resendVerification = () => {
+    setLocalError(null);
+    setLocalInfo(null);
+    void (async () => {
+      try {
+        const result = await onResendVerification({ username: username.trim(), email: email.trim() });
+        setLocalInfo(result.message);
       } catch (e) {
         setLocalError((e as Error).message);
       }
@@ -125,7 +171,7 @@ export function AuthPanel({
         setPassword("");
         setConfirm("");
         setResetCode("");
-        setIssuedCode(null);
+        setResetEmailSent(false);
         setMode("login");
       } catch (e) {
         setLocalError((e as Error).message);
@@ -175,7 +221,7 @@ export function AuthPanel({
         onChange={(e) => setUsername(e.target.value)}
         disabled={busy}
       />
-      {mode !== "reset" && (
+      {mode !== "reset" && mode !== "verify" && (
         <PasswordField
           id="auth-password"
           label="Password"
@@ -187,19 +233,51 @@ export function AuthPanel({
       )}
       {mode === "register" && (
         <>
-          <label htmlFor="auth-email">Email (recommended)</label>
+          <label htmlFor="auth-email">Email</label>
           <input
             id="auth-email"
             name="email"
             type="email"
             autoComplete="email"
+            required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={busy}
           />
           <p className="muted small">
-            Needed later to reset a forgotten password. This beta does not send mail.
+            Required for every account. We email a verification code before you can sign in.
           </p>
+        </>
+      )}
+      {mode === "verify" && (
+        <>
+          <p className="muted small">
+            Enter the verification code we sent to <strong>{email || "your email"}</strong>.
+          </p>
+          <label htmlFor="auth-verify-code">Verification code</label>
+          <input
+            id="auth-verify-code"
+            name="verifyCode"
+            autoComplete="one-time-code"
+            required
+            value={verifyCode}
+            onChange={(e) => setVerifyCode(e.target.value)}
+            disabled={busy}
+            spellCheck={false}
+          />
+          <div className="row">
+            <button type="submit" disabled={busy || !verifyCode.trim()}>
+              Verify email
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !username.trim() || !email.trim()}
+              onClick={resendVerification}
+            >
+              Resend code
+            </button>
+          </div>
         </>
       )}
       {mode === "reset" && (
@@ -216,20 +294,22 @@ export function AuthPanel({
             disabled={busy}
           />
           <div className="row">
-            <button type="button" disabled={busy || !username.trim() || !email.trim()} onClick={requestCode}>
-              Get reset code
+            <button
+              type="button"
+              disabled={busy || resetEmailSent || !username.trim() || !email.trim()}
+              onClick={requestResetEmail}
+            >
+              Email reset code
             </button>
           </div>
-          {issuedCode && (
-            <p className="reset-code" role="status">
-              Reset code: <strong>{issuedCode}</strong> — copy it, then set a new password.
-              It expires in 15 minutes.
+          {resetEmailSent && (
+            <p className="muted small" role="status">
+              Check your inbox for the reset code (expires in 15 minutes), then enter it below.
             </p>
           )}
-          {issuedCode === null && (
+          {!resetEmailSent && (
             <p className="muted small">
-              Use the email you added when creating the account. Accounts without an
-              email cannot reset from the site.
+              Use the verified email on your account. Reset codes are only sent by email.
             </p>
           )}
           <label htmlFor="auth-reset-code">Reset code</label>
@@ -271,18 +351,24 @@ export function AuthPanel({
           </div>
         </>
       )}
-      {mode !== "reset" && (
+      {mode !== "reset" && mode !== "verify" && (
         <div className="row">
           <button type="submit" disabled={busy}>
             {mode === "register" ? "Create account" : "Sign in"}
           </button>
           {mode === "login" && (
-            <button type="button" className="linkish" disabled={busy} onClick={() => switchMode("reset")}>
-              Forgot password?
-            </button>
+            <>
+              <button type="button" className="linkish" disabled={busy} onClick={() => switchMode("reset")}>
+                Forgot password?
+              </button>
+              <button type="button" className="linkish" disabled={busy} onClick={() => switchMode("verify")}>
+                Verify email
+              </button>
+            </>
           )}
         </div>
       )}
+      {localInfo && <p className="banner info">{localInfo}</p>}
       {localError && <p className="banner error">{localError}</p>}
       <p className="muted small">
         Play and redeem funded DAT with this account. Connect Sage later only if you
