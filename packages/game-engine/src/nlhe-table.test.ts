@@ -255,6 +255,43 @@ describe("NlheTableEngine", () => {
     expect(() => table.cashOutPlayer("alice")).toThrow(/active hand/i);
   });
 
+  it("refunds uncalled all-in chips when the shorter stack covers less", () => {
+    const short = {
+      ...config,
+      minBuyInMojos: 1000n,
+      smallBlindMojos: 5000n,
+      bigBlindMojos: 10_000n,
+    };
+    const table = new NlheTableEngine(short);
+    const humanStack = 1_000_000n;
+    const houseStack = 100_000n;
+    table.seatPlayer("alice", 0, humanStack);
+    table.seatPlayer("dat-poker:house", 1, houseStack);
+
+    table.startHand("hand-short-cover");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("dat-poker:house", generateServerSeed());
+    table.revealAndDeal();
+
+    const hand = table.getHandState()!;
+    const firstActor = hand.players.find((p) => p.seatIndex === hand.actionSeat)!;
+    if (firstActor.playerId === "alice") {
+      table.applyAction("alice", "all-in");
+      table.applyAction("dat-poker:house", "call");
+    } else {
+      table.applyAction("dat-poker:house", "check");
+      table.applyAction("alice", "all-in");
+      table.applyAction("dat-poker:house", "call");
+    }
+
+    expect(table.getHandState()).toBeNull();
+    const aliceFinal = table.getPlayerStack("alice") ?? 0n;
+    const houseFinal = table.getPlayerStack("dat-poker:house") ?? 0n;
+    expect(aliceFinal).toBeGreaterThanOrEqual(humanStack - houseStack);
+    expect(aliceFinal).toBeLessThanOrEqual(humanStack + houseStack);
+    expect(houseFinal + aliceFinal).toBe(humanStack + houseStack);
+  });
+
   it("runs out when both players are all-in from the blinds", () => {
     const short = {
       ...config,

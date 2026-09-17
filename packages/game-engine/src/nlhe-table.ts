@@ -606,8 +606,45 @@ export class NlheTableEngine {
     h.seq++;
   }
 
+  /** Refund chips matched by no opponent (e.g. all-in for more than a short stack can cover). */
+  private reconcileMatchedContributions(h: TableHandState): void {
+    const live = this.activePlayers(h);
+    if (live.length < 2) return;
+    let minBet = live[0]!.totalBetHandMojos;
+    for (const p of live.slice(1)) {
+      if (p.totalBetHandMojos < minBet) minBet = p.totalBetHandMojos;
+    }
+    for (const p of live) {
+      const excess = p.totalBetHandMojos - minBet;
+      if (excess <= 0n) continue;
+      p.totalBetHandMojos = minBet;
+      p.stackMojos += excess;
+      h.potMojos -= excess;
+      this.stacks.set(p.playerId, p.stackMojos);
+    }
+  }
+
+  /** When everyone else folded, return the winner's uncalled raise/all-in portion. */
+  private returnUncalledBetsToWinner(h: TableHandState): void {
+    const live = this.activePlayers(h);
+    if (live.length !== 1) return;
+    const winner = live[0]!;
+    let othersMax = 0n;
+    for (const p of h.players) {
+      if (p.playerId === winner.playerId) continue;
+      if (p.totalBetHandMojos > othersMax) othersMax = p.totalBetHandMojos;
+    }
+    const excess = winner.totalBetHandMojos - othersMax;
+    if (excess <= 0n) return;
+    winner.totalBetHandMojos -= excess;
+    winner.stackMojos += excess;
+    h.potMojos -= excess;
+    this.stacks.set(winner.playerId, winner.stackMojos);
+  }
+
   private runShowdown(h: TableHandState): void {
     h.street = "showdown";
+    this.reconcileMatchedContributions(h);
     const live = this.activePlayers(h);
     let best = live[0];
     let bestEval = evaluateBestHand([...best.holeCards, ...h.board]);
@@ -640,6 +677,7 @@ export class NlheTableEngine {
   }
 
   private awardToWinner(h: TableHandState): void {
+    this.returnUncalledBetsToWinner(h);
     const winner = this.activePlayers(h)[0];
     winner.stackMojos += h.potMojos;
     this.stacks.set(winner.playerId, winner.stackMojos);

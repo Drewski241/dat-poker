@@ -75,6 +75,25 @@ export function TableRoom({
     (s) => !s.sittingOut && BigInt(s.stackMojos) > 0n,
   ).length;
   const canDeal = activeSeatCount >= 2;
+  const mySeatStack = (() => {
+    try {
+      return BigInt(tableStackMojos ?? "0");
+    } catch {
+      return 0n;
+    }
+  })();
+  const houseSeat = tableSeats.find((s) => s.playerId === HOUSE_PLAYER_ID);
+  const houseStack = (() => {
+    try {
+      return BigInt(houseSeat?.stackMojos ?? "0");
+    } catch {
+      return 0n;
+    }
+  })();
+  const houseNeedsReload = Boolean(houseSeat && houseStack <= 0n);
+  const playerBusted = mySeatStack <= 0n;
+  /** Allow deal when the API can reseat a busted house (syncHouseSeating on /hands/go). */
+  const canAttemptDeal = canDeal || (!playerBusted && houseNeedsReload);
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const opponents = hand?.players.filter((p) => p.playerId !== playerId) ?? [];
@@ -197,16 +216,30 @@ export function TableRoom({
             <button
               type="button"
               className="table-room-deal-btn"
-              disabled={busy || !canDeal}
+              disabled={busy || !canAttemptDeal}
               onClick={onStartHand}
             >
               {handResult ? "New hand" : "Deal hand"}
             </button>
-            {!canDeal && !canSeatHouse && tableSeats.some((s) => s.playerId === HOUSE_PLAYER_ID) && (
+            {!canDeal && playerBusted && (
               <p className="muted small table-room-wait-opponent">
-                House is reloading chips… try again in a moment or tap New hand once more.
+                You&apos;re out of chips at this table. Open Lobby to buy in again or cash out to your account.
               </p>
             )}
+            {!canDeal && !playerBusted && houseNeedsReload && (
+              <p className="muted small table-room-wait-opponent">
+                House is reloading chips… tap New hand in a moment.
+              </p>
+            )}
+            {!canDeal &&
+              !canSeatHouse &&
+              !playerBusted &&
+              !houseNeedsReload &&
+              tableSeats.some((s) => s.playerId === HOUSE_PLAYER_ID) && (
+                <p className="muted small table-room-wait-opponent">
+                  Need two players with chips to deal. Tap New hand when ready.
+                </p>
+              )}
             {!canDeal && !canSeatHouse && tableSeats.length >= 2 && !tableSeats.some((s) => s.playerId === HOUSE_PLAYER_ID) && (
               <p className="muted small table-room-wait-opponent">
                 Waiting for another active player, or use Lobby to sit out and play the house.
