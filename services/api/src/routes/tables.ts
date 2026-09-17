@@ -41,6 +41,13 @@ function humanCount(table: NlheTableEngine): number {
   return table.getSeatedPlayers().filter((s) => s.playerId !== HOUSE_PLAYER_ID).length;
 }
 
+function activeHumanCount(table: NlheTableEngine): number {
+  return table
+    .getSeatedPlayers()
+    .filter((s) => s.playerId !== HOUSE_PLAYER_ID && !s.sittingOut)
+    .length;
+}
+
 function createTable(maxSeats = 6): { tableId: string; table: NlheTableEngine; config: TableConfig } {
   const id = randomUUID();
   const dat = readDatTokenConfig();
@@ -72,6 +79,7 @@ function tableSnapshot(tableId: string, table: NlheTableEngine, viewerId?: strin
     maxSeats: table.getMaxSeats(),
     players: table.getActivePlayerCount(),
     humans: humanCount(table),
+    activeHumans: activeHumanCount(table),
     handInProgress: table.isHandInProgress(),
     smallBlindMojos: table.getSmallBlindMojos().toString(),
     bigBlindMojos: table.getBigBlindMojos().toString(),
@@ -114,24 +122,58 @@ export function pickJoinableTable(): { tableId: string; table: NlheTableEngine }
   return { tableId: open[0][0], table: open[0][1] };
 }
 
-function seatHouseIfNeeded(table: NlheTableEngine, buyInMojos: bigint): void {
+/** Keep house seating aligned with how many humans are actively playing. */
+export function syncHouseSeating(table: NlheTableEngine, buyInMojos: bigint): void {
   if (table.isHandInProgress()) {
     return;
   }
-  if (humanCount(table) >= 2) {
+
+  let houseWasSeated = table.hasPlayer(HOUSE_PLAYER_ID);
+  if (houseWasSeated) {
+    const stack = table.getPlayerStack(HOUSE_PLAYER_ID) ?? 0n;
+    if (stack <= 0n) {
+      try {
+        table.cashOutPlayer(HOUSE_PLAYER_ID);
+      } catch {
+        /* already standing */
+      }
+      houseWasSeated = true;
+    }
+  }
+
+  const humans = humanCount(table);
+  const activeHumans = activeHumanCount(table);
+  if (activeHumans >= 2) {
     if (table.hasPlayer(HOUSE_PLAYER_ID)) {
       table.cashOutPlayer(HOUSE_PLAYER_ID);
     }
     return;
   }
-  if (table.hasPlayer(HOUSE_PLAYER_ID)) {
+
+  const shouldAutoSeatHouse =
+    activeHumans === 1 &&
+    (humans === 1 || (houseWasSeated && !table.hasPlayer(HOUSE_PLAYER_ID)));
+
+  if (shouldAutoSeatHouse) {
+    if (table.hasPlayer(HOUSE_PLAYER_ID)) {
+      const stack = table.getPlayerStack(HOUSE_PLAYER_ID) ?? 0n;
+      if (stack > 0n) {
+        return;
+      }
+    } else {
+      const seat = table.emptySeatIndex();
+      if (seat === null) {
+        return;
+      }
+      table.seatPlayer(HOUSE_PLAYER_ID, seat, buyInMojos);
+    }
     return;
   }
-  const seat = table.emptySeatIndex();
-  if (seat === null) {
-    return;
-  }
-  table.seatPlayer(HOUSE_PLAYER_ID, seat, buyInMojos);
+  /* Multiple humans seated but fewer than two active: house is opt-in via seat-house. */
+}
+
+function seatHouseIfNeeded(table: NlheTableEngine, buyInMojos: bigint): void {
+  syncHouseSeating(table, buyInMojos);
 }
 
 function takeBuyInFromAccountOrProof(params: {
@@ -399,6 +441,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
     if (table.hasPlayer(HOUSE_PLAYER_ID)) {
       return { ok: true, playerId: HOUSE_PLAYER_ID };
     }
+    if (activeHumanCount(table) >= 2) {
+      return reply
+        .status(400)
+        .send({ error: "House is only available when no other active player is at the table" });
+    }
     const buyInMojos = BigInt(req.body.buyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString());
     const seat = table.emptySeatIndex();
     if (seat === null) {
@@ -407,6 +454,37 @@ export function registerTableRoutes(app: FastifyInstance): void {
     try {
       table.seatPlayer(HOUSE_PLAYER_ID, seat, buyInMojos);
       return { ok: true, playerId: HOUSE_PLAYER_ID, seatIndex: seat };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Params: { tableId: string };
+    Body: { playerId?: string; sittingOut: boolean };
+  }>("/v1/tables/:tableId/sit-out", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    const table = tables.get(req.params.tableId);
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+    if (!table.hasPlayer(session.playerId)) {
+      return reply.status(403).send({ error: "You are not seated at this table" });
+    }
+    try {
+      table.setSittingOut(session.playerId, req.body.sittingOut);
+      const dat = readDatTokenConfig();
+      const buyInMojos = resolveDatMinBuyInMojos(dat.minBuyInMojos);
+      syncHouseSeating(table, buyInMojos);
+      return {
+        ok: true,
+        sittingOut: req.body.sittingOut,
+        ...tableSnapshot(req.params.tableId, table, session.playerId),
+      };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
     }
@@ -422,6 +500,10 @@ export function persistTablePlaythrough(table: NlheTableEngine): void {
     if (seated.playerId === HOUSE_PLAYER_ID) continue;
     setPlaythroughHands(seated.playerId, table.getHandsPlayed(seated.playerId));
     syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId) + seated.stackMojos);
+  }
+  if (!table.isHandInProgress()) {
+    const dat = readDatTokenConfig();
+    syncHouseSeating(table, resolveDatMinBuyInMojos(dat.minBuyInMojos));
   }
 }
 

@@ -88,13 +88,15 @@ describe("pickBigWinOverlay", () => {
     });
   });
 
-  it("alternates hunter and irish after the first pick", () => {
+  it("cycles irish, hunter, and hero", () => {
     expect(pickBigWinOverlay("irish")).toBe("hunter");
-    expect(pickBigWinOverlay("hunter")).toBe("irish");
+    expect(pickBigWinOverlay("hunter")).toBe("hero");
+    expect(pickBigWinOverlay("hero")).toBe("irish");
   });
 
   it("starts with irish when there is no prior overlay", () => {
     expect(pickBigWinOverlay(null)).toBe("irish");
     expect(pickBigWinOverlay(null)).toBe("hunter");
+    expect(pickBigWinOverlay(null)).toBe("hero");
   });
 });

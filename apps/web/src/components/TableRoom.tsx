@@ -28,6 +28,8 @@ type Props = {
   onBetAmountChange: (v: bigint) => void;
   onSendAction: (action: PlayerAction, amountMojos?: string) => void;
   onStartHand: () => void;
+  onSeatHouse: () => void;
+  canSeatHouse: boolean;
   onOpenLobby: () => void;
   playerLabel: (id: string, youId: string | null, display?: string) => string;
   seatPositionLabel: (seatIndex: number, hand: HandState | null, dealerButtonSeat: number | null) => string;
@@ -56,6 +58,8 @@ export function TableRoom({
   onBetAmountChange,
   onSendAction,
   onStartHand,
+  onSeatHouse,
+  canSeatHouse,
   onOpenLobby,
   playerLabel,
   seatPositionLabel,
@@ -66,6 +70,11 @@ export function TableRoom({
       : null;
 
   const canStepToLobby = !hand && !handInProgress;
+
+  const activeSeatCount = tableSeats.filter(
+    (s) => !s.sittingOut && BigInt(s.stackMojos) > 0n,
+  ).length;
+  const canDeal = activeSeatCount >= 2;
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const opponents = hand?.players.filter((p) => p.playerId !== playerId) ?? [];
@@ -112,6 +121,7 @@ export function TableRoom({
                   <>
                     <span className="table-room-seat-name">
                       {playerLabel(seated.playerId, playerId, seated.displayAddress)}
+                      {seated.sittingOut && seated.playerId !== HOUSE_PLAYER_ID ? " · sitting out" : ""}
                     </span>
                     <span className="table-room-seat-stack">
                       {formatDatMojos(seated.stackMojos, datToken?.ticker)}
@@ -174,14 +184,34 @@ export function TableRoom({
                 )}
               </div>
             )}
+            {canSeatHouse && (
+              <button
+                type="button"
+                className="secondary table-room-house-btn"
+                disabled={busy}
+                onClick={onSeatHouse}
+              >
+                Play vs house
+              </button>
+            )}
             <button
               type="button"
               className="table-room-deal-btn"
-              disabled={busy || tableSeats.length < 2}
+              disabled={busy || !canDeal}
               onClick={onStartHand}
             >
               {handResult ? "New hand" : "Deal hand"}
             </button>
+            {!canDeal && !canSeatHouse && tableSeats.some((s) => s.playerId === HOUSE_PLAYER_ID) && (
+              <p className="muted small table-room-wait-opponent">
+                House is reloading chips… try again in a moment or tap New hand once more.
+              </p>
+            )}
+            {!canDeal && !canSeatHouse && tableSeats.length >= 2 && !tableSeats.some((s) => s.playerId === HOUSE_PLAYER_ID) && (
+              <p className="muted small table-room-wait-opponent">
+                Waiting for another active player, or use Lobby to sit out and play the house.
+              </p>
+            )}
           </div>
         ) : (
           <section className="table-room-felt" aria-label="Hand">
