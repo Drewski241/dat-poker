@@ -52,12 +52,6 @@ function indexUser(user: StoredUser): void {
   }
 }
 
-function unindexEmail(user: StoredUser): void {
-  if (user.emailKey) {
-    usersByEmailKey.delete(user.emailKey);
-  }
-}
-
 async function persist(): Promise<void> {
   const path = accountsPath();
   if (!path) return;
