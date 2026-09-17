@@ -125,10 +125,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   useEffect(() => {
     void (async () => {
+      restoreApiAuthToken();
       try {
-        restoreApiAuthToken();
         await api.health();
         setApiOk(true);
+      } catch {
+        setApiOk(false);
+        return;
+      }
+      try {
         const [config, dat] = await Promise.all([api.walletConfig(), api.datToken()]);
         setDatToken(dat);
         if (restoreApiAuthToken()) {
@@ -157,7 +162,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           }
         }
       } catch {
-        setApiOk(false);
+        /* Wallet config / DAT token / Sage restore failures must not block account sign-up. */
       }
     })();
   }, []);
@@ -926,7 +931,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Sage until you want DAT in your wallet.
             </p>
             <AuthPanel
-              busy={busy || !apiOk}
+              busy={busy || apiOk === false}
+              apiError={error}
               verificationPending={verificationPending}
               onAuth={handleAuth}
               onVerifyEmail={handleVerifyEmail}

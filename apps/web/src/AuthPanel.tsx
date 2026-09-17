@@ -68,8 +68,10 @@ export function AuthPanel({
   onForgot,
   onReset,
   verificationPending,
+  apiError,
 }: {
   busy: boolean;
+  apiError?: string | null;
   verificationPending?: { username: string; email: string } | null;
   onAuth: (
     mode: "register" | "login",
@@ -102,8 +104,10 @@ export function AuthPanel({
   const [termsContent, setTermsContent] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
+  const [termsLoadError, setTermsLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadAuthMeta = useCallback(() => {
+    setTermsLoadError(null);
     void (async () => {
       try {
         const [req, geo, terms] = await Promise.all([
@@ -120,10 +124,14 @@ export function AuthPanel({
           setCountryCode(geo.countryCode);
         }
       } catch {
-        /* API offline — server will enforce when back */
+        setTermsLoadError("Could not load terms or eligibility settings. Check API status and try again.");
       }
     })();
   }, []);
+
+  useEffect(() => {
+    loadAuthMeta();
+  }, [loadAuthMeta]);
 
   const onTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
 
@@ -283,7 +291,7 @@ export function AuthPanel({
           disabled={busy}
           onClick={() => switchMode("register")}
         >
-          Create account
+          Register
         </button>
         <button
           type="button"
@@ -340,29 +348,45 @@ export function AuthPanel({
           )}
         </fieldset>
       )}
-      {(mode === "register" || mode === "login" || mode === "verify") && termsVersion && (
+      {(mode === "register" || mode === "login" || mode === "verify") && (
         <fieldset className="compliance-fieldset">
           <legend>Terms and Conditions</legend>
-          <div className="row">
-            <button type="button" className="linkish" disabled={busy} onClick={() => setTermsOpen((o) => !o)}>
-              {termsOpen ? "Hide" : "View"} full terms (v{termsVersion})
-            </button>
-          </div>
-          {termsOpen && (
-            <pre className="terms-preview" aria-label="Terms and Conditions">
-              {termsContent}
-            </pre>
+          {!termsVersion ? (
+            <>
+              <p className="muted small">Loading terms…</p>
+              {termsLoadError && (
+                <div className="row">
+                  <p className="banner error">{termsLoadError}</p>
+                  <button type="button" className="secondary" disabled={busy} onClick={loadAuthMeta}>
+                    Retry
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="row">
+                <button type="button" className="linkish" disabled={busy} onClick={() => setTermsOpen((o) => !o)}>
+                  {termsOpen ? "Hide" : "View"} full terms (v{termsVersion})
+                </button>
+              </div>
+              {termsOpen && (
+                <pre className="terms-preview" aria-label="Terms and Conditions">
+                  {termsContent}
+                </pre>
+              )}
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  disabled={busy}
+                />
+                I have read and accept the Terms and Conditions (version {termsVersion}). Your acceptance is kept on
+                file and must be renewed when terms change or after the retention period.
+              </label>
+            </>
           )}
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={termsAccepted}
-              onChange={(e) => setTermsAccepted(e.target.checked)}
-              disabled={busy}
-            />
-            I have read and accept the Terms and Conditions (version {termsVersion}). Your acceptance is kept on
-            file and must be renewed when terms change or after the retention period.
-          </label>
         </fieldset>
       )}
       <label htmlFor="auth-username">Username</label>
@@ -527,6 +551,7 @@ export function AuthPanel({
         </div>
       )}
       {localInfo && <p className="banner info">{localInfo}</p>}
+      {apiError && <p className="banner error">{apiError}</p>}
       {localError && <p className="banner error">{localError}</p>}
       <p className="muted small">
         Play and redeem funded DAT with this account. Connect Sage later only if you
