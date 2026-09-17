@@ -5,6 +5,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { expirePasswordResetForTests, resetUsersForTests } from "./user-store.js";
 import { resetPlayerSessionsForTests } from "./player-session.js";
 import { resetIpRateLimitsForTests } from "./ip-rate-limit.js";
+import { latestOutboxCodeForTests, resetMailOutboxForTests } from "./mail.js";
 
 async function buildApp() {
   const app = Fastify();
@@ -16,17 +17,35 @@ async function buildApp() {
   return app;
 }
 
+async function verifyNewAccount(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  username: string,
+  email: string,
+) {
+  const code = latestOutboxCodeForTests(email, "Verify");
+  expect(code).toBeTruthy();
+  const verified = await app.inject({
+    method: "POST",
+    url: "/v1/auth/email/verify",
+    payload: { username, code },
+  });
+  expect(verified.statusCode).toBe(200);
+  return JSON.parse(verified.body) as { token: string; playerId: string };
+}
+
 describe("player accounts", () => {
   beforeEach(() => {
     process.env.DAT_ACCOUNTS_PATH = "memory";
     process.env.DAT_SCRYPT_N = "4096";
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
+    process.env.DAT_EMAIL_MODE = "memory";
     resetUsersForTests();
     resetPlayerSessionsForTests();
     resetIpRateLimitsForTests();
+    resetMailOutboxForTests();
   });
 
-  it("registers, signs in, and rejects a duplicate username", async () => {
+  it("registers with required email, verifies, signs in, and rejects duplicate username", async () => {
     const app = await buildApp();
     const created = await app.inject({
       method: "POST",
@@ -36,24 +55,36 @@ describe("player accounts", () => {
     expect(created.statusCode).toBe(200);
     const body = JSON.parse(created.body);
     expect(body.username).toBe("Alice_1");
-    expect(body.playerId).toMatch(/^user_/);
-    expect(body.token).toBeTruthy();
-    expect(body.sageLinked).toBe(false);
+    expect(body.needsEmailVerification).toBe(true);
+    expect(body.token).toBeUndefined();
+    expect(body.emailVerified).toBe(false);
+
+    const unverifiedLogin = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { username: "Alice_1", password: "hunter2xx" },
+    });
+    expect(unverifiedLogin.statusCode).toBe(400);
+
+    const verified = await verifyNewAccount(app, "Alice_1", "alice@example.com");
+    expect(verified.playerId).toMatch(/^user_/);
+    expect(verified.token).toBeTruthy();
 
     const dup = await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "alice_1", password: "otherpass" },
+      payload: { username: "alice_1", password: "otherpass12", email: "other@example.com" },
     });
     expect(dup.statusCode).toBe(400);
 
     const me = await app.inject({
       method: "GET",
       url: "/v1/auth/me",
-      headers: { authorization: `Bearer ${body.token}` },
+      headers: { authorization: `Bearer ${verified.token}` },
     });
     expect(me.statusCode).toBe(200);
     expect(JSON.parse(me.body).username).toBe("Alice_1");
+    expect(JSON.parse(me.body).emailVerified).toBe(true);
 
     const login = await app.inject({
       method: "POST",
@@ -71,30 +102,37 @@ describe("player accounts", () => {
     await app.close();
   });
 
-  it("rejects a short username and a short password", async () => {
+  it("rejects registration without email and rejects weak credentials", async () => {
     const app = await buildApp();
+    const noEmail = await app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: { username: "validname", password: "password1" },
+    });
+    expect(noEmail.statusCode).toBe(400);
     const shortName = await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "ab", password: "password1" },
+      payload: { username: "ab", password: "password1", email: "a@b.com" },
     });
     expect(shortName.statusCode).toBe(400);
     const shortPass = await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "validname", password: "short" },
+      payload: { username: "validname", password: "short", email: "a@b.com" },
     });
     expect(shortPass.statusCode).toBe(400);
     await app.close();
   });
 
-  it("resets a forgotten password with username, email, and a one-time code", async () => {
+  it("emails a password reset code after the account email is verified", async () => {
     const app = await buildApp();
     await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "resetme", password: "oldpass12", email: "Reset.Me@example.com" },
+      payload: { username: "resetme", password: "oldpass12", email: "reset.me@example.com" },
     });
+    await verifyNewAccount(app, "resetme", "reset.me@example.com");
 
     const missed = await app.inject({
       method: "POST",
@@ -110,7 +148,8 @@ describe("player accounts", () => {
       payload: { username: "resetme", email: "reset.me@example.com" },
     });
     expect(forgot.statusCode).toBe(200);
-    const code = JSON.parse(forgot.body).resetCode as string;
+    expect(JSON.parse(forgot.body).resetCode).toBeUndefined();
+    const code = latestOutboxCodeForTests("reset.me@example.com", "Reset");
     expect(code).toMatch(/^[0-9a-f]{8}$/);
 
     const badCode = await app.inject({
@@ -152,30 +191,24 @@ describe("player accounts", () => {
 
   it("rejects an expired reset code and a signed-in change with the wrong current password", async () => {
     const app = await buildApp();
-    const created = JSON.parse(
-      (
-        await app.inject({
-          method: "POST",
-          url: "/v1/auth/register",
-          payload: { username: "changer", password: "keepme123", email: "changer@example.com" },
-        })
-      ).body,
-    );
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: { username: "changer", password: "keepme123", email: "changer@example.com" },
+    });
+    const created = await verifyNewAccount(app, "changer", "changer@example.com");
 
-    const forgot = JSON.parse(
-      (
-        await app.inject({
-          method: "POST",
-          url: "/v1/auth/password/forgot",
-          payload: { username: "changer", email: "changer@example.com" },
-        })
-      ).body,
-    );
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/password/forgot",
+      payload: { username: "changer", email: "changer@example.com" },
+    });
+    const resetCode = latestOutboxCodeForTests("changer@example.com", "Reset") as string;
     expirePasswordResetForTests("changer");
     const expired = await app.inject({
       method: "POST",
       url: "/v1/auth/password/reset",
-      payload: { username: "changer", resetCode: forgot.resetCode, password: "latepass1" },
+      payload: { username: "changer", resetCode, password: "latepass1" },
     });
     expect(expired.statusCode).toBe(400);
 
