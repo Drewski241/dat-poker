@@ -628,7 +628,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       ? hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded)
       : null;
 
-  const isMyAction = actionSeatPlayer?.playerId === playerId;
+  const isMyAction =
+    actionSeatPlayer?.playerId === playerId &&
+    Boolean(me && !me.folded && !me.allIn && BigInt(me.stackMojos) > 0n);
   const liveHandLabel =
     me && me.holeCards.length > 0 ? describeLiveHand(me.holeCards, hand?.board ?? []) : null;
   const actionSecondsLeft = actionSecondsRemaining(turnElapsedMs);

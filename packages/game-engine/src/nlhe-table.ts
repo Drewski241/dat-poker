@@ -451,6 +451,9 @@ export class NlheTableEngine {
     player.betThisStreetMojos += pay;
     player.totalBetHandMojos += pay;
     h.potMojos += pay;
+    if (player.stackMojos === 0n) {
+      player.allIn = true;
+    }
     this.stacks.set(player.playerId, player.stackMojos);
   }
 
@@ -464,8 +467,16 @@ export class NlheTableEngine {
     return h.players.filter((p) => !p.folded);
   }
 
+  private canPlayerAct(p: PlayerHandState): boolean {
+    return !p.folded && !p.allIn && p.stackMojos > 0n;
+  }
+
+  private playersWhoCanBet(h: TableHandState): PlayerHandState[] {
+    return h.players.filter((p) => this.canPlayerAct(p));
+  }
+
   private bettingRoundComplete(h: TableHandState): boolean {
-    const contenders = h.players.filter((p) => !p.folded && !p.allIn);
+    const contenders = this.playersWhoCanBet(h);
     if (contenders.length === 0) return true;
     return contenders.every(
       (p) => p.betThisStreetMojos === h.currentBetMojos && p.actedThisStreet,
@@ -531,6 +542,18 @@ export class NlheTableEngine {
     for (let i = 0; i < count; i++) {
       h.board.push(this.draw(h));
     }
+
+    if (this.playersWhoCanBet(h).length === 0) {
+      h.actionSeat = null;
+      h.seq++;
+      if (street === "river") {
+        this.runShowdown(h);
+      } else {
+        this.advanceStreet(h);
+      }
+      return;
+    }
+
     h.actionSeat = this.firstActiveSeatClockwise(h, h.dealerSeat);
     h.seq++;
   }
@@ -634,7 +657,7 @@ export class NlheTableEngine {
       seat = (seat + 1) % max;
       if (!seats.includes(seat)) continue;
       const p = this.playerAtSeat(h, seat);
-      if (p && !p.folded && !p.allIn) {
+      if (p && this.canPlayerAct(p)) {
         return seat;
       }
     }

@@ -55,6 +55,7 @@ export interface HandPlayer {
   stackMojos: string;
   betThisStreetMojos: string;
   folded: boolean;
+  allIn?: boolean;
 }
 
 export interface HandState {

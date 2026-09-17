@@ -79,6 +79,68 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()?.currentBetMojos).toBe(600_000n);
   });
 
+  it("runs out board to showdown when both players are all-in preflop", () => {
+    const small: TableConfig = {
+      ...config,
+      smallBlindMojos: 50_000n,
+      bigBlindMojos: 100_000n,
+      minBuyInMojos: 5_000_000n,
+      maxBuyInMojos: 50_000_000n,
+    };
+    const table = new NlheTableEngine(small);
+    table.seatPlayer("alice", 0, 10_000_000n);
+    table.seatPlayer("bob", 1, 10_000_000n);
+    table.startHand("hand-ai-runout");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    let state = table.getHandState()!;
+    const sb = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(sb.playerId, "raise", 500_000n);
+    state = table.getHandState()!;
+    const bb = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(bb.playerId, "raise", 1_500_000n);
+    state = table.getHandState()!;
+    const sb2 = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(sb2.playerId, "all-in");
+    state = table.getHandState()!;
+    const bb2 = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(bb2.playerId, "call");
+
+    expect(table.getHandState()).toBeNull();
+    const result = table.getLastHandResult();
+    expect(result?.reason).toBe("showdown");
+    expect(result?.board).toHaveLength(5);
+  });
+
+  it("marks a player all-in when a raise consumes their entire stack", () => {
+    const small: TableConfig = {
+      ...config,
+      smallBlindMojos: 50_000n,
+      bigBlindMojos: 100_000n,
+      minBuyInMojos: 5_000_000n,
+      maxBuyInMojos: 50_000_000n,
+    };
+    const table = new NlheTableEngine(small);
+    table.seatPlayer("alice", 0, 5_000_000n);
+    table.seatPlayer("bob", 1, 10_000_000n);
+    table.startHand("hand-shove");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    let state = table.getHandState()!;
+    const sb = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    const shoveTo = sb.betThisStreetMojos + sb.stackMojos;
+    table.applyAction(sb.playerId, "raise", shoveTo);
+    state = table.getHandState()!;
+    expect(state.actionSeat).not.toBe(sb.seatIndex);
+    const alice = table.getHandState()!.players.find((p) => p.playerId === "alice")!;
+    expect(alice.stackMojos).toBe(0n);
+    expect(alice.allIn).toBe(true);
+  });
+
   it("heads-up: after a raise the other player must act before the street advances", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);
