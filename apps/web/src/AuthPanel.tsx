@@ -54,6 +54,9 @@ export function AuthPanel({
   onAuth,
   onForgot,
   onReset,
+  onResendVerification,
+  awaitingEmailVerification,
+  onClearAwaitingEmailVerification,
 }: {
   busy: boolean;
   onAuth: (mode: "register" | "login", fields: { username: string; password: string; email?: string }) => void;
@@ -62,6 +65,9 @@ export function AuthPanel({
     message: string;
   }>;
   onReset: (fields: { username: string; resetCode: string; password: string }) => Promise<void>;
+  onResendVerification: (fields: { username: string; email: string }) => Promise<{ message: string }>;
+  awaitingEmailVerification: { username: string; email: string } | null;
+  onClearAwaitingEmailVerification: () => void;
 }) {
   const [mode, setMode] = useState<"register" | "login" | "reset">("register");
   const [username, setUsername] = useState("");
@@ -69,30 +75,38 @@ export function AuthPanel({
   const [confirm, setConfirm] = useState("");
   const [email, setEmail] = useState("");
   const [resetCode, setResetCode] = useState("");
-  const [issuedCode, setIssuedCode] = useState<string | null>(null);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const switchMode = (next: "register" | "login" | "reset") => {
     setMode(next);
     setPassword("");
     setConfirm("");
     setResetCode("");
-    setIssuedCode(null);
+    setResetEmailSent(false);
     setLocalError(null);
+    onClearAwaitingEmailVerification();
   };
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     setLocalError(null);
     if (mode === "reset") {
-      if (issuedCode || resetCode.trim()) submitNewPassword();
-      else requestCode();
+      if (!resetEmailSent) {
+        requestCode();
+      } else {
+        submitNewPassword();
+      }
+      return;
+    }
+    if (mode === "register" && !email.trim()) {
+      setLocalError("Email is required");
       return;
     }
     onAuth(mode, {
       username: username.trim(),
       password,
-      email: email.trim() || undefined,
+      email: email.trim(),
     });
   };
 
@@ -101,8 +115,10 @@ export function AuthPanel({
     void (async () => {
       try {
         const result = await onForgot({ username: username.trim(), email: email.trim() });
-        setIssuedCode(result.resetCode ?? null);
-        if (result.resetCode) setResetCode(result.resetCode);
+        setResetEmailSent(true);
+        if (import.meta.env.DEV && result.resetCode) {
+          setResetCode(result.resetCode);
+        }
       } catch (e) {
         setLocalError((e as Error).message);
       }
@@ -125,13 +141,48 @@ export function AuthPanel({
         setPassword("");
         setConfirm("");
         setResetCode("");
-        setIssuedCode(null);
+        setResetEmailSent(false);
         setMode("login");
       } catch (e) {
         setLocalError((e as Error).message);
       }
     })();
   };
+
+  const resendVerification = () => {
+    if (!awaitingEmailVerification) return;
+    setLocalError(null);
+    void (async () => {
+      try {
+        const result = await onResendVerification(awaitingEmailVerification);
+        setStatusMessage(result.message);
+      } catch (e) {
+        setLocalError((e as Error).message);
+      }
+    })();
+  };
+
+  if (awaitingEmailVerification) {
+    return (
+      <div className="feedback-form">
+        <p className="ok-text">Account created for {awaitingEmailVerification.username}</p>
+        <p className="muted small">
+          We sent a verification link to <strong>{awaitingEmailVerification.email}</strong>. Open it to sign in
+          and play. The link expires in 48 hours.
+        </p>
+        <div className="row">
+          <button type="button" disabled={busy} onClick={resendVerification}>
+            Resend verification email
+          </button>
+          <button type="button" className="secondary" disabled={busy} onClick={() => switchMode("login")}>
+            Back to sign in
+          </button>
+        </div>
+        {statusMessage && <p className="banner info">{statusMessage}</p>}
+        {localError && <p className="banner error">{localError}</p>}
+      </div>
+    );
+  }
 
   return (
     <form className="feedback-form" onSubmit={onSubmit}>
@@ -187,18 +238,19 @@ export function AuthPanel({
       )}
       {mode === "register" && (
         <>
-          <label htmlFor="auth-email">Email (recommended)</label>
+          <label htmlFor="auth-email">Email</label>
           <input
             id="auth-email"
             name="email"
             type="email"
             autoComplete="email"
+            required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={busy}
           />
           <p className="muted small">
-            Needed later to reset a forgotten password. This beta does not send mail.
+            Required. We email a verification link before you can sign in. Password resets go to this address.
           </p>
         </>
       )}
@@ -215,28 +267,22 @@ export function AuthPanel({
             onChange={(e) => setEmail(e.target.value)}
             disabled={busy}
           />
-          <div className="row">
-            <button type="button" disabled={busy || !username.trim() || !email.trim()} onClick={requestCode}>
-              Get reset code
-            </button>
-          </div>
-          {issuedCode && (
-            <p className="reset-code" role="status">
-              Reset code: <strong>{issuedCode}</strong> — copy it, then set a new password.
-              It expires in 15 minutes.
-            </p>
-          )}
-          {issuedCode === null && (
+          {!resetEmailSent && (
             <p className="muted small">
-              Use the email you added when creating the account. Accounts without an
-              email cannot reset from the site.
+              Enter your username and verified email. We will email a one-time reset code (15 minutes).
             </p>
           )}
-          <label htmlFor="auth-reset-code">Reset code</label>
+          {resetEmailSent && (
+            <p className="ok-text" role="status">
+              If the account matches, check your email for the reset code, then enter it below.
+            </p>
+          )}
+          <label htmlFor="auth-reset-code">Reset code from email</label>
           <input
             id="auth-reset-code"
             name="resetCode"
             autoComplete="one-time-code"
+            required={resetEmailSent}
             value={resetCode}
             onChange={(e) => setResetCode(e.target.value)}
             disabled={busy}
@@ -260,15 +306,6 @@ export function AuthPanel({
             disabled={busy}
             name="confirm-password"
           />
-          <div className="row">
-            <button
-              type="button"
-              disabled={busy || !resetCode.trim() || password.length < 8}
-              onClick={submitNewPassword}
-            >
-              Set new password
-            </button>
-          </div>
         </>
       )}
       {mode !== "reset" && (
@@ -283,10 +320,26 @@ export function AuthPanel({
           )}
         </div>
       )}
+      {mode === "reset" && (
+        <div className="row">
+          {!resetEmailSent ? (
+            <button type="submit" disabled={busy || !username.trim() || !email.trim()}>
+              Email reset code
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy || !resetCode.trim() || password.length < 8}
+              onClick={submitNewPassword}
+            >
+              Set new password
+            </button>
+          )}
+        </div>
+      )}
       {localError && <p className="banner error">{localError}</p>}
       <p className="muted small">
-        Play and redeem funded DAT with this account. Connect Sage later only if you
-        want DAT in your wallet.
+        Play and redeem funded DAT with this account. Connect Sage later only if you want DAT in your wallet.
       </p>
     </form>
   );

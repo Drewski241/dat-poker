@@ -8,7 +8,9 @@ import {
   publicUser,
   registerUser,
   requestPasswordReset,
+  resendVerificationEmailForUser,
   resetPasswordWithCode,
+  verifyEmailWithToken,
 } from "../user-store.js";
 
 export function registerAuthRoutes(app: FastifyInstance): void {
@@ -21,16 +23,15 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     }
     const username = req.body?.username ?? "";
     const password = req.body?.password ?? "";
-    const email = req.body?.email;
+    const email = req.body?.email ?? "";
     try {
-      const user = await registerUser({ username, password, email });
-      const { token, session } = issueAccountSession(user);
+      const { user, verificationToken } = await registerUser({ username, password, email });
       return {
         ok: true,
-        token,
         ...publicUser(user),
-        playerId: session.playerId,
-        expiresInSeconds: sessionTtlSeconds(),
+        playerId: user.id,
+        message: "Check your email for a verification link before signing in.",
+        verificationToken,
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -60,6 +61,51 @@ export function registerAuthRoutes(app: FastifyInstance): void {
   });
 
   app.post<{
+    Body: { token?: string };
+  }>("/v1/auth/email/verify", async (req, reply) => {
+    const ip = req.ip || "unknown";
+    if (!allowIpBucket(ip, "email-verify", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many verification attempts from this network" });
+    }
+    try {
+      const user = await verifyEmailWithToken(req.body?.token ?? "");
+      const { token, session } = issueAccountSession(user);
+      return {
+        ok: true,
+        token,
+        ...publicUser(user),
+        playerId: session.playerId,
+        expiresInSeconds: sessionTtlSeconds(),
+        message: "Email verified. You are signed in.",
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Body: { username?: string; email?: string };
+  }>("/v1/auth/email/resend", async (req, reply) => {
+    const ip = req.ip || "unknown";
+    if (!allowIpBucket(ip, "email-resend", Date.now(), 8)) {
+      return reply.status(429).send({ error: "Too many verification emails from this network" });
+    }
+    try {
+      const { verificationToken } = await resendVerificationEmailForUser(
+        req.body?.username ?? "",
+        req.body?.email ?? "",
+      );
+      return {
+        ok: true,
+        message: "If that account exists and is not verified yet, we sent a new verification email.",
+        verificationToken,
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
     Body: { username?: string; email?: string };
   }>("/v1/auth/password/forgot", async (req, reply) => {
     const ip = req.ip || "unknown";
@@ -71,8 +117,9 @@ export function registerAuthRoutes(app: FastifyInstance): void {
       return {
         ok: true,
         message:
-          "If that username and email match an account, a reset code is ready. This beta shows the code here instead of sending email.",
-        ...result,
+          "If that username and verified email match an account, we emailed a reset code (expires in 15 minutes).",
+        resetCode: result.resetCode,
+        expiresInSeconds: result.expiresInSeconds,
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -127,6 +174,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
       playerId: session.playerId,
       username: session.displayAddress,
       email: "",
+      emailVerified: false,
       sageLinked: Boolean(session.pubkey),
       sageAddress: session.pubkey ? session.displayAddress : "",
       expiresInSeconds: sessionTtlSeconds(),

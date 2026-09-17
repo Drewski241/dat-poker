@@ -17,6 +17,32 @@ import { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import { issueTestSession, resetPlayerSessionsForTests } from "./player-session.js";
 import { signChip0002ForTests } from "./chip0002.js";
 import { resetIpRateLimitsForTests } from "./ip-rate-limit.js";
+import { resetEmailOutboxForTests } from "./email-mailer.js";
+
+async function registerVerifiedAccount(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  username: string,
+): Promise<{ token: string; playerId: string }> {
+  const created = JSON.parse(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/v1/auth/register",
+        payload: { username, password: "password1", email: `${username}@example.com` },
+      })
+    ).body,
+  );
+  const verified = JSON.parse(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/v1/auth/email/verify",
+        payload: { token: created.verificationToken },
+      })
+    ).body,
+  );
+  return { token: verified.token, playerId: verified.playerId };
+}
 
 async function buildApp() {
   const app = Fastify();
@@ -53,6 +79,8 @@ describe("6-max join + daily redeem", () => {
     resetPlayerSessionsForTests();
     resetUsersForTests();
     resetIpRateLimitsForTests();
+    resetEmailOutboxForTests();
+    process.env.DAT_EMAIL_DEV = "true";
     process.env.DAT_ALLOW_DEV_BUYIN = "true";
     process.env.DAT_MIN_BUY_IN_MOJOS = "1000000";
     process.env.DAT_DAILY_REDEEM_MOJOS = "5000000";
@@ -405,15 +433,7 @@ describe("6-max join + daily redeem", () => {
 
   it("lets a username account redeem and join without Sage", async () => {
     const app = await buildApp();
-    const created = JSON.parse(
-      (
-        await app.inject({
-          method: "POST",
-          url: "/v1/auth/register",
-          payload: { username: "betty", password: "password1" },
-        })
-      ).body,
-    );
+    const created = await registerVerifiedAccount(app, "betty");
     const headers = auth(created.token);
     const redeem = await app.inject({
       method: "POST",
@@ -436,15 +456,7 @@ describe("6-max join + daily redeem", () => {
 
   it("keeps the account playerId when Sage is linked for withdraw", async () => {
     const app = await buildApp();
-    const created = JSON.parse(
-      (
-        await app.inject({
-          method: "POST",
-          url: "/v1/auth/register",
-          payload: { username: "sagewait", password: "password1" },
-        })
-      ).body,
-    );
+    const created = await registerVerifiedAccount(app, "sagewait");
     const address = "xch1sagewaitlink";
     const challenge = JSON.parse(
       (
@@ -489,15 +501,7 @@ describe("6-max join + daily redeem", () => {
   it("cashes a username account out to the table ledger without Sage", async () => {
     process.env.DAT_MIN_BUY_IN_MOJOS = "1000";
     const app = await buildApp();
-    const created = JSON.parse(
-      (
-        await app.inject({
-          method: "POST",
-          url: "/v1/auth/register",
-          payload: { username: "cashout", password: "password1" },
-        })
-      ).body,
-    );
+    const created = await registerVerifiedAccount(app, "cashout");
     const headers = auth(created.token);
     await app.inject({
       method: "POST",
@@ -566,15 +570,7 @@ describe("6-max join + daily redeem", () => {
 
   it("returns a seated stack to the account ledger on restart", async () => {
     const app = await buildApp();
-    const created = JSON.parse(
-      (
-        await app.inject({
-          method: "POST",
-          url: "/v1/auth/register",
-          payload: { username: "keepstack", password: "password1" },
-        })
-      ).body,
-    );
+    const created = await registerVerifiedAccount(app, "keepstack");
     const headers = auth(created.token);
     await app.inject({
       method: "POST",
@@ -605,15 +601,7 @@ describe("6-max join + daily redeem", () => {
 
   it("keeps unlocked DAT after a redeploy and lets 2 hands withdraw 2 DAT", async () => {
     const app = await buildApp();
-    const created = JSON.parse(
-      (
-        await app.inject({
-          method: "POST",
-          url: "/v1/auth/register",
-          payload: { username: "playkeep", password: "password1" },
-        })
-      ).body,
-    );
+    const created = await registerVerifiedAccount(app, "playkeep");
     const headers = auth(created.token);
     await app.inject({
       method: "POST",

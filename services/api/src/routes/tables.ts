@@ -23,6 +23,7 @@ import { HOUSE_PLAYER_ID } from "../house-id.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { allowIpBucket } from "../ip-rate-limit.js";
 import { readPlayerSession, requirePlayer, sessionMatchesClaim } from "../player-session.js";
+import { assertUserEmailVerified } from "../user-store.js";
 import {
   type BuyInProof,
   readDatTokenConfig,
@@ -305,6 +306,12 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
     const playerId = session.playerId;
     rememberLabel(playerId, session.displayAddress);
+
+    try {
+      await assertUserEmailVerified(playerId);
+    } catch (e) {
+      return reply.status(403).send({ error: (e as Error).message });
+    }
 
     const existing = findPlayerTable(playerId);
     if (existing) {

@@ -17,6 +17,10 @@ describe("pathToPage", () => {
     expect(pathToPage("/feedback/")).toBe("feedback");
   });
 
+  it("maps /verify-email to the verification handler", () => {
+    expect(pathToPage("/verify-email")).toBe("verify-email");
+  });
+
   it("sends unknown paths home so testers still find the site", () => {
     expect(pathToPage("/tables")).toBe("landing");
   });

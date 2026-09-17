@@ -184,7 +184,14 @@ sudo DAT_POKER_REPO_REF=cursor/beta-all-updates-6971 bash /opt/dat-poker/deploy/
 
 That branch tip includes the current beta stack: WalletConnect/Sage fixes, sit-out
 and play vs house, your-turn cues, big-win overlays (5–12), short-stack all-in
-refunds, and house reseat after bust. Use `main` instead after those PRs are merged.
+refunds, house reseat after bust, table rebuy, and email verification + password
+reset via SMTP. Use `main` instead after those PRs are merged.
+
+On the instance, set in `/opt/dat-poker/.env` (see `.env.beta.example`):
+
+- `DAT_PUBLIC_APP_URL=https://datspiritpoker.com` (verification and reset links)
+- `DAT_SMTP_HOST`, `DAT_SMTP_PORT`, `DAT_SMTP_USER`, `DAT_SMTP_PASS`, `DAT_SMTP_FROM`
+- Do **not** set `DAT_EMAIL_DEV=true` in production (emails go out via SMTP; reset codes are not returned in API responses)
 
 Restarting the API clears **in-memory tables**; account DAT, play-through, and
 ledger data stay under `/opt/dat-poker/data/` (`ledger.json`, `accounts.json`).

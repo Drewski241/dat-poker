@@ -26,6 +26,7 @@ import {
   requestTreasuryOffer,
 } from "../treasury-payout.js";
 import { getTableEngine, persistTablePlaythrough } from "./tables.js";
+import { assertUserEmailVerified } from "../user-store.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import type { NlheTableEngine } from "@dat-poker/game-engine";
 import { allowIpBucket } from "../ip-rate-limit.js";
@@ -167,6 +168,11 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       return reply.status(429).send({ error: "Too many redeem attempts from this network" });
     }
     const playerId = session.playerId;
+    try {
+      await assertUserEmailVerified(playerId);
+    } catch (e) {
+      return reply.status(403).send({ error: (e as Error).message });
+    }
     const dat = readDatTokenConfig();
     const amount = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS);
     const now = new Date();

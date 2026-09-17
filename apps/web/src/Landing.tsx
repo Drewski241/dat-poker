@@ -45,7 +45,7 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
         <ol className="how-to">
           <li>
             Click <strong>Play poker now!</strong> and <strong>Create account</strong> (or sign in).
-            Add an email if you want to reset a forgotten password. You do not need Sage to play.
+            Every account needs a verified email (sign-in and password reset). You do not need Sage to play.
           </li>
           <li>
             <strong>Redeem 5000 DAT</strong> once per UTC day. That is in-game table

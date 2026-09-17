@@ -212,15 +212,15 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  register: (body: { username: string; password: string; email?: string }) =>
+  register: (body: { username: string; password: string; email: string }) =>
     request<{
       ok: boolean;
-      token: string;
       playerId: string;
       username: string;
       email: string;
-      sageLinked: boolean;
-      sageAddress: string;
+      emailVerified: boolean;
+      message: string;
+      verificationToken?: string;
     }>("/v1/auth/register", {
       method: "POST",
       body: JSON.stringify(body),
@@ -233,9 +233,34 @@ export const api = {
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
     }>("/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  verifyEmail: (token: string) =>
+    request<{
+      ok: boolean;
+      token: string;
+      playerId: string;
+      username: string;
+      email: string;
+      emailVerified: boolean;
+      message: string;
+    }>("/v1/auth/email/verify", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
+  resendVerificationEmail: (body: { username: string; email: string }) =>
+    request<{
+      ok: boolean;
+      message: string;
+      verificationToken?: string;
+    }>("/v1/auth/email/resend", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -246,6 +271,7 @@ export const api = {
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
     }>("/v1/auth/me"),
