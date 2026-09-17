@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
 import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type PlaythroughInfo, type TableSeat, type WithdrawResult } from "./api.js";
 import { AuthPanel, ChangePasswordForm } from "./AuthPanel.js";
-import { BetSlider } from "./components/BetSlider.js";
 import { CardRow } from "./components/PlayingCard.js";
 import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
 import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
+import { TableRoom } from "./components/TableRoom.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -102,6 +102,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [redeemedToday, setRedeemedToday] = useState(false);
 
   const [tableId, setTableId] = useState<string | null>(null);
+  /** When seated: full-screen table vs lobby (account, withdraw, leave). */
+  const [tableFocusMode, setTableFocusMode] = useState(true);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
   const [dealerButtonSeat, setDealerButtonSeat] = useState<number | null>(null);
   const [handInProgress, setHandInProgress] = useState(false);
@@ -226,6 +228,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }, 2000);
     return () => window.clearInterval(timer);
   }, [tableId, refreshTable]);
+
+  useEffect(() => {
+    if (hand || handInProgress) {
+      setTableFocusMode(true);
+    }
+  }, [hand, handInProgress]);
 
   const cancelPairing = () => {
     pairingGen.current += 1;
@@ -429,6 +437,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         devAck: datToken?.devBuyInEnabled,
       });
       setTableId(joined.tableId);
+      setTableFocusMode(true);
       setTableSeats(joined.seats);
       setHand(joined.hand);
       setHandInProgress(joined.handInProgress);
@@ -714,19 +723,56 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setBigWin(overlay);
   }, [handResult, playerId, bigBlindMojos]);
 
+  const atTableRoom = Boolean(tableId && tableFocusMode && playerId);
+
   return (
-    <div className="app">
+    <div className={`app ${atTableRoom ? "app--table-room" : "app--lobby"}`}>
       {bigWin === "irish" && <LuckyIrishWin onFinished={() => setBigWin(null)} />}
       {bigWin === "hunter" && <HunterBullseyeWin onFinished={() => setBigWin(null)} />}
       {showSlothReminder && (
         <YourTurnSloth secondsLeft={slothPreview ? undefined : actionSecondsLeft} />
       )}
-      {isBeta && (
+      {isBeta && !atTableRoom && (
         <div className="beta-banner" role="status">
           Public beta — software under development.           Open tables reset on restart;
           your account DAT and play-through progress are kept. Dev buy-in is for testing, not real-money settlement.
         </div>
       )}
+      {atTableRoom ? (
+        <>
+          {error && <div className="banner error table-room-banner">{error}</div>}
+          {status && <div className="banner info table-room-banner">{status}</div>}
+          <TableRoom
+            datToken={datToken}
+            playerId={playerId!}
+            tableSeats={tableSeats}
+            dealerButtonSeat={dealerButtonSeat}
+            tableStackMojos={tableStackMojos}
+            hand={hand}
+            handResult={handResult}
+            handInProgress={handInProgress}
+            smallBlindMojos={smallBlindMojos}
+            bigBlindMojos={bigBlindMojos}
+            busy={busy}
+            liveHandLabel={liveHandLabel}
+            isMyAction={isMyAction}
+            actionSecondsLeft={actionSecondsLeft}
+            canCheck={canCheck}
+            toCall={toCall}
+            betRange={betRange}
+            betAmountMojos={betAmountMojos}
+            myStack={myStack}
+            onBetAmountChange={setBetAmountMojos}
+            onSendAction={sendAction}
+            onStartHand={startHandFlow}
+            onOpenLobby={() => setTableFocusMode(false)}
+            playerLabel={playerLabel}
+            seatPositionLabel={seatPositionLabel}
+            handCategoryLabel={handCategoryLabel}
+          />
+        </>
+      ) : (
+        <>
       <header>
         {onNavigate && <SiteNav page="play" onNavigate={onNavigate} />}
         <h1>DAT Poker{isBeta ? " beta" : ""}</h1>
@@ -738,6 +784,22 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
       {error && <div className="banner error">{error}</div>}
       {status && <div className="banner info">{status}</div>}
+
+      {tableId && (
+        <section className="panel seated-return">
+          <h2>At the table</h2>
+          <p className="muted small">
+            {hand || handInProgress
+              ? "A hand is in progress — return to the table to act."
+              : "You are seated. Cash out here or return to deal the next hand."}
+          </p>
+          <div className="row">
+            <button type="button" disabled={busy} onClick={() => setTableFocusMode(true)}>
+              Return to table
+            </button>
+          </div>
+        </section>
+      )}
 
       {cardPreview && (
         <section className="panel">
@@ -849,7 +911,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       )}
 
       <section className="panel">
-        <h2>Table</h2>
+        <h2>{tableId ? "Leave table" : "Table"}</h2>
         {!tableId ? (
           <button
             type="button"
@@ -923,160 +985,6 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         )}
       </section>
 
-      {tableId && (
-        <section className="panel">
-          <h2>Hand</h2>
-          {!hand ? (
-            <>
-              {handResult && (
-                <div className={handResult.winnerId === playerId ? "banner win" : "banner info"}>
-                  <strong>{playerLabel(handResult.winnerId, playerId, tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress)}</strong>
-                  {handResult.winnerId === playerId ? " win " : " wins "}
-                  {formatDatMojos(handResult.potMojos, datToken?.ticker)}
-                  {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
-                  {handResult.reason === "showdown" && handResult.board && handResult.board.length > 0 && (
-                    <CardRow label="Board" cards={handResult.board} size="lg" />
-                  )}
-                  {handResult.reason === "showdown" && (handResult.shown?.length ?? 0) > 0 && (
-                    <ul className="showdown-hands">
-                      {handResult.shown!.map((shown) => (
-                        <li key={shown.playerId}>
-                          <div className="player-meta">
-                            <strong>{playerLabel(shown.playerId, playerId, tableSeats.find((s) => s.playerId === shown.playerId)?.displayAddress)}</strong>
-                            {" — "}
-                            {handCategoryLabel(shown.category)}
-                            {shown.playerId === handResult.winnerId ? " (winner)" : ""}
-                          </div>
-                          <CardRow
-                            cards={shown.holeCards}
-                            size={shown.playerId === playerId ? "lg" : "md"}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {handResult.reason === "fold" && (
-                    <p className="muted small">
-                      No showdown — the last remaining player took the pot without showing cards.
-                    </p>
-                  )}
-                </div>
-              )}
-              <button type="button" disabled={busy || tableSeats.length < 2} onClick={startHandFlow}>
-                {handResult ? "New hand" : "Deal hand"}
-              </button>
-              <p className="muted small">
-                6-max: house fills if you are alone; another human can sit an empty seat between hands.
-              </p>
-            </>
-          ) : (
-            <>
-              <p>
-                Street: <strong>{hand.street}</strong> · Pot:{" "}
-                <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
-              </p>
-              <p className="hand-blinds-line">
-                Dealer seat {hand.dealerSeat + 1} · SB seat {hand.smallBlindSeat + 1} · BB seat{" "}
-                {hand.bigBlindSeat + 1} · blinds{" "}
-                <strong>{formatDatMojos(smallBlindMojos.toString(), datToken?.ticker)}</strong> /{" "}
-                <strong>{formatDatMojos(bigBlindMojos.toString(), datToken?.ticker)}</strong>
-              </p>
-              {liveHandLabel && (
-                <p className="live-hand">
-                  Your hand: <strong>{liveHandLabel}</strong>
-                </p>
-              )}
-              {hand.board.length > 0 && <CardRow label="Board" cards={hand.board} size="lg" />}
-              <ul className="players">
-                {hand.players.map((p) => (
-                  <li key={p.playerId}>
-                    <div className="player-meta">
-                      <strong>{p.playerId === playerId ? "You" : p.playerId === HOUSE_PLAYER_ID ? "House" : p.playerId}</strong>
-                      {p.folded ? " — folded" : ""}
-                      <span className="stack"> stack {formatDatMojos(p.stackMojos, datToken?.ticker)}</span>
-                    </div>
-                    {p.holeCards.length > 0 && (
-                      <CardRow cards={p.holeCards} size={p.playerId === playerId ? "lg" : "md"} />
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {isMyAction && (
-                <div className="actions your-turn">
-                  <div className="action-bar-top">
-                    <span className="action-bar-label">
-                      Your action · {actionSecondsLeft}s
-                    </span>
-                    <div className="action-buttons-row">
-                      <button
-                        type="button"
-                        className="primary-bet"
-                        disabled={busy}
-                        onClick={() => sendAction("fold")}
-                      >
-                        fold
-                      </button>
-                      {canCheck ? (
-                        <button type="button" disabled={busy} onClick={() => sendAction("check")}>
-                          check
-                        </button>
-                      ) : (
-                        <button type="button" disabled={busy} onClick={() => sendAction("call")}>
-                          call {formatDatMojos(toCall.toString(), datToken?.ticker)}
-                        </button>
-                      )}
-                      {betRange.canBetOrRaise && (
-                        <button
-                          type="button"
-                          className="primary-bet action-bet-submit"
-                          disabled={busy}
-                          onClick={() =>
-                            sendAction(
-                              betRange.isOpeningBet ? "bet" : "raise",
-                              betAmountMojos.toString(),
-                            )
-                          }
-                        >
-                          {betRange.isOpeningBet ? "bet" : "raise to"}{" "}
-                          {formatDatMojos(betAmountMojos.toString(), datToken?.ticker)}
-                        </button>
-                      )}
-                      {myStack > 0n && (
-                        <button type="button" disabled={busy} onClick={() => sendAction("all-in")}>
-                          all-in
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {betRange.canBetOrRaise && (
-                    <div className="action-bet-panel">
-                      <BetSlider
-                        label={betRange.isOpeningBet ? "Bet size" : "Raise to"}
-                        minMojos={betRange.minRaiseTo}
-                        maxMojos={betRange.maxRaiseTo}
-                        stepMojos={bigBlindMojos}
-                        bigBlindMojos={bigBlindMojos}
-                        valueMojos={betAmountMojos}
-                        ticker={datToken?.ticker}
-                        disabled={busy}
-                        onChange={setBetAmountMojos}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-              {!isMyAction && actionSeatPlayer && (
-                <p className="muted">Waiting for {playerLabel(actionSeatPlayer.playerId, playerId, tableSeats.find((s) => s.playerId === actionSeatPlayer.playerId)?.displayAddress)}…</p>
-              )}
-            </>
-          )}
-        </section>
-      )}
-
-      {pairingOpen && (
-        <QrConnectModal uri={wcUri} status={status} onClose={cancelPairing} />
-      )}
-
       <footer>
         {isBeta ? (
           <p>
@@ -1096,6 +1004,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           </p>
         )}
       </footer>
+        </>
+      )}
+
+      {pairingOpen && (
+        <QrConnectModal uri={wcUri} status={status} onClose={cancelPairing} />
+      )}
     </div>
   );
 }
