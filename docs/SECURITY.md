@@ -31,7 +31,12 @@ take an offer during this beta, tap reject and report it on `/feedback`.
 
 Play uses a username + password account (`POST /v1/auth/register` /
 `/v1/auth/login`). Passwords are scrypt-hashed. Usernames persist on the
-game host (`data/accounts.json`). In-game DAT balances persist in
+game host (`data/accounts.json`). A forgotten password can be reset with the
+**username plus the email on the account** (`POST /v1/auth/password/forgot`
+then `/reset`). This beta has no mailer, so a matching request returns a
+15-minute one-time code in the response. Wrong pairs get no code. Signed-in
+players can change a password they still know (`POST /v1/auth/password/change`).
+In-game DAT balances persist in
 `data/ledger.json`. Open tables still reset when the API restarts; seated
 stacks are returned to the account ledger on a clean shutdown. Play-through
 (one completed hand unlocks 1 DAT of the buy-in) is stored on that ledger too,

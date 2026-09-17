@@ -594,6 +594,26 @@ button.secondary {
   font-size: 0.85rem;
 }
 
+button.linkish {
+  background: none;
+  color: var(--accent);
+  padding: 0.5rem 0.25rem;
+  box-shadow: none;
+}
+
+button.linkish:hover {
+  text-decoration: underline;
+}
+
+.reset-code {
+  margin: 0.85rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 6px;
+  background: #143322;
+  color: var(--accent);
+  word-break: break-all;
+}
+
 .feedback-form textarea {
   resize: vertical;
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
 import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type PlaythroughInfo, type TableSeat, type WithdrawResult } from "./api.js";
-import { AuthPanel } from "./AuthPanel.js";
+import { AuthPanel, ChangePasswordForm } from "./AuthPanel.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { CardRow } from "./components/PlayingCard.js";
 import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
@@ -276,6 +276,53 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       if (result.sageAddress) setWalletAddress(result.sageAddress);
       await refreshAccount(result.playerId);
     });
+  };
+
+  const handleForgot = async (fields: { username: string; email: string }) => {
+    setBusy(true);
+    setError(null);
+    setStatus("Requesting reset code…");
+    try {
+      const result = await api.forgotPassword(fields);
+      setStatus(result.message);
+      return result;
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const handleReset = async (fields: { username: string; resetCode: string; password: string }) => {
+    setBusy(true);
+    setError(null);
+    setStatus("Updating password…");
+    try {
+      const result = await api.resetPassword(fields);
+      setStatus(result.message);
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleChangePassword = async (fields: { currentPassword: string; password: string }) => {
+    setBusy(true);
+    setError(null);
+    setStatus("Updating password…");
+    try {
+      const result = await api.changePassword(fields);
+      setStatus(result.message);
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+    }
   };
 
   const linkSageWallet = () =>
@@ -607,7 +654,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Create an account to redeem funded DAT and sit at a table. You do not need
               Sage until you want DAT in your wallet.
             </p>
-            <AuthPanel busy={busy || !apiOk} onAuth={handleAuth} />
+            <AuthPanel
+              busy={busy || !apiOk}
+              onAuth={handleAuth}
+              onForgot={handleForgot}
+              onReset={handleReset}
+            />
           </>
         ) : (
           <>
@@ -638,6 +690,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 Sign out
               </button>
             </div>
+            <ChangePasswordForm busy={busy} onChangePassword={handleChangePassword} />
           </>
         )}
       </section>

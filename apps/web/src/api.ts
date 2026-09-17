@@ -244,6 +244,29 @@ export const api = {
       sageAddress: string;
     }>("/v1/auth/me"),
 
+  forgotPassword: (body: { username: string; email: string }) =>
+    request<{
+      ok: boolean;
+      message: string;
+      resetCode?: string;
+      expiresInSeconds?: number;
+    }>("/v1/auth/password/forgot", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  resetPassword: (body: { username: string; resetCode: string; password: string }) =>
+    request<{ ok: boolean; message: string }>("/v1/auth/password/reset", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  changePassword: (body: { currentPassword: string; password: string }) =>
+    request<{ ok: boolean; message: string }>("/v1/auth/password/change", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   redeemMessage: (address: string) =>
     request<{ message: string; utcDate: string; amountMojos: string }>(
       `/v1/wallet/redeem/message?address=${encodeURIComponent(address)}`,

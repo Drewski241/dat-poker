@@ -2,10 +2,13 @@ import type { FastifyInstance } from "fastify";
 import { allowIpBucket } from "../ip-rate-limit.js";
 import { issueAccountSession, readPlayerSession, requirePlayer, sessionTtlSeconds } from "../player-session.js";
 import {
+  changePassword,
   getUserById,
   loginUser,
   publicUser,
   registerUser,
+  requestPasswordReset,
+  resetPasswordWithCode,
 } from "../user-store.js";
 
 export function registerAuthRoutes(app: FastifyInstance): void {
@@ -51,6 +54,62 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         playerId: session.playerId,
         expiresInSeconds: sessionTtlSeconds(),
       };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Body: { username?: string; email?: string };
+  }>("/v1/auth/password/forgot", async (req, reply) => {
+    const ip = req.ip || "unknown";
+    if (!allowIpBucket(ip, "password-forgot", Date.now(), 8)) {
+      return reply.status(429).send({ error: "Too many password reset requests from this network" });
+    }
+    try {
+      const result = await requestPasswordReset(req.body?.username ?? "", req.body?.email ?? "");
+      return {
+        ok: true,
+        message:
+          "If that username and email match an account, a reset code is ready. This beta shows the code here instead of sending email.",
+        ...result,
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Body: { username?: string; resetCode?: string; password?: string };
+  }>("/v1/auth/password/reset", async (req, reply) => {
+    const ip = req.ip || "unknown";
+    if (!allowIpBucket(ip, "password-reset", Date.now(), 20)) {
+      return reply.status(429).send({ error: "Too many password reset attempts from this network" });
+    }
+    try {
+      await resetPasswordWithCode(
+        req.body?.username ?? "",
+        req.body?.resetCode ?? "",
+        req.body?.password ?? "",
+      );
+      return { ok: true, message: "Password updated. Sign in with your new password." };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Body: { currentPassword?: string; password?: string };
+  }>("/v1/auth/password/change", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    const ip = req.ip || "unknown";
+    if (!allowIpBucket(ip, "password-change", Date.now(), 20)) {
+      return reply.status(429).send({ error: "Too many password changes from this network" });
+    }
+    try {
+      await changePassword(session.playerId, req.body?.currentPassword ?? "", req.body?.password ?? "");
+      return { ok: true, message: "Password updated." };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
     }

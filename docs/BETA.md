@@ -320,7 +320,8 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 
 1. Open **`https://datspiritpoker.com/`** after you [point DNS here](#website-address)
    (or the `https://YOUR-DASHES.sslip.io/` bookmark until then). Click **Play poker now!**.
-2. **Create account** (username + password). Sage is not required to play.
+2. **Create account** (username + password). Add an email if you want to reset
+   a forgotten password. Sage is not required to play.
 3. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits we fund).
 4. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
 5. **Deal hand** when at least two seats are filled.
