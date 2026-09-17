@@ -127,6 +127,20 @@ export function syncHouseSeating(table: NlheTableEngine, buyInMojos: bigint): vo
   if (table.isHandInProgress()) {
     return;
   }
+
+  let houseWasSeated = table.hasPlayer(HOUSE_PLAYER_ID);
+  if (houseWasSeated) {
+    const stack = table.getPlayerStack(HOUSE_PLAYER_ID) ?? 0n;
+    if (stack <= 0n) {
+      try {
+        table.cashOutPlayer(HOUSE_PLAYER_ID);
+      } catch {
+        /* already standing */
+      }
+      houseWasSeated = true;
+    }
+  }
+
   const humans = humanCount(table);
   const activeHumans = activeHumanCount(table);
   if (activeHumans >= 2) {
@@ -135,15 +149,24 @@ export function syncHouseSeating(table: NlheTableEngine, buyInMojos: bigint): vo
     }
     return;
   }
-  if (humans === 1 && activeHumans === 1) {
+
+  const shouldAutoSeatHouse =
+    activeHumans === 1 &&
+    (humans === 1 || (houseWasSeated && !table.hasPlayer(HOUSE_PLAYER_ID)));
+
+  if (shouldAutoSeatHouse) {
     if (table.hasPlayer(HOUSE_PLAYER_ID)) {
-      return;
+      const stack = table.getPlayerStack(HOUSE_PLAYER_ID) ?? 0n;
+      if (stack > 0n) {
+        return;
+      }
+    } else {
+      const seat = table.emptySeatIndex();
+      if (seat === null) {
+        return;
+      }
+      table.seatPlayer(HOUSE_PLAYER_ID, seat, buyInMojos);
     }
-    const seat = table.emptySeatIndex();
-    if (seat === null) {
-      return;
-    }
-    table.seatPlayer(HOUSE_PLAYER_ID, seat, buyInMojos);
     return;
   }
   /* Multiple humans seated but fewer than two active: house is opt-in via seat-house. */
@@ -477,6 +500,10 @@ export function persistTablePlaythrough(table: NlheTableEngine): void {
     if (seated.playerId === HOUSE_PLAYER_ID) continue;
     setPlaythroughHands(seated.playerId, table.getHandsPlayed(seated.playerId));
     syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId) + seated.stackMojos);
+  }
+  if (!table.isHandInProgress()) {
+    const dat = readDatTokenConfig();
+    syncHouseSeating(table, resolveDatMinBuyInMojos(dat.minBuyInMojos));
   }
 }
 

@@ -202,7 +202,12 @@ export function TableRoom({
             >
               {handResult ? "New hand" : "Deal hand"}
             </button>
-            {!canDeal && !canSeatHouse && tableSeats.length >= 2 && (
+            {!canDeal && !canSeatHouse && tableSeats.some((s) => s.playerId === HOUSE_PLAYER_ID) && (
+              <p className="muted small table-room-wait-opponent">
+                House is reloading chips… try again in a moment or tap New hand once more.
+              </p>
+            )}
+            {!canDeal && !canSeatHouse && tableSeats.length >= 2 && !tableSeats.some((s) => s.playerId === HOUSE_PLAYER_ID) && (
               <p className="muted small table-room-wait-opponent">
                 Waiting for another active player, or use Lobby to sit out and play the house.
               </p>

@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type NlheTableEngine, type PlayerAction } from "@dat-poker/game-engine";
-import { getTableEngine, persistTablePlaythrough } from "./tables.js";
+import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
+import { getTableEngine, persistTablePlaythrough, syncHouseSeating } from "./tables.js";
+import { readDatTokenConfig } from "../wallet-config.js";
 import { playHouseIfDue } from "../house-play.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { requirePlayer, sessionMatchesClaim, type PlayerSession } from "../player-session.js";
@@ -52,6 +54,8 @@ export function registerHandRoutes(app: FastifyInstance): void {
     const session = seatedPlayer(req, reply, table, req.body.playerId);
     if (!session) return;
     try {
+      const dat = readDatTokenConfig();
+      syncHouseSeating(table, resolveDatMinBuyInMojos(dat.minBuyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos));
       const handId = randomUUID();
       const { commitHash } = table.startHand(handId);
       for (const seated of table.getSeatedPlayers()) {

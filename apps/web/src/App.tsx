@@ -492,6 +492,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (!tableId || !playerId) return;
     run("Dealing hand…", async () => {
       setHandResult(null);
+      await refreshTable(tableId);
       const dealt = await api.goHand(tableId, playerId);
       setHand(dealt.hand);
       if (dealt.lastHandResult) setHandResult(dealt.lastHandResult);
