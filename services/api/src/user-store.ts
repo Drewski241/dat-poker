@@ -143,7 +143,7 @@ export async function registerUser(params: {
   username: string;
   password: string;
   email: string;
-}): Promise<StoredUser> {
+}): Promise<{ user: StoredUser; verificationCode: string }> {
   await loadUsers();
   const usernameError = validateUsername(params.username);
   if (usernameError) throw new Error(usernameError);
@@ -176,11 +176,11 @@ export async function registerUser(params: {
   usersByKey.set(key, user);
   usersById.set(user.id, user);
   await persist();
-  await issueEmailVerification(user);
-  return user;
+  const verificationCode = await issueEmailVerification(user);
+  return { user, verificationCode };
 }
 
-async function issueEmailVerification(user: StoredUser): Promise<void> {
+async function issueEmailVerification(user: StoredUser): Promise<string> {
   const code = randomBytes(4).toString("hex");
   user.emailVerifyHash = hashResetCode(code);
   user.emailVerifyExpiresAt = new Date(Date.now() + VERIFY_TTL_MS).toISOString();
@@ -194,6 +194,7 @@ async function issueEmailVerification(user: StoredUser): Promise<void> {
     code,
     expiresInMinutes: VERIFY_TTL_MS / 60_000,
   });
+  return code;
 }
 
 export async function verifyEmailWithCode(username: string, code: string): Promise<StoredUser> {
@@ -217,14 +218,18 @@ export async function verifyEmailWithCode(username: string, code: string): Promi
   return user;
 }
 
-export async function resendEmailVerification(username: string, email: string): Promise<void> {
+export async function resendEmailVerification(
+  username: string,
+  email: string,
+): Promise<{ sent: boolean; verificationCode?: string }> {
   await loadUsers();
   const user = usersByKey.get(usernameKey(username));
   const want = normalizeEmail(email);
   if (!user || !want || normalizeEmail(user.email) !== want || isEmailVerified(user)) {
-    return;
+    return { sent: false };
   }
-  await issueEmailVerification(user);
+  const code = await issueEmailVerification(user);
+  return { sent: true, verificationCode: code };
 }
 
 export async function authenticateUserPassword(
@@ -265,7 +270,7 @@ export async function attachEmailToAccount(params: {
   username: string;
   password: string;
   email: string;
-}): Promise<StoredUser> {
+}): Promise<{ user: StoredUser; verificationCode: string }> {
   const user = await authenticateUserPassword(params.username, params.password);
   if (isEmailVerified(user)) {
     throw new Error("This account already has a verified email. Sign in instead.");
@@ -279,8 +284,8 @@ export async function attachEmailToAccount(params: {
   user.email = email;
   usersById.set(user.id, user);
   usersByKey.set(user.usernameKey, user);
-  await issueEmailVerification(user);
-  return user;
+  const verificationCode = await issueEmailVerification(user);
+  return { user, verificationCode };
 }
 
 export async function getUserById(id: string): Promise<StoredUser | undefined> {

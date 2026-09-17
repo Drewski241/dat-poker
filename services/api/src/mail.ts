@@ -10,7 +10,7 @@ export interface SentMail {
 const outbox: SentMail[] = [];
 let transport: Transporter | null | undefined;
 
-function emailMode(): "memory" | "log" | "smtp" {
+export function emailDeliveryMode(): "memory" | "log" | "smtp" {
   const raw = process.env.DAT_EMAIL_MODE?.trim().toLowerCase();
   if (raw === "memory" || raw === "log" || raw === "smtp") return raw;
   if (process.env.DAT_SMTP_HOST?.trim()) return "smtp";
@@ -40,7 +40,7 @@ function smtpTransport(): Transporter {
 
 async function getTransport(): Promise<Transporter | null> {
   if (transport !== undefined) return transport;
-  const mode = emailMode();
+  const mode = emailDeliveryMode();
   if (mode === "memory" || mode === "log") {
     transport = null;
     return transport;
@@ -49,8 +49,17 @@ async function getTransport(): Promise<Transporter | null> {
   return transport;
 }
 
+export function emailDeliversToInbox(): boolean {
+  return emailDeliveryMode() === "smtp";
+}
+
+/** When true, register/resend/add may include the code in JSON (beta ops only). */
+export function emailBetaRevealCodeInApi(): boolean {
+  return process.env.DAT_EMAIL_BETA_REVEAL_CODE === "true";
+}
+
 export async function sendMail(params: { to: string; subject: string; text: string }): Promise<void> {
-  const mode = emailMode();
+  const mode = emailDeliveryMode();
   if (mode === "memory") {
     outbox.push({ to: params.to, subject: params.subject, text: params.text });
     return;

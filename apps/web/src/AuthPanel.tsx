@@ -101,6 +101,7 @@ export function AuthPanel({
   const [localError, setLocalError] = useState<string | null>(null);
   const [localInfo, setLocalInfo] = useState<string | null>(null);
   const [complianceRequired, setComplianceRequired] = useState(false);
+  const [emailDeliversToInbox, setEmailDeliversToInbox] = useState(true);
   const [minAge, setMinAge] = useState(18);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
   const [countryCode, setCountryCode] = useState("US");
@@ -126,6 +127,7 @@ export function AuthPanel({
         setComplianceRequired(req.complianceRequired);
         setMinAge(req.minAge);
         setTurnstileSiteKey(req.turnstileSiteKey);
+        setEmailDeliversToInbox(req.emailDeliversToInbox);
         if (geo.countryCode && PLAY_COUNTRY_OPTIONS.some((c) => c.code === geo.countryCode)) {
           setCountryCode(geo.countryCode);
         }
@@ -276,7 +278,8 @@ export function AuthPanel({
     void (async () => {
       try {
         const result = await onResendVerification({ username: username.trim(), email: email.trim() });
-        setLocalInfo(result.message);
+        const codeHint = result.betaVerificationCode ? ` Code (beta): ${result.betaVerificationCode}` : "";
+        setLocalInfo(result.message + codeHint);
       } catch (e) {
         setLocalError((e as Error).message);
       }
@@ -592,6 +595,13 @@ export function AuthPanel({
         <p className="muted small">
           For accounts created before email was required. You need your username and password, then we verify the
           new address.
+        </p>
+      )}
+      {!emailDeliversToInbox && (mode === "register" || mode === "verify" || mode === "add-email") && (
+        <p className="banner info" role="status">
+          This beta server is not configured to deliver email to your inbox (SMTP missing). Verification codes
+          are only written to the server log unless the operator enables{" "}
+          <code>DAT_SMTP_*</code> or temporary <code>DAT_EMAIL_BETA_REVEAL_CODE=true</code>.
         </p>
       )}
       {localInfo && <p className="banner info">{localInfo}</p>}

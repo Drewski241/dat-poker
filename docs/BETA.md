@@ -320,8 +320,32 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 
 1. Open **`https://datspiritpoker.com/`** after you [point DNS here](#website-address)
    (or the `https://YOUR-DASHES.sslip.io/` bookmark until then). Click **Play poker now!**.
-2. **Create account** (username + password). Add an email if you want to reset
-   a forgotten password. Sage is not required to play.
+2. **Create account** (username + password + email + verification code). Sage is not required to play.
+
+### Verification email not arriving?
+
+Without `DAT_SMTP_*` in `/opt/dat-poker/.env`, the API uses **`DAT_EMAIL_MODE=log`**: codes are **not** sent to inboxes — they are printed in the API log:
+
+```bash
+sudo journalctl -u dat-poker-api -n 100 --no-pager | grep 'dat-poker mail'
+```
+
+For real delivery, set for example:
+
+```bash
+DAT_EMAIL_MODE=smtp
+DAT_EMAIL_FROM=DAT Poker <noreply@datspiritpoker.com>
+DAT_SMTP_HOST=email-smtp.us-east-1.amazonaws.com
+DAT_SMTP_PORT=587
+DAT_SMTP_USER=...
+DAT_SMTP_PASS=...
+```
+
+Then `sudo systemctl restart dat-poker-api`.
+
+Temporary beta workaround (small tester list only): `DAT_EMAIL_BETA_REVEAL_CODE=true` includes `betaVerificationCode` in register/resend JSON and the Play UI status line.
+
+**Resend** only sends when **username and email exactly match** the unverified account on file (same spelling as `accounts.json`).
 3. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits we fund).
 4. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
 5. **Deal hand** when at least two seats are filled.

@@ -22,6 +22,7 @@ import {
 } from "../play-compliance.js";
 import { assertTermsAccepted, getCurrentTermsDocument } from "../terms-of-service.js";
 import { recordTermsAcceptance } from "../terms-acceptance-store.js";
+import { emailBetaRevealCodeInApi, emailDeliversToInbox } from "../mail.js";
 
 type AuthComplianceBody = PlayAttestation & {
   termsAccepted?: boolean;
@@ -43,6 +44,18 @@ function readAttestation(body: AuthComplianceBody | undefined): PlayAttestation 
     ageConfirmed: body?.ageConfirmed,
     turnstileToken: body?.turnstileToken,
   };
+}
+
+function verificationUserMessage(): string {
+  if (emailDeliversToInbox()) {
+    return "Check your email for a verification code, then sign in.";
+  }
+  return "This server is not sending email to inboxes yet (SMTP not configured). The operator can read the code from the API server log, or set DAT_SMTP_* on the host.";
+}
+
+function betaVerificationFields(code: string | undefined): { betaVerificationCode?: string } {
+  if (!emailBetaRevealCodeInApi() || !code) return {};
+  return { betaVerificationCode: code };
 }
 
 function complianceErrorStatus(message: string): 400 | 403 {
@@ -84,15 +97,16 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         termsAccepted: req.body?.termsAccepted,
         termsVersion: req.body?.termsVersion,
       });
-      const user = await registerUser({ username, password, email });
+      const { user, verificationCode } = await registerUser({ username, password, email });
       await recordPlayEligibility(user.id, eligibility.countryCode);
       const terms = await getCurrentTermsDocument();
       await recordTermsAcceptance(user.id, terms.version);
       return {
         ok: true,
         needsEmailVerification: true,
-        message: "Check your email for a verification code, then sign in.",
+        message: verificationUserMessage(),
         ...publicUser(user),
+        ...betaVerificationFields(verificationCode),
       };
     } catch (e) {
       const msg = (e as Error).message;
@@ -140,7 +154,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         termsAccepted: req.body?.termsAccepted,
         termsVersion: req.body?.termsVersion,
       });
-      const user = await attachEmailToAccount({
+      const { user, verificationCode } = await attachEmailToAccount({
         username: req.body?.username ?? "",
         password: req.body?.password ?? "",
         email: req.body?.email ?? "",
@@ -150,8 +164,9 @@ export function registerAuthRoutes(app: FastifyInstance): void {
       return {
         ok: true,
         needsEmailVerification: true,
-        message: "We sent a verification code to your email. Enter it under Verify email to sign in.",
+        message: verificationUserMessage(),
         ...publicUser(user),
+        ...betaVerificationFields(verificationCode),
       };
     } catch (e) {
       const msg = (e as Error).message;
@@ -167,10 +182,13 @@ export function registerAuthRoutes(app: FastifyInstance): void {
       return reply.status(429).send({ error: "Too many verification emails from this network" });
     }
     try {
-      await resendEmailVerification(req.body?.username ?? "", req.body?.email ?? "");
+      const result = await resendEmailVerification(req.body?.username ?? "", req.body?.email ?? "");
       return {
         ok: true,
-        message: "If that username and email match an unverified account, a new verification code was sent.",
+        message: result.sent
+          ? verificationUserMessage()
+          : "If that username and email match an unverified account, a new verification code was sent.",
+        ...betaVerificationFields(result.verificationCode),
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });

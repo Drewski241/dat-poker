@@ -1,4 +1,5 @@
 import type { FastifyRequest } from "fastify";
+import { emailDeliversToInbox, emailDeliveryMode } from "./mail.js";
 
 /** Cloudflare Turnstile always-pass test secret (for automated tests with live verify). */
 export const TURNSTILE_TEST_SECRET = "1x0000000000000000000000000000000AA";
@@ -18,6 +19,8 @@ export interface PlayRequirements {
   turnstileSiteKey: string;
   minAge: number;
   blockedCountryCodes: string[];
+  emailDeliveryMode: "memory" | "log" | "smtp";
+  emailDeliversToInbox: boolean;
 }
 
 function complianceMode(): "off" | "test" | "required" {
@@ -74,6 +77,8 @@ export function readPlayRequirements(): PlayRequirements {
     turnstileSiteKey: complianceRequired && (turnstileRequired() || complianceMode() === "test") ? siteKey : "",
     minAge: minPlayerAge(),
     blockedCountryCodes: [...blockedCountryCodes()].sort(),
+    emailDeliveryMode: emailDeliveryMode(),
+    emailDeliversToInbox: emailDeliversToInbox(),
   };
 }
 

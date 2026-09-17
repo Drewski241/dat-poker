@@ -344,7 +344,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           termsVersion: fields.termsVersion,
         });
         setVerificationPending({ username: registered.username, email: registered.email });
-        setStatus(registered.message ?? "Check your email for a verification code.");
+        const codeHint = registered.betaVerificationCode
+          ? ` Code (beta): ${registered.betaVerificationCode}`
+          : "";
+        setStatus((registered.message ?? "Check your email for a verification code.") + codeHint);
         return;
       }
       const result = await api.login({

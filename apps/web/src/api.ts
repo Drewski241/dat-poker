@@ -227,6 +227,8 @@ export const api = {
       turnstileSiteKey: string;
       minAge: number;
       blockedCountryCodes: string[];
+      emailDeliveryMode: "memory" | "log" | "smtp";
+      emailDeliversToInbox: boolean;
     }>("/v1/auth/play-requirements"),
 
   geoHint: () => request<{ ok: boolean; countryCode: string | null }>("/v1/auth/geo-hint"),
@@ -254,6 +256,7 @@ export const api = {
       emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
+      betaVerificationCode?: string;
     }>("/v1/auth/register", {
       method: "POST",
       body: JSON.stringify(body),
@@ -286,7 +289,7 @@ export const api = {
     }),
 
   resendVerificationEmail: (body: { username: string; email: string }) =>
-    request<{ ok: boolean; message: string }>("/v1/auth/email/resend", {
+    request<{ ok: boolean; message: string; betaVerificationCode?: string }>("/v1/auth/email/resend", {
       method: "POST",
       body: JSON.stringify(body),
     }),
