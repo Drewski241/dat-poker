@@ -2,7 +2,11 @@ import { describe, expect, it, beforeEach } from "vitest";
 import Fastify from "fastify";
 import { serializeForJson } from "./serialize.js";
 import { registerAuthRoutes } from "./routes/auth.js";
-import { expirePasswordResetForTests, resetUsersForTests } from "./user-store.js";
+import {
+  expirePasswordResetForTests,
+  resetUsersForTests,
+  seedLegacyUserWithoutEmail,
+} from "./user-store.js";
 import { resetPlayerSessionsForTests } from "./player-session.js";
 import { resetIpRateLimitsForTests } from "./ip-rate-limit.js";
 import { latestOutboxCodeForTests, resetMailOutboxForTests } from "./mail.js";
@@ -120,6 +124,45 @@ describe("player accounts", () => {
       headers: authComplianceHeaders(),
     });
     expect(bad.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("lets legacy accounts without email attach an address and verify", async () => {
+    const app = await buildApp();
+    await seedLegacyUserWithoutEmail("legacy_beta", "password1");
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { username: "legacy_beta", password: "password1", ...authCompliancePayload() },
+      headers: authComplianceHeaders(),
+    });
+    expect(blocked.statusCode).toBe(400);
+    expect(JSON.parse(blocked.body).error).toMatch(/no email/i);
+
+    const added = await app.inject({
+      method: "POST",
+      url: "/v1/auth/email/add",
+      payload: {
+        username: "legacy_beta",
+        password: "password1",
+        email: "legacy@example.com",
+        ...authCompliancePayload(),
+      },
+      headers: authComplianceHeaders(),
+    });
+    expect(added.statusCode).toBe(200);
+    expect(JSON.parse(added.body).needsEmailVerification).toBe(true);
+
+    await verifyNewAccount(app, "legacy_beta", "legacy@example.com");
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { username: "legacy_beta", password: "password1", ...authCompliancePayload() },
+      headers: authComplianceHeaders(),
+    });
+    expect(login.statusCode).toBe(200);
     await app.close();
   });
 

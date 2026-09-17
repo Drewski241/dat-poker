@@ -227,7 +227,10 @@ export async function resendEmailVerification(username: string, email: string): 
   await issueEmailVerification(user);
 }
 
-export async function loginUser(username: string, password: string): Promise<StoredUser> {
+export async function authenticateUserPassword(
+  username: string,
+  password: string,
+): Promise<StoredUser> {
   await loadUsers();
   const user = usersByKey.get(usernameKey(username));
   if (!user) {
@@ -239,12 +242,44 @@ export async function loginUser(username: string, password: string): Promise<Sto
   if (hash.length !== next.length || !timingSafeEqual(hash, next)) {
     throw new Error("Unknown username or password");
   }
-  if (!user.email) {
-    throw new Error("This account has no email on file. Contact support.");
+  return user;
+}
+
+export async function loginUser(username: string, password: string): Promise<StoredUser> {
+  const user = await authenticateUserPassword(username, password);
+  if (!user.email?.trim()) {
+    throw new Error(
+      "This account has no email yet. Use Add email on the sign-in form (username + password + email), then verify the code we send.",
+    );
   }
   if (!isEmailVerified(user)) {
-    throw new Error("Verify your email before signing in. Check your inbox or request a new code.");
+    throw new Error(
+      "Verify your email before signing in. Check your inbox, use Verify email, or resend the code.",
+    );
   }
+  return user;
+}
+
+/** Legacy beta accounts: attach email after proving password; sends a verification code. */
+export async function attachEmailToAccount(params: {
+  username: string;
+  password: string;
+  email: string;
+}): Promise<StoredUser> {
+  const user = await authenticateUserPassword(params.username, params.password);
+  if (isEmailVerified(user)) {
+    throw new Error("This account already has a verified email. Sign in instead.");
+  }
+  const email = normalizeEmail(params.email);
+  const emailError = validateEmail(email);
+  if (emailError) throw new Error(emailError);
+  if (emailTaken(email, user.id)) {
+    throw new Error("That email is already registered");
+  }
+  user.email = email;
+  usersById.set(user.id, user);
+  usersByKey.set(user.usernameKey, user);
+  await issueEmailVerification(user);
   return user;
 }
 
@@ -404,4 +439,28 @@ export function resetUsersForTests(): void {
   usersByKey.clear();
   usersById.clear();
   loaded = true;
+}
+
+/** Test helper — account created before email was required. */
+export async function seedLegacyUserWithoutEmail(
+  username: string,
+  password: string,
+): Promise<StoredUser> {
+  await loadUsers();
+  const key = usernameKey(username);
+  const salt = randomBytes(16);
+  const user: StoredUser = {
+    id: `user_${randomBytes(8).toString("hex")}`,
+    username: normalizeUsername(username),
+    usernameKey: key,
+    email: "",
+    passwordSalt: salt.toString("hex"),
+    passwordHash: await hashPassword(password, salt),
+    sageAddress: "",
+    sagePubkey: "",
+    createdAt: new Date().toISOString(),
+  };
+  usersByKey.set(key, user);
+  usersById.set(user.id, user);
+  return user;
 }

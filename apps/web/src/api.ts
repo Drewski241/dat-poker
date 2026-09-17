@@ -291,6 +291,29 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  addEmailToAccount: (
+    body: {
+      username: string;
+      password: string;
+      email: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      needsEmailVerification?: boolean;
+      message?: string;
+      username: string;
+      email: string;
+    }>("/v1/auth/email/add", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   login: (
     body: {
       username: string;

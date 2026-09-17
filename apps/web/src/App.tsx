@@ -398,6 +398,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   };
 
+  const handleAddEmail = async (fields: {
+    username: string;
+    password: string;
+    email: string;
+    countryCode: string;
+    ageConfirmed: boolean;
+    turnstileToken?: string;
+    termsAccepted: boolean;
+    termsVersion: string;
+  }) => {
+    await run("Adding email…", async () => {
+      const result = await api.addEmailToAccount(fields);
+      setVerificationPending({ username: result.username, email: result.email });
+      setStatus(result.message ?? "Check your email for a verification code.");
+    });
+  };
+
   const handleResendVerification = async (fields: { username: string; email: string }) => {
     setBusy(true);
     setError(null);
@@ -937,6 +954,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               onAuth={handleAuth}
               onVerifyEmail={handleVerifyEmail}
               onResendVerification={handleResendVerification}
+              onAddEmail={handleAddEmail}
               onForgot={handleForgot}
               onReset={handleReset}
             />

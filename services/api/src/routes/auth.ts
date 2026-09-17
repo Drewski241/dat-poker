@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { allowIpBucket } from "../ip-rate-limit.js";
 import { issueAccountSession, readPlayerSession, requirePlayer, sessionTtlSeconds } from "../player-session.js";
 import {
+  attachEmailToAccount,
   changePassword,
   getUserById,
   loginUser,
@@ -119,6 +120,38 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         ...publicUser(user),
         playerId: session.playerId,
         expiresInSeconds: sessionTtlSeconds(),
+      };
+    } catch (e) {
+      const msg = (e as Error).message;
+      return reply.status(complianceErrorStatus(msg)).send({ error: msg });
+    }
+  });
+
+  app.post<{
+    Body: AuthComplianceBody & { username?: string; password?: string; email?: string };
+  }>("/v1/auth/email/add", async (req, reply) => {
+    const ip = req.ip || "unknown";
+    if (!allowIpBucket(ip, "email-add", Date.now(), 12)) {
+      return reply.status(429).send({ error: "Too many requests from this network" });
+    }
+    try {
+      await assertPlayCompliance(req, readAttestation(req.body));
+      assertTermsAccepted({
+        termsAccepted: req.body?.termsAccepted,
+        termsVersion: req.body?.termsVersion,
+      });
+      const user = await attachEmailToAccount({
+        username: req.body?.username ?? "",
+        password: req.body?.password ?? "",
+        email: req.body?.email ?? "",
+      });
+      const terms = await getCurrentTermsDocument();
+      await recordTermsAcceptance(user.id, terms.version);
+      return {
+        ok: true,
+        needsEmailVerification: true,
+        message: "We sent a verification code to your email. Enter it under Verify email to sign in.",
+        ...publicUser(user),
       };
     } catch (e) {
       const msg = (e as Error).message;

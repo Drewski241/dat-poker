@@ -67,6 +67,7 @@ export function AuthPanel({
   onResendVerification,
   onForgot,
   onReset,
+  onAddEmail,
   verificationPending,
   apiError,
 }: {
@@ -79,12 +80,17 @@ export function AuthPanel({
   ) => void;
   onVerifyEmail: (fields: { username: string; code: string } & PlayComplianceInput) => Promise<void>;
   onResendVerification: (fields: { username: string; email: string }) => Promise<{ message: string }>;
+  onAddEmail: (
+    fields: { username: string; password: string; email: string } & PlayComplianceInput,
+  ) => Promise<void>;
   onForgot: (fields: { username: string; email: string }) => Promise<{
     message: string;
   }>;
   onReset: (fields: { username: string; resetCode: string; password: string }) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<"register" | "login" | "verify" | "reset">("register");
+  const [mode, setMode] = useState<"register" | "login" | "verify" | "reset" | "add-email">(
+    "register",
+  );
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -181,7 +187,7 @@ export function AuthPanel({
     setLocalInfo("Check your email for a verification code.");
   }, [verificationPending]);
 
-  const switchMode = (next: "register" | "login" | "verify" | "reset") => {
+  const switchMode = (next: "register" | "login" | "verify" | "reset" | "add-email") => {
     setMode(next);
     setPassword("");
     setConfirm("");
@@ -215,6 +221,25 @@ export function AuthPanel({
     if (mode === "reset") {
       if (resetEmailSent && resetCode.trim()) submitNewPassword();
       else if (!resetEmailSent) requestResetEmail();
+      return;
+    }
+    if (mode === "add-email") {
+      if (!email.trim()) {
+        setLocalError("Email is required");
+        return;
+      }
+      const compliance = buildCompliance();
+      if (!compliance) return;
+      void onAddEmail({
+        username: username.trim(),
+        password,
+        email: email.trim(),
+        ...compliance,
+      }).then(() => {
+        setVerifyCode("");
+        setMode("verify");
+        setLocalInfo("Verification code sent. Enter it below to finish signing in.");
+      });
       return;
     }
     if (mode === "register" && !email.trim()) {
@@ -310,7 +335,11 @@ export function AuthPanel({
           Reset password
         </button>
       </div>
-      {(mode === "register" || mode === "login" || mode === "verify") && complianceRequired && (
+      {(mode === "register" ||
+        mode === "login" ||
+        mode === "verify" ||
+        mode === "add-email") &&
+        complianceRequired && (
         <fieldset className="compliance-fieldset">
           <legend>Eligibility</legend>
           <label htmlFor="auth-country">Country (where you are now)</label>
@@ -348,7 +377,7 @@ export function AuthPanel({
           )}
         </fieldset>
       )}
-      {(mode === "register" || mode === "login" || mode === "verify") && (
+      {(mode === "register" || mode === "login" || mode === "verify" || mode === "add-email") && (
         <fieldset className="compliance-fieldset">
           <legend>Terms and Conditions</legend>
           {!termsVersion ? (
@@ -409,11 +438,11 @@ export function AuthPanel({
           label="Password"
           value={password}
           onChange={setPassword}
-          autoComplete={mode === "login" ? "current-password" : "new-password"}
+          autoComplete={mode === "login" || mode === "add-email" ? "current-password" : "new-password"}
           disabled={busy}
         />
       )}
-      {mode === "register" && (
+      {(mode === "register" || mode === "add-email") && (
         <>
           <label htmlFor="auth-email">Email</label>
           <input
@@ -427,7 +456,9 @@ export function AuthPanel({
             disabled={busy}
           />
           <p className="muted small">
-            Required for every account. We email a verification code before you can sign in.
+            {mode === "add-email"
+              ? "Proves you own this pre-email account. We email a verification code before you can sign in."
+              : "Required for every account. We email a verification code before you can sign in."}
           </p>
         </>
       )}
@@ -536,7 +567,11 @@ export function AuthPanel({
       {mode !== "reset" && mode !== "verify" && (
         <div className="row">
           <button type="submit" disabled={busy}>
-            {mode === "register" ? "Create account" : "Sign in"}
+            {mode === "register"
+              ? "Create account"
+              : mode === "add-email"
+                ? "Add email & send code"
+                : "Sign in"}
           </button>
           {mode === "login" && (
             <>
@@ -546,9 +581,18 @@ export function AuthPanel({
               <button type="button" className="linkish" disabled={busy} onClick={() => switchMode("verify")}>
                 Verify email
               </button>
+              <button type="button" className="linkish" disabled={busy} onClick={() => switchMode("add-email")}>
+                Add email (older account)
+              </button>
             </>
           )}
         </div>
+      )}
+      {mode === "add-email" && (
+        <p className="muted small">
+          For accounts created before email was required. You need your username and password, then we verify the
+          new address.
+        </p>
       )}
       {localInfo && <p className="banner info">{localInfo}</p>}
       {apiError && <p className="banner error">{apiError}</p>}
