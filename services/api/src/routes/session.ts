@@ -7,7 +7,8 @@ import {
   requirePlayer,
   sessionTtlSeconds,
 } from "../player-session.js";
-import { setUserSageLink } from "../user-store.js";
+import { recordPlayEligibility, setUserSageLink } from "../user-store.js";
+import { assertPlayCompliance, type PlayAttestation } from "../play-compliance.js";
 
 export function registerSessionRoutes(app: FastifyInstance): void {
   app.get<{ Querystring: { address?: string } }>("/v1/session/challenge", async (req, reply) => {
@@ -32,7 +33,7 @@ export function registerSessionRoutes(app: FastifyInstance): void {
   });
 
   app.post<{
-    Body: {
+    Body: PlayAttestation & {
       address?: string;
       nonce?: string;
       signature?: string;
@@ -43,17 +44,24 @@ export function registerSessionRoutes(app: FastifyInstance): void {
     if (!allowIpBucket(ip, "session-create", Date.now(), 40)) {
       return reply.status(429).send({ error: "Too many login attempts from this network" });
     }
-    const { address, nonce, signature, pubkey } = req.body ?? {};
+    const { address, nonce, signature, pubkey, countryCode, ageConfirmed, turnstileToken } =
+      req.body ?? {};
     if (!address || !nonce || !signature || !pubkey) {
       return reply.status(400).send({ error: "address, nonce, signature, and pubkey required" });
     }
     try {
+      const eligibility = await assertPlayCompliance(req, {
+        countryCode,
+        ageConfirmed,
+        turnstileToken,
+      });
       const { token, session } = issueSessionFromProof({
         address,
         nonce,
         signature,
         pubkey,
       });
+      await recordPlayEligibility(session.playerId, eligibility.countryCode);
       return {
         ok: true,
         token,
@@ -62,7 +70,13 @@ export function registerSessionRoutes(app: FastifyInstance): void {
         expiresInSeconds: sessionTtlSeconds(),
       };
     } catch (e) {
-      return reply.status(400).send({ error: (e as Error).message });
+      const msg = (e as Error).message;
+      const status = /not available|Bot check|country|legally allowed|Complete the bot|network location/i.test(
+        msg,
+      )
+        ? 403
+        : 400;
+      return reply.status(status).send({ error: msg });
     }
   });
 

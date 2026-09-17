@@ -23,6 +23,8 @@ export interface StoredUser {
   emailVerifyExpiresAt?: string;
   passwordResetHash?: string;
   passwordResetExpiresAt?: string;
+  playCountryCode?: string;
+  playEligibilityAt?: string;
 }
 
 const usersByKey = new Map<string, StoredUser>();
@@ -357,11 +359,23 @@ export async function setUserSageLink(
   return user;
 }
 
+export async function recordPlayEligibility(userId: string, countryCode: string): Promise<void> {
+  await loadUsers();
+  const user = usersById.get(userId);
+  if (!user) return;
+  user.playCountryCode = countryCode;
+  user.playEligibilityAt = new Date().toISOString();
+  usersById.set(user.id, user);
+  usersByKey.set(user.usernameKey, user);
+  await persist();
+}
+
 export function publicUser(user: StoredUser): {
   playerId: string;
   username: string;
   email: string;
   emailVerified: boolean;
+  playCountryCode: string;
   sageLinked: boolean;
   sageAddress: string;
 } {
@@ -370,6 +384,7 @@ export function publicUser(user: StoredUser): {
     username: user.username,
     email: user.email,
     emailVerified: isEmailVerified(user),
+    playCountryCode: user.playCountryCode ?? "",
     sageLinked: Boolean(user.sagePubkey),
     sageAddress: user.sageAddress,
   };

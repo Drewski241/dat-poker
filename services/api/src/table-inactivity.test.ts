@@ -15,6 +15,7 @@ import {
   setPlayerActivityForTests,
 } from "./player-activity.js";
 import { ChiaGamingClient } from "@dat-poker/chia-bridge";
+import { authComplianceHeaders, authCompliancePayload } from "./auth-test-helpers.js";
 
 async function buildApp() {
   const app = Fastify();
@@ -48,13 +49,15 @@ async function registerAndLogin(
   await app.inject({
     method: "POST",
     url: "/v1/auth/register",
-    payload: { username, password, email },
+    payload: { username, password, email, ...authCompliancePayload() },
+    headers: authComplianceHeaders(),
   });
   verifyEmailForTests(username);
   const login = await app.inject({
     method: "POST",
     url: "/v1/auth/login",
-    payload: { username, password },
+    payload: { username, password, ...authCompliancePayload() },
+    headers: authComplianceHeaders(),
   });
   return JSON.parse(login.body) as { token: string; playerId: string };
 }
@@ -67,6 +70,7 @@ describe("inactive player unseat", () => {
     process.env.DAT_SCRYPT_N = "4096";
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
     process.env.DAT_EMAIL_MODE = "memory";
+    process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
     resetTablesForTests();
     resetAccountsForTests();
     resetUsersForTests();

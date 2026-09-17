@@ -6,6 +6,7 @@ import { expirePasswordResetForTests, resetUsersForTests } from "./user-store.js
 import { resetPlayerSessionsForTests } from "./player-session.js";
 import { resetIpRateLimitsForTests } from "./ip-rate-limit.js";
 import { latestOutboxCodeForTests, resetMailOutboxForTests } from "./mail.js";
+import { authComplianceHeaders, authCompliancePayload } from "./auth-test-helpers.js";
 
 async function buildApp() {
   const app = Fastify();
@@ -27,7 +28,8 @@ async function verifyNewAccount(
   const verified = await app.inject({
     method: "POST",
     url: "/v1/auth/email/verify",
-    payload: { username, code },
+    payload: { username, code, ...authCompliancePayload() },
+    headers: authComplianceHeaders(),
   });
   expect(verified.statusCode).toBe(200);
   return JSON.parse(verified.body) as { token: string; playerId: string };
@@ -39,6 +41,8 @@ describe("player accounts", () => {
     process.env.DAT_SCRYPT_N = "4096";
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
     process.env.DAT_EMAIL_MODE = "memory";
+    process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
+    process.env.DAT_BLOCKED_COUNTRY_CODES = "CU,IR";
     resetUsersForTests();
     resetPlayerSessionsForTests();
     resetIpRateLimitsForTests();
@@ -50,7 +54,13 @@ describe("player accounts", () => {
     const created = await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "Alice_1", password: "hunter2xx", email: "alice@example.com" },
+      payload: {
+        username: "Alice_1",
+        password: "hunter2xx",
+        email: "alice@example.com",
+        ...authCompliancePayload(),
+      },
+      headers: authComplianceHeaders(),
     });
     expect(created.statusCode).toBe(200);
     const body = JSON.parse(created.body);
@@ -62,7 +72,8 @@ describe("player accounts", () => {
     const unverifiedLogin = await app.inject({
       method: "POST",
       url: "/v1/auth/login",
-      payload: { username: "Alice_1", password: "hunter2xx" },
+      payload: { username: "Alice_1", password: "hunter2xx", ...authCompliancePayload() },
+      headers: authComplianceHeaders(),
     });
     expect(unverifiedLogin.statusCode).toBe(400);
 
@@ -73,7 +84,13 @@ describe("player accounts", () => {
     const dup = await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "alice_1", password: "otherpass12", email: "other@example.com" },
+      payload: {
+        username: "alice_1",
+        password: "otherpass12",
+        email: "other@example.com",
+        ...authCompliancePayload(),
+      },
+      headers: authComplianceHeaders(),
     });
     expect(dup.statusCode).toBe(400);
 
@@ -89,16 +106,60 @@ describe("player accounts", () => {
     const login = await app.inject({
       method: "POST",
       url: "/v1/auth/login",
-      payload: { username: "Alice_1", password: "hunter2xx" },
+      payload: { username: "Alice_1", password: "hunter2xx", ...authCompliancePayload() },
+      headers: authComplianceHeaders(),
     });
     expect(login.statusCode).toBe(200);
 
     const bad = await app.inject({
       method: "POST",
       url: "/v1/auth/login",
-      payload: { username: "Alice_1", password: "wrong-password" },
+      payload: { username: "Alice_1", password: "wrong-password", ...authCompliancePayload() },
+      headers: authComplianceHeaders(),
     });
     expect(bad.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("blocks sign-in when jurisdiction or bot checks fail", async () => {
+    const app = await buildApp();
+    await app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: {
+        username: "legaluser",
+        password: "password1",
+        email: "legal@example.com",
+        ...authCompliancePayload("US"),
+      },
+      headers: authComplianceHeaders("US"),
+    });
+    await verifyNewAccount(app, "legaluser", "legal@example.com");
+
+    const blockedCountry = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {
+        username: "legaluser",
+        password: "password1",
+        ...authCompliancePayload("CU"),
+      },
+      headers: authComplianceHeaders("US"),
+    });
+    expect(blockedCountry.statusCode).toBe(403);
+
+    const noBot = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {
+        username: "legaluser",
+        password: "password1",
+        countryCode: "US",
+        ageConfirmed: true,
+      },
+      headers: authComplianceHeaders("US"),
+    });
+    expect(noBot.statusCode).toBe(403);
     await app.close();
   });
 
@@ -107,19 +168,32 @@ describe("player accounts", () => {
     const noEmail = await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "validname", password: "password1" },
+      payload: { username: "validname", password: "password1", ...authCompliancePayload() },
+      headers: authComplianceHeaders(),
     });
     expect(noEmail.statusCode).toBe(400);
     const shortName = await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "ab", password: "password1", email: "a@b.com" },
+      payload: {
+        username: "ab",
+        password: "password1",
+        email: "a@b.com",
+        ...authCompliancePayload(),
+      },
+      headers: authComplianceHeaders(),
     });
     expect(shortName.statusCode).toBe(400);
     const shortPass = await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "validname", password: "short", email: "a@b.com" },
+      payload: {
+        username: "validname",
+        password: "short",
+        email: "a@b.com",
+        ...authCompliancePayload(),
+      },
+      headers: authComplianceHeaders(),
     });
     expect(shortPass.statusCode).toBe(400);
     await app.close();
@@ -130,7 +204,13 @@ describe("player accounts", () => {
     await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "resetme", password: "oldpass12", email: "reset.me@example.com" },
+      payload: {
+        username: "resetme",
+        password: "oldpass12",
+        email: "reset.me@example.com",
+        ...authCompliancePayload(),
+      },
+      headers: authComplianceHeaders(),
     });
     await verifyNewAccount(app, "resetme", "reset.me@example.com");
 
@@ -169,14 +249,16 @@ describe("player accounts", () => {
     const oldLogin = await app.inject({
       method: "POST",
       url: "/v1/auth/login",
-      payload: { username: "resetme", password: "oldpass12" },
+      payload: { username: "resetme", password: "oldpass12", ...authCompliancePayload() },
+      headers: authComplianceHeaders(),
     });
     expect(oldLogin.statusCode).toBe(400);
 
     const login = await app.inject({
       method: "POST",
       url: "/v1/auth/login",
-      payload: { username: "resetme", password: "newpass99" },
+      payload: { username: "resetme", password: "newpass99", ...authCompliancePayload() },
+      headers: authComplianceHeaders(),
     });
     expect(login.statusCode).toBe(200);
 
@@ -194,7 +276,13 @@ describe("player accounts", () => {
     await app.inject({
       method: "POST",
       url: "/v1/auth/register",
-      payload: { username: "changer", password: "keepme123", email: "changer@example.com" },
+      payload: {
+        username: "changer",
+        password: "keepme123",
+        email: "changer@example.com",
+        ...authCompliancePayload(),
+      },
+      headers: authComplianceHeaders(),
     });
     const created = await verifyNewAccount(app, "changer", "changer@example.com");
 
@@ -231,7 +319,8 @@ describe("player accounts", () => {
     const login = await app.inject({
       method: "POST",
       url: "/v1/auth/login",
-      payload: { username: "changer", password: "freshpass" },
+      payload: { username: "changer", password: "freshpass", ...authCompliancePayload() },
+      headers: authComplianceHeaders(),
     });
     expect(login.statusCode).toBe(200);
     await app.close();

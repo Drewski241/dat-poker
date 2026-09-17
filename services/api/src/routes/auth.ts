@@ -6,16 +6,50 @@ import {
   getUserById,
   loginUser,
   publicUser,
+  recordPlayEligibility,
   registerUser,
   requestPasswordReset,
   resendEmailVerification,
   resetPasswordWithCode,
   verifyEmailWithCode,
 } from "../user-store.js";
+import {
+  assertPlayCompliance,
+  readPlayRequirements,
+  resolveIpCountry,
+  type PlayAttestation,
+} from "../play-compliance.js";
+
+type AuthComplianceBody = PlayAttestation;
+
+function readAttestation(body: AuthComplianceBody | undefined): PlayAttestation {
+  return {
+    countryCode: body?.countryCode,
+    ageConfirmed: body?.ageConfirmed,
+    turnstileToken: body?.turnstileToken,
+  };
+}
+
+function complianceErrorStatus(message: string): 400 | 403 {
+  return /not available|Bot check|country|legally allowed|Complete the bot|network location/i.test(
+    message,
+  )
+    ? 403
+    : 400;
+}
 
 export function registerAuthRoutes(app: FastifyInstance): void {
+  app.get("/v1/auth/play-requirements", async () => {
+    const req = readPlayRequirements();
+    return { ok: true, ...req };
+  });
+
+  app.get("/v1/auth/geo-hint", async (req) => {
+    const countryCode = resolveIpCountry(req);
+    return { ok: true, countryCode };
+  });
   app.post<{
-    Body: { username?: string; password?: string; email?: string };
+    Body: AuthComplianceBody & { username?: string; password?: string; email?: string };
   }>("/v1/auth/register", async (req, reply) => {
     const ip = req.ip || "unknown";
     if (!allowIpBucket(ip, "register", Date.now(), 12)) {
@@ -25,7 +59,9 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     const password = req.body?.password ?? "";
     const email = req.body?.email ?? "";
     try {
+      const eligibility = await assertPlayCompliance(req, readAttestation(req.body));
       const user = await registerUser({ username, password, email });
+      await recordPlayEligibility(user.id, eligibility.countryCode);
       return {
         ok: true,
         needsEmailVerification: true,
@@ -33,19 +69,22 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         ...publicUser(user),
       };
     } catch (e) {
-      return reply.status(400).send({ error: (e as Error).message });
+      const msg = (e as Error).message;
+      return reply.status(complianceErrorStatus(msg)).send({ error: msg });
     }
   });
 
   app.post<{
-    Body: { username?: string; code?: string };
+    Body: AuthComplianceBody & { username?: string; code?: string };
   }>("/v1/auth/email/verify", async (req, reply) => {
     const ip = req.ip || "unknown";
     if (!allowIpBucket(ip, "email-verify", Date.now(), 30)) {
       return reply.status(429).send({ error: "Too many verification attempts from this network" });
     }
     try {
+      const eligibility = await assertPlayCompliance(req, readAttestation(req.body));
       const user = await verifyEmailWithCode(req.body?.username ?? "", req.body?.code ?? "");
+      await recordPlayEligibility(user.id, eligibility.countryCode);
       const { token, session } = issueAccountSession(user);
       return {
         ok: true,
@@ -56,7 +95,8 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         expiresInSeconds: sessionTtlSeconds(),
       };
     } catch (e) {
-      return reply.status(400).send({ error: (e as Error).message });
+      const msg = (e as Error).message;
+      return reply.status(complianceErrorStatus(msg)).send({ error: msg });
     }
   });
 
@@ -79,14 +119,16 @@ export function registerAuthRoutes(app: FastifyInstance): void {
   });
 
   app.post<{
-    Body: { username?: string; password?: string };
+    Body: AuthComplianceBody & { username?: string; password?: string };
   }>("/v1/auth/login", async (req, reply) => {
     const ip = req.ip || "unknown";
     if (!allowIpBucket(ip, "login", Date.now(), 30)) {
       return reply.status(429).send({ error: "Too many sign-in attempts from this network" });
     }
     try {
+      const eligibility = await assertPlayCompliance(req, readAttestation(req.body));
       const user = await loginUser(req.body?.username ?? "", req.body?.password ?? "");
+      await recordPlayEligibility(user.id, eligibility.countryCode);
       const { token, session } = issueAccountSession(user);
       return {
         ok: true,
@@ -96,7 +138,9 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         expiresInSeconds: sessionTtlSeconds(),
       };
     } catch (e) {
-      return reply.status(400).send({ error: (e as Error).message });
+      const msg = (e as Error).message;
+      const status = complianceErrorStatus(msg);
+      return reply.status(status).send({ error: msg });
     }
   });
 

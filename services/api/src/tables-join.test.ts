@@ -13,6 +13,7 @@ import { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import { issueTestSession, resetPlayerSessionsForTests } from "./player-session.js";
 import { signChip0002ForTests } from "./chip0002.js";
 import { resetIpRateLimitsForTests } from "./ip-rate-limit.js";
+import { authComplianceHeaders, authCompliancePayload } from "./auth-test-helpers.js";
 
 async function buildApp() {
   const app = Fastify();
@@ -47,14 +48,16 @@ async function registerAndLogin(
   const reg = await app.inject({
     method: "POST",
     url: "/v1/auth/register",
-    payload: { username, password, email },
+    payload: { username, password, email, ...authCompliancePayload() },
+    headers: authComplianceHeaders(),
   });
   expect(reg.statusCode).toBe(200);
   verifyEmailForTests(username);
   const login = await app.inject({
     method: "POST",
     url: "/v1/auth/login",
-    payload: { username, password },
+    payload: { username, password, ...authCompliancePayload() },
+    headers: authComplianceHeaders(),
   });
   expect(login.statusCode).toBe(200);
   return JSON.parse(login.body) as { token: string; playerId: string };
@@ -67,6 +70,7 @@ describe("6-max join + daily redeem", () => {
     process.env.DAT_LEDGER_PATH = "memory";
     process.env.DAT_SCRYPT_N = "4096";
     process.env.DAT_EMAIL_MODE = "memory";
+    process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
     resetMailOutboxForTests();
     resetTablesForTests();
     resetAccountsForTests();
@@ -322,7 +326,9 @@ describe("6-max join + daily redeem", () => {
         nonce: challenge.nonce,
         signature: signed.signature,
         pubkey: signed.pubkey,
+        ...authCompliancePayload(),
       },
+      headers: authComplianceHeaders(),
     });
     expect(created.statusCode).toBe(200);
     const body = JSON.parse(created.body);
@@ -337,7 +343,9 @@ describe("6-max join + daily redeem", () => {
         nonce: challenge.nonce,
         signature: "00".repeat(96),
         pubkey: signed.pubkey,
+        ...authCompliancePayload(),
       },
+      headers: authComplianceHeaders(),
     });
     expect(forged.statusCode).toBe(400);
     await app.close();
