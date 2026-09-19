@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { App } from "./App.js";
 import { Feedback } from "./Feedback.js";
 import { Landing } from "./Landing.js";
+import { Privacy } from "./Privacy.js";
 import { pageToPath, pathToPage, type SitePage } from "./site-route.js";
 
 export function Root() {
@@ -26,6 +27,9 @@ export function Root() {
   }
   if (page === "feedback") {
     return <Feedback onNavigate={onNavigate} />;
+  }
+  if (page === "privacy") {
+    return <Privacy onNavigate={onNavigate} />;
   }
   return <Landing onNavigate={onNavigate} />;
 }

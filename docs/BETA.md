@@ -320,8 +320,7 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 
 1. Open **`https://datspiritpoker.com/`** after you [point DNS here](#website-address)
    (or the `https://YOUR-DASHES.sslip.io/` bookmark until then). Click **Play poker now!**.
-2. **Create account** (username + password). Add an email if you want to reset
-   a forgotten password. Sage is not required to play.
+2. **Create account** (username + password + email). The platform emails a **verification code**; entering it on **Verify email** proves they own that inbox. Testers are **not** pre-registered in AWS — that is only an SES sandbox quirk (see below). Sage is not required to play.
 3. Click **Redeem 5000 DAT today** (once per UTC day; in-game table credits we fund).
 4. **Buy in & join 6-max** — you sit vs house, or next to another human if they are waiting.
 5. **Deal hand** when at least two seats are filled.
@@ -330,6 +329,27 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
 7. **Connect Sage to withdraw DAT** only if you want those credits in a wallet. Approve a
    sign-only pairing (it cannot send coins).
 8. Send notes and screenshots from **https://datspiritpoker.com/feedback**.
+
+### Email delivery (one-time operator setup)
+
+The game already works the way you expect: **any** address the player types → code by email → they paste the code → account verified. You do **not** add testers in AWS one by one unless SES is still in **sandbox**.
+
+| Problem | Fix (do once) |
+|--------|------------------|
+| No mail at all | Set `DAT_EMAIL_MODE=smtp` and `DAT_SMTP_*` in `/opt/dat-poker/.env`, then `sudo systemctl restart dat-poker-api`. Without SMTP, codes only appear in `journalctl` (`grep 'dat-poker mail'`). |
+| SMTP works but mail only reaches *some* addresses | **SES sandbox** — request **production access** (below) or use **Resend** with domain DNS only. |
+| Resend on site does nothing | Username + email must **exactly** match `accounts.json` (`jq '.users[] | {username, email}' /opt/dat-poker/data/accounts.json`). |
+
+**Recommended — Amazon SES production (send to any inbox):**
+
+1. SES (same region as EC2) → verify **domain** `datspiritpoker.com` (DKIM DNS in Cloudflare).
+2. **Account dashboard** → **Request production access** — use case: transactional verification and password-reset email for datspiritpoker.com poker accounts; no marketing.
+3. Create **SMTP credentials**, put them in `/opt/dat-poker/.env` (`DAT_EMAIL_MODE=smtp`, `DAT_EMAIL_FROM=DAT Poker <noreply@datspiritpoker.com>`, host/port/user/pass).
+4. Restart `dat-poker-api`.
+
+**Alternative — Resend (often faster for beta):** verify `datspiritpoker.com` in Resend (DNS in Cloudflare), SMTP host `smtp.resend.com`, user `resend`, password = API key. Same `.env` shape; restart API.
+
+**Dev-only:** `DAT_EMAIL_BETA_REVEAL_CODE=true` shows the code in the API/UI when SMTP is not ready — not for production.
 
 Sage pairing **only signs messages**. If Sage asks to send coins or take an
 offer during this beta, reject it and file feedback. Details:

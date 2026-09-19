@@ -211,27 +211,130 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  register: (body: { username: string; password: string; email?: string }) =>
+  terms: () =>
     request<{
       ok: boolean;
-      token: string;
+      version: string;
+      effectiveDate: string;
+      acceptanceValidDays: number;
+      content: string;
+    }>("/v1/auth/terms"),
+
+  playRequirements: () =>
+    request<{
+      ok: boolean;
+      complianceRequired: boolean;
+      turnstileSiteKey: string;
+      minAge: number;
+      blockedCountryCodes: string[];
+      emailDeliveryMode: "memory" | "log" | "smtp";
+      emailDeliversToInbox: boolean;
+    }>("/v1/auth/play-requirements"),
+
+  geoHint: () => request<{ ok: boolean; countryCode: string | null }>("/v1/auth/geo-hint"),
+
+  register: (
+    body: {
+      username: string;
+      password: string;
+      email: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      needsEmailVerification?: boolean;
+      message?: string;
+      token?: string;
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
+      betaVerificationCode?: string;
     }>("/v1/auth/register", {
       method: "POST",
       body: JSON.stringify(body),
     }),
 
-  login: (body: { username: string; password: string }) =>
+  verifyEmail: (
+    body: {
+      username: string;
+      code: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      message: string;
+      token: string;
+      playerId: string;
+      username: string;
+      email: string;
+      emailVerified: boolean;
+      sageLinked: boolean;
+      sageAddress: string;
+    }>("/v1/auth/email/verify", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  resendVerificationEmail: (body: { username: string; email: string }) =>
+    request<{ ok: boolean; message: string; betaVerificationCode?: string }>("/v1/auth/email/resend", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  addEmailToAccount: (
+    body: {
+      username: string;
+      password: string;
+      email: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      needsEmailVerification?: boolean;
+      message?: string;
+      username: string;
+      email: string;
+    }>("/v1/auth/email/add", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  login: (
+    body: {
+      username: string;
+      password: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) =>
     request<{
       ok: boolean;
       token: string;
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
     }>("/v1/auth/login", {
@@ -245,6 +348,7 @@ export const api = {
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
     }>("/v1/auth/me"),
@@ -253,7 +357,6 @@ export const api = {
     request<{
       ok: boolean;
       message: string;
-      resetCode?: string;
       expiresInSeconds?: number;
     }>("/v1/auth/password/forgot", {
       method: "POST",

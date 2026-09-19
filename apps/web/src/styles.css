@@ -636,6 +636,48 @@ button.secondary {
   word-break: break-all;
 }
 
+.compliance-fieldset {
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.compliance-fieldset legend {
+  padding: 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.checkbox-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.checkbox-row input {
+  margin-top: 0.2rem;
+}
+
+.turnstile-wrap {
+  margin-top: 0.5rem;
+  min-height: 65px;
+}
+
+.terms-preview {
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  background: var(--panel-bg, rgba(0, 0, 0, 0.2));
+  border-radius: 6px;
+}
+
 .feedback-form label {
   display: block;
   margin: 0.85rem 0 0.35rem;

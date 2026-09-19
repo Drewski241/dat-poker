@@ -118,14 +118,22 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [error, setError] = useState<string | null>(null);
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
   const [bigBlindMojos, setBigBlindMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+  const [verificationPending, setVerificationPending] = useState<{ username: string; email: string } | null>(
+    null,
+  );
   const [smallBlindMojos, setSmallBlindMojos] = useState<bigint>(DAT_TABLE_DEFAULTS.smallBlindMojos);
 
   useEffect(() => {
     void (async () => {
+      restoreApiAuthToken();
       try {
-        restoreApiAuthToken();
         await api.health();
         setApiOk(true);
+      } catch {
+        setApiOk(false);
+        return;
+      }
+      try {
         const [config, dat] = await Promise.all([api.walletConfig(), api.datToken()]);
         setDatToken(dat);
         if (restoreApiAuthToken()) {
@@ -154,7 +162,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           }
         }
       } catch {
-        setApiOk(false);
+        /* Wallet config / DAT token / Sage restore failures must not block account sign-up. */
       }
     })();
   }, []);
@@ -307,9 +315,54 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setApiAuthToken(null);
     });
 
-  const handleAuth = (mode: "register" | "login", fields: { username: string; password: string; email?: string }) => {
+  const handleAuth = (
+    mode: "register" | "login",
+    fields: {
+      username: string;
+      password: string;
+      email?: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) => {
     void run(mode === "register" ? "Creating account…" : "Signing in…", async () => {
-      const result = mode === "register" ? await api.register(fields) : await api.login(fields);
+      if (mode === "register") {
+        if (!fields.email?.trim()) {
+          throw new Error("Email is required");
+        }
+        const registered = await api.register({
+          username: fields.username,
+          password: fields.password,
+          email: fields.email.trim(),
+          countryCode: fields.countryCode,
+          ageConfirmed: fields.ageConfirmed,
+          turnstileToken: fields.turnstileToken,
+          termsAccepted: fields.termsAccepted,
+          termsVersion: fields.termsVersion,
+        });
+        setVerificationPending({ username: registered.username, email: registered.email });
+        const codeHint = registered.betaVerificationCode
+          ? ` Code (beta): ${registered.betaVerificationCode}`
+          : "";
+        setStatus((registered.message ?? "Check your email for a verification code.") + codeHint);
+        return;
+      }
+      const result = await api.login({
+        username: fields.username,
+        password: fields.password,
+        countryCode: fields.countryCode,
+        ageConfirmed: fields.ageConfirmed,
+        turnstileToken: fields.turnstileToken,
+        termsAccepted: fields.termsAccepted,
+        termsVersion: fields.termsVersion,
+      });
+      if (!result.token) {
+        throw new Error("Sign-in failed");
+      }
+      setVerificationPending(null);
       setApiAuthToken(result.token);
       setPlayerId(result.playerId);
       setUsername(result.username);
@@ -318,10 +371,70 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     });
   };
 
+  const handleVerifyEmail = async (fields: {
+    username: string;
+    code: string;
+    countryCode: string;
+    ageConfirmed: boolean;
+    turnstileToken?: string;
+    termsAccepted: boolean;
+    termsVersion: string;
+  }) => {
+    setBusy(true);
+    setError(null);
+    setStatus("Verifying email…");
+    try {
+      const result = await api.verifyEmail(fields);
+      setVerificationPending(null);
+      setApiAuthToken(result.token);
+      setPlayerId(result.playerId);
+      setUsername(result.username);
+      if (result.sageAddress) setWalletAddress(result.sageAddress);
+      await refreshAccount(result.playerId);
+      setStatus(result.message);
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const handleAddEmail = async (fields: {
+    username: string;
+    password: string;
+    email: string;
+    countryCode: string;
+    ageConfirmed: boolean;
+    turnstileToken?: string;
+    termsAccepted: boolean;
+    termsVersion: string;
+  }) => {
+    await run("Adding email…", async () => {
+      const result = await api.addEmailToAccount(fields);
+      setVerificationPending({ username: result.username, email: result.email });
+      setStatus(result.message ?? "Check your email for a verification code.");
+    });
+  };
+
+  const handleResendVerification = async (fields: { username: string; email: string }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      return await api.resendVerificationEmail(fields);
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleForgot = async (fields: { username: string; email: string }) => {
     setBusy(true);
     setError(null);
-    setStatus("Requesting reset code…");
+    setStatus("Sending reset email…");
     try {
       const result = await api.forgotPassword(fields);
       setStatus(result.message);
@@ -838,8 +951,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Sage until you want DAT in your wallet.
             </p>
             <AuthPanel
-              busy={busy || !apiOk}
+              busy={busy || apiOk === false}
+              apiError={error}
+              verificationPending={verificationPending}
               onAuth={handleAuth}
+              onVerifyEmail={handleVerifyEmail}
+              onResendVerification={handleResendVerification}
+              onAddEmail={handleAddEmail}
               onForgot={handleForgot}
               onReset={handleReset}
             />
