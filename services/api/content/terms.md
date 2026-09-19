@@ -17,7 +17,7 @@ Collusion, bots, and automated play are prohibited. We may suspend accounts and 
 
 ## 4. Privacy
 
-Account email is used for verification and security. See operator privacy practices published with the production site.
+Account email is used for verification and security. See https://datspiritpoker.com/privacy
 
 ## 5. Changes
 
