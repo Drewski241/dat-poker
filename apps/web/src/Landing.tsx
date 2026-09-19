@@ -92,6 +92,10 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
           <a href="/feedback" onClick={(event) => { event.preventDefault(); onNavigate("feedback"); }}>
             Send feedback
           </a>
+          {" · "}
+          <a href="/privacy" onClick={(event) => { event.preventDefault(); onNavigate("privacy"); }}>
+            Privacy
+          </a>
           .
         </p>
       </footer>
