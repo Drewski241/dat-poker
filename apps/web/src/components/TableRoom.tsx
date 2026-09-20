@@ -28,6 +28,9 @@ type Props = {
   onBetAmountChange: (v: bigint) => void;
   onSendAction: (action: PlayerAction, amountMojos?: string) => void;
   onStartHand: () => void;
+  canRebuy: boolean;
+  onRebuy: () => void;
+  rebuyLabel: string;
   onOpenLobby: () => void;
   playerLabel: (id: string, youId: string | null, display?: string) => string;
   seatPositionLabel: (seatIndex: number, hand: HandState | null, dealerButtonSeat: number | null) => string;
@@ -56,6 +59,9 @@ export function TableRoom({
   onBetAmountChange,
   onSendAction,
   onStartHand,
+  canRebuy,
+  onRebuy,
+  rebuyLabel,
   onOpenLobby,
   playerLabel,
   seatPositionLabel,
@@ -174,14 +180,36 @@ export function TableRoom({
                 )}
               </div>
             )}
-            <button
-              type="button"
-              className="table-room-deal-btn"
-              disabled={busy || tableSeats.length < 2}
-              onClick={onStartHand}
-            >
-              {handResult ? "New hand" : "Deal hand"}
-            </button>
+            {tableStackMojos != null && BigInt(tableStackMojos) === 0n && !canRebuy && (
+              <p className="banner info table-room-bust">
+                You have no chips at this table. Wait for the hand to finish, then buy in again, or open{" "}
+                <strong>Lobby</strong> to redeem DAT.
+              </p>
+            )}
+            {canRebuy && (
+              <button
+                type="button"
+                className="table-room-deal-btn table-room-rebuy-btn"
+                disabled={busy}
+                onClick={onRebuy}
+              >
+                Buy in again ({rebuyLabel})
+              </button>
+            )}
+            {!canRebuy && (
+              <button
+                type="button"
+                className="table-room-deal-btn"
+                disabled={
+                  busy ||
+                  tableSeats.length < 2 ||
+                  (tableStackMojos != null && BigInt(tableStackMojos) === 0n)
+                }
+                onClick={onStartHand}
+              >
+                {handResult ? "New hand" : "Deal hand"}
+              </button>
+            )}
           </div>
         ) : (
           <section className="table-room-felt" aria-label="Hand">

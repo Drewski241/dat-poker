@@ -609,6 +609,31 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   };
 
+  const minBuyInMojos = datToken?.minBuyInMojos ?? "1000000";
+
+  const rebuyAtTable = () => {
+    if (!tableId || !playerId) return;
+    run("Buying in…", async () => {
+      const account = BigInt(accountMojos ?? "0");
+      if (account < BigInt(minBuyInMojos) && !datToken?.devBuyInEnabled) {
+        throw new Error(
+          `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", datToken?.ticker ?? "DAT")} in Lobby, then buy in`,
+        );
+      }
+      const rebought = await api.rebuyTable(tableId, playerId, minBuyInMojos, {
+        devAck: datToken?.devBuyInEnabled,
+      });
+      setHand(rebought.hand);
+      setTableSeats(rebought.seats);
+      setHandInProgress(rebought.handInProgress);
+      setDealerButtonSeat(rebought.dealerButtonSeat ?? null);
+      if (rebought.lastHandResult) setHandResult(rebought.lastHandResult);
+      else setHandResult(null);
+      await refreshAccount(playerId);
+      setStatus("Buy-in added — deal when ready.");
+    });
+  };
+
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
     run("Dealing hand…", async () => {
@@ -631,6 +656,22 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const myTableSeat = tableSeats.find((s) => s.playerId === playerId);
   const tableStackMojos = myTableSeat?.stackMojos ?? null;
+  const tableStackIsZero =
+    tableStackMojos != null && (() => {
+      try {
+        return BigInt(tableStackMojos) === 0n;
+      } catch {
+        return false;
+      }
+    })();
+  const canRebuyAtTable = Boolean(
+    tableId &&
+      playerId &&
+      !hand &&
+      !handInProgress &&
+      datToken?.buyInReady &&
+      tableStackIsZero,
+  );
   const handsPlayed = myTableSeat?.handsPlayed ?? accountPlaythrough?.handsPlayed ?? 0;
   const handsRequired = myTableSeat?.handsRequired ?? accountPlaythrough?.handsRequired ?? 0;
   const playthroughRemaining = myTableSeat?.playthroughRemaining ?? accountPlaythrough?.playthroughRemaining ?? 0;
@@ -923,6 +964,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onBetAmountChange={setBetAmountMojos}
             onSendAction={sendAction}
             onStartHand={startHandFlow}
+            canRebuy={canRebuyAtTable}
+            onRebuy={rebuyAtTable}
+            rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => setTableFocusMode(false)}
             playerLabel={playerLabel}
             seatPositionLabel={seatPositionLabel}
