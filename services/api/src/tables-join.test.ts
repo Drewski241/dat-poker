@@ -39,6 +39,52 @@ function auth(token: string) {
   return { authorization: `Bearer ${token}` };
 }
 
+/** Play a fold when it is the human's turn; otherwise poll the table (house acts on GET). */
+async function finishHeadsUpHandAsHumanFold(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  tableId: string,
+  playerId: string,
+  token: string,
+  initial: { hand?: unknown; handInProgress?: boolean },
+) {
+  let body: {
+    hand?: {
+      actionSeat: number | null;
+      players: { playerId: string; seatIndex: number; allIn?: boolean; folded?: boolean }[];
+    } | null;
+    handInProgress?: boolean;
+  } = { ...(initial as typeof body) };
+  for (let i = 0; i < 40 && (body.hand || body.handInProgress); i++) {
+    if (body.hand?.actionSeat != null) {
+      const actor = body.hand.players.find((p) => p.seatIndex === body.hand!.actionSeat);
+      const me = body.hand.players.find((p) => p.playerId === playerId);
+      if (actor?.playerId === playerId && me && !me.allIn && !me.folded) {
+        const act = await app.inject({
+          method: "POST",
+          url: `/v1/tables/${tableId}/hands/action`,
+          headers: auth(token),
+          payload: { playerId, action: "fold" },
+        });
+        expect(act.statusCode).toBe(200);
+        body = JSON.parse(act.body);
+        continue;
+      }
+    }
+    const poll = await app.inject({
+      method: "GET",
+      url: `/v1/tables/${tableId}?playerId=${encodeURIComponent(playerId)}`,
+      headers: auth(token),
+    });
+    body = JSON.parse(poll.body);
+  }
+  const finalPoll = await app.inject({
+    method: "GET",
+    url: `/v1/tables/${tableId}?playerId=${encodeURIComponent(playerId)}`,
+    headers: auth(token),
+  });
+  return JSON.parse(finalPoll.body) as typeof body & { handInProgress: boolean };
+}
+
 async function registerAndLogin(
   app: Awaited<ReturnType<typeof buildApp>>,
   username: string,
@@ -191,23 +237,15 @@ describe("6-max join + daily redeem", () => {
       payload: { playerId: carol.session.playerId },
     });
     expect(go.statusCode).toBe(200);
-    let body = JSON.parse(go.body);
-    for (let i = 0; i < 20 && body.hand; i++) {
-      const actor = body.hand.players.find(
-        (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
-      );
-      if (!actor || actor.playerId !== carol.session.playerId) {
-        break;
-      }
-      const act = await app.inject({
-        method: "POST",
-        url: `/v1/tables/${joined.tableId}/hands/action`,
-        headers: auth(carol.token),
-        payload: { playerId: carol.session.playerId, action: "fold" },
-      });
-      body = JSON.parse(act.body);
-    }
-    expect(body.hand).toBeNull();
+    const body = await finishHeadsUpHandAsHumanFold(
+      app,
+      joined.tableId,
+      carol.session.playerId,
+      carol.token,
+      JSON.parse(go.body),
+    );
+    expect(body.hand ?? null).toBeNull();
+    expect(body.handInProgress).toBe(false);
 
     const allowed = await app.inject({
       method: "POST",
@@ -446,23 +484,15 @@ describe("6-max join + daily redeem", () => {
       headers,
       payload: { playerId: created.playerId },
     });
-    let body = JSON.parse(go.body);
-    for (let i = 0; i < 20 && body.hand; i++) {
-      const actor = body.hand.players.find(
-        (p: { seatIndex: number }) => p.seatIndex === body.hand.actionSeat,
-      );
-      if (!actor || actor.playerId !== created.playerId) {
-        break;
-      }
-      const act = await app.inject({
-        method: "POST",
-        url: `/v1/tables/${joined.tableId}/hands/action`,
-        headers,
-        payload: { playerId: created.playerId, action: "fold" },
-      });
-      body = JSON.parse(act.body);
-    }
-    expect(body.hand).toBeNull();
+    const body = await finishHeadsUpHandAsHumanFold(
+      app,
+      joined.tableId,
+      created.playerId,
+      created.token,
+      JSON.parse(go.body),
+    );
+    expect(body.hand ?? null).toBeNull();
+    expect(body.handInProgress).toBe(false);
 
     const cashed = await app.inject({
       method: "POST",

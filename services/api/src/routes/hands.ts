@@ -60,6 +60,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         table.submitPlayerSeed(seated.playerId, generateServerSeed());
       }
       table.revealAndDeal();
+      table.advanceHandIfIdle();
       playHouseIfDue(table);
       persistTablePlaythrough(table);
       return {
@@ -99,7 +100,6 @@ export function registerHandRoutes(app: FastifyInstance): void {
       if (!session) return;
       try {
         table.revealAndDeal();
-        playHouseIfDue(table);
         persistTablePlaythrough(table);
         return {
           ok: true,
@@ -122,6 +122,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
     try {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
       table.applyAction(session.playerId, req.body.action, amount);
+      table.advanceHandIfIdle();
       playHouseIfDue(table);
       persistTablePlaythrough(table);
       if (!table.isHandInProgress()) {
