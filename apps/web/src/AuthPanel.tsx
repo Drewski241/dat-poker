@@ -79,7 +79,10 @@ export function AuthPanel({
     fields: { username: string; password: string; email?: string } & PlayComplianceInput,
   ) => void;
   onVerifyEmail: (fields: { username: string; code: string } & PlayComplianceInput) => Promise<void>;
-  onResendVerification: (fields: { username: string; email: string }) => Promise<{ message: string }>;
+  onResendVerification: (fields: { username: string; email: string }) => Promise<{
+    message: string;
+    betaVerificationCode?: string;
+  }>;
   onAddEmail: (
     fields: { username: string; password: string; email: string } & PlayComplianceInput,
   ) => Promise<void>;
