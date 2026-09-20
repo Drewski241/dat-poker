@@ -587,6 +587,51 @@ button.secondary {
   padding: 1rem;
 }
 
+.wc-modal-backdrop {
+  z-index: 1100;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wc-modal {
+  max-height: min(92vh, 40rem);
+  overflow-y: auto;
+}
+
+.wc-modal-error {
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.wc-mobile-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.wc-open-sage {
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+}
+
+.wc-qr-details {
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.qr-img {
+  display: block;
+  margin: 1rem auto;
+  border-radius: 8px;
+  max-width: 100%;
+  height: auto;
+}
+
 .modal {
   background: var(--panel);
   border-radius: 12px;

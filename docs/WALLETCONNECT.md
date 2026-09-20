@@ -58,8 +58,10 @@ The Vite web client (`apps/web`) implements Sage WalletConnect:
 1. Fetch `/v1/wallet/config` on app load.
 2. **Create account / sign in** — username and password. This is the play identity.
 3. **Redeem** funded DAT and **join a table** with the account token. Sage is not required.
-4. **Connect Sage** only to withdraw DAT to a wallet. Scan QR, then **Link Sage address**
-   (CHIP-0002 sign-only). The account id does not change.
+4. **Connect Sage** only to withdraw DAT to a wallet. On **desktop**, scan the QR with
+   Sage mobile. On **iPhone Safari**, tap **Open Sage** in the modal (same phone — do not
+   scan the QR on this device). Then **Link Sage address** (CHIP-0002 sign-only). The
+   account id does not change.
 5. **Start hand** — commit-reveal deal; you act when prompted. Solo vs house,
    the house bot bets, raises, and folds from its cards (it is not a check/call
    station).

@@ -124,6 +124,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [session, setSession] = useState<WcSession | null>(null);
   const [wcUri, setWcUri] = useState<string | null>(null);
   const [pairingOpen, setPairingOpen] = useState(false);
+  const [pairingError, setPairingError] = useState<string | null>(null);
   const pairingGen = useRef(0);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [datBalance, setDatBalance] = useState<string | null>(null);
@@ -292,6 +293,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     pairingGen.current += 1;
     setPairingOpen(false);
     setWcUri(null);
+    setPairingError(null);
     setBusy(false);
     setStatus("");
   };
@@ -305,6 +307,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setBusy(true);
     setError(null);
     setWcUri(null);
+    setPairingError(null);
     setPairingOpen(true);
     setStatus("Connecting to WalletConnect…");
     void (async () => {
@@ -314,22 +317,26 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           onUri: (nextUri) => {
             if (pairingGen.current !== gen) return;
             setWcUri(nextUri);
+            setPairingError(null);
             setStatus("Scan the QR with Sage…");
           },
         });
         if (pairingGen.current !== gen) return;
         setWcUri(uri);
+        setPairingError(null);
         setStatus("Scan the QR with Sage…");
         const next = await approval();
         if (pairingGen.current !== gen) return;
         setSession(next);
         setPairingOpen(false);
         setWcUri(null);
+        setPairingError(null);
         setStatus("");
       } catch (e) {
         if (pairingGen.current !== gen) return;
-        setError(mapWalletConnectError(e).message);
-        setPairingOpen(false);
+        const message = mapWalletConnectError(e).message;
+        setPairingError(message);
+        setError(message);
         setWcUri(null);
         setStatus("");
       } finally {
@@ -1274,7 +1281,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       )}
 
       {pairingOpen && (
-        <QrConnectModal uri={wcUri} status={status} onClose={cancelPairing} />
+        <QrConnectModal uri={wcUri} status={status} error={pairingError} onClose={cancelPairing} />
       )}
     </div>
   );

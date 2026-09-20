@@ -9,10 +9,13 @@ import {
   requiredNamespaces,
   sessionSpendMethods,
 } from "./constants.js";
+import { isMobileUserAgent } from "./wc-link.js";
 
 let clientPromise: Promise<SignClient> | null = null;
 
-const RELAYER_WAIT_MS = 12_000;
+function relayerWaitMs(): number {
+  return isMobileUserAgent() ? 22_000 : 12_000;
+}
 
 type DisplayUriClient = {
   on(event: "display_uri", listener: (uri: string) => void): void;
@@ -44,7 +47,7 @@ export function mapWalletConnectError(err: unknown): Error {
   return err instanceof Error ? err : new Error(raw);
 }
 
-async function waitForRelayer(client: SignClient, timeoutMs = RELAYER_WAIT_MS): Promise<void> {
+async function waitForRelayer(client: SignClient, timeoutMs = relayerWaitMs()): Promise<void> {
   const relayer = client.core.relayer;
   if (relayer.connected) return;
 
