@@ -114,6 +114,47 @@ describe("NlheTableEngine", () => {
     expect(result?.board).toHaveLength(5);
   });
 
+  it("caps showdown winnings at the short stack (main and side pots)", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 1n,
+      bigBlindMojos: 2n,
+      minBuyInMojos: 500n,
+      maxBuyInMojos: 50_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("short", 0, 1000n);
+    table.seatPlayer("deep", 1, 2000n);
+    table.startHand("hand-side-pot");
+    table.submitPlayerSeed("short", generateServerSeed());
+    table.submitPlayerSeed("deep", generateServerSeed());
+    table.revealAndDeal();
+
+    let state = table.getHandState()!;
+    const sb = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(sb.playerId, "all-in");
+    state = table.getHandState()!;
+    const bb = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(bb.playerId, "all-in");
+
+    expect(table.getHandState()).toBeNull();
+    const shortStack = table.getPlayerStack("short")!;
+    const deepStack = table.getPlayerStack("deep")!;
+    expect(shortStack + deepStack).toBe(3000n);
+
+    const result = table.getLastHandResult()!;
+    expect(result.potMojos).toBe(table.getPlayerStack(result.winnerId));
+    if (result.winnerId === "short") {
+      expect(shortStack).toBe(2000n);
+      expect(deepStack).toBe(1000n);
+      expect(result.potMojos).toBe(2000n);
+    } else {
+      expect(deepStack).toBe(3000n);
+      expect(shortStack).toBe(0n);
+      expect(result.potMojos).toBe(3000n);
+    }
+  });
+
   it("marks a player all-in when a raise consumes their entire stack", () => {
     const small: TableConfig = {
       ...config,
@@ -245,6 +286,67 @@ describe("NlheTableEngine", () => {
     expect(debit.remaining).toBe(4_950_000_000_000n);
     expect(table.getPlayerStack("alice")).toBe(4_950_000_000_000n);
     expect(table.getHandsPlayed("alice")).toBe(50);
+  });
+
+  it("closes preflop when the small blind checks facing a shorter all-in big blind", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 5_000n,
+      bigBlindMojos: 10_000n,
+      minBuyInMojos: 2_000n,
+      maxBuyInMojos: 50_000_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("alice", 0, 10_000_000n);
+    table.seatPlayer("bob", 1, 2_000n);
+    table.startHand("hand-short-bb");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const pre = table.getHandState()!;
+    expect(pre.street).toBe("preflop");
+    expect(pre.players.find((p) => p.playerId === "bob")?.allIn).toBe(true);
+    const sb = pre.players.find((p) => p.seatIndex === pre.actionSeat)!;
+    expect(sb.betThisStreetMojos).toBeGreaterThan(pre.currentBetMojos);
+
+    table.applyAction(sb.playerId, "check");
+    expect(table.getHandState()?.street).not.toBe("preflop");
+  });
+
+  it("runs out the board when blinds put every player all-in", () => {
+    const short = {
+      ...config,
+      minBuyInMojos: 1000n,
+      smallBlindMojos: 1000n,
+      bigBlindMojos: 2000n,
+    };
+    const table = new NlheTableEngine(short);
+    table.seatPlayer("alice", 0, 1000n);
+    table.seatPlayer("bob", 1, 1000n);
+    table.startHand("hand-allin-blind");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+    table.advanceHandIfIdle();
+    expect(table.isHandInProgress()).toBe(false);
+    expect(table.getLastHandResult()).not.toBeNull();
+  });
+
+  it("reloads a zero stack between hands via rebuyStack", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.startHand("hand-rebuy");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+    table.applyAction("alice", "fold");
+    expect(table.getHandState()).toBeNull();
+    const internal = table as unknown as { stacks: Map<string, bigint> };
+    internal.stacks.set("alice", 0n);
+    table.rebuyStack("alice", 5_000_000_000_000n);
+    expect(table.getPlayerStack("alice")).toBe(5_000_000_000_000n);
   });
 
   it("rejects cash out during active hand", () => {

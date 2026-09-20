@@ -28,7 +28,12 @@ type Props = {
   onBetAmountChange: (v: bigint) => void;
   onSendAction: (action: PlayerAction, amountMojos?: string) => void;
   onStartHand: () => void;
+  canRebuy: boolean;
+  onRebuy: () => void;
+  rebuyLabel: string;
   onOpenLobby: () => void;
+  handHistoryCount: number;
+  onOpenHandHistory: () => void;
   playerLabel: (id: string, youId: string | null, display?: string) => string;
   seatPositionLabel: (seatIndex: number, hand: HandState | null, dealerButtonSeat: number | null) => string;
 };
@@ -56,7 +61,12 @@ export function TableRoom({
   onBetAmountChange,
   onSendAction,
   onStartHand,
+  canRebuy,
+  onRebuy,
+  rebuyLabel,
   onOpenLobby,
+  handHistoryCount,
+  onOpenHandHistory,
   playerLabel,
   seatPositionLabel,
 }: Props) {
@@ -66,6 +76,7 @@ export function TableRoom({
       : null;
 
   const canStepToLobby = !hand && !handInProgress;
+  const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const opponents = hand?.players.filter((p) => p.playerId !== playerId) ?? [];
@@ -87,27 +98,46 @@ export function TableRoom({
             )}
           </h1>
         </div>
-        <button
-          type="button"
-          className="secondary table-room-lobby-btn"
-          disabled={busy || !canStepToLobby}
-          title={canStepToLobby ? "Account, withdraw, leave table" : "Finish or wait for the hand to end"}
-          onClick={onOpenLobby}
-        >
-          Lobby
-        </button>
+        <div className="table-room-header-actions">
+          <button
+            type="button"
+            className="table-room-history-link"
+            disabled={busy}
+            onClick={onOpenHandHistory}
+          >
+            Hand history{handHistoryCount > 0 ? ` (${handHistoryCount})` : ""}
+          </button>
+          <button
+            type="button"
+            className="secondary table-room-lobby-btn"
+            disabled={busy || !canStepToLobby}
+            title={canStepToLobby ? "Account, withdraw, leave table" : "Finish or wait for the hand to end"}
+            onClick={onOpenLobby}
+          >
+            Lobby
+          </button>
+        </div>
       </header>
 
       {!hand && (
         <div className="table-room-seats" aria-label="Seats">
           {Array.from({ length: 6 }, (_, i) => {
             const seated = tableSeats.find((s) => s.seatIndex === i);
+            const isDealer = buttonSeatIndex === i;
             return (
               <div
                 key={i}
-                className={`table-room-seat ${seated ? "occupied" : "empty"}`}
+                className={`table-room-seat ${seated ? "occupied" : "empty"}${isDealer ? " table-room-seat-dealer" : ""}`}
               >
-                <span className="table-room-seat-num">{i + 1}</span>
+                <span className="table-room-seat-num">
+                  {isDealer ? (
+                    <span className="table-room-dealer-chip" title="Dealer button">
+                      D
+                    </span>
+                  ) : (
+                    i + 1
+                  )}
+                </span>
                 {seated ? (
                   <>
                     <span className="table-room-seat-name">
@@ -174,14 +204,36 @@ export function TableRoom({
                 )}
               </div>
             )}
-            <button
-              type="button"
-              className="table-room-deal-btn"
-              disabled={busy || tableSeats.length < 2}
-              onClick={onStartHand}
-            >
-              {handResult ? "New hand" : "Deal hand"}
-            </button>
+            {tableStackMojos != null && BigInt(tableStackMojos) === 0n && !canRebuy && (
+              <p className="banner info table-room-bust">
+                You have no chips at this table. Wait for the hand to finish, then buy in again, or open{" "}
+                <strong>Lobby</strong> to redeem DAT.
+              </p>
+            )}
+            {canRebuy && (
+              <button
+                type="button"
+                className="table-room-deal-btn table-room-rebuy-btn"
+                disabled={busy}
+                onClick={onRebuy}
+              >
+                Buy in again ({rebuyLabel})
+              </button>
+            )}
+            {!canRebuy && (
+              <button
+                type="button"
+                className="table-room-deal-btn"
+                disabled={
+                  busy ||
+                  tableSeats.length < 2 ||
+                  (tableStackMojos != null && BigInt(tableStackMojos) === 0n)
+                }
+                onClick={onStartHand}
+              >
+                {handResult ? "New hand" : "Deal hand"}
+              </button>
+            )}
           </div>
         ) : (
           <section className="table-room-felt" aria-label="Hand">
@@ -224,6 +276,11 @@ export function TableRoom({
                   >
                     <div className="table-room-opponent-meta">
                       <strong>
+                        {hand.dealerSeat === p.seatIndex && (
+                          <span className="table-room-dealer-chip table-room-dealer-chip-inline" title="Dealer">
+                            D{" "}
+                          </span>
+                        )}
                         {p.playerId === HOUSE_PLAYER_ID
                           ? "House"
                           : playerLabel(
@@ -247,7 +304,14 @@ export function TableRoom({
             {me && (
               <div className={`table-room-hero ${isMyAction ? "your-turn" : ""}`}>
                 <div className="table-room-hero-meta">
-                  <strong>You</strong>
+                  <strong>
+                    {hand.dealerSeat === me.seatIndex && (
+                      <span className="table-room-dealer-chip table-room-dealer-chip-inline" title="Dealer">
+                        D{" "}
+                      </span>
+                    )}
+                    You
+                  </strong>
                   <span className="stack">{formatDatMojos(me.stackMojos, datToken?.ticker)}</span>
                   {liveHandLabel && (
                     <span className="live-hand table-room-live-hand">

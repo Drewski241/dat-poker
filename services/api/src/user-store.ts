@@ -1,6 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import {
+  sendEmailVerificationMail,
+  sendPasswordResetMail,
+} from "./mail.js";
 
 export const USERNAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{2,19}$/;
 
@@ -14,8 +18,13 @@ export interface StoredUser {
   sageAddress: string;
   sagePubkey: string;
   createdAt: string;
+  emailVerifiedAt?: string;
+  emailVerifyHash?: string;
+  emailVerifyExpiresAt?: string;
   passwordResetHash?: string;
   passwordResetExpiresAt?: string;
+  playCountryCode?: string;
+  playEligibilityAt?: string;
 }
 
 const usersByKey = new Map<string, StoredUser>();
@@ -87,13 +96,26 @@ export function normalizeEmail(email: string): string {
 
 export function validateEmail(email: string): string | null {
   const trimmed = email.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return "Email is required";
   if (trimmed.length > 200) return "Email is too long";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return "Enter a valid email or leave it blank";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return "Enter a valid email address";
   return null;
 }
 
 const RESET_TTL_MS = 15 * 60 * 1000;
+const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function isEmailVerified(user: StoredUser): boolean {
+  return Boolean(user.emailVerifiedAt);
+}
+
+function emailTaken(normalized: string, exceptUserId?: string): boolean {
+  for (const user of usersById.values()) {
+    if (exceptUserId && user.id === exceptUserId) continue;
+    if (user.email && normalizeEmail(user.email) === normalized) return true;
+  }
+  return false;
+}
 
 function hashResetCode(code: string): string {
   return createHash("sha256").update(code.trim().toLowerCase()).digest("hex");
@@ -120,16 +142,19 @@ async function hashPassword(password: string, salt: Buffer): Promise<string> {
 export async function registerUser(params: {
   username: string;
   password: string;
-  email?: string;
-}): Promise<StoredUser> {
+  email: string;
+}): Promise<{ user: StoredUser; verificationCode: string }> {
   await loadUsers();
   const usernameError = validateUsername(params.username);
   if (usernameError) throw new Error(usernameError);
   const passwordError = validatePassword(params.password);
   if (passwordError) throw new Error(passwordError);
-  const email = (params.email ?? "").trim();
+  const email = normalizeEmail(params.email ?? "");
   const emailError = validateEmail(email);
   if (emailError) throw new Error(emailError);
+  if (emailTaken(email)) {
+    throw new Error("That email is already registered");
+  }
 
   const key = usernameKey(params.username);
   if (usersByKey.has(key)) {
@@ -151,10 +176,66 @@ export async function registerUser(params: {
   usersByKey.set(key, user);
   usersById.set(user.id, user);
   await persist();
+  const verificationCode = await issueEmailVerification(user);
+  return { user, verificationCode };
+}
+
+async function issueEmailVerification(user: StoredUser): Promise<string> {
+  const code = randomBytes(4).toString("hex");
+  user.emailVerifyHash = hashResetCode(code);
+  user.emailVerifyExpiresAt = new Date(Date.now() + VERIFY_TTL_MS).toISOString();
+  user.emailVerifiedAt = "";
+  usersById.set(user.id, user);
+  usersByKey.set(user.usernameKey, user);
+  await persist();
+  await sendEmailVerificationMail({
+    to: user.email,
+    username: user.username,
+    code,
+    expiresInMinutes: VERIFY_TTL_MS / 60_000,
+  });
+  return code;
+}
+
+export async function verifyEmailWithCode(username: string, code: string): Promise<StoredUser> {
+  await loadUsers();
+  const user = usersByKey.get(usernameKey(username));
+  const given = Buffer.from(hashResetCode(code), "hex");
+  const stored = Buffer.from(user?.emailVerifyHash ?? "00".repeat(32), "hex");
+  const expired =
+    !user?.emailVerifyExpiresAt || Date.parse(user.emailVerifyExpiresAt) < Date.now();
+  const match =
+    stored.length === given.length && stored.length > 0 && timingSafeEqual(stored, given);
+  if (!user || user.emailVerifiedAt || expired || !match) {
+    throw new Error("Verification code is invalid or expired");
+  }
+  user.emailVerifiedAt = new Date().toISOString();
+  user.emailVerifyHash = "";
+  user.emailVerifyExpiresAt = "";
+  usersById.set(user.id, user);
+  usersByKey.set(user.usernameKey, user);
+  await persist();
   return user;
 }
 
-export async function loginUser(username: string, password: string): Promise<StoredUser> {
+export async function resendEmailVerification(
+  username: string,
+  email: string,
+): Promise<{ sent: boolean; verificationCode?: string }> {
+  await loadUsers();
+  const user = usersByKey.get(usernameKey(username));
+  const want = normalizeEmail(email);
+  if (!user || !want || normalizeEmail(user.email) !== want || isEmailVerified(user)) {
+    return { sent: false };
+  }
+  const code = await issueEmailVerification(user);
+  return { sent: true, verificationCode: code };
+}
+
+export async function authenticateUserPassword(
+  username: string,
+  password: string,
+): Promise<StoredUser> {
   await loadUsers();
   const user = usersByKey.get(usernameKey(username));
   if (!user) {
@@ -169,6 +250,44 @@ export async function loginUser(username: string, password: string): Promise<Sto
   return user;
 }
 
+export async function loginUser(username: string, password: string): Promise<StoredUser> {
+  const user = await authenticateUserPassword(username, password);
+  if (!user.email?.trim()) {
+    throw new Error(
+      "This account has no email yet. Use Add email on the sign-in form (username + password + email), then verify the code we send.",
+    );
+  }
+  if (!isEmailVerified(user)) {
+    throw new Error(
+      "Verify your email before signing in. Check your inbox, use Verify email, or resend the code.",
+    );
+  }
+  return user;
+}
+
+/** Legacy beta accounts: attach email after proving password; sends a verification code. */
+export async function attachEmailToAccount(params: {
+  username: string;
+  password: string;
+  email: string;
+}): Promise<{ user: StoredUser; verificationCode: string }> {
+  const user = await authenticateUserPassword(params.username, params.password);
+  if (isEmailVerified(user)) {
+    throw new Error("This account already has a verified email. Sign in instead.");
+  }
+  const email = normalizeEmail(params.email);
+  const emailError = validateEmail(email);
+  if (emailError) throw new Error(emailError);
+  if (emailTaken(email, user.id)) {
+    throw new Error("That email is already registered");
+  }
+  user.email = email;
+  usersById.set(user.id, user);
+  usersByKey.set(user.usernameKey, user);
+  const verificationCode = await issueEmailVerification(user);
+  return { user, verificationCode };
+}
+
 export async function getUserById(id: string): Promise<StoredUser | undefined> {
   await loadUsers();
   return usersById.get(id);
@@ -177,13 +296,19 @@ export async function getUserById(id: string): Promise<StoredUser | undefined> {
 export async function requestPasswordReset(
   username: string,
   email: string,
-): Promise<{ resetCode?: string; expiresInSeconds: number }> {
+): Promise<{ expiresInSeconds: number }> {
   await loadUsers();
   await hashPassword("timing-pad", Buffer.alloc(16));
   const user = usersByKey.get(usernameKey(username));
   const want = normalizeEmail(email);
   const expiresInSeconds = RESET_TTL_MS / 1000;
-  if (!user || !user.email || !want || normalizeEmail(user.email) !== want) {
+  if (
+    !user ||
+    !user.email ||
+    !want ||
+    normalizeEmail(user.email) !== want ||
+    !isEmailVerified(user)
+  ) {
     return { expiresInSeconds };
   }
   const resetCode = randomBytes(4).toString("hex");
@@ -192,7 +317,13 @@ export async function requestPasswordReset(
   usersById.set(user.id, user);
   usersByKey.set(user.usernameKey, user);
   await persist();
-  return { resetCode, expiresInSeconds };
+  await sendPasswordResetMail({
+    to: user.email,
+    username: user.username,
+    code: resetCode,
+    expiresInMinutes: RESET_TTL_MS / 60_000,
+  });
+  return { expiresInSeconds };
 }
 
 export async function resetPasswordWithCode(
@@ -268,10 +399,23 @@ export async function setUserSageLink(
   return user;
 }
 
+export async function recordPlayEligibility(userId: string, countryCode: string): Promise<void> {
+  await loadUsers();
+  const user = usersById.get(userId);
+  if (!user) return;
+  user.playCountryCode = countryCode;
+  user.playEligibilityAt = new Date().toISOString();
+  usersById.set(user.id, user);
+  usersByKey.set(user.usernameKey, user);
+  await persist();
+}
+
 export function publicUser(user: StoredUser): {
   playerId: string;
   username: string;
   email: string;
+  emailVerified: boolean;
+  playCountryCode: string;
   sageLinked: boolean;
   sageAddress: string;
 } {
@@ -279,13 +423,49 @@ export function publicUser(user: StoredUser): {
     playerId: user.id,
     username: user.username,
     email: user.email,
+    emailVerified: isEmailVerified(user),
+    playCountryCode: user.playCountryCode ?? "",
     sageLinked: Boolean(user.sagePubkey),
     sageAddress: user.sageAddress,
   };
+}
+
+/** Test helper — mark email verified without going through mail. */
+export function verifyEmailForTests(username: string): void {
+  const user = usersByKey.get(usernameKey(username));
+  if (user) {
+    user.emailVerifiedAt = new Date().toISOString();
+    user.emailVerifyHash = "";
+    user.emailVerifyExpiresAt = "";
+  }
 }
 
 export function resetUsersForTests(): void {
   usersByKey.clear();
   usersById.clear();
   loaded = true;
+}
+
+/** Test helper — account created before email was required. */
+export async function seedLegacyUserWithoutEmail(
+  username: string,
+  password: string,
+): Promise<StoredUser> {
+  await loadUsers();
+  const key = usernameKey(username);
+  const salt = randomBytes(16);
+  const user: StoredUser = {
+    id: `user_${randomBytes(8).toString("hex")}`,
+    username: normalizeUsername(username),
+    usernameKey: key,
+    email: "",
+    passwordSalt: salt.toString("hex"),
+    passwordHash: await hashPassword(password, salt),
+    sageAddress: "",
+    sagePubkey: "",
+    createdAt: new Date().toISOString(),
+  };
+  usersByKey.set(key, user);
+  usersById.set(user.id, user);
+  return user;
 }

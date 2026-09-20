@@ -83,6 +83,27 @@ export interface HandResult {
     holeCards: { rank: string; suit: string }[];
     category: string;
   }[];
+  participants?: {
+    playerId: string;
+    totalBetHandMojos: string;
+    stackBeforePayoutMojos: string;
+  }[];
+}
+
+export interface HandHistoryEntry {
+  handId: string;
+  completedAtMs: number;
+  winnerId: string;
+  potMojos: string;
+  reason: "fold" | "showdown";
+  board?: { rank: string; suit: string }[];
+  shown?: HandResult["shown"];
+  participants: {
+    playerId: string;
+    totalBetHandMojos: string;
+    stackBeforePayoutMojos: string;
+    stackAfterMojos: string;
+  }[];
 }
 
 export interface WalletConnectConfig {
@@ -211,27 +232,130 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  register: (body: { username: string; password: string; email?: string }) =>
+  terms: () =>
     request<{
       ok: boolean;
-      token: string;
+      version: string;
+      effectiveDate: string;
+      acceptanceValidDays: number;
+      content: string;
+    }>("/v1/auth/terms"),
+
+  playRequirements: () =>
+    request<{
+      ok: boolean;
+      complianceRequired: boolean;
+      turnstileSiteKey: string;
+      minAge: number;
+      blockedCountryCodes: string[];
+      emailDeliveryMode: "memory" | "log" | "smtp";
+      emailDeliversToInbox: boolean;
+    }>("/v1/auth/play-requirements"),
+
+  geoHint: () => request<{ ok: boolean; countryCode: string | null }>("/v1/auth/geo-hint"),
+
+  register: (
+    body: {
+      username: string;
+      password: string;
+      email: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      needsEmailVerification?: boolean;
+      message?: string;
+      token?: string;
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
+      betaVerificationCode?: string;
     }>("/v1/auth/register", {
       method: "POST",
       body: JSON.stringify(body),
     }),
 
-  login: (body: { username: string; password: string }) =>
+  verifyEmail: (
+    body: {
+      username: string;
+      code: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      message: string;
+      token: string;
+      playerId: string;
+      username: string;
+      email: string;
+      emailVerified: boolean;
+      sageLinked: boolean;
+      sageAddress: string;
+    }>("/v1/auth/email/verify", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  resendVerificationEmail: (body: { username: string; email: string }) =>
+    request<{ ok: boolean; message: string; betaVerificationCode?: string }>("/v1/auth/email/resend", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  addEmailToAccount: (
+    body: {
+      username: string;
+      password: string;
+      email: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      needsEmailVerification?: boolean;
+      message?: string;
+      username: string;
+      email: string;
+    }>("/v1/auth/email/add", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  login: (
+    body: {
+      username: string;
+      password: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) =>
     request<{
       ok: boolean;
       token: string;
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
     }>("/v1/auth/login", {
@@ -245,6 +369,7 @@ export const api = {
       playerId: string;
       username: string;
       email: string;
+      emailVerified: boolean;
       sageLinked: boolean;
       sageAddress: string;
     }>("/v1/auth/me"),
@@ -253,7 +378,6 @@ export const api = {
     request<{
       ok: boolean;
       message: string;
-      resetCode?: string;
       expiresInSeconds?: number;
     }>("/v1/auth/password/forgot", {
       method: "POST",
@@ -328,6 +452,11 @@ export const api = {
       }),
     }),
 
+  lobbyPresence: () =>
+    request<{ seatedHumans: number; humansInHand: number; tableCount: number }>(
+      "/v1/lobby/presence",
+    ),
+
   createTable: () =>
     request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
       method: "POST",
@@ -359,6 +488,14 @@ export const api = {
         ...options,
       }),
     }),
+
+  getHandHistory: (tableId: string, playerId?: string, limit = 20) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (playerId) q.set("playerId", playerId);
+    return request<{ tableId: string; hands: HandHistoryEntry[] }>(
+      `/v1/tables/${tableId}/hand-history?${q}`,
+    );
+  },
 
   getTable: (tableId: string, playerId?: string) =>
     request<{
@@ -396,6 +533,34 @@ export const api = {
     request<{ ok: boolean; playerId: string }>(`/v1/tables/${tableId}/seat-house`, {
       method: "POST",
       body: JSON.stringify({ buyInMojos }),
+    }),
+
+  rebuyTable: (
+    tableId: string,
+    playerId: string,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<{
+      ok: boolean;
+      rebuy: boolean;
+      tableId: string;
+      maxSeats: number;
+      humans: number;
+      handInProgress: boolean;
+      smallBlindMojos?: string;
+      bigBlindMojos?: string;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      dealerButtonSeat?: number | null;
+    }>(`/v1/tables/${tableId}/rebuy`, {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        buyInMojos,
+        ...options,
+      }),
     }),
 
   goHand: (tableId: string, playerId: string) =>

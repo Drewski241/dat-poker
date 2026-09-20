@@ -17,6 +17,11 @@ describe("pathToPage", () => {
     expect(pathToPage("/feedback/")).toBe("feedback");
   });
 
+  it("maps /privacy to the privacy page", () => {
+    expect(pathToPage("/privacy")).toBe("privacy");
+    expect(pathToPage("/privacy/")).toBe("privacy");
+  });
+
   it("sends unknown paths home so testers still find the site", () => {
     expect(pathToPage("/tables")).toBe("landing");
   });
@@ -27,7 +32,9 @@ describe("pageToPath", () => {
     expect(pageToPath("landing")).toBe("/");
     expect(pageToPath("play")).toBe("/play");
     expect(pageToPath("feedback")).toBe("/feedback");
+    expect(pageToPath("privacy")).toBe("/privacy");
     expect(pathToPage(pageToPath("feedback"))).toBe("feedback");
+    expect(pathToPage(pageToPath("privacy"))).toBe("privacy");
   });
 });
 

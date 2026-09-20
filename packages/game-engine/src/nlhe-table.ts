@@ -8,6 +8,7 @@ import {
   shuffleDeck,
   verifyCommit,
 } from "./shuffle.js";
+import { buildSidePots, splitPotEvenly } from "./side-pots.js";
 
 export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in";
 
@@ -17,6 +18,14 @@ export interface ShownHand {
   category: HandCategory;
 }
 
+export interface HandResultParticipant {
+  playerId: PlayerId;
+  /** Chips this player put in the pot this hand (including blinds). */
+  totalBetHandMojos: bigint;
+  /** Table stack immediately before the pot is paid to the winner. */
+  stackBeforePayoutMojos: bigint;
+}
+
 export interface HandResult {
   handId: HandId;
   winnerId: PlayerId;
@@ -24,6 +33,7 @@ export interface HandResult {
   reason: "fold" | "showdown";
   board: Card[];
   shown: ShownHand[];
+  participants: HandResultParticipant[];
 }
 
 export interface PlayerHandState {
@@ -90,6 +100,23 @@ export class NlheTableEngine {
     if (!this.handsPlayed.has(playerId)) {
       this.handsPlayed.set(playerId, 0);
     }
+  }
+
+  rebuyStack(playerId: PlayerId, buyInMojos: bigint): void {
+    if (this.hand) {
+      throw new Error("Cannot rebuy during an active hand");
+    }
+    if (!this.stacks.has(playerId)) {
+      throw new Error("Player not seated");
+    }
+    const stack = this.stacks.get(playerId) ?? 0n;
+    if (stack > 0n) {
+      throw new Error("Rebuy is only available when your table stack is zero");
+    }
+    if (buyInMojos < this.config.minBuyInMojos || buyInMojos > this.config.maxBuyInMojos) {
+      throw new Error("Buy-in out of range");
+    }
+    this.stacks.set(playerId, buyInMojos);
   }
 
   getMaxSeats(): number {
@@ -317,6 +344,32 @@ export class NlheTableEngine {
     h.seq++;
   }
 
+  /** Run out the board or skip action when everyone is all-in / the round is already closed. */
+  advanceHandIfIdle(): void {
+    const h = this.hand;
+    if (!h) return;
+    for (let guard = 0; guard < 16; guard++) {
+      if (this.bettingRoundComplete(h)) {
+        this.advanceStreet(h);
+        if (!this.hand) return;
+        continue;
+      }
+      if (h.actionSeat == null) break;
+      const actor = this.playerAtSeat(h, h.actionSeat);
+      if (actor && this.canPlayerAct(actor)) break;
+      try {
+        h.actionSeat = this.firstActiveSeatClockwise(h, h.actionSeat);
+      } catch {
+        if (this.bettingRoundComplete(h)) {
+          this.advanceStreet(h);
+          if (!this.hand) return;
+          continue;
+        }
+        break;
+      }
+    }
+  }
+
   applyAction(playerId: PlayerId, action: PlayerAction, amountMojos: bigint = 0n): void {
     const h = this.requireHand();
     const player = this.getPlayer(h, playerId);
@@ -479,7 +532,7 @@ export class NlheTableEngine {
     const contenders = this.playersWhoCanBet(h);
     if (contenders.length === 0) return true;
     return contenders.every(
-      (p) => p.betThisStreetMojos === h.currentBetMojos && p.actedThisStreet,
+      (p) => p.betThisStreetMojos >= h.currentBetMojos && p.actedThisStreet,
     );
   }
 
@@ -561,23 +614,26 @@ export class NlheTableEngine {
   private runShowdown(h: TableHandState): void {
     h.street = "showdown";
     const live = this.activePlayers(h);
-    let best = live[0];
-    let bestEval = evaluateBestHand([...best.holeCards, ...h.board]);
+    const participants = h.players.map((p) => ({
+      playerId: p.playerId,
+      totalBetHandMojos: p.totalBetHandMojos,
+      stackBeforePayoutMojos: p.stackMojos,
+    }));
 
-    for (const p of live.slice(1)) {
-      const ev = evaluateBestHand([...p.holeCards, ...h.board]);
-      if (compareHands(ev, bestEval) > 0) {
-        best = p;
-        bestEval = ev;
+    const { primaryWinnerId, awardedByPlayer } = this.settleSidePots(h, live, false);
+    for (const p of h.players) {
+      const add = awardedByPlayer.get(p.playerId) ?? 0n;
+      if (add > 0n) {
+        p.stackMojos += add;
+        this.stacks.set(p.playerId, p.stackMojos);
       }
     }
 
-    best.stackMojos += h.potMojos;
-    this.stacks.set(best.playerId, best.stackMojos);
+    const potMojos = awardedByPlayer.get(primaryWinnerId) ?? 0n;
     this.lastHandResult = {
       handId: h.handId,
-      winnerId: best.playerId,
-      potMojos: h.potMojos,
+      winnerId: primaryWinnerId,
+      potMojos,
       reason: "showdown",
       board: [...h.board],
       shown: live.map((p) => ({
@@ -585,6 +641,7 @@ export class NlheTableEngine {
         holeCards: [...p.holeCards],
         category: evaluateBestHand([...p.holeCards, ...h.board]).category,
       })),
+      participants,
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;
@@ -592,20 +649,120 @@ export class NlheTableEngine {
   }
 
   private awardToWinner(h: TableHandState): void {
-    const winner = this.activePlayers(h)[0];
-    winner.stackMojos += h.potMojos;
-    this.stacks.set(winner.playerId, winner.stackMojos);
+    const live = this.activePlayers(h);
+    const participants = h.players.map((p) => ({
+      playerId: p.playerId,
+      totalBetHandMojos: p.totalBetHandMojos,
+      stackBeforePayoutMojos: p.stackMojos,
+    }));
+
+    const { primaryWinnerId, awardedByPlayer } = this.settleSidePots(h, live, true);
+    for (const p of h.players) {
+      const add = awardedByPlayer.get(p.playerId) ?? 0n;
+      if (add > 0n) {
+        p.stackMojos += add;
+        this.stacks.set(p.playerId, p.stackMojos);
+      }
+    }
+
+    const potMojos = awardedByPlayer.get(primaryWinnerId) ?? 0n;
     this.lastHandResult = {
       handId: h.handId,
-      winnerId: winner.playerId,
-      potMojos: h.potMojos,
+      winnerId: primaryWinnerId,
+      potMojos,
       reason: "fold",
       board: [...h.board],
       shown: [],
+      participants,
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;
     this.finishHand();
+  }
+
+  /**
+   * Distribute the pot into main/side pots. Returns chips awarded per player and the headline winner.
+   */
+  private settleSidePots(
+    h: TableHandState,
+    live: PlayerHandState[],
+    foldWin: boolean,
+  ): { primaryWinnerId: PlayerId; awardedByPlayer: Map<PlayerId, bigint> } {
+    const contributions = h.players.map((p) => ({
+      playerId: p.playerId,
+      totalBetHandMojos: p.totalBetHandMojos,
+    }));
+    const pots = buildSidePots(contributions);
+    const awardedByPlayer = new Map<PlayerId, bigint>();
+    const eligibleSet = (ids: PlayerId[]) => new Set(ids);
+
+    for (const pot of pots) {
+      const contenders = foldWin
+        ? live.filter((p) => eligibleSet(pot.eligiblePlayerIds).has(p.playerId))
+        : live.filter((p) => eligibleSet(pot.eligiblePlayerIds).has(p.playerId));
+
+      let winners: PlayerHandState[];
+      if (contenders.length === 0) {
+        if (live.length === 1) {
+          winners = live;
+        } else {
+          continue;
+        }
+      } else if (contenders.length === 1) {
+        winners = contenders;
+      } else if (foldWin) {
+        winners = contenders;
+      } else {
+        winners = this.showdownWinnersForPot(contenders, h.board);
+      }
+
+      winners.sort((a, b) => a.seatIndex - b.seatIndex);
+      const shares = splitPotEvenly(pot.amountMojos, winners.length);
+      for (let i = 0; i < winners.length; i++) {
+        const w = winners[i]!;
+        const share = shares[i] ?? 0n;
+        awardedByPlayer.set(w.playerId, (awardedByPlayer.get(w.playerId) ?? 0n) + share);
+      }
+    }
+
+    let primaryWinnerId = live[0]!.playerId;
+    if (!foldWin) {
+      let best = live[0]!;
+      let bestEval = evaluateBestHand([...best.holeCards, ...h.board]);
+      for (const p of live.slice(1)) {
+        const ev = evaluateBestHand([...p.holeCards, ...h.board]);
+        if (compareHands(ev, bestEval) > 0) {
+          best = p;
+          bestEval = ev;
+        }
+      }
+      primaryWinnerId = best.playerId;
+    }
+
+    const totalAwarded = [...awardedByPlayer.values()].reduce((a, b) => a + b, 0n);
+    if (totalAwarded !== h.potMojos) {
+      throw new Error(
+        `Pot settlement mismatch: awarded ${totalAwarded} but pot was ${h.potMojos}`,
+      );
+    }
+
+    return { primaryWinnerId, awardedByPlayer };
+  }
+
+  private showdownWinnersForPot(contenders: PlayerHandState[], board: Card[]): PlayerHandState[] {
+    let bestEval = evaluateBestHand([...contenders[0]!.holeCards, ...board]);
+    let winners: PlayerHandState[] = [contenders[0]!];
+    for (const p of contenders.slice(1)) {
+      const ev = evaluateBestHand([...p.holeCards, ...board]);
+      const cmp = compareHands(ev, bestEval);
+      if (cmp > 0) {
+        bestEval = ev;
+        winners = [p];
+      } else if (cmp === 0) {
+        winners.push(p);
+      }
+    }
+    return winners;
   }
 
   private finishHand(): void {

@@ -1,7 +1,14 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type NlheTableEngine, type PlayerAction } from "@dat-poker/game-engine";
-import { getTableEngine, persistTablePlaythrough } from "./tables.js";
+import { maybeRecordCompletedHand } from "../hand-history-store.js";
+import {
+  ensureHouseFunded,
+  getTableEngine,
+  persistTablePlaythrough,
+  unseatInactivePlayers,
+} from "./tables.js";
+import { touchPlayerActivity } from "../player-activity.js";
 import { playHouseIfDue } from "../house-play.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { requirePlayer, sessionMatchesClaim, type PlayerSession } from "../player-session.js";
@@ -22,6 +29,7 @@ function seatedPlayer(
     void reply.status(403).send({ error: "You are not seated at this table" });
     return null;
   }
+  touchPlayerActivity(session.playerId);
   return session;
 }
 
@@ -34,6 +42,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       const session = seatedPlayer(req, reply, table, req.body.playerId);
       if (!session) return;
       try {
+        ensureHouseFunded(table);
         const handId = req.body.handId ?? randomUUID();
         const { commitHash } = table.startHand(handId);
         return { handId, commitHash, phase: "awaiting_seeds" };
@@ -49,17 +58,20 @@ export function registerHandRoutes(app: FastifyInstance): void {
   }>("/v1/tables/:tableId/hands/go", async (req, reply) => {
     const table = getTableEngine(req.params.tableId);
     if (!table) return reply.status(404).send({ error: "Table not found" });
-    const session = seatedPlayer(req, reply, table, req.body.playerId);
-    if (!session) return;
-    try {
-      const handId = randomUUID();
-      const { commitHash } = table.startHand(handId);
-      for (const seated of table.getSeatedPlayers()) {
+      const session = seatedPlayer(req, reply, table, req.body.playerId);
+      if (!session) return;
+      try {
+        ensureHouseFunded(table);
+        const handId = randomUUID();
+        const { commitHash } = table.startHand(handId);
+        for (const seated of table.getSeatedPlayers()) {
         table.submitPlayerSeed(seated.playerId, generateServerSeed());
       }
       table.revealAndDeal();
+      table.advanceHandIfIdle();
       playHouseIfDue(table);
       persistTablePlaythrough(table);
+      maybeRecordCompletedHand(req.params.tableId, table);
       return {
         ok: true,
         handId,
@@ -97,7 +109,6 @@ export function registerHandRoutes(app: FastifyInstance): void {
       if (!session) return;
       try {
         table.revealAndDeal();
-        playHouseIfDue(table);
         persistTablePlaythrough(table);
         return {
           ok: true,
@@ -120,8 +131,13 @@ export function registerHandRoutes(app: FastifyInstance): void {
     try {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
       table.applyAction(session.playerId, req.body.action, amount);
+      table.advanceHandIfIdle();
       playHouseIfDue(table);
       persistTablePlaythrough(table);
+      if (!table.isHandInProgress()) {
+        unseatInactivePlayers(req.params.tableId, table, Date.now());
+      }
+      maybeRecordCompletedHand(req.params.tableId, table);
       return {
         ok: true,
         hand: redactHandForViewer(table.getHandState(), session.playerId),

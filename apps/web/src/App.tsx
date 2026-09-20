@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type PlaythroughInfo, type TableSeat, type WithdrawResult } from "./api.js";
+import {
+  api,
+  restoreApiAuthToken,
+  setApiAuthToken,
+  type BuyInProof,
+  type DatTokenInfo,
+  type HandHistoryEntry,
+  type HandResult,
+  type HandState,
+  type PlayerAction,
+  type PlaythroughInfo,
+  type TableSeat,
+  type WithdrawResult,
+} from "./api.js";
 import { AuthPanel, ChangePasswordForm } from "./AuthPanel.js";
 import { CardRow } from "./components/PlayingCard.js";
 import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
 import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
 import { TableRoom } from "./components/TableRoom.js";
+import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -16,9 +30,9 @@ import {
   turnTimerKey,
 } from "./player-turn-timer.js";
 import {
-  isLuckyIrishWin,
   pickBigWinOverlay,
   readStoredBigWinOverlay,
+  shouldCelebrateBigWin,
   type BigWinOverlay,
 } from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
@@ -77,6 +91,31 @@ function shortAddress(addr: string): string {
   return `${addr.slice(0, 8)}…${addr.slice(-6)}`;
 }
 
+const VERIFY_PENDING_STORAGE_KEY = "dat-poker-verify-pending-v1";
+
+function readVerifyPending(): { username: string; email: string } | null {
+  try {
+    const raw = sessionStorage.getItem(VERIFY_PENDING_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { username?: string; email?: string };
+    if (parsed.username?.trim() && parsed.email?.trim()) {
+      return { username: parsed.username.trim(), email: parsed.email.trim() };
+    }
+  } catch {
+    /* private browsing */
+  }
+  return null;
+}
+
+function writeVerifyPending(pending: { username: string; email: string } | null): void {
+  try {
+    if (pending) sessionStorage.setItem(VERIFY_PENDING_STORAGE_KEY, JSON.stringify(pending));
+    else sessionStorage.removeItem(VERIFY_PENDING_STORAGE_KEY);
+  } catch {
+    /* private browsing */
+  }
+}
+
 export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = {}) {
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [datToken, setDatToken] = useState<DatTokenInfo | null>(null);
@@ -85,6 +124,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [session, setSession] = useState<WcSession | null>(null);
   const [wcUri, setWcUri] = useState<string | null>(null);
   const [pairingOpen, setPairingOpen] = useState(false);
+  const [pairingError, setPairingError] = useState<string | null>(null);
   const pairingGen = useRef(0);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [datBalance, setDatBalance] = useState<string | null>(null);
@@ -103,6 +143,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [hand, setHand] = useState<HandState | null>(null);
   const [handResult, setHandResult] = useState<HandResult | null>(null);
+  const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
+  const [handHistoryOpen, setHandHistoryOpen] = useState(false);
   const [bigWin, setBigWin] = useState<BigWinOverlay | null>(null);
   const celebratedHandId = useRef<string | null>(null);
   const lastBigWin = useRef<BigWinOverlay | null>(readStoredBigWinOverlay());
@@ -118,14 +160,30 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [error, setError] = useState<string | null>(null);
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
   const [bigBlindMojos, setBigBlindMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+  const [verificationPending, setVerificationPending] = useState<{ username: string; email: string } | null>(
+    () => readVerifyPending(),
+  );
+  const [lobbyPresence, setLobbyPresence] = useState<{
+    seatedHumans: number;
+    humansInHand: number;
+  } | null>(null);
+
+  useEffect(() => {
+    writeVerifyPending(verificationPending);
+  }, [verificationPending]);
   const [smallBlindMojos, setSmallBlindMojos] = useState<bigint>(DAT_TABLE_DEFAULTS.smallBlindMojos);
 
   useEffect(() => {
     void (async () => {
+      restoreApiAuthToken();
       try {
-        restoreApiAuthToken();
         await api.health();
         setApiOk(true);
+      } catch {
+        setApiOk(false);
+        return;
+      }
+      try {
         const [config, dat] = await Promise.all([api.walletConfig(), api.datToken()]);
         setDatToken(dat);
         if (restoreApiAuthToken()) {
@@ -154,7 +212,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           }
         }
       } catch {
-        setApiOk(false);
+        /* Wallet config / DAT token / Sage restore failures must not block account sign-up. */
       }
     })();
   }, []);
@@ -203,6 +261,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       }
     }
     if (t.lastHandResult) setHandResult(t.lastHandResult);
+    if (playerId) {
+      try {
+        const hist = await api.getHandHistory(id, playerId);
+        setHandHistory(hist.hands);
+      } catch {
+        /* history optional */
+      }
+    }
   }, [playerId]);
 
   const applyActionResponse = useCallback(
@@ -221,6 +287,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     return () => window.clearInterval(timer);
   }, [tableId, refreshTable]);
 
+  const atTableRoom = Boolean(tableId && tableFocusMode && playerId);
+
+  useEffect(() => {
+    if (!apiOk || atTableRoom) return;
+    const load = () => {
+      void api.lobbyPresence().then(
+        (p) => setLobbyPresence({ seatedHumans: p.seatedHumans, humansInHand: p.humansInHand }),
+        () => setLobbyPresence(null),
+      );
+    };
+    load();
+    const timer = window.setInterval(load, 15_000);
+    return () => window.clearInterval(timer);
+  }, [apiOk, atTableRoom, tableId, handInProgress]);
+
   useEffect(() => {
     if (hand || handInProgress) {
       setTableFocusMode(true);
@@ -231,6 +312,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     pairingGen.current += 1;
     setPairingOpen(false);
     setWcUri(null);
+    setPairingError(null);
     setBusy(false);
     setStatus("");
   };
@@ -244,6 +326,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setBusy(true);
     setError(null);
     setWcUri(null);
+    setPairingError(null);
     setPairingOpen(true);
     setStatus("Connecting to WalletConnect…");
     void (async () => {
@@ -253,22 +336,26 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           onUri: (nextUri) => {
             if (pairingGen.current !== gen) return;
             setWcUri(nextUri);
+            setPairingError(null);
             setStatus("Scan the QR with Sage…");
           },
         });
         if (pairingGen.current !== gen) return;
         setWcUri(uri);
+        setPairingError(null);
         setStatus("Scan the QR with Sage…");
         const next = await approval();
         if (pairingGen.current !== gen) return;
         setSession(next);
         setPairingOpen(false);
         setWcUri(null);
+        setPairingError(null);
         setStatus("");
       } catch (e) {
         if (pairingGen.current !== gen) return;
-        setError(mapWalletConnectError(e).message);
-        setPairingOpen(false);
+        const message = mapWalletConnectError(e).message;
+        setPairingError(message);
+        setError(message);
         setWcUri(null);
         setStatus("");
       } finally {
@@ -307,9 +394,54 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setApiAuthToken(null);
     });
 
-  const handleAuth = (mode: "register" | "login", fields: { username: string; password: string; email?: string }) => {
+  const handleAuth = (
+    mode: "register" | "login",
+    fields: {
+      username: string;
+      password: string;
+      email?: string;
+      countryCode: string;
+      ageConfirmed: boolean;
+      turnstileToken?: string;
+      termsAccepted: boolean;
+      termsVersion: string;
+    },
+  ) => {
     void run(mode === "register" ? "Creating account…" : "Signing in…", async () => {
-      const result = mode === "register" ? await api.register(fields) : await api.login(fields);
+      if (mode === "register") {
+        if (!fields.email?.trim()) {
+          throw new Error("Email is required");
+        }
+        const registered = await api.register({
+          username: fields.username,
+          password: fields.password,
+          email: fields.email.trim(),
+          countryCode: fields.countryCode,
+          ageConfirmed: fields.ageConfirmed,
+          turnstileToken: fields.turnstileToken,
+          termsAccepted: fields.termsAccepted,
+          termsVersion: fields.termsVersion,
+        });
+        setVerificationPending({ username: registered.username, email: registered.email });
+        const codeHint = registered.betaVerificationCode
+          ? ` Code (beta): ${registered.betaVerificationCode}`
+          : "";
+        setStatus((registered.message ?? "Check your email for a verification code.") + codeHint);
+        return;
+      }
+      const result = await api.login({
+        username: fields.username,
+        password: fields.password,
+        countryCode: fields.countryCode,
+        ageConfirmed: fields.ageConfirmed,
+        turnstileToken: fields.turnstileToken,
+        termsAccepted: fields.termsAccepted,
+        termsVersion: fields.termsVersion,
+      });
+      if (!result.token) {
+        throw new Error("Sign-in failed");
+      }
+      setVerificationPending(null);
       setApiAuthToken(result.token);
       setPlayerId(result.playerId);
       setUsername(result.username);
@@ -318,10 +450,70 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     });
   };
 
+  const handleVerifyEmail = async (fields: {
+    username: string;
+    code: string;
+    countryCode: string;
+    ageConfirmed: boolean;
+    turnstileToken?: string;
+    termsAccepted: boolean;
+    termsVersion: string;
+  }) => {
+    setBusy(true);
+    setError(null);
+    setStatus("Verifying email…");
+    try {
+      const result = await api.verifyEmail(fields);
+      setVerificationPending(null);
+      setApiAuthToken(result.token);
+      setPlayerId(result.playerId);
+      setUsername(result.username);
+      if (result.sageAddress) setWalletAddress(result.sageAddress);
+      await refreshAccount(result.playerId);
+      setStatus(result.message);
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const handleAddEmail = async (fields: {
+    username: string;
+    password: string;
+    email: string;
+    countryCode: string;
+    ageConfirmed: boolean;
+    turnstileToken?: string;
+    termsAccepted: boolean;
+    termsVersion: string;
+  }) => {
+    await run("Adding email…", async () => {
+      const result = await api.addEmailToAccount(fields);
+      setVerificationPending({ username: result.username, email: result.email });
+      setStatus(result.message ?? "Check your email for a verification code.");
+    });
+  };
+
+  const handleResendVerification = async (fields: { username: string; email: string }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      return await api.resendVerificationEmail(fields);
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleForgot = async (fields: { username: string; email: string }) => {
     setBusy(true);
     setError(null);
-    setStatus("Requesting reset code…");
+    setStatus("Sending reset email…");
     try {
       const result = await api.forgotPassword(fields);
       setStatus(result.message);
@@ -467,6 +659,31 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   };
 
+  const minBuyInMojos = datToken?.minBuyInMojos ?? "1000000";
+
+  const rebuyAtTable = () => {
+    if (!tableId || !playerId) return;
+    run("Buying in…", async () => {
+      const account = BigInt(accountMojos ?? "0");
+      if (account < BigInt(minBuyInMojos) && !datToken?.devBuyInEnabled) {
+        throw new Error(
+          `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", datToken?.ticker ?? "DAT")} in Lobby, then buy in`,
+        );
+      }
+      const rebought = await api.rebuyTable(tableId, playerId, minBuyInMojos, {
+        devAck: datToken?.devBuyInEnabled,
+      });
+      setHand(rebought.hand);
+      setTableSeats(rebought.seats);
+      setHandInProgress(rebought.handInProgress);
+      setDealerButtonSeat(rebought.dealerButtonSeat ?? null);
+      if (rebought.lastHandResult) setHandResult(rebought.lastHandResult);
+      else setHandResult(null);
+      await refreshAccount(playerId);
+      setStatus("Buy-in added — deal when ready.");
+    });
+  };
+
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
     run("Dealing hand…", async () => {
@@ -489,6 +706,22 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const myTableSeat = tableSeats.find((s) => s.playerId === playerId);
   const tableStackMojos = myTableSeat?.stackMojos ?? null;
+  const tableStackIsZero =
+    tableStackMojos != null && (() => {
+      try {
+        return BigInt(tableStackMojos) === 0n;
+      } catch {
+        return false;
+      }
+    })();
+  const canRebuyAtTable = Boolean(
+    tableId &&
+      playerId &&
+      !hand &&
+      !handInProgress &&
+      datToken?.buyInReady &&
+      tableStackIsZero,
+  );
   const handsPlayed = myTableSeat?.handsPlayed ?? accountPlaythrough?.handsPlayed ?? 0;
   const handsRequired = myTableSeat?.handsRequired ?? accountPlaythrough?.handsRequired ?? 0;
   const playthroughRemaining = myTableSeat?.playthroughRemaining ?? accountPlaythrough?.playthroughRemaining ?? 0;
@@ -725,7 +958,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   useEffect(() => {
     if (!handResult || !playerId) return;
-    if (!isLuckyIrishWin({ playerId, result: handResult, bigBlindMojos })) return;
+    if (!shouldCelebrateBigWin({ playerId, result: handResult, bigBlindMojos })) return;
     if (celebratedHandId.current === handResult.handId) return;
     celebratedHandId.current = handResult.handId;
     const overlay = pickBigWinOverlay(lastBigWin.current);
@@ -733,13 +966,20 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setBigWin(overlay);
   }, [handResult, playerId, bigBlindMojos]);
 
-  const atTableRoom = Boolean(tableId && tableFocusMode && playerId);
-
   useEffect(() => {
     if (!atTableRoom) return;
     document.documentElement.classList.add("play-table-screen");
     return () => document.documentElement.classList.remove("play-table-screen");
   }, [atTableRoom]);
+
+  useEffect(() => {
+    if (!handHistoryOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHandHistoryOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handHistoryOpen]);
 
   return (
     <div className={`app ${atTableRoom ? "app--table-room" : "app--lobby"}`}>
@@ -753,6 +993,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           Public beta — software under development.           Open tables reset on restart;
           your account DAT and play-through progress are kept. Dev buy-in is for testing, not real-money settlement.
         </div>
+      )}
+      {playerId && tableId && (
+        <HandHistoryModal
+          open={handHistoryOpen}
+          onClose={() => setHandHistoryOpen(false)}
+          datToken={datToken}
+          playerId={playerId}
+          hands={handHistory}
+          playerLabel={playerLabel}
+          seatDisplayFor={(id) => tableSeats.find((s) => s.playerId === id)?.displayAddress}
+        />
       )}
       {atTableRoom ? (
         <>
@@ -781,7 +1032,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onBetAmountChange={setBetAmountMojos}
             onSendAction={sendAction}
             onStartHand={startHandFlow}
+            canRebuy={canRebuyAtTable}
+            onRebuy={rebuyAtTable}
+            rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => setTableFocusMode(false)}
+            handHistoryCount={handHistory.length}
+            onOpenHandHistory={() => setHandHistoryOpen(true)}
             playerLabel={playerLabel}
             seatPositionLabel={seatPositionLabel}
           />
@@ -792,6 +1048,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         {onNavigate && <SiteNav page="play" onNavigate={onNavigate} />}
         <h1>DAT Poker{isBeta ? " beta" : ""}</h1>
         <p className="tagline">Account · daily 5000 DAT · 6-max · Sage only to withdraw</p>
+        {lobbyPresence != null && apiOk && (
+          <p className="lobby-presence" role="status">
+            {lobbyPresence.seatedHumans === 0
+              ? "No human players seated at tables right now."
+              : lobbyPresence.seatedHumans === 1
+                ? "1 player seated at tables"
+                : `${lobbyPresence.seatedHumans} players seated at tables`}
+            {lobbyPresence.humansInHand > 0 && (
+              <>
+                {" "}
+                · {lobbyPresence.humansInHand} in a hand
+              </>
+            )}
+          </p>
+        )}
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -838,8 +1109,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Sage until you want DAT in your wallet.
             </p>
             <AuthPanel
-              busy={busy || !apiOk}
+              busy={busy || apiOk === false}
+              apiError={error}
+              verificationPending={verificationPending}
               onAuth={handleAuth}
+              onVerifyEmail={handleVerifyEmail}
+              onResendVerification={handleResendVerification}
+              onAddEmail={handleAddEmail}
               onForgot={handleForgot}
               onReset={handleReset}
             />
@@ -941,9 +1217,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <ol className="seat-list">
               {Array.from({ length: 6 }, (_, i) => {
                 const seated = tableSeats.find((s) => s.seatIndex === i);
+                const isDealer = (hand?.dealerSeat ?? dealerButtonSeat) === i;
                 return (
-                  <li key={i}>
-                    Seat {i + 1}:{" "}
+                  <li key={i} className={isDealer ? "seat-list-dealer" : undefined}>
+                    Seat {i + 1}
+                    {isDealer ? " (D)" : ""}:{" "}
                     {seated
                       ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}${seatPositionLabel(i, hand, dealerButtonSeat)}`
                       : "empty"}
@@ -951,6 +1229,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 );
               })}
             </ol>
+            {tableId && playerId && (
+              <p className="hand-history-lobby-link">
+                <button
+                  type="button"
+                  className="table-room-history-link"
+                  disabled={busy}
+                  onClick={() => setHandHistoryOpen(true)}
+                >
+                  Open hand history{handHistory.length > 0 ? ` (${handHistory.length})` : ""}
+                </button>
+              </p>
+            )}
             {tableStackMojos && (
               <p>
                 Your table stack:{" "}
@@ -1023,7 +1313,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       )}
 
       {pairingOpen && (
-        <QrConnectModal uri={wcUri} status={status} onClose={cancelPairing} />
+        <QrConnectModal uri={wcUri} status={status} error={pairingError} onClose={cancelPairing} />
       )}
     </div>
   );
