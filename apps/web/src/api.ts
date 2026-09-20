@@ -452,6 +452,11 @@ export const api = {
       }),
     }),
 
+  lobbyPresence: () =>
+    request<{ seatedHumans: number; humansInHand: number; tableCount: number }>(
+      "/v1/lobby/presence",
+    ),
+
   createTable: () =>
     request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
       method: "POST",

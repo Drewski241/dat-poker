@@ -63,6 +63,32 @@ function humanCount(table: NlheTableEngine): number {
   return table.getSeatedPlayers().filter((s) => s.playerId !== HOUSE_PLAYER_ID).length;
 }
 
+export function lobbyPresence(): {
+  seatedHumans: number;
+  humansInHand: number;
+  tableCount: number;
+} {
+  const seated = new Set<string>();
+  const inHand = new Set<string>();
+  for (const table of tables.values()) {
+    for (const s of table.getSeatedPlayers()) {
+      if (s.playerId === HOUSE_PLAYER_ID) continue;
+      seated.add(s.playerId);
+    }
+    const hand = table.getHandState();
+    if (!hand) continue;
+    for (const p of hand.players) {
+      if (p.playerId === HOUSE_PLAYER_ID || p.folded) continue;
+      inHand.add(p.playerId);
+    }
+  }
+  return {
+    seatedHumans: seated.size,
+    humansInHand: inHand.size,
+    tableCount: tables.size,
+  };
+}
+
 function createTable(maxSeats = 6): { tableId: string; table: NlheTableEngine; config: TableConfig } {
   const id = randomUUID();
   const dat = readDatTokenConfig();
@@ -354,6 +380,8 @@ function takeBuyInFromAccountOrProof(params: {
 }
 
 export function registerTableRoutes(app: FastifyInstance): void {
+  app.get("/v1/lobby/presence", async () => lobbyPresence());
+
   app.get("/v1/tables", async (req) => {
     const session = readPlayerSession(req);
     return {

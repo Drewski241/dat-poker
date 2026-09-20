@@ -576,6 +576,12 @@ button.secondary {
   margin-top: 0.75rem;
 }
 
+.lobby-presence {
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+  color: var(--accent, #3dd68c);
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

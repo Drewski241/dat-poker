@@ -163,6 +163,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [verificationPending, setVerificationPending] = useState<{ username: string; email: string } | null>(
     () => readVerifyPending(),
   );
+  const [lobbyPresence, setLobbyPresence] = useState<{
+    seatedHumans: number;
+    humansInHand: number;
+  } | null>(null);
 
   useEffect(() => {
     writeVerifyPending(verificationPending);
@@ -282,6 +286,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }, 2000);
     return () => window.clearInterval(timer);
   }, [tableId, refreshTable]);
+
+  const atTableRoom = Boolean(tableId && tableFocusMode && playerId);
+
+  useEffect(() => {
+    if (!apiOk || atTableRoom) return;
+    const load = () => {
+      void api.lobbyPresence().then(
+        (p) => setLobbyPresence({ seatedHumans: p.seatedHumans, humansInHand: p.humansInHand }),
+        () => setLobbyPresence(null),
+      );
+    };
+    load();
+    const timer = window.setInterval(load, 15_000);
+    return () => window.clearInterval(timer);
+  }, [apiOk, atTableRoom, tableId, handInProgress]);
 
   useEffect(() => {
     if (hand || handInProgress) {
@@ -947,8 +966,6 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setBigWin(overlay);
   }, [handResult, playerId, bigBlindMojos]);
 
-  const atTableRoom = Boolean(tableId && tableFocusMode && playerId);
-
   useEffect(() => {
     if (!atTableRoom) return;
     document.documentElement.classList.add("play-table-screen");
@@ -1031,6 +1048,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         {onNavigate && <SiteNav page="play" onNavigate={onNavigate} />}
         <h1>DAT Poker{isBeta ? " beta" : ""}</h1>
         <p className="tagline">Account · daily 5000 DAT · 6-max · Sage only to withdraw</p>
+        {lobbyPresence != null && apiOk && (
+          <p className="lobby-presence" role="status">
+            {lobbyPresence.seatedHumans === 0
+              ? "No human players seated at tables right now."
+              : lobbyPresence.seatedHumans === 1
+                ? "1 player seated at tables"
+                : `${lobbyPresence.seatedHumans} players seated at tables`}
+            {lobbyPresence.humansInHand > 0 && (
+              <>
+                {" "}
+                · {lobbyPresence.humansInHand} in a hand
+              </>
+            )}
+          </p>
+        )}
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
