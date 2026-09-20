@@ -77,6 +77,31 @@ function shortAddress(addr: string): string {
   return `${addr.slice(0, 8)}…${addr.slice(-6)}`;
 }
 
+const VERIFY_PENDING_STORAGE_KEY = "dat-poker-verify-pending-v1";
+
+function readVerifyPending(): { username: string; email: string } | null {
+  try {
+    const raw = sessionStorage.getItem(VERIFY_PENDING_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { username?: string; email?: string };
+    if (parsed.username?.trim() && parsed.email?.trim()) {
+      return { username: parsed.username.trim(), email: parsed.email.trim() };
+    }
+  } catch {
+    /* private browsing */
+  }
+  return null;
+}
+
+function writeVerifyPending(pending: { username: string; email: string } | null): void {
+  try {
+    if (pending) sessionStorage.setItem(VERIFY_PENDING_STORAGE_KEY, JSON.stringify(pending));
+    else sessionStorage.removeItem(VERIFY_PENDING_STORAGE_KEY);
+  } catch {
+    /* private browsing */
+  }
+}
+
 export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = {}) {
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [datToken, setDatToken] = useState<DatTokenInfo | null>(null);
@@ -119,8 +144,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
   const [bigBlindMojos, setBigBlindMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
   const [verificationPending, setVerificationPending] = useState<{ username: string; email: string } | null>(
-    null,
+    () => readVerifyPending(),
   );
+
+  useEffect(() => {
+    writeVerifyPending(verificationPending);
+  }, [verificationPending]);
   const [smallBlindMojos, setSmallBlindMojos] = useState<bigint>(DAT_TABLE_DEFAULTS.smallBlindMojos);
 
   useEffect(() => {

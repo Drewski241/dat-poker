@@ -470,8 +470,20 @@ export function AuthPanel({
       )}
       {mode === "verify" && (
         <>
+          <label htmlFor="auth-verify-email">Email on the account</label>
+          <input
+            id="auth-verify-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={busy}
+          />
           <p className="muted small">
-            Enter the verification code we sent to <strong>{email || "your email"}</strong>.
+            Must match the address saved on your account (same as in the verification email). Use{" "}
+            <strong>Resend code</strong> if you need a new message.
           </p>
           <label htmlFor="auth-verify-code">Verification code</label>
           <input
@@ -485,7 +497,10 @@ export function AuthPanel({
             spellCheck={false}
           />
           <div className="row">
-            <button type="submit" disabled={busy || !verifyCode.trim()}>
+            <button
+              type="submit"
+              disabled={busy || !verifyCode.trim() || !username.trim() || !email.trim()}
+            >
               Verify email
             </button>
             <button
