@@ -30,9 +30,9 @@ import {
   turnTimerKey,
 } from "./player-turn-timer.js";
 import {
-  isLuckyIrishWin,
   pickBigWinOverlay,
   readStoredBigWinOverlay,
+  shouldCelebrateBigWin,
   type BigWinOverlay,
 } from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
@@ -932,7 +932,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   useEffect(() => {
     if (!handResult || !playerId) return;
-    if (!isLuckyIrishWin({ playerId, result: handResult, bigBlindMojos })) return;
+    if (!shouldCelebrateBigWin({ playerId, result: handResult, bigBlindMojos })) return;
     if (celebratedHandId.current === handResult.handId) return;
     celebratedHandId.current = handResult.handId;
     const overlay = pickBigWinOverlay(lastBigWin.current);

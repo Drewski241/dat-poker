@@ -31,7 +31,7 @@ describe("isLuckyIrishWin", () => {
     ).toBe(true);
   });
 
-  it("fires when you win a pot of 20 big blinds or more", () => {
+  it("fires when you win a pot of 100 big blinds or more", () => {
     expect(
       isLuckyIrishWin({
         playerId: "you",
@@ -43,6 +43,36 @@ describe("isLuckyIrishWin", () => {
         }),
       }),
     ).toBe(true);
+  });
+
+  it("does not fire for a routine 50 big blind pot with a pair", () => {
+    expect(
+      isLuckyIrishWin({
+        playerId: "you",
+        bigBlindMojos: bb,
+        result: result({
+          winnerId: "you",
+          potMojos: (bb * 50n).toString(),
+          reason: "showdown",
+          shown: [{ playerId: "you", holeCards: [], category: "pair" }],
+        }),
+      }),
+    ).toBe(false);
+  });
+
+  it("does not treat fold wins as high-ranking hands", () => {
+    expect(
+      isLuckyIrishWin({
+        playerId: "you",
+        bigBlindMojos: bb,
+        result: result({
+          winnerId: "you",
+          potMojos: "15000",
+          reason: "fold",
+          shown: [{ playerId: "you", holeCards: [], category: "full_house" }],
+        }),
+      }),
+    ).toBe(false);
   });
 
   it("does not fire when the house wins a full house", () => {
