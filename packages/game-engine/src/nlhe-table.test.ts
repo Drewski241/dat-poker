@@ -114,6 +114,47 @@ describe("NlheTableEngine", () => {
     expect(result?.board).toHaveLength(5);
   });
 
+  it("caps showdown winnings at the short stack (main and side pots)", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 1n,
+      bigBlindMojos: 2n,
+      minBuyInMojos: 500n,
+      maxBuyInMojos: 50_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("short", 0, 1000n);
+    table.seatPlayer("deep", 1, 2000n);
+    table.startHand("hand-side-pot");
+    table.submitPlayerSeed("short", generateServerSeed());
+    table.submitPlayerSeed("deep", generateServerSeed());
+    table.revealAndDeal();
+
+    let state = table.getHandState()!;
+    const sb = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(sb.playerId, "all-in");
+    state = table.getHandState()!;
+    const bb = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    table.applyAction(bb.playerId, "all-in");
+
+    expect(table.getHandState()).toBeNull();
+    const shortStack = table.getPlayerStack("short")!;
+    const deepStack = table.getPlayerStack("deep")!;
+    expect(shortStack + deepStack).toBe(3000n);
+
+    const result = table.getLastHandResult()!;
+    expect(result.potMojos).toBe(table.getPlayerStack(result.winnerId));
+    if (result.winnerId === "short") {
+      expect(shortStack).toBe(2000n);
+      expect(deepStack).toBe(1000n);
+      expect(result.potMojos).toBe(2000n);
+    } else {
+      expect(deepStack).toBe(3000n);
+      expect(shortStack).toBe(0n);
+      expect(result.potMojos).toBe(3000n);
+    }
+  });
+
   it("marks a player all-in when a raise consumes their entire stack", () => {
     const small: TableConfig = {
       ...config,
