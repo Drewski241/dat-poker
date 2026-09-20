@@ -247,6 +247,41 @@ describe("NlheTableEngine", () => {
     expect(table.getHandsPlayed("alice")).toBe(50);
   });
 
+  it("runs out the board when blinds put every player all-in", () => {
+    const short = {
+      ...config,
+      minBuyInMojos: 1000n,
+      smallBlindMojos: 1000n,
+      bigBlindMojos: 2000n,
+    };
+    const table = new NlheTableEngine(short);
+    table.seatPlayer("alice", 0, 1000n);
+    table.seatPlayer("bob", 1, 1000n);
+    table.startHand("hand-allin-blind");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+    table.advanceHandIfIdle();
+    expect(table.isHandInProgress()).toBe(false);
+    expect(table.getLastHandResult()).not.toBeNull();
+  });
+
+  it("reloads a zero stack between hands via rebuyStack", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.startHand("hand-rebuy");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+    table.applyAction("alice", "fold");
+    expect(table.getHandState()).toBeNull();
+    const internal = table as unknown as { stacks: Map<string, bigint> };
+    internal.stacks.set("alice", 0n);
+    table.rebuyStack("alice", 5_000_000_000_000n);
+    expect(table.getPlayerStack("alice")).toBe(5_000_000_000_000n);
+  });
+
   it("rejects cash out during active hand", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

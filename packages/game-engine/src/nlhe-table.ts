@@ -92,6 +92,23 @@ export class NlheTableEngine {
     }
   }
 
+  rebuyStack(playerId: PlayerId, buyInMojos: bigint): void {
+    if (this.hand) {
+      throw new Error("Cannot rebuy during an active hand");
+    }
+    if (!this.stacks.has(playerId)) {
+      throw new Error("Player not seated");
+    }
+    const stack = this.stacks.get(playerId) ?? 0n;
+    if (stack > 0n) {
+      throw new Error("Rebuy is only available when your table stack is zero");
+    }
+    if (buyInMojos < this.config.minBuyInMojos || buyInMojos > this.config.maxBuyInMojos) {
+      throw new Error("Buy-in out of range");
+    }
+    this.stacks.set(playerId, buyInMojos);
+  }
+
   getMaxSeats(): number {
     return this.config.maxSeats;
   }
@@ -315,6 +332,32 @@ export class NlheTableEngine {
 
     this.postBlinds(h);
     h.seq++;
+  }
+
+  /** Run out the board or skip action when everyone is all-in / the round is already closed. */
+  advanceHandIfIdle(): void {
+    const h = this.hand;
+    if (!h) return;
+    for (let guard = 0; guard < 16; guard++) {
+      if (this.bettingRoundComplete(h)) {
+        this.advanceStreet(h);
+        if (!this.hand) return;
+        continue;
+      }
+      if (h.actionSeat == null) break;
+      const actor = this.playerAtSeat(h, h.actionSeat);
+      if (actor && this.canPlayerAct(actor)) break;
+      try {
+        h.actionSeat = this.firstActiveSeatClockwise(h, h.actionSeat);
+      } catch {
+        if (this.bettingRoundComplete(h)) {
+          this.advanceStreet(h);
+          if (!this.hand) return;
+          continue;
+        }
+        break;
+      }
+    }
   }
 
   applyAction(playerId: PlayerId, action: PlayerAction, amountMojos: bigint = 0n): void {
