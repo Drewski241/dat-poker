@@ -162,6 +162,8 @@ function maintainTable(
       persistTablePlaythrough(table);
       maybeRecordCompletedHand(tableId, table);
     }
+  } else {
+    ensureHouseFunded(table);
   }
   return unseatInactivePlayers(tableId, table, nowMs);
 }
@@ -232,14 +234,39 @@ function seatHouseIfNeeded(table: NlheTableEngine, buyInMojos: bigint): void {
     }
     return;
   }
+  const buyIn = buyInMojos > 0n ? buyInMojos : defaultHouseBuyIn();
+
   if (table.hasPlayer(HOUSE_PLAYER_ID)) {
+    const stack = table.getPlayerStack(HOUSE_PLAYER_ID) ?? 0n;
+    if (stack > 0n) {
+      return;
+    }
+    try {
+      table.rebuyStack(HOUSE_PLAYER_ID, buyIn);
+    } catch {
+      try {
+        table.cashOutPlayer(HOUSE_PLAYER_ID);
+      } catch {
+        /* already unseated */
+      }
+      const seat = table.emptySeatIndex();
+      if (seat !== null) {
+        table.seatPlayer(HOUSE_PLAYER_ID, seat, buyIn);
+      }
+    }
     return;
   }
+
   const seat = table.emptySeatIndex();
   if (seat === null) {
     return;
   }
-  table.seatPlayer(HOUSE_PLAYER_ID, seat, buyInMojos);
+  table.seatPlayer(HOUSE_PLAYER_ID, seat, buyIn);
+}
+
+/** Top up or seat the house between hands (heads-up vs one human). */
+export function ensureHouseFunded(table: NlheTableEngine): void {
+  seatHouseIfNeeded(table, defaultHouseBuyIn());
 }
 
 function takeBuyInFromAccountOrProof(params: {
@@ -559,7 +586,14 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return reply.status(403).send({ error: "You are not seated at this table" });
     }
     if (table.hasPlayer(HOUSE_PLAYER_ID)) {
-      return { ok: true, playerId: HOUSE_PLAYER_ID };
+      ensureHouseFunded(table);
+      const house = table.getSeatedPlayers().find((s) => s.playerId === HOUSE_PLAYER_ID);
+      return {
+        ok: true,
+        playerId: HOUSE_PLAYER_ID,
+        seatIndex: house?.seatIndex,
+        stackMojos: house?.stackMojos.toString(),
+      };
     }
     const buyInMojos = BigInt(req.body.buyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString());
     const seat = table.emptySeatIndex();

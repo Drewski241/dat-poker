@@ -2,7 +2,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type NlheTableEngine, type PlayerAction } from "@dat-poker/game-engine";
 import { maybeRecordCompletedHand } from "../hand-history-store.js";
-import { getTableEngine, persistTablePlaythrough, unseatInactivePlayers } from "./tables.js";
+import {
+  ensureHouseFunded,
+  getTableEngine,
+  persistTablePlaythrough,
+  unseatInactivePlayers,
+} from "./tables.js";
 import { touchPlayerActivity } from "../player-activity.js";
 import { playHouseIfDue } from "../house-play.js";
 import { redactHandForViewer } from "../redact-hand.js";
@@ -37,6 +42,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       const session = seatedPlayer(req, reply, table, req.body.playerId);
       if (!session) return;
       try {
+        ensureHouseFunded(table);
         const handId = req.body.handId ?? randomUUID();
         const { commitHash } = table.startHand(handId);
         return { handId, commitHash, phase: "awaiting_seeds" };
@@ -52,12 +58,13 @@ export function registerHandRoutes(app: FastifyInstance): void {
   }>("/v1/tables/:tableId/hands/go", async (req, reply) => {
     const table = getTableEngine(req.params.tableId);
     if (!table) return reply.status(404).send({ error: "Table not found" });
-    const session = seatedPlayer(req, reply, table, req.body.playerId);
-    if (!session) return;
-    try {
-      const handId = randomUUID();
-      const { commitHash } = table.startHand(handId);
-      for (const seated of table.getSeatedPlayers()) {
+      const session = seatedPlayer(req, reply, table, req.body.playerId);
+      if (!session) return;
+      try {
+        ensureHouseFunded(table);
+        const handId = randomUUID();
+        const { commitHash } = table.startHand(handId);
+        for (const seated of table.getSeatedPlayers()) {
         table.submitPlayerSeed(seated.playerId, generateServerSeed());
       }
       table.revealAndDeal();
