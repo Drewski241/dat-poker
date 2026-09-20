@@ -70,19 +70,23 @@ describe("hand history", () => {
       payload: { playerId: alice.session.playerId },
     });
     expect(go.statusCode).toBe(200);
-    let snap = JSON.parse(go.body) as { hand: unknown; handInProgress?: boolean };
+    type Snap = {
+      hand?: {
+        actionSeat: number;
+        players: { playerId: string; seatIndex: number; allIn?: boolean; folded?: boolean }[];
+      } | null;
+      handInProgress?: boolean;
+    };
+    let snap = JSON.parse(go.body) as Snap;
     for (let i = 0; i < 40 && (snap.hand || snap.handInProgress); i++) {
       const poll = await app.inject({
         method: "GET",
         url: `/v1/tables/${joined.tableId}?playerId=${encodeURIComponent(alice.session.playerId)}`,
         headers: auth(alice.token),
       });
-      snap = JSON.parse(poll.body);
+      snap = JSON.parse(poll.body) as Snap;
       if (snap.hand?.actionSeat != null) {
-        const hand = snap.hand as {
-          actionSeat: number;
-          players: { playerId: string; seatIndex: number; allIn?: boolean; folded?: boolean }[];
-        };
+        const hand = snap.hand;
         const actor = hand.players.find((p) => p.seatIndex === hand.actionSeat);
         if (actor?.playerId === alice.session.playerId && !actor.allIn && !actor.folded) {
           await app.inject({
