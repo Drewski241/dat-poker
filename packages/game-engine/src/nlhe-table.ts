@@ -17,6 +17,14 @@ export interface ShownHand {
   category: HandCategory;
 }
 
+export interface HandResultParticipant {
+  playerId: PlayerId;
+  /** Chips this player put in the pot this hand (including blinds). */
+  totalBetHandMojos: bigint;
+  /** Table stack immediately before the pot is paid to the winner. */
+  stackBeforePayoutMojos: bigint;
+}
+
 export interface HandResult {
   handId: HandId;
   winnerId: PlayerId;
@@ -24,6 +32,7 @@ export interface HandResult {
   reason: "fold" | "showdown";
   board: Card[];
   shown: ShownHand[];
+  participants: HandResultParticipant[];
 }
 
 export interface PlayerHandState {
@@ -615,12 +624,18 @@ export class NlheTableEngine {
       }
     }
 
-    best.stackMojos += h.potMojos;
+    const participants = h.players.map((p) => ({
+      playerId: p.playerId,
+      totalBetHandMojos: p.totalBetHandMojos,
+      stackBeforePayoutMojos: p.stackMojos,
+    }));
+    const potMojos = h.potMojos;
+    best.stackMojos += potMojos;
     this.stacks.set(best.playerId, best.stackMojos);
     this.lastHandResult = {
       handId: h.handId,
       winnerId: best.playerId,
-      potMojos: h.potMojos,
+      potMojos,
       reason: "showdown",
       board: [...h.board],
       shown: live.map((p) => ({
@@ -628,6 +643,7 @@ export class NlheTableEngine {
         holeCards: [...p.holeCards],
         category: evaluateBestHand([...p.holeCards, ...h.board]).category,
       })),
+      participants,
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;
@@ -636,15 +652,22 @@ export class NlheTableEngine {
 
   private awardToWinner(h: TableHandState): void {
     const winner = this.activePlayers(h)[0];
-    winner.stackMojos += h.potMojos;
+    const participants = h.players.map((p) => ({
+      playerId: p.playerId,
+      totalBetHandMojos: p.totalBetHandMojos,
+      stackBeforePayoutMojos: p.stackMojos,
+    }));
+    const potMojos = h.potMojos;
+    winner.stackMojos += potMojos;
     this.stacks.set(winner.playerId, winner.stackMojos);
     this.lastHandResult = {
       handId: h.handId,
       winnerId: winner.playerId,
-      potMojos: h.potMojos,
+      potMojos,
       reason: "fold",
       board: [...h.board],
       shown: [],
+      participants,
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;

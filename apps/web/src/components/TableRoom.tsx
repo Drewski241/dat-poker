@@ -1,4 +1,5 @@
-import type { DatTokenInfo, HandResult, HandState, PlayerAction, TableSeat } from "../api.js";
+import type { DatTokenInfo, HandHistoryEntry, HandResult, HandState, PlayerAction, TableSeat } from "../api.js";
+import { HandHistoryPanel } from "./HandHistoryPanel.js";
 import { computeNlheBetRange, formatDatMojos } from "@dat-poker/shared";
 import { BetSlider } from "./BetSlider.js";
 import { CardRow, PlayingCard } from "./PlayingCard.js";
@@ -32,6 +33,7 @@ type Props = {
   onRebuy: () => void;
   rebuyLabel: string;
   onOpenLobby: () => void;
+  handHistory: HandHistoryEntry[];
   playerLabel: (id: string, youId: string | null, display?: string) => string;
   seatPositionLabel: (seatIndex: number, hand: HandState | null, dealerButtonSeat: number | null) => string;
 };
@@ -63,6 +65,7 @@ export function TableRoom({
   onRebuy,
   rebuyLabel,
   onOpenLobby,
+  handHistory,
   playerLabel,
   seatPositionLabel,
 }: Props) {
@@ -178,7 +181,35 @@ export function TableRoom({
                     ))}
                   </div>
                 )}
+                {(handResult.participants?.length ?? 0) > 0 && (
+                  <ul className="table-room-hand-audit muted small">
+                    {handResult.participants!.map((p) => (
+                      <li key={p.playerId}>
+                        {playerLabel(
+                          p.playerId,
+                          playerId,
+                          tableSeats.find((s) => s.playerId === p.playerId)?.displayAddress,
+                        )}
+                        : in pot {formatDatMojos(p.totalBetHandMojos, datToken?.ticker)} · stack before
+                        payout {formatDatMojos(p.stackBeforePayoutMojos, datToken?.ticker)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="muted small">
+                  Pot size is what was awarded; your table stack can differ if you had chips left before
+                  this hand.
+                </p>
               </div>
+            )}
+            {!hand && (
+              <HandHistoryPanel
+                datToken={datToken}
+                playerId={playerId}
+                hands={handHistory}
+                playerLabel={playerLabel}
+                seatDisplayFor={(id) => tableSeats.find((s) => s.playerId === id)?.displayAddress}
+              />
             )}
             {tableStackMojos != null && BigInt(tableStackMojos) === 0n && !canRebuy && (
               <p className="banner info table-room-bust">

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type NlheTableEngine, type PlayerAction } from "@dat-poker/game-engine";
+import { maybeRecordCompletedHand } from "../hand-history-store.js";
 import { getTableEngine, persistTablePlaythrough, unseatInactivePlayers } from "./tables.js";
 import { touchPlayerActivity } from "../player-activity.js";
 import { playHouseIfDue } from "../house-play.js";
@@ -63,6 +64,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       table.advanceHandIfIdle();
       playHouseIfDue(table);
       persistTablePlaythrough(table);
+      maybeRecordCompletedHand(req.params.tableId, table);
       return {
         ok: true,
         handId,
@@ -128,6 +130,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       if (!table.isHandInProgress()) {
         unseatInactivePlayers(req.params.tableId, table, Date.now());
       }
+      maybeRecordCompletedHand(req.params.tableId, table);
       return {
         ok: true,
         hand: redactHandForViewer(table.getHandState(), session.playerId),

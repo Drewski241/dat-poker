@@ -34,6 +34,11 @@ import {
   inactiveUnseatMs,
   touchPlayerActivity,
 } from "../player-activity.js";
+import {
+  getHandHistory,
+  maybeRecordCompletedHand,
+  resetHandHistoryForTests,
+} from "../hand-history-store.js";
 import { playHouseIfDue } from "../house-play.js";
 
 export interface UnseatedInactivePlayer {
@@ -155,6 +160,7 @@ function maintainTable(
         table.advanceHandIfIdle();
       }
       persistTablePlaythrough(table);
+      maybeRecordCompletedHand(tableId, table);
     }
   }
   return unseatInactivePlayers(tableId, table, nowMs);
@@ -440,6 +446,29 @@ export function registerTableRoutes(app: FastifyInstance): void {
     },
   );
 
+  app.get<{
+    Params: { tableId: string };
+    Querystring: { playerId?: string; limit?: string };
+  }>("/v1/tables/:tableId/hand-history", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (
+      req.query.playerId &&
+      !sessionMatchesClaim(session, req.query.playerId)
+    ) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    const table = tables.get(req.params.tableId);
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+    const limit = Math.min(40, Math.max(1, Number(req.query.limit ?? "20") || 20));
+    return {
+      tableId: req.params.tableId,
+      hands: getHandHistory(req.params.tableId, limit),
+    };
+  });
+
   app.post<{ Params: { tableId: string }; Body: { playerId?: string } }>(
     "/v1/tables/:tableId/seats/unseat-inactive",
     async (req, reply) => {
@@ -659,4 +688,5 @@ export function returnAllStacksToAccounts(): { returned: number } {
 export function resetTablesForTests(): void {
   tables.clear();
   playerLabels.clear();
+  resetHandHistoryForTests();
 }

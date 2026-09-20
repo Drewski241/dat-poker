@@ -83,6 +83,27 @@ export interface HandResult {
     holeCards: { rank: string; suit: string }[];
     category: string;
   }[];
+  participants?: {
+    playerId: string;
+    totalBetHandMojos: string;
+    stackBeforePayoutMojos: string;
+  }[];
+}
+
+export interface HandHistoryEntry {
+  handId: string;
+  completedAtMs: number;
+  winnerId: string;
+  potMojos: string;
+  reason: "fold" | "showdown";
+  board?: { rank: string; suit: string }[];
+  shown?: HandResult["shown"];
+  participants: {
+    playerId: string;
+    totalBetHandMojos: string;
+    stackBeforePayoutMojos: string;
+    stackAfterMojos: string;
+  }[];
 }
 
 export interface WalletConnectConfig {
@@ -462,6 +483,14 @@ export const api = {
         ...options,
       }),
     }),
+
+  getHandHistory: (tableId: string, playerId?: string, limit = 20) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (playerId) q.set("playerId", playerId);
+    return request<{ tableId: string; hands: HandHistoryEntry[] }>(
+      `/v1/tables/${tableId}/hand-history?${q}`,
+    );
+  },
 
   getTable: (tableId: string, playerId?: string) =>
     request<{

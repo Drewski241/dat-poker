@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, restoreApiAuthToken, setApiAuthToken, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type PlaythroughInfo, type TableSeat, type WithdrawResult } from "./api.js";
+import {
+  api,
+  restoreApiAuthToken,
+  setApiAuthToken,
+  type BuyInProof,
+  type DatTokenInfo,
+  type HandHistoryEntry,
+  type HandResult,
+  type HandState,
+  type PlayerAction,
+  type PlaythroughInfo,
+  type TableSeat,
+  type WithdrawResult,
+} from "./api.js";
 import { AuthPanel, ChangePasswordForm } from "./AuthPanel.js";
 import { CardRow } from "./components/PlayingCard.js";
 import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
 import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
 import { TableRoom } from "./components/TableRoom.js";
+import { HandHistoryPanel } from "./components/HandHistoryPanel.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -128,6 +142,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [hand, setHand] = useState<HandState | null>(null);
   const [handResult, setHandResult] = useState<HandResult | null>(null);
+  const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
   const [bigWin, setBigWin] = useState<BigWinOverlay | null>(null);
   const celebratedHandId = useRef<string | null>(null);
   const lastBigWin = useRef<BigWinOverlay | null>(readStoredBigWinOverlay());
@@ -240,6 +255,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       }
     }
     if (t.lastHandResult) setHandResult(t.lastHandResult);
+    if (playerId) {
+      try {
+        const hist = await api.getHandHistory(id, playerId);
+        setHandHistory(hist.hands);
+      } catch {
+        /* history optional */
+      }
+    }
   }, [playerId]);
 
   const applyActionResponse = useCallback(
@@ -968,6 +991,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => setTableFocusMode(false)}
+            handHistory={handHistory}
             playerLabel={playerLabel}
             seatPositionLabel={seatPositionLabel}
           />
@@ -1156,6 +1180,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   ? ` — ${playthroughRemaining} remaining`
                   : " — fully unlocked"}
               </p>
+            )}
+            {tableId && playerId && (
+              <HandHistoryPanel
+                datToken={datToken}
+                playerId={playerId}
+                hands={handHistory}
+                playerLabel={playerLabel}
+                seatDisplayFor={(id) => tableSeats.find((s) => s.playerId === id)?.displayAddress}
+              />
             )}
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">
