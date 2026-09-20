@@ -1,5 +1,4 @@
-import type { DatTokenInfo, HandHistoryEntry, HandResult, HandState, PlayerAction, TableSeat } from "../api.js";
-import { HandHistoryPanel } from "./HandHistoryPanel.js";
+import type { DatTokenInfo, HandResult, HandState, PlayerAction, TableSeat } from "../api.js";
 import { computeNlheBetRange, formatDatMojos } from "@dat-poker/shared";
 import { BetSlider } from "./BetSlider.js";
 import { CardRow, PlayingCard } from "./PlayingCard.js";
@@ -33,7 +32,8 @@ type Props = {
   onRebuy: () => void;
   rebuyLabel: string;
   onOpenLobby: () => void;
-  handHistory: HandHistoryEntry[];
+  handHistoryCount: number;
+  onOpenHandHistory: () => void;
   playerLabel: (id: string, youId: string | null, display?: string) => string;
   seatPositionLabel: (seatIndex: number, hand: HandState | null, dealerButtonSeat: number | null) => string;
 };
@@ -65,7 +65,8 @@ export function TableRoom({
   onRebuy,
   rebuyLabel,
   onOpenLobby,
-  handHistory,
+  handHistoryCount,
+  onOpenHandHistory,
   playerLabel,
   seatPositionLabel,
 }: Props) {
@@ -75,6 +76,7 @@ export function TableRoom({
       : null;
 
   const canStepToLobby = !hand && !handInProgress;
+  const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const opponents = hand?.players.filter((p) => p.playerId !== playerId) ?? [];
@@ -96,27 +98,46 @@ export function TableRoom({
             )}
           </h1>
         </div>
-        <button
-          type="button"
-          className="secondary table-room-lobby-btn"
-          disabled={busy || !canStepToLobby}
-          title={canStepToLobby ? "Account, withdraw, leave table" : "Finish or wait for the hand to end"}
-          onClick={onOpenLobby}
-        >
-          Lobby
-        </button>
+        <div className="table-room-header-actions">
+          <button
+            type="button"
+            className="table-room-history-link"
+            disabled={busy}
+            onClick={onOpenHandHistory}
+          >
+            Hand history{handHistoryCount > 0 ? ` (${handHistoryCount})` : ""}
+          </button>
+          <button
+            type="button"
+            className="secondary table-room-lobby-btn"
+            disabled={busy || !canStepToLobby}
+            title={canStepToLobby ? "Account, withdraw, leave table" : "Finish or wait for the hand to end"}
+            onClick={onOpenLobby}
+          >
+            Lobby
+          </button>
+        </div>
       </header>
 
       {!hand && (
         <div className="table-room-seats" aria-label="Seats">
           {Array.from({ length: 6 }, (_, i) => {
             const seated = tableSeats.find((s) => s.seatIndex === i);
+            const isDealer = buttonSeatIndex === i;
             return (
               <div
                 key={i}
-                className={`table-room-seat ${seated ? "occupied" : "empty"}`}
+                className={`table-room-seat ${seated ? "occupied" : "empty"}${isDealer ? " table-room-seat-dealer" : ""}`}
               >
-                <span className="table-room-seat-num">{i + 1}</span>
+                <span className="table-room-seat-num">
+                  {isDealer ? (
+                    <span className="table-room-dealer-chip" title="Dealer button">
+                      D
+                    </span>
+                  ) : (
+                    i + 1
+                  )}
+                </span>
                 {seated ? (
                   <>
                     <span className="table-room-seat-name">
@@ -181,35 +202,7 @@ export function TableRoom({
                     ))}
                   </div>
                 )}
-                {(handResult.participants?.length ?? 0) > 0 && (
-                  <ul className="table-room-hand-audit muted small">
-                    {handResult.participants!.map((p) => (
-                      <li key={p.playerId}>
-                        {playerLabel(
-                          p.playerId,
-                          playerId,
-                          tableSeats.find((s) => s.playerId === p.playerId)?.displayAddress,
-                        )}
-                        : in pot {formatDatMojos(p.totalBetHandMojos, datToken?.ticker)} · stack before
-                        payout {formatDatMojos(p.stackBeforePayoutMojos, datToken?.ticker)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <p className="muted small">
-                  Pot size is what was awarded; your table stack can differ if you had chips left before
-                  this hand.
-                </p>
               </div>
-            )}
-            {!hand && (
-              <HandHistoryPanel
-                datToken={datToken}
-                playerId={playerId}
-                hands={handHistory}
-                playerLabel={playerLabel}
-                seatDisplayFor={(id) => tableSeats.find((s) => s.playerId === id)?.displayAddress}
-              />
             )}
             {tableStackMojos != null && BigInt(tableStackMojos) === 0n && !canRebuy && (
               <p className="banner info table-room-bust">
@@ -283,6 +276,11 @@ export function TableRoom({
                   >
                     <div className="table-room-opponent-meta">
                       <strong>
+                        {hand.dealerSeat === p.seatIndex && (
+                          <span className="table-room-dealer-chip table-room-dealer-chip-inline" title="Dealer">
+                            D{" "}
+                          </span>
+                        )}
                         {p.playerId === HOUSE_PLAYER_ID
                           ? "House"
                           : playerLabel(
@@ -306,7 +304,14 @@ export function TableRoom({
             {me && (
               <div className={`table-room-hero ${isMyAction ? "your-turn" : ""}`}>
                 <div className="table-room-hero-meta">
-                  <strong>You</strong>
+                  <strong>
+                    {hand.dealerSeat === me.seatIndex && (
+                      <span className="table-room-dealer-chip table-room-dealer-chip-inline" title="Dealer">
+                        D{" "}
+                      </span>
+                    )}
+                    You
+                  </strong>
                   <span className="stack">{formatDatMojos(me.stackMojos, datToken?.ticker)}</span>
                   {liveHandLabel && (
                     <span className="live-hand table-room-live-hand">

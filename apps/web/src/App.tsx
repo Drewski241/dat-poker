@@ -19,7 +19,7 @@ import { CardRow } from "./components/PlayingCard.js";
 import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
 import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
 import { TableRoom } from "./components/TableRoom.js";
-import { HandHistoryPanel } from "./components/HandHistoryPanel.js";
+import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -143,6 +143,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [hand, setHand] = useState<HandState | null>(null);
   const [handResult, setHandResult] = useState<HandResult | null>(null);
   const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
+  const [handHistoryOpen, setHandHistoryOpen] = useState(false);
   const [bigWin, setBigWin] = useState<BigWinOverlay | null>(null);
   const celebratedHandId = useRef<string | null>(null);
   const lastBigWin = useRef<BigWinOverlay | null>(readStoredBigWinOverlay());
@@ -947,6 +948,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     return () => document.documentElement.classList.remove("play-table-screen");
   }, [atTableRoom]);
 
+  useEffect(() => {
+    if (!handHistoryOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHandHistoryOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handHistoryOpen]);
+
   return (
     <div className={`app ${atTableRoom ? "app--table-room" : "app--lobby"}`}>
       {bigWin === "irish" && <LuckyIrishWin onFinished={() => setBigWin(null)} />}
@@ -959,6 +969,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           Public beta — software under development.           Open tables reset on restart;
           your account DAT and play-through progress are kept. Dev buy-in is for testing, not real-money settlement.
         </div>
+      )}
+      {playerId && tableId && (
+        <HandHistoryModal
+          open={handHistoryOpen}
+          onClose={() => setHandHistoryOpen(false)}
+          datToken={datToken}
+          playerId={playerId}
+          hands={handHistory}
+          playerLabel={playerLabel}
+          seatDisplayFor={(id) => tableSeats.find((s) => s.playerId === id)?.displayAddress}
+        />
       )}
       {atTableRoom ? (
         <>
@@ -991,7 +1012,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => setTableFocusMode(false)}
-            handHistory={handHistory}
+            handHistoryCount={handHistory.length}
+            onOpenHandHistory={() => setHandHistoryOpen(true)}
             playerLabel={playerLabel}
             seatPositionLabel={seatPositionLabel}
           />
@@ -1156,9 +1178,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <ol className="seat-list">
               {Array.from({ length: 6 }, (_, i) => {
                 const seated = tableSeats.find((s) => s.seatIndex === i);
+                const isDealer = (hand?.dealerSeat ?? dealerButtonSeat) === i;
                 return (
-                  <li key={i}>
-                    Seat {i + 1}:{" "}
+                  <li key={i} className={isDealer ? "seat-list-dealer" : undefined}>
+                    Seat {i + 1}
+                    {isDealer ? " (D)" : ""}:{" "}
                     {seated
                       ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}${seatPositionLabel(i, hand, dealerButtonSeat)}`
                       : "empty"}
@@ -1166,6 +1190,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 );
               })}
             </ol>
+            {tableId && playerId && (
+              <p className="hand-history-lobby-link">
+                <button
+                  type="button"
+                  className="table-room-history-link"
+                  disabled={busy}
+                  onClick={() => setHandHistoryOpen(true)}
+                >
+                  Open hand history{handHistory.length > 0 ? ` (${handHistory.length})` : ""}
+                </button>
+              </p>
+            )}
             {tableStackMojos && (
               <p>
                 Your table stack:{" "}
@@ -1180,15 +1216,6 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   ? ` — ${playthroughRemaining} remaining`
                   : " — fully unlocked"}
               </p>
-            )}
-            {tableId && playerId && (
-              <HandHistoryPanel
-                datToken={datToken}
-                playerId={playerId}
-                hands={handHistory}
-                playerLabel={playerLabel}
-                seatDisplayFor={(id) => tableSeats.find((s) => s.playerId === id)?.displayAddress}
-              />
             )}
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">

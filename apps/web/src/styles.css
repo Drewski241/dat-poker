@@ -1346,7 +1346,113 @@ html.play-table-screen body {
   color: var(--text);
 }
 
+.table-room-header-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.table-room-history-link {
+  background: none;
+  border: none;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.table-room-history-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .table-room-lobby-btn {
+  flex-shrink: 0;
+}
+
+.table-room-seat-dealer {
+  outline: 2px solid #e8c547;
+  box-shadow: 0 0 0 1px rgba(232, 197, 71, 0.35);
+}
+
+.table-room-dealer-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: #e8c547;
+  color: #1a1200;
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.table-room-dealer-chip-inline {
+  vertical-align: middle;
+  margin-right: 0.15rem;
+}
+
+.seat-list-dealer {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.seat-list-dealer::marker {
+  color: #e8c547;
+}
+
+.hand-history-lobby-link {
+  margin: 0.5rem 0 0;
+}
+
+.hand-history-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.hand-history-modal {
+  width: min(100%, 28rem);
+  max-height: min(85vh, 32rem);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid #2d3a4f;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.hand-history-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #2d3a4f;
+}
+
+.hand-history-modal-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.hand-history-modal-body {
+  overflow: auto;
+  padding: 0.75rem 1rem 1rem;
+}
+
+.hand-history-modal-close {
   flex-shrink: 0;
 }
 

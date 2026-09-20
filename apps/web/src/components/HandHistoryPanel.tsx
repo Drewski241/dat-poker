@@ -27,7 +27,6 @@ export function HandHistoryPanel({
 
   return (
     <section className="hand-history" aria-label="Recent hand history">
-      <h2 className="hand-history-title">Recent hands</h2>
       <ul className="hand-history-list">
         {hands.map((hand) => {
           const you = hand.participants.find((p) => p.playerId === playerId);
