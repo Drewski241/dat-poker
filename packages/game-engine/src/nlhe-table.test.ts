@@ -288,6 +288,32 @@ describe("NlheTableEngine", () => {
     expect(table.getHandsPlayed("alice")).toBe(50);
   });
 
+  it("closes preflop when the small blind checks facing a shorter all-in big blind", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 5_000n,
+      bigBlindMojos: 10_000n,
+      minBuyInMojos: 2_000n,
+      maxBuyInMojos: 50_000_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("alice", 0, 10_000_000n);
+    table.seatPlayer("bob", 1, 2_000n);
+    table.startHand("hand-short-bb");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const pre = table.getHandState()!;
+    expect(pre.street).toBe("preflop");
+    expect(pre.players.find((p) => p.playerId === "bob")?.allIn).toBe(true);
+    const sb = pre.players.find((p) => p.seatIndex === pre.actionSeat)!;
+    expect(sb.betThisStreetMojos).toBeGreaterThan(pre.currentBetMojos);
+
+    table.applyAction(sb.playerId, "check");
+    expect(table.getHandState()?.street).not.toBe("preflop");
+  });
+
   it("runs out the board when blinds put every player all-in", () => {
     const short = {
       ...config,

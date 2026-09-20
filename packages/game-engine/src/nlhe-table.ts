@@ -532,7 +532,7 @@ export class NlheTableEngine {
     const contenders = this.playersWhoCanBet(h);
     if (contenders.length === 0) return true;
     return contenders.every(
-      (p) => p.betThisStreetMojos === h.currentBetMojos && p.actedThisStreet,
+      (p) => p.betThisStreetMojos >= h.currentBetMojos && p.actedThisStreet,
     );
   }
 
