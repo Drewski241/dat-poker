@@ -1,9 +1,10 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   applyBuyInPlaythrough,
+  consumePlaythroughWithdraw,
   creditAccount,
   debitAccount,
   getAccountBalance,
@@ -15,7 +16,7 @@ import {
   syncPlaythroughHeld,
   tryRedeemDaily,
 } from "./account-store.js";
-import { playthroughUnlockedMojos } from "@dat-poker/shared";
+import { playthroughHandsRequired, playthroughUnlockedMojos } from "@dat-poker/shared";
 
 describe("account-store", () => {
   beforeEach(() => {
@@ -108,6 +109,47 @@ describe("account-store", () => {
     const returning = applyBuyInPlaythrough("user_pt", 1_000_000n, true);
     expect(returning.addedFreshMojos).toBe(0n);
     expect(getPlaythrough("user_pt").handsPlayed).toBe(50);
+  });
+
+  it("restores a wiped redeem lock so lobby play-through is 5000, then 10000", () => {
+    const file = join(mkdtempSync(join(tmpdir(), "dat-pt-wipe-")), "ledger.json");
+    process.env.DAT_LEDGER_PATH = file;
+    resetAccountsForTests();
+    const noon = new Date("2026-09-16T12:00:00.000Z");
+    tryRedeemDaily("user_wiped", 5_000_000n, noon);
+    setPlaythroughHands("user_wiped", 17);
+    writeFileSync(
+      file,
+      JSON.stringify({
+        balances: [{ playerId: "user_wiped", balanceMojos: "5000000" }],
+        redeemed: [{ playerId: "user_wiped", lastRedeemAt: noon.toISOString() }],
+        playthrough: [],
+      }),
+      "utf8",
+    );
+    reloadLedgerFromDiskForTests();
+    const restored = getPlaythrough("user_wiped");
+    expect(restored.poolMojos).toBe(5_000_000n);
+    expect(playthroughHandsRequired(restored.poolMojos)).toBe(5000);
+
+    const nextDay = new Date("2026-09-17T12:00:01.000Z");
+    expect(tryRedeemDaily("user_wiped", 5_000_000n, nextDay).credited).toBe(true);
+    expect(getPlaythrough("user_wiped").poolMojos).toBe(10_000_000n);
+    expect(playthroughHandsRequired(getPlaythrough("user_wiped").poolMojos)).toBe(10000);
+  });
+
+  it("does not rewind hands when a new table reports zero", () => {
+    tryRedeemDaily("user_hands", 5_000_000n);
+    setPlaythroughHands("user_hands", 40);
+    setPlaythroughHands("user_hands", 0);
+    expect(getPlaythrough("user_hands").handsPlayed).toBe(40);
+  });
+
+  it("does not restore play-through after a Sage withdraw", () => {
+    tryRedeemDaily("user_sage", 5_000_000n);
+    setPlaythroughHands("user_sage", 20);
+    consumePlaythroughWithdraw("user_sage", 5_000_000n);
+    expect(getPlaythrough("user_sage")).toEqual({ poolMojos: 0n, handsPlayed: 0 });
   });
 });
 

@@ -860,10 +860,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }, delay);
     return () => window.clearTimeout(id);
   }, [sngCanAutoDeal, handResult]);
-  const handsPlayed = myTableSeat?.handsPlayed ?? accountPlaythrough?.handsPlayed ?? 0;
-  const handsRequired = myTableSeat?.handsRequired ?? accountPlaythrough?.handsRequired ?? 0;
-  const playthroughRemaining = myTableSeat?.playthroughRemaining ?? accountPlaythrough?.playthroughRemaining ?? 0;
-  const unlockedMojos = myTableSeat?.unlockedMojos ?? accountPlaythrough?.unlockedMojos ?? "0";
+  const handsPlayed = Math.max(myTableSeat?.handsPlayed ?? 0, accountPlaythrough?.handsPlayed ?? 0);
+  const handsRequired = Math.max(myTableSeat?.handsRequired ?? 0, accountPlaythrough?.handsRequired ?? 0);
+  const playthroughRemaining = handsRequired > 0 ? Math.max(0, handsRequired - handsPlayed) : 0;
+  const unlockedMojos = (() => {
+    try {
+      const seat = BigInt(myTableSeat?.unlockedMojos ?? "0");
+      const account = BigInt(accountPlaythrough?.unlockedMojos ?? "0");
+      return (seat > account ? seat : account).toString();
+    } catch {
+      return myTableSeat?.unlockedMojos ?? accountPlaythrough?.unlockedMojos ?? "0";
+    }
+  })();
   const unlockedDat = (() => {
     try {
       return BigInt(unlockedMojos);
@@ -1339,10 +1347,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 {redeemedToday ? " · redeem available in 24h" : ""}
               </p>
             )}
-            {accountPlaythrough && accountPlaythrough.handsRequired > 0 && (
+            {handsRequired > 0 && (
               <p className="muted small">
-                Play-through: {accountPlaythrough.handsPlayed}/{accountPlaythrough.handsRequired}{" "}
-                hands · {formatDatMojos(accountPlaythrough.unlockedMojos, datToken?.ticker)} unlocked
+                Play-through: {handsPlayed}/{handsRequired}{" "}
+                hands · {formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked
                 (1 redeemed DAT = 1 hand; stays until you withdraw to Sage)
               </p>
             )}
@@ -1598,7 +1606,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             {tableId && handsRequired > 0 && (
               <p className="muted small">
                 Play-through: {handsPlayed}/{handsRequired} hands ·{" "}
-                {formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked (1 hand = 1 DAT)
+                {formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked (1 hand = 1 DAT;
+                stays until you withdraw to Sage)
                 {playthroughRemaining > 0
                   ? ` — ${playthroughRemaining} remaining`
                   : " — fully unlocked"}

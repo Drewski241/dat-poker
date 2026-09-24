@@ -7,6 +7,7 @@ import {
   nextRedeemAtIso,
   playthroughHandsRequired,
   redeemCooldownRemainingMs,
+  resolveDatDailyRedeemMojos,
 } from "@dat-poker/shared";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -15,6 +16,12 @@ const balances = new Map<string, bigint>();
 /** ISO timestamp of last successful daily redeem per player. */
 const lastRedeemAt = new Map<string, string>();
 const playthrough = new Map<string, { poolMojos: bigint; handsPlayed: number }>();
+/** Cumulative DAT locked by daily redeem (not reduced by lost pots). */
+const lifetimeRedeemed = new Map<string, bigint>();
+/** Cumulative DAT removed from the lock by a Sage withdraw. */
+const lifetimeWithdrawn = new Map<string, bigint>();
+/** Set when a Sage withdraw consumes the remaining pool so we do not restore it. */
+const clearedByWithdraw = new Set<string>();
 let loaded = false;
 
 export interface PlaythroughState {
@@ -52,6 +59,15 @@ function persist(): void {
         poolMojos: row.poolMojos.toString(),
         handsPlayed: row.handsPlayed,
       })),
+      lifetimeRedeemed: [...lifetimeRedeemed.entries()].map(([playerId, mojos]) => ({
+        playerId,
+        mojos: mojos.toString(),
+      })),
+      lifetimeWithdrawn: [...lifetimeWithdrawn.entries()].map(([playerId, mojos]) => ({
+        playerId,
+        mojos: mojos.toString(),
+      })),
+      playthroughClearedByWithdraw: [...clearedByWithdraw],
     },
     null,
     2,
@@ -87,6 +103,9 @@ export function loadLedger(): void {
       balances?: { playerId?: string; balanceMojos?: string }[];
       redeemed?: { playerId?: string; lastRedeemAt?: string; utcDay?: string }[];
       playthrough?: { playerId?: string; poolMojos?: string; handsPlayed?: number }[];
+      lifetimeRedeemed?: { playerId?: string; mojos?: string }[];
+      lifetimeWithdrawn?: { playerId?: string; mojos?: string }[];
+      playthroughClearedByWithdraw?: string[];
     };
     for (const row of parsed.balances ?? []) {
       if (!row.playerId) continue;
@@ -113,6 +132,27 @@ export function loadLedger(): void {
       } catch {
         /* skip bad row */
       }
+    }
+    for (const row of parsed.lifetimeRedeemed ?? []) {
+      if (!row.playerId) continue;
+      try {
+        const mojos = BigInt(row.mojos ?? "0");
+        if (mojos > 0n) lifetimeRedeemed.set(row.playerId, mojos);
+      } catch {
+        /* skip bad row */
+      }
+    }
+    for (const row of parsed.lifetimeWithdrawn ?? []) {
+      if (!row.playerId) continue;
+      try {
+        const mojos = BigInt(row.mojos ?? "0");
+        if (mojos > 0n) lifetimeWithdrawn.set(row.playerId, mojos);
+      } catch {
+        /* skip bad row */
+      }
+    }
+    for (const playerId of parsed.playthroughClearedByWithdraw ?? []) {
+      if (playerId) clearedByWithdraw.add(playerId);
     }
   } catch {
     /* first run — file is created on credit */
@@ -175,16 +215,48 @@ export function tryRedeemDaily(
   if (hasRedeemedToday(address, now)) {
     return { credited: false, balance: getAccountBalance(address), alreadyRedeemed: true };
   }
+  const hadPriorRedeem = lastRedeemAt.has(address);
   lastRedeemAt.set(address, now.toISOString());
   const balance = creditAccount(address, amount);
-  const pt = getPlaythrough(address);
+  clearedByWithdraw.delete(address);
+  if (hadPriorRedeem) {
+    ensureRedeemLock(address);
+  }
+  const pt = playthrough.get(address) ?? { poolMojos: 0n, handsPlayed: 0 };
+  lifetimeRedeemed.set(address, (lifetimeRedeemed.get(address) ?? 0n) + amount);
   writePlaythrough(address, pt.poolMojos + amount, pt.handsPlayed);
   return { credited: true, balance, alreadyRedeemed: false };
 }
 
 export function getPlaythrough(playerId: string): PlaythroughState {
   loadLedger();
+  ensureRedeemLock(playerId);
   return playthrough.get(playerId) ?? { poolMojos: 0n, handsPlayed: 0 };
+}
+
+function dailyRedeemLockMojos(): bigint {
+  return resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS);
+}
+
+/**
+ * Redeemed DAT stays locked until a Sage withdraw. Older hosts wiped the pool
+ * when a pot was lost — restore at least one daily redeem (or the recorded
+ * lifetime total) so the lobby does not show 0/0 after a restart or bust.
+ */
+function ensureRedeemLock(playerId: string): void {
+  if (clearedByWithdraw.has(playerId)) return;
+  const withdrawn = lifetimeWithdrawn.get(playerId) ?? 0n;
+  let redeemed = lifetimeRedeemed.get(playerId) ?? 0n;
+  if (redeemed <= 0n && lastRedeemAt.has(playerId)) {
+    redeemed = dailyRedeemLockMojos();
+    lifetimeRedeemed.set(playerId, redeemed);
+  }
+  const minPool = redeemed > withdrawn ? redeemed - withdrawn : 0n;
+  if (minPool <= 0n) return;
+  const pt = playthrough.get(playerId) ?? { poolMojos: 0n, handsPlayed: 0 };
+  if (pt.poolMojos < minPool) {
+    writePlaythrough(playerId, minPool, pt.handsPlayed);
+  }
 }
 
 function writePlaythrough(playerId: string, poolMojos: bigint, handsPlayed: number): void {
@@ -241,7 +313,9 @@ export function reducePlaythroughPool(playerId: string, amount: bigint): void {
 export function setPlaythroughHands(playerId: string, handsPlayed: number): void {
   loadLedger();
   const pt = getPlaythrough(playerId);
-  writePlaythrough(playerId, pt.poolMojos, handsPlayed);
+  const next = Math.max(0, Math.floor(handsPlayed));
+  if (next <= pt.handsPlayed) return;
+  writePlaythrough(playerId, pt.poolMojos, next);
 }
 
 /**
@@ -261,11 +335,21 @@ export function consumePlaythroughWithdraw(playerId: string, withdrawMojos: bigi
     throw new Error("Withdraw exceeds play-through pool");
   }
   const consumedHands = Number(withdrawMojos / CAT_MOJOS_PER_TOKEN);
-  writePlaythrough(playerId, pt.poolMojos - withdrawMojos, pt.handsPlayed - consumedHands);
+  lifetimeWithdrawn.set(playerId, (lifetimeWithdrawn.get(playerId) ?? 0n) + withdrawMojos);
+  const nextPool = pt.poolMojos - withdrawMojos;
+  if (nextPool <= 0n) {
+    clearedByWithdraw.add(playerId);
+  }
+  writePlaythrough(playerId, nextPool, pt.handsPlayed - consumedHands);
 }
 
 export function clearPlaythrough(playerId: string): void {
   loadLedger();
+  clearedByWithdraw.add(playerId);
+  const redeemed = lifetimeRedeemed.get(playerId) ?? playthrough.get(playerId)?.poolMojos ?? 0n;
+  if (redeemed > 0n) {
+    lifetimeWithdrawn.set(playerId, redeemed);
+  }
   playthrough.delete(playerId);
   persist();
 }
@@ -275,6 +359,9 @@ export function resetAccountsForTests(): void {
   balances.clear();
   lastRedeemAt.clear();
   playthrough.clear();
+  lifetimeRedeemed.clear();
+  lifetimeWithdrawn.clear();
+  clearedByWithdraw.clear();
   loaded = true;
 }
 
@@ -283,6 +370,9 @@ export function reloadLedgerFromDiskForTests(): void {
   balances.clear();
   lastRedeemAt.clear();
   playthrough.clear();
+  lifetimeRedeemed.clear();
+  lifetimeWithdrawn.clear();
+  clearedByWithdraw.clear();
   loaded = false;
   loadLedger();
 }
