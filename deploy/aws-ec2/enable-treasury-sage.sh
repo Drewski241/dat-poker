@@ -5,6 +5,7 @@
 #   sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_FINGERPRINT=1234567890 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+#   sudo SAGE_PASTE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_PRIVATE_KEY=hex_or_secret bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_MNEMONIC='word word …' bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
@@ -75,13 +76,49 @@ def parse_env(path: Path) -> dict[str, str]:
         key, val = line.split("=", 1)
         key = key.strip()
         val = val.strip()
-        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'\'":
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in (chr(34), chr(39)):
             val = val[1:-1]
         data[key] = val
     return data
 
 print(parse_env(Path(sys.argv[1])).get(sys.argv[2], ""), end="")
 ' "$ENV_FILE" "$1"
+}
+
+paste_treasury_secret() {
+  local secret
+  echo "No TREASURY_SAGE_PRIVATE_KEY in $ENV_FILE (only TREASURY_SAGE_FINGERPRINT was found last time)."
+  echo "Paste the Sage Settings → secret key (64 hex chars) or a 12/24-word mnemonic."
+  echo "It will not echo. Press Enter when done. Do not paste it into chat."
+  if [[ -r /dev/tty ]]; then
+    read -r -s -p "Treasury spend key: " secret </dev/tty
+    echo >/dev/tty
+  else
+    read -r -s -p "Treasury spend key: " secret
+    echo
+  fi
+  secret="$(printf '%s' "$secret" | tr -d '\r\n')"
+  if [[ -z "$secret" ]]; then
+    echo "nothing pasted" >&2
+    return 1
+  fi
+  if [[ "$secret" =~ ^[0-9a-fA-F]{64}$ || "$secret" =~ ^0[xX][0-9a-fA-F]{64}$ ]]; then
+    TREASURY_SAGE_PRIVATE_KEY="$secret"
+    set_kv TREASURY_SAGE_PRIVATE_KEY "$secret"
+    echo "Wrote TREASURY_SAGE_PRIVATE_KEY to $ENV_FILE (${#secret} hex chars)."
+    return 0
+  fi
+  local words
+  words="$(printf '%s' "$secret" | wc -w)"
+  if [[ "$words" -eq 12 || "$words" -eq 24 ]]; then
+    TREASURY_SAGE_MNEMONIC="$secret"
+    set_kv TREASURY_SAGE_MNEMONIC "$secret"
+    echo "Wrote TREASURY_SAGE_MNEMONIC to $ENV_FILE ($words words)."
+    return 0
+  fi
+  echo "That paste is ${#secret} chars / $words words. Sage needs 64 hex chars or 12/24 words." >&2
+  echo "An xch1 address or wallet.key path will not work." >&2
+  return 1
 }
 
 describe_env_secret() {
@@ -109,7 +146,7 @@ for raw in text.splitlines():
         continue
     key, val = line.split("=", 1)
     key = key.strip()
-    val = val.strip().strip("\"'\''")
+    val = val.strip().strip(chr(34) + chr(39))
     if key.startswith("TREASURY_"):
         names.append(key)
     if key not in wanted or not val:
@@ -420,6 +457,11 @@ if [[ -z "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
   TREASURY_SAGE_MNEMONIC="$(read_env_kv TREASURY_SAGE_MNEMONIC)"
 fi
 echo "Sage spend-key env: $(describe_env_secret)"
+if [[ -z "${TREASURY_SAGE_PRIVATE_KEY:-}" && -z "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
+  if [[ "${SAGE_PASTE_KEY:-}" == "1" || -r /dev/tty ]]; then
+    paste_treasury_secret
+  fi
+fi
 
 if find_sage_bin >/dev/null; then
   ensure_sage_rpc_running || true

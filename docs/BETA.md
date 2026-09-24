@@ -410,10 +410,9 @@ certs are present (`wallet.key` is not the Chia spend key). Put the dedicated
 treasury private key in `/opt/dat-poker/.env`:
 
 ```bash
-# edit /opt/dat-poker/.env
-TREASURY_SAGE_PRIVATE_KEY=your_hex_or_bech32_secret
-# or TREASURY_SAGE_MNEMONIC=word word …
-sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# The secret must be a line in /opt/dat-poker/.env, not pasted into chat.
+# Silent prompt (does not echo):
+sudo SAGE_PASTE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 ```
 
 ## Website address
