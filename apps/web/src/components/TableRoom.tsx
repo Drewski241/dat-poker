@@ -126,7 +126,18 @@ export function TableRoom({
   const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
 
   const me = hand?.players.find((p) => p.playerId === playerId);
-  const opponents = hand?.players.filter((p) => p.playerId !== playerId) ?? [];
+  const opponents = (hand?.players.filter((p) => p.playerId !== playerId) ?? []).slice().sort((a, b) => {
+    const aAct = hand && hand.actionSeat === a.seatIndex && !a.folded ? 0 : 1;
+    const bAct = hand && hand.actionSeat === b.seatIndex && !b.folded ? 0 : 1;
+    return aAct - bAct;
+  });
+  const actorName = actionSeatPlayer
+    ? playerLabel(
+        actionSeatPlayer.playerId,
+        playerId,
+        tableSeats.find((s) => s.playerId === actionSeatPlayer.playerId)?.displayAddress,
+      )
+    : null;
 
   return (
     <div
@@ -325,6 +336,15 @@ export function TableRoom({
                   {hand.dealerSeat + 1} SB{hand.smallBlindSeat + 1} BB{hand.bigBlindSeat + 1}
                 </span>
               </p>
+              {actorName && (
+                <p
+                  className={`table-room-turn-banner ${isMyAction ? "table-room-turn-banner-you" : ""}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {isMyAction ? "Your turn to bet" : `${actorName} is betting`}
+                </p>
+              )}
             </div>
 
             <div className="table-room-board">
@@ -367,7 +387,7 @@ export function TableRoom({
                         )}
                       </strong>
                       {p.folded ? " · folded" : ""}
-                      {acting ? " · acting" : ""}
+                      {acting ? <span className="to-act-badge">Betting</span> : null}
                       <span className="stack">{formatDatMojos(p.stackMojos, datToken?.ticker)}</span>
                     </div>
                     {p.holeCards.length > 0 && !p.folded && (
@@ -389,6 +409,7 @@ export function TableRoom({
                     )}
                     You
                   </strong>
+                  {isMyAction ? <span className="to-act-badge">Betting</span> : null}
                   <span className="stack">{formatDatMojos(me.stackMojos, datToken?.ticker)}</span>
                   {liveHandLabel && (
                     <span className="live-hand table-room-live-hand">
@@ -400,15 +421,9 @@ export function TableRoom({
               </div>
             )}
 
-            {!isMyAction && actionSeatPlayer && (
-              <p className="muted table-room-wait">
-                Waiting for{" "}
-                {playerLabel(
-                  actionSeatPlayer.playerId,
-                  playerId,
-                  tableSeats.find((s) => s.playerId === actionSeatPlayer.playerId)?.displayAddress,
-                )}
-                …
+            {!isMyAction && actorName && (
+              <p className="table-room-wait">
+                Waiting — <strong>{actorName}</strong> is betting
               </p>
             )}
           </section>
