@@ -156,6 +156,7 @@ export interface PlaythroughInfo {
   handsPlayed: number;
   handsRequired: number;
   unlockedMojos: string;
+  withdrawableMojos?: string;
   playthroughRemaining: number;
 }
 
@@ -652,6 +653,7 @@ export const api = {
       dealerButtonSeat?: number | null;
       sng?: SngSnapshot | null;
       playthrough?: PlaythroughInfo | null;
+      accountMojos?: string;
     }>(`/v1/tables/${tableId}${playerId ? `?playerId=${encodeURIComponent(playerId)}` : ""}`),
 
   seatPlayer: (

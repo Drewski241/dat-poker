@@ -8,7 +8,7 @@ import {
   resetAccountsForTests,
   tryRedeemDaily,
 } from "./account-store.js";
-import { getSng, registerTableRoutes, resetTablesForTests } from "./routes/tables.js";
+import { getMtt, getSng, registerTableRoutes, resetTablesForTests } from "./routes/tables.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
 import { registerSessionRoutes } from "./routes/session.js";
@@ -56,7 +56,7 @@ async function finishHeadsUpHandAsHumanFold(
       players: { playerId: string; seatIndex: number; allIn?: boolean; folded?: boolean }[];
     } | null;
     handInProgress?: boolean;
-    playthrough?: { handsPlayed: number; unlockedMojos: string };
+    playthrough?: { handsPlayed: number; unlockedMojos: string; withdrawableMojos?: string };
   } = { ...(initial as typeof body) };
   for (let i = 0; i < 40 && (body.hand || body.handInProgress); i++) {
     if (body.hand?.actionSeat != null) {
@@ -88,7 +88,12 @@ async function finishHeadsUpHandAsHumanFold(
   });
   return JSON.parse(finalPoll.body) as typeof body & {
     handInProgress: boolean;
-    playthrough?: { handsPlayed: number; unlockedMojos: string; handsRequired: number };
+    playthrough?: {
+      handsPlayed: number;
+      unlockedMojos: string;
+      handsRequired: number;
+      withdrawableMojos?: string;
+    };
     seats: { playerId: string; handsPlayed: number; unlockedMojos: string }[];
   };
 }
@@ -125,6 +130,7 @@ describe("SNG play-through unlocks", () => {
     process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
     process.env.DAT_TERMS_ACCEPTANCE_PATH = "memory";
     process.env.DAT_ALLOW_DEV_BUYIN = "true";
+    process.env.DAT_SNG_FILL_HOUSE = "true";
     process.env.DAT_MIN_BUY_IN_MOJOS = "1000000";
     process.env.DAT_DAILY_REDEEM_MOJOS = "5000000";
     resetMailOutboxForTests();
@@ -156,6 +162,7 @@ describe("SNG play-through unlocks", () => {
     expect(seated?.unlockedMojos).toBe("2000");
     expect(after.playthrough?.handsPlayed).toBe(2);
     expect(after.playthrough?.unlockedMojos).toBe("2000");
+    expect(after.playthrough?.withdrawableMojos).toBe("2000");
 
     const sng = getSng(body.tableId);
     expect(sng).toBeDefined();
@@ -168,12 +175,20 @@ describe("SNG play-through unlocks", () => {
     expect(bust.statusCode).toBe(200);
     const busted = JSON.parse(bust.body) as {
       sng: { status: string };
-      playthrough: { handsPlayed: number; unlockedMojos: string; handsRequired: number };
+      playthrough: {
+        handsPlayed: number;
+        unlockedMojos: string;
+        handsRequired: number;
+        withdrawableMojos: string;
+      };
+      accountMojos?: string;
     };
     expect(busted.sng.status).toBe("finished");
     expect(busted.playthrough.handsPlayed).toBe(2);
     expect(busted.playthrough.unlockedMojos).toBe("2000");
+    expect(busted.playthrough.withdrawableMojos).toBe("2000");
     expect(busted.playthrough.handsRequired).toBeGreaterThan(0);
+    expect(BigInt(busted.accountMojos ?? "0")).toBeGreaterThan(0n);
 
     const acc = await app.inject({
       method: "GET",
@@ -182,10 +197,11 @@ describe("SNG play-through unlocks", () => {
     });
     const account = JSON.parse(acc.body) as {
       balanceMojos: string;
-      playthrough: { handsPlayed: number; unlockedMojos: string };
+      playthrough: { handsPlayed: number; unlockedMojos: string; withdrawableMojos: string };
     };
     expect(account.playthrough.handsPlayed).toBe(2);
     expect(account.playthrough.unlockedMojos).toBe("2000");
+    expect(account.playthrough.withdrawableMojos).toBe("2000");
     expect(BigInt(account.balanceMojos)).toBeGreaterThan(0n);
 
     const withdrawn = await app.inject({
@@ -236,7 +252,25 @@ describe("SNG play-through unlocks", () => {
     expect(pt.poolMojos).toBe(1_000_000n);
     expect(getAccountBalance(alice.session.playerId)).toBe(0n);
 
+    const empty = await app.inject({
+      method: "GET",
+      url: `/v1/wallet/account?address=${encodeURIComponent(alice.session.playerId)}`,
+      headers: auth(alice.token),
+    });
+    const emptyAcc = JSON.parse(empty.body) as {
+      playthrough: { unlockedMojos: string; withdrawableMojos: string };
+    };
+    expect(emptyAcc.playthrough.unlockedMojos).toBe("3000");
+    expect(emptyAcc.playthrough.withdrawableMojos).toBe("0");
+
     creditAccount(alice.session.playerId, 5_000_000n);
+
+    const funded = await app.inject({
+      method: "GET",
+      url: `/v1/wallet/account?address=${encodeURIComponent(alice.session.playerId)}`,
+      headers: auth(alice.token),
+    });
+    expect(JSON.parse(funded.body).playthrough.withdrawableMojos).toBe("3000");
 
     const withdrawn = await app.inject({
       method: "POST",
@@ -273,6 +307,99 @@ describe("SNG play-through unlocks", () => {
     });
     expect(blocked.statusCode).toBe(400);
     expect(JSON.parse(blocked.body).error).toMatch(/tournament chips/i);
+    await app.close();
+  });
+
+  it("withdraws leftover account DAT when unlocked SNG hands exceed leftover", async () => {
+    const app = await buildApp();
+    const alice = issueTestSession("xch1sngleftover");
+    tryRedeemDaily(alice.session.playerId, 1_002_000n);
+
+    const joined = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-sng",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(joined.statusCode).toBe(200);
+    const body = JSON.parse(joined.body) as { tableId: string };
+    expect(getAccountBalance(alice.session.playerId)).toBe(2_000n);
+
+    await playSngFolds(app, body.tableId, alice.session.playerId, alice.token, 5);
+    const acc = await app.inject({
+      method: "GET",
+      url: `/v1/wallet/account?address=${encodeURIComponent(alice.session.playerId)}`,
+      headers: auth(alice.token),
+    });
+    const account = JSON.parse(acc.body) as {
+      playthrough: { unlockedMojos: string; withdrawableMojos: string };
+    };
+    expect(account.playthrough.unlockedMojos).toBe("5000");
+    expect(account.playthrough.withdrawableMojos).toBe("2000");
+
+    const withdrawn = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, fromAccount: true, devAck: true },
+    });
+    expect(withdrawn.statusCode).toBe(200);
+    expect(JSON.parse(withdrawn.body).stackMojos).toBe("2000");
+    await app.close();
+  });
+
+  it("keeps 16-player SNG unlocks as Sage-withdrawable leftover after a bust", async () => {
+    const app = await buildApp();
+    const alice = issueTestSession("xch1mttunlock");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+
+    const joined = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-mtt",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(joined.statusCode).toBe(200);
+    const body = JSON.parse(joined.body) as { tableId: string };
+    await playSngFolds(app, body.tableId, alice.session.playerId, alice.token, 2);
+
+    const mtt = getMtt(body.tableId);
+    expect(mtt).toBeDefined();
+    const engine = mtt!.engineFor(body.tableId);
+    expect(engine).toBeDefined();
+    engine!.setPlayerStack(alice.session.playerId, 0n);
+    const bust = await app.inject({
+      method: "GET",
+      url: `/v1/tables/${body.tableId}?playerId=${encodeURIComponent(alice.session.playerId)}`,
+      headers: auth(alice.token),
+    });
+    expect(bust.statusCode).toBe(200);
+    const busted = JSON.parse(bust.body) as {
+      playthrough: { handsPlayed: number; unlockedMojos: string; withdrawableMojos: string };
+    };
+    expect(busted.playthrough.handsPlayed).toBe(2);
+    expect(busted.playthrough.unlockedMojos).toBe("2000");
+    expect(busted.playthrough.withdrawableMojos).toBe("2000");
+
+    const acc = await app.inject({
+      method: "GET",
+      url: `/v1/wallet/account?address=${encodeURIComponent(alice.session.playerId)}`,
+      headers: auth(alice.token),
+    });
+    const account = JSON.parse(acc.body) as {
+      playthrough: { unlockedMojos: string; withdrawableMojos: string };
+    };
+    expect(account.playthrough.unlockedMojos).toBe("2000");
+    expect(account.playthrough.withdrawableMojos).toBe("2000");
+
+    const withdrawn = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, fromAccount: true, devAck: true },
+    });
+    expect(withdrawn.statusCode).toBe(200);
+    expect(JSON.parse(withdrawn.body).stackMojos).toBe("2000");
     await app.close();
   });
 });

@@ -63,7 +63,7 @@ function unlockedTableWithdrawMojos(table: NlheTableEngine, playerId: string): b
 }
 
 function unlockedAccountWithdrawMojos(playerId: string): bigint {
-  return unlockedFromHeld(playerId, getAccountBalance(playerId));
+  return BigInt(playthroughView(playerId).withdrawableMojos);
 }
 
 function sagePlaythroughBlock(playerId: string, available: bigint): string | null {
@@ -71,6 +71,10 @@ function sagePlaythroughBlock(playerId: string, available: bigint): string | nul
   const view = playthroughView(playerId);
   if (view.handsRequired <= 0) {
     return "No DAT is unlocked for withdraw yet. Buy in and complete hands — each hand unlocks 1 DAT.";
+  }
+  const unlocked = BigInt(view.unlockedMojos);
+  if (unlocked > 0n && getAccountBalance(playerId) <= 0n) {
+    return "SNG hands unlocked DAT, but Sage withdraw uses leftover account chips or a 1st–3rd prize. Redeem or finish in the money, then withdraw the unlocked amount.";
   }
   if (view.playthroughRemaining <= 0) {
     return getAccountBalance(playerId) <= 0n

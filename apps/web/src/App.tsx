@@ -302,6 +302,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
     if (t.lastHandResult) setHandResult(t.lastHandResult);
     if (t.playthrough) setAccountPlaythrough(t.playthrough);
+    if (t.accountMojos) setAccountMojos(t.accountMojos);
     if (playerId) {
       try {
         const hist = await api.getHandHistory(id, playerId);
@@ -985,6 +986,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   })();
   const accountUnlockedMojos = (() => {
     try {
+      const reported = accountPlaythrough?.withdrawableMojos;
+      if (reported != null && reported !== "") {
+        const n = BigInt(reported);
+        return (n / CAT_MOJOS_PER_TOKEN) * CAT_MOJOS_PER_TOKEN;
+      }
       const held = BigInt(accountMojos ?? "0");
       const capped = unlockedDat < held ? unlockedDat : held;
       return (capped / CAT_MOJOS_PER_TOKEN) * CAT_MOJOS_PER_TOKEN;
@@ -1104,16 +1110,22 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const withdrawUnlockedFromAccount = () => {
     if (!playerId) return;
     run("Withdrawing unlocked DAT…", async () => {
-      const unlocked = accountPlaythrough?.unlockedMojos ?? unlockedMojos;
-      if (!unlocked || BigInt(unlocked) <= 0n) {
+      const withdrawable = accountUnlockedMojos;
+      if (withdrawable <= 0n) {
+        if (unlockedDat > 0n) {
+          throw new Error(
+            "SNG hands unlocked DAT, but Sage withdraw uses leftover account chips or a 1st–3rd prize",
+          );
+        }
         throw new Error("Play sit-n-go or cash hands to unlock DAT first");
       }
+      const stackMojos = withdrawable.toString();
       let withdrawProof: BuyInProof | undefined;
       if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
         const { message } = await api.withdrawMessage({
           tableId: tableId ?? undefined,
           address: walletAddress,
-          stackMojos: unlocked,
+          stackMojos,
           fromAccount: true,
         });
         setStatus("Approve withdraw in Sage (check your phone)…");
@@ -1372,6 +1384,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             playthroughHandsPlayed={handsPlayed}
             playthroughHandsRequired={handsRequired}
             playthroughUnlockedMojos={unlockedMojos}
+            playthroughWithdrawableMojos={accountUnlockedMojos.toString()}
           />
         </>
       ) : (
@@ -1466,7 +1479,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               <p className="muted small">
                 Play-through: {handsPlayed}/{handsRequired}{" "}
                 hands · {formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked
-                (1 redeemed DAT = 1 hand; stays until you withdraw to Sage)
+                (1 redeemed DAT = 1 hand)
+                {accountUnlockedMojos > 0n
+                  ? ` · ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} available to withdraw to Sage`
+                  : unlockedDat > 0n
+                    ? " · Sage withdraw needs leftover account chips or a 1st–3rd SNG prize"
+                    : " · stays until you withdraw to Sage"}
               </p>
             )}
             <div className="row">
@@ -1500,6 +1518,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           Pairing only signs a message. This site cannot send DAT or XCH from Sage.
           Skip this unless you want funded DAT sent to your wallet.
         </p>
+        {playerId && handsRequired > 0 && (
+          <p>
+            Available to withdraw to Sage:{" "}
+            <strong>{formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)}</strong>
+            {unlockedDat > 0n && accountUnlockedMojos === 0n
+              ? " — leftover account chips or a 1st–3rd prize are required"
+              : ""}
+          </p>
+        )}
         {!wcConfig ? (
           <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage withdraw.</p>
         ) : !session ? (
@@ -1578,7 +1605,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
               Prize pool is each human buy-in. Finish 1st, 2nd, or 3rd overall to get paid
               50% / 30% / 20%. House seats in the money are not paid. Each completed SNG
-              hand unlocks 1 DAT you can withdraw from leftover account chips or prizes.
+              hand unlocks 1 DAT into Available to withdraw to Sage from leftover account
+              chips or prizes.
             </p>
             <div className="lobby">
               <h3>Active sit-n-gos</h3>
@@ -1684,6 +1712,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 {unlockedDat > 0n
                   ? ` · ${formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked by SNG hands`
                   : ""}
+                {accountUnlockedMojos > 0n
+                  ? ` · ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} available to withdraw to Sage`
+                  : unlockedDat > 0n && accountUnlockedMojos === 0n
+                    ? " · leftover account chips or a prize are needed to send that to Sage"
+                    : ""}
               </div>
             )}
             {sng?.placements.length ? (
@@ -1743,8 +1776,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             {tableId && handsRequired > 0 && (
               <p className="muted small">
                 Play-through: {handsPlayed}/{handsRequired} hands ·{" "}
-                {formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked (1 hand = 1 DAT;
-                stays until you withdraw to Sage)
+                {formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked (1 hand = 1 DAT)
+                {accountUnlockedMojos > 0n
+                  ? ` · ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} available to withdraw to Sage`
+                  : " · stays until you withdraw to Sage"}
                 {playthroughRemaining > 0
                   ? ` — ${playthroughRemaining} remaining`
                   : " — fully unlocked"}
