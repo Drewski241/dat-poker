@@ -257,7 +257,8 @@ if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'describe_env_secret' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'paste_treasury_secret' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'looks_like_secret_key' "$DIR/enable-treasury-sage.sh" \
-  && grep -q 'is_u32_fingerprint' "$DIR/enable-treasury-sage.sh"; then
+  && grep -q 'is_u32_fingerprint' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'tr -d' "$DIR/enable-treasury-sage.sh"; then
   ok "enable-treasury-sage.sh writes Sage RPC cert paths and uses prebuilt sage-cli"
 else
   bad "enable-treasury-sage.sh cert paths"

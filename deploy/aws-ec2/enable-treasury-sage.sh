@@ -300,8 +300,11 @@ raise SystemExit(0 if len(raw)==64 and all(c in "0123456789abcdefABCDEF" for c i
 }
 
 sage_rpc() {
-  local method="$1" body="${2:-{}}"
+  local method="$1"
+  local body="${2:-{}}"
   local bin
+  # sage-cli serde rejects a trailing newline ("trailing characters").
+  body="$(printf '%s' "$body" | tr -d '\r\n')"
   bin="$(find_sage_bin)" || {
     echo "sage-cli is not installed" >&2
     return 1
@@ -360,9 +363,11 @@ ensure_sage_rpc_running() {
 
 import_treasury_key() {
   local secret="$1"
-  local out fingerprint
+  local out fingerprint body
   echo "Importing dedicated treasury spend key from env into Sage RPC…"
-  out="$(sage_rpc import_key "$(python3 -c 'import json,sys; print(json.dumps({"name":"treasury","key":sys.argv[1],"save_secrets":True,"login":True}))' "$secret")")"
+  body="$(TREASURY_IMPORT_KEY="$secret" python3 -c 'import json,os,sys
+sys.stdout.write(json.dumps({"name":"treasury","key":os.environ["TREASURY_IMPORT_KEY"],"save_secrets":True,"login":True}))')"
+  out="$(sage_rpc import_key "$body")"
   fingerprint="$(printf '%s\n' "$out" | json_field fingerprint)" || {
     echo "import_key failed (do not paste the private key into chat). Is Sage RPC up?" >&2
     printf '%s\n' "$out" | python3 -c 'import json,sys
@@ -400,7 +405,8 @@ login_treasury_key() {
     return 1
   fi
   echo "Logging Sage RPC into fingerprint $fingerprint"
-  sage_rpc login "$(python3 -c 'import json,sys; print(json.dumps({"fingerprint": int(sys.argv[1])}))' "$fingerprint")"
+  sage_rpc login "$(python3 -c 'import json,sys
+sys.stdout.write(json.dumps({"fingerprint": int(sys.argv[1])}))' "$fingerprint")"
 }
 
 start_sage_rpc() {
@@ -517,7 +523,8 @@ if find_sage_bin >/dev/null; then
   fi
   if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
     login_treasury_key "$TREASURY_SAGE_FINGERPRINT" || true
-    if ADDR="$(sage_rpc get_wallet_address "$(python3 -c 'import json,sys; print(json.dumps({"fingerprint": int(sys.argv[1]), "network_id": sys.argv[2]}))' "$TREASURY_SAGE_FINGERPRINT" "${TREASURY_NETWORK_ID:-mainnet}")" | json_field address 2>/dev/null)"; then
+    if ADDR="$(sage_rpc get_wallet_address "$(python3 -c 'import json,sys
+sys.stdout.write(json.dumps({"fingerprint": int(sys.argv[1]), "network_id": sys.argv[2]}))' "$TREASURY_SAGE_FINGERPRINT" "${TREASURY_NETWORK_ID:-mainnet}")" | json_field address 2>/dev/null)"; then
       echo "Treasury receive address: $ADDR"
       echo "Fund this address with DAT and a little XCH for fees (not the player Sage)."
       if [[ -z "${TREASURY_XCH_ADDRESS:-}" ]]; then
