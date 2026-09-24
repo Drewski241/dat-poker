@@ -250,7 +250,9 @@ if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'dat-poker-sage-rpc' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'install_prebuilt_sage_cli' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'free_sage_build_space' "$DIR/enable-treasury-sage.sh" \
-  && grep -q 'sage_runs' "$DIR/enable-treasury-sage.sh"; then
+  && grep -q 'sage_runs' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'SAGE_CREATE_KEY' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'import_treasury_mnemonic' "$DIR/enable-treasury-sage.sh"; then
   ok "enable-treasury-sage.sh writes Sage RPC cert paths and uses prebuilt sage-cli"
 else
   bad "enable-treasury-sage.sh cert paths"

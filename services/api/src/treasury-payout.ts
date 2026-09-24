@@ -110,13 +110,16 @@ export async function inspectTreasuryPayout(payoutUrl: string): Promise<Treasury
           /* health may be a bare 200 */
         }
         const missingCerts = offerMode === "rpc" && walletConfigured === false;
+        const notLoggedIn = offerMode === "rpc" && walletRpcReachable === false;
         return {
           reachable: true,
           healthUrl: url,
           host,
           error: missingCerts
             ? (walletError ?? "Sage RPC certs missing on the treasury host")
-            : null,
+            : notLoggedIn
+              ? (walletError ?? "Sage RPC is not logged in on the treasury host")
+              : null,
           walletRpcReachable,
           walletConfigured,
           offerMode,

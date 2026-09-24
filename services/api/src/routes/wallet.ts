@@ -100,7 +100,8 @@ async function requestPlayerTreasuryOffer(params: {
     return {
       status: 502,
       error:
-        "Treasury HTTP is up, but Sage RPC is not logged in on that host. Enable RPC :9257 and TREASURY_SAGE_FINGERPRINT, then try again.",
+        ping.error ??
+        "Treasury HTTP is up, but Sage RPC is not logged in. Import a dedicated treasury key on the AWS host, then: sudo TREASURY_SAGE_FINGERPRINT=<id> bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh",
     };
   }
   const address = await playerSagePayoutAddress(params, params.requestedAddress);

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { describeMissingSageCerts, expandWalletPath, sageCertSearchDirs } from "./sage-wallet-rpc.js";
+import {
+  describeMissingSageCerts,
+  describeSageLoginNeeded,
+  expandWalletPath,
+  sageCertSearchDirs,
+} from "./sage-wallet-rpc.js";
 import { buildSageCatGiftOfferRequest } from "./sage-payout-offer.js";
 
 describe("expandWalletPath", () => {
@@ -14,6 +19,8 @@ describe("sageCertSearchDirs", () => {
     expect(dirs).toContain("/home/ec2-user/.local/share/sage/ssl");
     expect(dirs).toContain("/opt/dat-poker/data/sage/ssl");
     expect(describeMissingSageCerts()).toMatch(/enable-treasury-sage\.sh/);
+    expect(describeSageLoginNeeded(false)).toMatch(/SAGE_CREATE_KEY=1/);
+    expect(describeSageLoginNeeded(true)).toMatch(/TREASURY_SAGE_FINGERPRINT/);
   });
 });
 

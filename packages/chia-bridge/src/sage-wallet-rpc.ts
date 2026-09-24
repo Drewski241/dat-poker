@@ -76,6 +76,21 @@ export function describeMissingSageCerts(): string {
   );
 }
 
+export function describeSageLoginNeeded(fingerprintSet: boolean): string {
+  if (fingerprintSet) {
+    return (
+      "Sage RPC certs are present but the treasury key is not logged in. " +
+      "On the AWS host: sudo TREASURY_SAGE_FINGERPRINT=<id> bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh"
+    );
+  }
+  return (
+    "Sage RPC certs are present, but no treasury key is imported (sageFingerprint is null). " +
+    "This is a dedicated host key, not the player Sage. Create or import it: " +
+    "sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh " +
+    "or sudo TREASURY_SAGE_MNEMONIC='word word …' bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh"
+  );
+}
+
 export function readTreasuryWalletRpcConfigFromEnv(): TreasuryWalletRpcConfig {
   const backend = process.env.TREASURY_WALLET_BACKEND === "chia" ? "chia" : "sage";
   const defaults = backend === "sage" ? defaultSageCertPaths() : {};

@@ -4,6 +4,8 @@
 #
 #   sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_FINGERPRINT=1234567890 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+#   sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+#   sudo TREASURY_SAGE_MNEMONIC='word word …' bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #
 # SAGE_INSTALL copies the prebuilt sage-cli shipped in this repo. Do not compile
@@ -151,6 +153,99 @@ install_sage_cli() {
   fi
 }
 
+sage_rpc() {
+  local method="$1" body="${2:-{}}"
+  local bin
+  bin="$(find_sage_bin)" || {
+    echo "sage-cli is not installed" >&2
+    return 1
+  }
+  sudo -u "$SAGE_USER" -H "$bin" rpc "$method" "$body"
+}
+
+json_field() {
+  python3 -c 'import json,sys
+raw=sys.stdin.read()
+try:
+  data=json.loads(raw)
+except Exception:
+  sys.exit(1)
+key=sys.argv[1]
+val=data.get(key)
+if val is None:
+  sys.exit(1)
+if isinstance(val, (dict, list)):
+  json.dump(val, sys.stdout)
+else:
+  print(val)
+' "$1"
+}
+
+list_fingerprints() {
+  sage_rpc get_keys '{}' 2>/dev/null | python3 -c 'import json,sys
+try:
+  data=json.loads(sys.stdin.read())
+except Exception:
+  sys.exit(0)
+for key in data.get("keys") or []:
+  fp=key.get("fingerprint")
+  if fp is not None:
+    print(fp)
+'
+}
+
+ensure_sage_rpc_running() {
+  if ! find_sage_bin >/dev/null; then
+    return 1
+  fi
+  if ! systemctl is-active --quiet dat-poker-sage-rpc; then
+    start_sage_rpc || true
+  fi
+  local i
+  for i in $(seq 1 20); do
+    if sage_rpc get_keys '{}' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Sage RPC is not answering get_keys. Check: sudo systemctl status dat-poker-sage-rpc" >&2
+  return 1
+}
+
+import_treasury_mnemonic() {
+  local mnemonic="$1"
+  local out fingerprint
+  echo "Importing dedicated treasury key (not the player Sage)…"
+  out="$(sage_rpc import_key "$(python3 -c 'import json,sys; print(json.dumps({"name":"treasury","key":sys.argv[1],"save_secrets":True,"login":True}))' "$mnemonic")")"
+  fingerprint="$(printf '%s\n' "$out" | json_field fingerprint)" || {
+    echo "import_key failed: $out" >&2
+    return 1
+  }
+  TREASURY_SAGE_FINGERPRINT="$fingerprint"
+  echo "Imported treasury fingerprint $fingerprint"
+}
+
+create_treasury_key() {
+  local out mnemonic
+  echo "Creating a new dedicated treasury key (24-word mnemonic)…"
+  out="$(sage_rpc generate_mnemonic '{"use_24_words":true}')"
+  mnemonic="$(printf '%s\n' "$out" | json_field mnemonic)" || {
+    echo "generate_mnemonic failed: $out" >&2
+    return 1
+  }
+  echo
+  echo "WRITE THIS TREASURY MNEMONIC DOWN. It is not stored again:"
+  echo "$mnemonic"
+  echo
+  import_treasury_mnemonic "$mnemonic"
+}
+
+login_treasury_key() {
+  local fingerprint="$1"
+  echo "Logging Sage RPC into fingerprint $fingerprint"
+  sage_rpc login "{\"fingerprint\": ${fingerprint}}"
+}
+
 start_sage_rpc() {
   local src="$INSTALL_ROOT/deploy/aws-ec2/dat-poker-sage-rpc.service"
   local start_src="$INSTALL_ROOT/deploy/aws-ec2/start-sage-rpc.sh"
@@ -209,8 +304,46 @@ else
   echo "Sage RPC wrote certs in $CERT_DIR"
 fi
 
-if find_sage_bin >/dev/null && ! systemctl is-enabled --quiet dat-poker-sage-rpc 2>/dev/null; then
-  start_sage_rpc || true
+if find_sage_bin >/dev/null; then
+  if ! systemctl is-active --quiet dat-poker-sage-rpc; then
+    start_sage_rpc || true
+  fi
+fi
+
+if [[ -z "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
+  TREASURY_SAGE_FINGERPRINT="$(grep '^TREASURY_SAGE_FINGERPRINT=' "$ENV_FILE" | tail -n1 | cut -d= -f2- || true)"
+fi
+
+if find_sage_bin >/dev/null; then
+  ensure_sage_rpc_running || true
+  if [[ -n "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
+    import_treasury_mnemonic "$TREASURY_SAGE_MNEMONIC"
+  elif [[ "${SAGE_CREATE_KEY:-}" == "1" ]]; then
+    create_treasury_key
+  fi
+  if [[ -z "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
+    mapfile -t SAGE_FPS < <(list_fingerprints)
+    if [[ "${#SAGE_FPS[@]}" -eq 1 && -n "${SAGE_FPS[0]}" ]]; then
+      TREASURY_SAGE_FINGERPRINT="${SAGE_FPS[0]}"
+      echo "Using the only Sage key on this host as TREASURY_SAGE_FINGERPRINT=${TREASURY_SAGE_FINGERPRINT}"
+    fi
+  fi
+  if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
+    login_treasury_key "$TREASURY_SAGE_FINGERPRINT" || true
+    if ADDR="$(sage_rpc get_wallet_address "{\"fingerprint\": ${TREASURY_SAGE_FINGERPRINT}, \"network_id\": \"${TREASURY_NETWORK_ID:-mainnet}\"}" | json_field address 2>/dev/null)"; then
+      echo "Treasury receive address: $ADDR"
+      echo "Fund this address with DAT and a little XCH for fees (not the player Sage)."
+      if [[ -z "${TREASURY_XCH_ADDRESS:-}" ]]; then
+        TREASURY_XCH_ADDRESS="$ADDR"
+      fi
+    fi
+  else
+    echo "No treasury key on this Sage yet. walletRpcReachable stays false until you import one."
+    echo "Create a dedicated key (write the mnemonic down):"
+    echo "  sudo SAGE_CREATE_KEY=1 bash $0"
+    echo "Or import an existing dedicated treasury mnemonic:"
+    echo "  sudo TREASURY_SAGE_MNEMONIC='word word …' bash $0"
+  fi
 fi
 
 set_kv TREASURY_OFFER_MODE rpc
@@ -250,9 +383,16 @@ if [[ "$ok" -ne 1 ]]; then
 fi
 
 echo "Treasury health:"
-curl -fsS http://127.0.0.1:4200/health
+HEALTH="$(curl -fsS http://127.0.0.1:4200/health)"
+printf '%s\n' "$HEALTH"
 echo
-echo
-echo "walletConfigured should be true. walletRpcReachable true means Sage RPC is logged in."
-echo "If reachable is false: import the treasury key, set TREASURY_SAGE_FINGERPRINT, re-run this script."
-echo "Then refresh /play and withdraw again."
+if printf '%s' "$HEALTH" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("walletRpcReachable") is True else 1)'; then
+  echo "walletConfigured and walletRpcReachable are true. Refresh /play and withdraw again."
+  echo "Keep DAT + fee XCH on the treasury address. Player Sage is a different key."
+else
+  echo "walletRpcReachable is still false. Sage has certs but no logged-in treasury key." >&2
+  echo "Create one (write the mnemonic down) or import a dedicated key:" >&2
+  echo "  sudo SAGE_CREATE_KEY=1 bash $0" >&2
+  echo "  sudo TREASURY_SAGE_MNEMONIC='word word …' bash $0" >&2
+  exit 1
+fi

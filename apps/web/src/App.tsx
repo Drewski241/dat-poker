@@ -1628,7 +1628,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 ? withdrawConfig.treasuryError
                   ? `HTTP is up at ${withdrawConfig.treasuryHost ?? "payout service"}, but Sage RPC is not ready (${withdrawConfig.treasuryError}). On the AWS host: sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh`
                   : withdrawConfig.treasuryWalletRpcReachable === false
-                    ? `HTTP is up at ${withdrawConfig.treasuryHost ?? "payout service"}, but Sage RPC is not logged in. Enable RPC :9257 on the AWS host, then try again.`
+                    ? `HTTP is up at ${withdrawConfig.treasuryHost ?? "payout service"}, but Sage RPC has no treasury key logged in. On the AWS host: sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh`
                     : `active at ${withdrawConfig.treasuryHost ?? "payout service"} — withdraw can send a DAT offer to your player Sage`
                 : withdrawConfig.treasuryConfigured
                   ? `configured but not reachable at ${withdrawConfig.treasuryHost ?? "the payout URL"}${

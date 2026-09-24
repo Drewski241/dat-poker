@@ -71,7 +71,10 @@ need Sage RPC on **this** AWS host:
 sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 # first time, copies the prebuilt sage-cli built for Amazon Linux 2023 (glibc 2.34):
 sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
-# after you import the treasury key:
+# then create or import a dedicated treasury key (not the player Sage):
+sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# or: sudo TREASURY_SAGE_MNEMONIC='word word …' bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# or, if the key is already on this Sage:
 sudo TREASURY_SAGE_FINGERPRINT=1234567890 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 ```
 

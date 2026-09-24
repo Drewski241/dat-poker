@@ -65,6 +65,38 @@ describe("onChainSageWithdrawEnabled", () => {
     expect(ping.walletConfigured).toBeNull();
   });
 
+  it("surfaces Sage login errors from treasury /health", async () => {
+    const { createServer } = await import("node:http");
+    const server = createServer((req, res) => {
+      if (req.url === "/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            status: "ok",
+            offerMode: "rpc",
+            walletConfigured: true,
+            walletRpcReachable: false,
+            walletError: "sudo SAGE_CREATE_KEY=1 bash enable-treasury-sage.sh",
+            sageFingerprint: null,
+          }),
+        );
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    const ping = await inspectTreasuryPayout(`http://127.0.0.1:${port}/payout`);
+    expect(ping.reachable).toBe(true);
+    expect(ping.walletConfigured).toBe(true);
+    expect(ping.walletRpcReachable).toBe(false);
+    expect(ping.error).toMatch(/SAGE_CREATE_KEY=1/);
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
+
   it("reads walletRpcReachable from treasury /health", async () => {
     const { createServer } = await import("node:http");
     const server = createServer((req, res) => {

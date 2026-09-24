@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { buildPayoutOffer, readTreasuryServiceConfig, type PayoutRequestBody } from "./payout.js";
-import { describeMissingSageCerts, pingTreasuryWalletRpc } from "@dat-poker/chia-bridge";
+import {
+  describeMissingSageCerts,
+  describeSageLoginNeeded,
+  ensureSageTreasuryLoggedIn,
+  pingTreasuryWalletRpc,
+} from "@dat-poker/chia-bridge";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -18,8 +23,14 @@ async function main(): Promise<void> {
     const walletConfigured = Boolean(config.walletRpc.certPath && config.walletRpc.keyPath);
     let walletRpcReachable: boolean | null = null;
     if (config.offerMode === "rpc" && walletConfigured) {
+      try {
+        await ensureSageTreasuryLoggedIn(config.walletRpc);
+      } catch {
+        /* login is best-effort on /health */
+      }
       walletRpcReachable = await pingTreasuryWalletRpc(config.walletRpc);
     }
+    const fingerprintSet = Boolean(config.walletRpc.sageFingerprint);
     return {
       status: "ok",
       offerMode: config.offerMode,
@@ -29,7 +40,11 @@ async function main(): Promise<void> {
       walletConfigured,
       walletRpcReachable,
       walletError:
-        config.offerMode === "rpc" && !walletConfigured ? describeMissingSageCerts() : null,
+        config.offerMode === "rpc" && !walletConfigured
+          ? describeMissingSageCerts()
+          : config.offerMode === "rpc" && walletConfigured && walletRpcReachable === false
+            ? describeSageLoginNeeded(fingerprintSet)
+            : null,
       sageFingerprint: config.walletRpc.sageFingerprint ?? null,
     };
   });
