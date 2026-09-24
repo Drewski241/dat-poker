@@ -4,7 +4,10 @@ import type { DatTokenInfo, HandResult } from "../api.js";
 import {
   formatHandCategory,
   runoutAllInPlayerIds,
+  runoutHandsToShow,
   runoutHoldMs,
+  runoutShowHoleCards,
+  runoutShowOutcome,
   runoutStreets,
   runoutVisibleCount,
   type RunoutStreet,
@@ -34,14 +37,15 @@ export function AllInRunout({
   const [index, setIndex] = useState(0);
   const street: RunoutStreet = streets[Math.min(index, streets.length - 1)] ?? "hands";
   const visible = (result.board ?? []).slice(0, runoutVisibleCount(street, fromBoardLen));
-  const revealHands = street === "hands";
+  const revealHands = runoutShowHoleCards(street);
+  const revealOutcome = runoutShowOutcome(street);
   const allInIds = runoutAllInPlayerIds(
     { boardLen: fromBoardLen, allIn: false, viewerId: playerId },
     result,
   );
   const viewerAllIn = allInIds.includes(playerId);
   const lost = viewerAllIn && result.winnerId !== playerId;
-  const allInHands = (result.shown ?? []).filter((shown) => allInIds.includes(shown.playerId));
+  const allInHands = runoutHandsToShow(result.shown, allInIds);
   const allInNames = allInIds
     .map((id) => playerLabel(id, playerId, seatDisplay(id)))
     .filter(Boolean)
@@ -94,28 +98,31 @@ export function AllInRunout({
           );
         })}
       </div>
-      {street === "allin" && allInNames && (
-        <p className="all-in-runout-who">{allInNames}</p>
-      )}
       {revealHands && allInHands.length > 0 && (
         <div className="table-room-showdown-strip all-in-runout-hands">
           {allInHands.map((shown) => (
             <div
               key={shown.playerId}
-              className={`table-room-showdown-entry ${shown.playerId === result.winnerId ? "is-winner" : "is-loser"}`}
+              className={`table-room-showdown-entry${revealOutcome && shown.playerId === result.winnerId ? " is-winner" : revealOutcome ? " is-loser" : ""}`}
             >
               <span className="table-room-showdown-name">
                 {playerLabel(shown.playerId, playerId, seatDisplay(shown.playerId))}
                 {" · all-in"}
-                {shown.playerId === result.winnerId ? " ★" : viewerAllIn && shown.playerId === playerId ? " (you)" : ""}
+                {revealOutcome && shown.playerId === result.winnerId
+                  ? " ★"
+                  : viewerAllIn && shown.playerId === playerId
+                    ? " (you)"
+                    : ""}
               </span>
-              <CardRow cards={shown.holeCards} size="sm" />
-              <span className="all-in-runout-cat">{formatHandCategory(shown.category)}</span>
+              <CardRow cards={shown.holeCards} size="md" />
+              {revealOutcome && (
+                <span className="all-in-runout-cat">{formatHandCategory(shown.category)}</span>
+              )}
             </div>
           ))}
         </div>
       )}
-      {revealHands && (
+      {revealOutcome && (
         <p className="all-in-runout-winner">
           {lost ? "You lost · " : ""}
           {playerLabel(result.winnerId, playerId, seatDisplay(result.winnerId))}

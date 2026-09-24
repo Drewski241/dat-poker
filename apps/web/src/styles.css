@@ -2228,6 +2228,19 @@ html.play-table-screen body {
 
 .all-in-runout-hands {
   width: 100%;
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: 0.6rem;
+}
+
+.all-in-runout-hands .table-room-showdown-entry {
+  max-width: none;
+}
+
+.all-in-runout-hands .table-room-showdown-name {
+  font-size: 0.8rem;
+  color: var(--text);
+  white-space: normal;
 }
 
 .all-in-runout-cat,

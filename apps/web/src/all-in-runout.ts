@@ -61,6 +61,25 @@ export function runoutVisibleCount(street: RunoutStreet, fromBoardLen = 0): numb
   return 5;
 }
 
+export function runoutShowHoleCards(_street: RunoutStreet): boolean {
+  return true;
+}
+
+export function runoutShowOutcome(street: RunoutStreet): boolean {
+  return street === "hands";
+}
+
+export function runoutHandsToShow<T extends { playerId: string }>(
+  shown: T[] | undefined,
+  allInPlayerIds: string[],
+): T[] {
+  const rows = shown ?? [];
+  if (rows.length === 0) return [];
+  if (allInPlayerIds.length === 0) return rows;
+  const matched = rows.filter((row) => allInPlayerIds.includes(row.playerId));
+  return matched.length > 0 ? matched : rows;
+}
+
 export function runoutHoldMs(street: RunoutStreet, lost = false): number {
   if (street === "allin") return 1800;
   if (street === "flop") return 2400;

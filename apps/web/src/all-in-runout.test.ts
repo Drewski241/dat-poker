@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   formatHandCategory,
   runoutAllInPlayerIds,
+  runoutHandsToShow,
   runoutHoldMs,
+  runoutShowHoleCards,
+  runoutShowOutcome,
   runoutStreets,
   runoutVisibleCount,
   shouldPlayAllInRunout,
@@ -96,6 +99,25 @@ describe("all-in runout", () => {
     expect(shouldPlayAllInRunout(live, result)).toBe(true);
     expect(runoutAllInPlayerIds(live, result)).toEqual(["house-2", "house-5"]);
     expect(runoutAllInPlayerIds(live, result).includes("you")).toBe(false);
+  });
+
+  it("shows hole cards on every street of the runout", () => {
+    expect(runoutShowHoleCards("allin")).toBe(true);
+    expect(runoutShowHoleCards("flop")).toBe(true);
+    expect(runoutShowHoleCards("turn")).toBe(true);
+    expect(runoutShowHoleCards("river")).toBe(true);
+    expect(runoutShowHoleCards("hands")).toBe(true);
+    expect(runoutShowOutcome("flop")).toBe(false);
+    expect(runoutShowOutcome("hands")).toBe(true);
+    expect(
+      runoutHandsToShow(
+        [
+          { playerId: "you" },
+          { playerId: "dat-poker:house:2" },
+        ],
+        ["you", "dat-poker:house:2"],
+      ).map((row) => row.playerId),
+    ).toEqual(["you", "dat-poker:house:2"]);
   });
 
   it("formats hand categories for the showdown strip", () => {
