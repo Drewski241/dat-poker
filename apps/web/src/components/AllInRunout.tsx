@@ -6,6 +6,7 @@ import {
   runoutAllInPlayerIds,
   runoutHandsToShow,
   runoutHoldMs,
+  runoutMatchupLine,
   runoutShowHoleCards,
   runoutShowOutcome,
   runoutStreets,
@@ -46,10 +47,12 @@ export function AllInRunout({
   const viewerAllIn = allInIds.includes(playerId);
   const lost = viewerAllIn && result.winnerId !== playerId;
   const allInHands = runoutHandsToShow(result.shown, allInIds);
-  const allInNames = allInIds
-    .map((id) => playerLabel(id, playerId, seatDisplay(id)))
-    .filter(Boolean)
-    .join(" · ");
+  const labelFor = (id: string) => playerLabel(id, playerId, seatDisplay(id));
+  const matchup = runoutMatchupLine(
+    allInIds,
+    allInHands.map((row) => row.playerId),
+    labelFor,
+  );
   const onFinishedRef = useRef(onFinished);
   onFinishedRef.current = onFinished;
   const finishedRef = useRef(false);
@@ -74,8 +77,8 @@ export function AllInRunout({
       className={`all-in-runout all-in-runout-${street}${lost ? " all-in-runout-lost" : " all-in-runout-won"}`}
       role="img"
       aria-label={
-        allInNames
-          ? `All-in: ${allInNames}`
+        matchup
+          ? `All-in: ${matchup}`
           : lost
             ? "All-in runout — you lost"
             : "All-in runout"
@@ -84,7 +87,7 @@ export function AllInRunout({
       <ActionSticker kind={street === "hands" ? "allin" : street} />
       <p className="all-in-runout-banner">
         {street === "allin" ? "ALL IN" : street === "hands" ? "Showdown" : street.toUpperCase()}
-        {allInNames ? <span> · {allInNames}</span> : street !== "hands" ? <span> · all-in</span> : null}
+        {matchup ? <span> · {matchup}</span> : street !== "hands" ? <span> · all-in</span> : null}
       </p>
       <div className="all-in-runout-board">
         {Array.from({ length: 5 }, (_, i) => {
@@ -106,8 +109,8 @@ export function AllInRunout({
               className={`table-room-showdown-entry${revealOutcome && shown.playerId === result.winnerId ? " is-winner" : revealOutcome ? " is-loser" : ""}`}
             >
               <span className="table-room-showdown-name">
-                {playerLabel(shown.playerId, playerId, seatDisplay(shown.playerId))}
-                {" · all-in"}
+                {labelFor(shown.playerId)}
+                {allInIds.includes(shown.playerId) ? " · all-in" : " · call"}
                 {revealOutcome && shown.playerId === result.winnerId
                   ? " ★"
                   : viewerAllIn && shown.playerId === playerId

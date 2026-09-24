@@ -71,13 +71,25 @@ export function runoutShowOutcome(street: RunoutStreet): boolean {
 
 export function runoutHandsToShow<T extends { playerId: string }>(
   shown: T[] | undefined,
-  allInPlayerIds: string[],
+  _allInPlayerIds: string[] = [],
 ): T[] {
-  const rows = shown ?? [];
-  if (rows.length === 0) return [];
-  if (allInPlayerIds.length === 0) return rows;
-  const matched = rows.filter((row) => allInPlayerIds.includes(row.playerId));
-  return matched.length > 0 ? matched : rows;
+  return shown ?? [];
+}
+
+export function runoutMatchupLine(
+  allInPlayerIds: string[],
+  shownPlayerIds: string[],
+  label: (id: string) => string,
+): string {
+  const allIn = allInPlayerIds.filter(Boolean);
+  const others = shownPlayerIds.filter((id) => id && !allIn.includes(id));
+  const allInNames = allIn.map(label).filter(Boolean);
+  const otherNames = others.map(label).filter(Boolean);
+  if (allInNames.length > 0 && otherNames.length > 0) {
+    return `${allInNames.join(" · ")} vs ${otherNames.join(" · ")}`;
+  }
+  if (allInNames.length > 1) return allInNames.join(" vs ");
+  return [...allInNames, ...otherNames].join(" · ");
 }
 
 export function runoutHoldMs(street: RunoutStreet, lost = false): number {

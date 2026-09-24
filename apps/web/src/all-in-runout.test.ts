@@ -4,6 +4,7 @@ import {
   runoutAllInPlayerIds,
   runoutHandsToShow,
   runoutHoldMs,
+  runoutMatchupLine,
   runoutShowHoleCards,
   runoutShowOutcome,
   runoutStreets,
@@ -118,6 +119,19 @@ describe("all-in runout", () => {
         ["you", "dat-poker:house:2"],
       ).map((row) => row.playerId),
     ).toEqual(["you", "dat-poker:house:2"]);
+  });
+
+  it("keeps the caller on screen when only one player shoved", () => {
+    const shown = [{ playerId: "dat-poker:house:5" }, { playerId: "dat-poker:house:2" }];
+    expect(runoutHandsToShow(shown, ["dat-poker:house:5"]).map((row) => row.playerId)).toEqual([
+      "dat-poker:house:5",
+      "dat-poker:house:2",
+    ]);
+    expect(
+      runoutMatchupLine(["dat-poker:house:5"], ["dat-poker:house:5", "dat-poker:house:2"], (id) =>
+        id.endsWith(":5") ? "House 5" : "House 2",
+      ),
+    ).toBe("House 5 vs House 2");
   });
 
   it("formats hand categories for the showdown strip", () => {

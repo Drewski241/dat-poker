@@ -849,8 +849,9 @@ export class NlheTableEngine {
   ): ShownHand[] {
     const contestants = live.filter((p) => !p.folded && p.holeCards.length === 2);
     const bigBlind = this.config.bigBlindMojos;
+    const allInPot = contestants.some((p) => p.allIn);
     const putMoneyIn = contestants.filter(
-      (p) => p.allIn || p.totalBetHandMojos > bigBlind,
+      (p) => p.allIn || p.totalBetHandMojos > bigBlind || allInPot,
     );
     const winners = contestants.filter((p) => (awardedByPlayer.get(p.playerId) ?? 0n) > 0n);
     const reveal = new Map<PlayerId, PlayerHandState>();
