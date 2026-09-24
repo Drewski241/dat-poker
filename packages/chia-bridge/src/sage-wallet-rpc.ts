@@ -104,11 +104,29 @@ function stripEnvSecret(value: string | undefined): string | undefined {
   return trimmed;
 }
 
+export function looksLikeSageSecretKey(value: string | undefined): boolean {
+  const trimmed = stripEnvSecret(value)?.replace(/^0x/i, "");
+  return Boolean(trimmed && /^[0-9a-fA-F]{64}$/.test(trimmed));
+}
+
+export function parseSageFingerprint(value: string | undefined): number | undefined {
+  const trimmed = stripEnvSecret(value);
+  if (!trimmed || !/^\d+$/.test(trimmed)) return undefined;
+  const fingerprint = Number(trimmed);
+  if (!Number.isInteger(fingerprint) || fingerprint < 0 || fingerprint > 0xffff_ffff) {
+    return undefined;
+  }
+  return fingerprint;
+}
+
 export function readSageTreasurySecretFromEnv(): string | undefined {
   return (
     stripEnvSecret(process.env.TREASURY_SAGE_PRIVATE_KEY) ??
     stripEnvSecret(process.env.TREASURY_SAGE_SECRET_KEY) ??
-    stripEnvSecret(process.env.TREASURY_SAGE_MNEMONIC)
+    stripEnvSecret(process.env.TREASURY_SAGE_MNEMONIC) ??
+    (looksLikeSageSecretKey(process.env.TREASURY_SAGE_FINGERPRINT)
+      ? stripEnvSecret(process.env.TREASURY_SAGE_FINGERPRINT)
+      : undefined)
   );
 }
 
@@ -144,7 +162,7 @@ export function readTreasuryWalletRpcConfigFromEnv(): TreasuryWalletRpcConfig {
           ? false
           : false
         : process.env.TREASURY_WALLET_INSECURE !== "true",
-    sageFingerprint: fingerprintRaw ? Number(fingerprintRaw) : undefined,
+    sageFingerprint: parseSageFingerprint(fingerprintRaw),
   };
 }
 

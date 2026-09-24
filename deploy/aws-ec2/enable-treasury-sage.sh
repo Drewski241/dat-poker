@@ -280,6 +280,25 @@ install_sage_cli() {
   fi
 }
 
+is_u32_fingerprint() {
+  python3 -c 'import sys
+raw=sys.argv[1].strip()
+if not raw.isdigit():
+    raise SystemExit(1)
+n=int(raw)
+raise SystemExit(0 if 0 <= n <= 0xFFFFFFFF else 1)
+' "${1:-}"
+}
+
+looks_like_secret_key() {
+  python3 -c 'import sys
+raw=sys.argv[1].strip()
+if raw.lower().startswith("0x"):
+    raw=raw[2:]
+raise SystemExit(0 if len(raw)==64 and all(c in "0123456789abcdefABCDEF" for c in raw) else 1)
+' "${1:-}"
+}
+
 sage_rpc() {
   local method="$1" body="${2:-{}}"
   local bin
@@ -376,8 +395,12 @@ create_treasury_key() {
 
 login_treasury_key() {
   local fingerprint="$1"
+  if ! is_u32_fingerprint "$fingerprint"; then
+    echo "TREASURY_SAGE_FINGERPRINT must be the integer Sage returns after import, not the 64-char secret key." >&2
+    return 1
+  fi
   echo "Logging Sage RPC into fingerprint $fingerprint"
-  sage_rpc login "{\"fingerprint\": ${fingerprint}}"
+  sage_rpc login "$(python3 -c 'import json,sys; print(json.dumps({"fingerprint": int(sys.argv[1])}))' "$fingerprint")"
 }
 
 start_sage_rpc() {
@@ -456,6 +479,19 @@ fi
 if [[ -z "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
   TREASURY_SAGE_MNEMONIC="$(read_env_kv TREASURY_SAGE_MNEMONIC)"
 fi
+if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]] && looks_like_secret_key "$TREASURY_SAGE_FINGERPRINT"; then
+  echo "TREASURY_SAGE_FINGERPRINT is a 64-char spend key, not an integer fingerprint. Moving it to TREASURY_SAGE_PRIVATE_KEY."
+  if [[ -z "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
+    TREASURY_SAGE_PRIVATE_KEY="$TREASURY_SAGE_FINGERPRINT"
+  fi
+  TREASURY_SAGE_FINGERPRINT=""
+  set_kv TREASURY_SAGE_PRIVATE_KEY "$TREASURY_SAGE_PRIVATE_KEY"
+  set_kv TREASURY_SAGE_FINGERPRINT ""
+fi
+if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]] && ! is_u32_fingerprint "$TREASURY_SAGE_FINGERPRINT"; then
+  echo "Ignoring TREASURY_SAGE_FINGERPRINT (not a Sage integer id)."
+  TREASURY_SAGE_FINGERPRINT=""
+fi
 echo "Sage spend-key env: $(describe_env_secret)"
 if [[ -z "${TREASURY_SAGE_PRIVATE_KEY:-}" && -z "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
   if [[ "${SAGE_PASTE_KEY:-}" == "1" || -r /dev/tty ]]; then
@@ -481,7 +517,7 @@ if find_sage_bin >/dev/null; then
   fi
   if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
     login_treasury_key "$TREASURY_SAGE_FINGERPRINT" || true
-    if ADDR="$(sage_rpc get_wallet_address "{\"fingerprint\": ${TREASURY_SAGE_FINGERPRINT}, \"network_id\": \"${TREASURY_NETWORK_ID:-mainnet}\"}" | json_field address 2>/dev/null)"; then
+    if ADDR="$(sage_rpc get_wallet_address "$(python3 -c 'import json,sys; print(json.dumps({"fingerprint": int(sys.argv[1]), "network_id": sys.argv[2]}))' "$TREASURY_SAGE_FINGERPRINT" "${TREASURY_NETWORK_ID:-mainnet}")" | json_field address 2>/dev/null)"; then
       echo "Treasury receive address: $ADDR"
       echo "Fund this address with DAT and a little XCH for fees (not the player Sage)."
       if [[ -z "${TREASURY_XCH_ADDRESS:-}" ]]; then
@@ -507,7 +543,7 @@ set_kv TREASURY_HOST "127.0.0.1"
 set_kv TREASURY_PORT "4200"
 set_kv DAT_TREASURY_PAYOUT_URL "http://127.0.0.1:4200/payout"
 set_kv DAT_ENABLE_ONCHAIN_WITHDRAW true
-if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
+if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]] && is_u32_fingerprint "$TREASURY_SAGE_FINGERPRINT"; then
   set_kv TREASURY_SAGE_FINGERPRINT "$TREASURY_SAGE_FINGERPRINT"
 fi
 if [[ -n "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then

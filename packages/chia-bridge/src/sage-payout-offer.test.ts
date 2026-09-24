@@ -4,6 +4,8 @@ import {
   describeMissingSageCerts,
   describeSageLoginNeeded,
   expandWalletPath,
+  looksLikeSageSecretKey,
+  parseSageFingerprint,
   readSageTreasurySecretFromEnv,
   sageCertSearchDirs,
 } from "./sage-wallet-rpc.js";
@@ -34,6 +36,9 @@ describe("sageCertSearchDirs", () => {
     expect(readSageTreasurySecretFromEnv()).toBe("hexkey");
     if (previousKey === undefined) delete process.env.TREASURY_SAGE_PRIVATE_KEY;
     else process.env.TREASURY_SAGE_PRIVATE_KEY = previousKey;
+    expect(looksLikeSageSecretKey("a".repeat(64))).toBe(true);
+    expect(parseSageFingerprint("a".repeat(64))).toBeUndefined();
+    expect(parseSageFingerprint("1234567890")).toBe(1234567890);
   });
 });
 
