@@ -225,19 +225,27 @@ function tableSnapshot(
       table.houseSeats().length === 0 &&
       table.getActivePlayerCount() >= table.getMaxSeats(),
     humanPlayerIds: table.getSeatedPlayers().filter((s) => !isHousePlayerId(s.playerId)).map((s) => s.playerId),
+    playthrough:
+      viewerId && !isHousePlayerId(viewerId)
+        ? playthroughFields(viewerId, table.getHandsPlayed(viewerId))
+        : null,
     seats: table.getSeatedPlayers().map((s) => {
       const house = isHousePlayerId(s.playerId);
-      const pt = house ? { poolMojos: 0n, handsPlayed: 0 } : getPlaythrough(s.playerId);
-      const handsRequired = playthroughHandsRequired(pt.poolMojos);
-      const handsPlayed = house ? table.getHandsPlayed(s.playerId) : pt.handsPlayed;
-      const unlockedMojos = playthroughUnlockedMojos(handsPlayed, pt.poolMojos);
+      const fields = house
+        ? {
+            handsPlayed: table.getHandsPlayed(s.playerId),
+            handsRequired: 0,
+            playthroughRemaining: 0,
+            unlockedMojos: "0",
+          }
+        : playthroughFields(s.playerId, table.getHandsPlayed(s.playerId));
       return {
         ...s,
         displayAddress: playerLabels.get(s.playerId) ?? (house ? (s.playerId === HOUSE_PLAYER_ID ? "House" : s.playerId.replace("dat-poker:", "")) : s.playerId),
-        handsPlayed,
-        handsRequired,
-        playthroughRemaining: Math.max(0, handsRequired - handsPlayed),
-        unlockedMojos: unlockedMojos.toString(),
+        handsPlayed: fields.handsPlayed,
+        handsRequired: fields.handsRequired,
+        playthroughRemaining: fields.playthroughRemaining,
+        unlockedMojos: fields.unlockedMojos,
       };
     }),
     hand: redactHandForViewer(table.getHandState(), viewerId),
@@ -912,11 +920,49 @@ export function getTableEngine(tableId: string): NlheTableEngine | undefined {
   return tables.get(tableId);
 }
 
+export function playthroughFields(playerId: string, tableHandsPlayed = 0) {
+  const pt = getPlaythrough(playerId);
+  const handsRequired = playthroughHandsRequired(pt.poolMojos);
+  const handsPlayed = Math.max(pt.handsPlayed, Math.max(0, Math.floor(tableHandsPlayed)));
+  const unlockedMojos = playthroughUnlockedMojos(handsPlayed, pt.poolMojos);
+  return {
+    poolMojos: pt.poolMojos.toString(),
+    handsPlayed,
+    handsRequired,
+    unlockedMojos: unlockedMojos.toString(),
+    playthroughRemaining: Math.max(0, handsRequired - handsPlayed),
+  };
+}
+
 export function persistTablePlaythrough(table: NlheTableEngine): void {
+  const sng = isSngTable(table);
   for (const seated of table.getSeatedPlayers()) {
     if (isHousePlayerId(seated.playerId)) continue;
     setPlaythroughHands(seated.playerId, table.getHandsPlayed(seated.playerId));
-    syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId) + seated.stackMojos);
+    // Tournament chips are not withdrawable DAT — do not shrink the buy-in
+    // pool when an SNG stack drops (or hits zero on a bust).
+    if (!sng) {
+      syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId) + seated.stackMojos);
+    }
+  }
+}
+
+function persistSngPlaythroughAfterSettle(sng: SngTournament): void {
+  const seen = new Set<string>();
+  for (const row of sng.snapshot().placements) {
+    if (isHousePlayerId(row.playerId)) continue;
+    seen.add(row.playerId);
+    const held = getAccountBalance(row.playerId);
+    if (held > 0n) {
+      syncPlaythroughHeld(row.playerId, held);
+    }
+  }
+  for (const seated of sng.engine.getSeatedPlayers()) {
+    if (isHousePlayerId(seated.playerId) || seen.has(seated.playerId)) continue;
+    const held = getAccountBalance(seated.playerId);
+    if (held > 0n) {
+      syncPlaythroughHeld(seated.playerId, held);
+    }
   }
 }
 
@@ -1005,11 +1051,13 @@ function settleSngPrizes(sng: SngTournament): void {
 export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): void {
   const sng = sngByTable.get(tableId);
   if (!sng || table.isHandInProgress()) return;
+  persistTablePlaythrough(table);
   if (sng.getStatus() === "running") {
     sng.afterHand();
   }
   if (sng.getStatus() === "finished") {
     settleSngPrizes(sng);
+    persistSngPlaythroughAfterSettle(sng);
   }
 }
 

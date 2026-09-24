@@ -71,6 +71,9 @@ type Props = {
   sng?: SngSnapshot | null;
   runoutFromBoardLen?: number | null;
   onRunoutFinished?: () => void;
+  playthroughHandsPlayed?: number;
+  playthroughHandsRequired?: number;
+  playthroughUnlockedMojos?: string;
 };
 
 export function TableRoom({
@@ -110,6 +113,9 @@ export function TableRoom({
   sng = null,
   runoutFromBoardLen = null,
   onRunoutFinished,
+  playthroughHandsPlayed = 0,
+  playthroughHandsRequired = 0,
+  playthroughUnlockedMojos = "0",
 }: Props) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -168,6 +174,13 @@ export function TableRoom({
                     .map((row) => `${row.place} ${formatDatMojos(row.prizeMojos, datToken?.ticker)}`)
                     .join(" · ")})`
                 : ""}
+            </p>
+          )}
+          {playthroughHandsRequired > 0 && (
+            <p className="table-room-playthrough">
+              Play-through {playthroughHandsPlayed}/{playthroughHandsRequired} hands ·{" "}
+              {formatDatMojos(playthroughUnlockedMojos, datToken?.ticker)} unlocked
+              {sng ? " from leftover account DAT or prizes" : ""}
             </p>
           )}
         </div>

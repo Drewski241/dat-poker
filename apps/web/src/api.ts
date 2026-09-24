@@ -469,24 +469,30 @@ export const api = {
     return request<{ message: string }>(`/v1/wallet/buy-in/message?${q}`);
   },
 
-  withdrawMessage: (params: { tableId: string; address: string; stackMojos: string }) => {
+  withdrawMessage: (params: {
+    tableId?: string;
+    address: string;
+    stackMojos: string;
+    fromAccount?: boolean;
+  }) => {
     const q = new URLSearchParams({
-      tableId: params.tableId,
       address: params.address,
       stackMojos: params.stackMojos,
     });
+    if (params.tableId) q.set("tableId", params.tableId);
+    if (params.fromAccount) q.set("fromAccount", "1");
     return request<{ message: string; stackMojos: string }>(`/v1/wallet/withdraw/message?${q}`);
   },
 
   withdraw: (
-    tableId: string,
+    tableId: string | null,
     playerId: string,
-    options?: { withdrawProof?: WithdrawProof; devAck?: boolean; toAccount?: boolean },
+    options?: { withdrawProof?: WithdrawProof; devAck?: boolean; toAccount?: boolean; fromAccount?: boolean },
   ) =>
     request<WithdrawResult>("/v1/wallet/withdraw", {
       method: "POST",
       body: JSON.stringify({
-        tableId,
+        tableId: tableId ?? undefined,
         playerId,
         ...options,
       }),
@@ -602,6 +608,7 @@ export const api = {
       lastHandResult: HandResult | null;
       dealerButtonSeat?: number | null;
       sng?: SngSnapshot | null;
+      playthrough?: PlaythroughInfo | null;
     }>(`/v1/tables/${tableId}${playerId ? `?playerId=${encodeURIComponent(playerId)}` : ""}`),
 
   seatPlayer: (
@@ -680,7 +687,13 @@ export const api = {
     }),
 
   action: (tableId: string, playerId: string, action: PlayerAction, amountMojos?: string) =>
-    request<{ ok: boolean; hand: HandState | null; lastHandResult: HandResult | null }>(
+    request<{
+      ok: boolean;
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+      playthrough?: PlaythroughInfo | null;
+    }>(
       `/v1/tables/${tableId}/hands/action`,
       {
         method: "POST",

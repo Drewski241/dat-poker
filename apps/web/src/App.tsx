@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatAmount, formatDatMojos, isHousePlayerId } from "@dat-poker/shared";
+import { CAT_MOJOS_PER_TOKEN, computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatAmount, formatDatMojos, isHousePlayerId } from "@dat-poker/shared";
 import {
   api,
   restoreApiAuthToken,
@@ -281,6 +281,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       }
     }
     if (t.lastHandResult) setHandResult(t.lastHandResult);
+    if (t.playthrough) setAccountPlaythrough(t.playthrough);
     if (playerId) {
       try {
         const hist = await api.getHandHistory(id, playerId);
@@ -292,10 +293,16 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   }, [playerId]);
 
   const applyActionResponse = useCallback(
-    (response: { hand: HandState | null; lastHandResult: HandResult | null; sng?: SngSnapshot | null }) => {
+    (response: {
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+      playthrough?: PlaythroughInfo | null;
+    }) => {
       setHand(response.hand);
       if (response.lastHandResult) setHandResult(response.lastHandResult);
       if (response.sng !== undefined) setSng(response.sng);
+      if (response.playthrough) setAccountPlaythrough(response.playthrough);
     },
     [],
   );
@@ -839,6 +846,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       return 0n;
     }
   })();
+  const accountUnlockedMojos = (() => {
+    try {
+      const held = BigInt(accountMojos ?? "0");
+      const capped = unlockedDat < held ? unlockedDat : held;
+      return (capped / CAT_MOJOS_PER_TOKEN) * CAT_MOJOS_PER_TOKEN;
+    } catch {
+      return 0n;
+    }
+  })();
 
   const leaveTableView = () => {
     setTableId(null);
@@ -944,6 +960,47 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         );
         setDatBalance(balance.spendable);
       }
+      await refreshAccount(playerId);
+    });
+  };
+
+  const withdrawUnlockedFromAccount = () => {
+    if (!playerId) return;
+    run("Withdrawing unlocked DAT…", async () => {
+      const unlocked = accountPlaythrough?.unlockedMojos ?? unlockedMojos;
+      if (!unlocked || BigInt(unlocked) <= 0n) {
+        throw new Error("Play sit-n-go or cash hands to unlock DAT first");
+      }
+      let withdrawProof: BuyInProof | undefined;
+      if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
+        const { message } = await api.withdrawMessage({
+          tableId: tableId ?? undefined,
+          address: walletAddress,
+          stackMojos: unlocked,
+          fromAccount: true,
+        });
+        setStatus("Approve withdraw in Sage (check your phone)…");
+        const signed = await signWithdrawMessage(
+          session,
+          wcConfig.projectId,
+          wcConfig.chainId,
+          message,
+          walletAddress,
+        );
+        withdrawProof = {
+          address: walletAddress,
+          message,
+          signature: signed.signature,
+          pubkey: signed.pubkey,
+        };
+      }
+      const result = await api.withdraw(tableId, playerId, {
+        withdrawProof,
+        devAck: datToken?.devBuyInEnabled,
+        fromAccount: true,
+      });
+      setWithdrawResult(result);
+      if (result.playthrough) setAccountPlaythrough(result.playthrough);
       await refreshAccount(playerId);
     });
   };
@@ -1164,6 +1221,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             sng={tableFormat === "sng" ? sng : null}
             runoutFromBoardLen={runoutFromBoardLen}
             onRunoutFinished={() => setRunoutFromBoardLen(null)}
+            playthroughHandsPlayed={handsPlayed}
+            playthroughHandsRequired={handsRequired}
+            playthroughUnlockedMojos={unlockedMojos}
           />
         </>
       ) : (
@@ -1320,6 +1380,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 )}
               </p>
             )}
+            {accountUnlockedMojos > 0n && (
+              <div className="row">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={withdrawUnlockedFromAccount}
+                >
+                  Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
+                  to Sage
+                </button>
+              </div>
+            )}
           </>
         )}
       </section>
@@ -1348,7 +1420,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <p className="muted small">
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
               Prize pool is each human buy-in. Finish 1st, 2nd, or 3rd overall to get paid
-              50% / 30% / 20%. House seats in the money are not paid.
+              50% / 30% / 20%. House seats in the money are not paid. Each completed SNG
+              hand unlocks 1 DAT you can withdraw from leftover account chips or prizes.
             </p>
             <div className="lobby">
               <h3>Active sit-n-gos</h3>
@@ -1438,6 +1511,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 {mySngPlace && BigInt(mySngPlace.prizeMojos) > 0n
                   ? ` · ${formatDatMojos(mySngPlace.prizeMojos, datToken?.ticker)} paid to your account`
                   : ". You have to finish 1st–3rd overall to get paid."}
+                {unlockedDat > 0n
+                  ? ` · ${formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked by SNG hands`
+                  : ""}
               </div>
             )}
             {sng?.placements.length ? (
@@ -1503,7 +1579,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   : " — fully unlocked"}
               </p>
             )}
-            {tableId && !hand && !handInProgress && tableStackMojos && (
+            {tableId && !hand && !handInProgress && tableStackMojos && tableFormat !== "sng" && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={cashOutToAccount}>
                   Cash out {formatDatMojos(tableStackMojos, datToken?.ticker)} to account
@@ -1518,6 +1594,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                     Withdraw {formatDatMojos(unlockedMojos, datToken?.ticker)} to Sage
                   </button>
                 )}
+              </div>
+            )}
+            {tableFormat === "sng" && accountUnlockedMojos > 0n && (
+              <div className="row">
+                <button type="button" disabled={busy} onClick={withdrawUnlockedFromAccount}>
+                  Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
+                  from SNG play
+                </button>
               </div>
             )}
           </>

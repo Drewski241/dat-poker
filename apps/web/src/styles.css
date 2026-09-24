@@ -1437,6 +1437,12 @@ html.play-table-screen body {
   font-weight: 600;
 }
 
+.table-room-playthrough {
+  margin: 0.15rem 0 0;
+  font-size: clamp(0.68rem, 2.6vmin, 0.82rem);
+  color: var(--muted);
+}
+
 .table-room-header-actions {
   display: flex;
   flex-shrink: 0;

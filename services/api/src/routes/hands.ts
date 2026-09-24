@@ -8,6 +8,7 @@ import {
   getSng,
   getTableEngine,
   persistTablePlaythrough,
+  playthroughFields,
   unseatInactivePlayers,
 } from "./tables.js";
 import { touchPlayerActivity } from "../player-activity.js";
@@ -104,6 +105,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         hand: redactHandForViewer(table.getHandState(), session.playerId),
         lastHandResult: table.getLastHandResult(),
         sng: getSng(req.params.tableId)?.snapshot() ?? null,
+        playthrough: playthroughFields(session.playerId, table.getHandsPlayed(session.playerId)),
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -170,6 +172,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         hand: redactHandForViewer(table.getHandState(), session.playerId),
         lastHandResult: table.getLastHandResult(),
         sng: getSng(req.params.tableId)?.snapshot() ?? null,
+        playthrough: playthroughFields(session.playerId, table.getHandsPlayed(session.playerId)),
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
