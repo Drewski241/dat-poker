@@ -1,0 +1,195 @@
+import { describe, expect, it } from "vitest";
+import {
+  formatHandCategory,
+  runoutAllInPlayerIds,
+  runoutHandsToShow,
+  runoutHoldMs,
+  runoutMatchupLine,
+  runoutShowHoleCards,
+  runoutShowOutcome,
+  runoutStreets,
+  runoutVisibleCount,
+  shouldPlayAllInRunout,
+  allInBettingClosed,
+  isCallAllIn,
+  shouldHoldTableForRunout,
+} from "./all-in-runout.js";
+
+describe("all-in runout", () => {
+  it("plays flop-turn-river when the board jumps from nothing to five", () => {
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 0, allIn: true, viewerId: "you" },
+        { reason: "showdown", board: [1, 2, 3, 4, 5], allInPlayerIds: ["you"] },
+      ),
+    ).toBe(true);
+    expect(runoutStreets(0)).toEqual(["allin", "flop", "turn", "river", "hands"]);
+    expect(runoutVisibleCount("allin", 0)).toBe(0);
+    expect(runoutVisibleCount("flop")).toBe(3);
+    expect(runoutVisibleCount("turn")).toBe(4);
+    expect(runoutVisibleCount("river")).toBe(5);
+  });
+
+  it("plays turn and river when the flop was already live", () => {
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 3, allIn: true, viewerId: "you" },
+        { reason: "showdown", board: [1, 2, 3, 4, 5], allInPlayerIds: ["you", "house"] },
+      ),
+    ).toBe(true);
+    expect(runoutStreets(3)).toEqual(["allin", "turn", "river", "hands"]);
+    expect(runoutVisibleCount("allin", 3)).toBe(3);
+  });
+
+  it("plays a slow river after an all-in on the turn", () => {
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 4, allIn: true, viewerId: "you" },
+        { reason: "showdown", board: [1, 2, 3, 4, 5], allInPlayerIds: ["you"] },
+      ),
+    ).toBe(true);
+    expect(runoutStreets(4)).toEqual(["allin", "river", "hands"]);
+  });
+
+  it("still slows down a river all-in so a losing player can look at the hands", () => {
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 5, allIn: true, viewerId: "you" },
+        { reason: "showdown", board: [1, 2, 3, 4, 5], allInPlayerIds: ["you"] },
+      ),
+    ).toBe(true);
+    expect(runoutStreets(5)).toEqual(["allin", "hands"]);
+    expect(runoutHoldMs("hands", true)).toBeGreaterThan(runoutHoldMs("hands", false));
+    expect(runoutHoldMs("flop")).toBeGreaterThanOrEqual(2000);
+  });
+
+  it("does not replay a check-down the player already saw", () => {
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 5, allIn: false },
+        { reason: "showdown", board: [1, 2, 3, 4, 5] },
+      ),
+    ).toBe(false);
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 4, allIn: false },
+        { reason: "showdown", board: [1, 2, 3, 4, 5] },
+      ),
+    ).toBe(false);
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 0, allIn: true },
+        { reason: "fold", board: [1, 2, 3, 4, 5] },
+      ),
+    ).toBe(false);
+  });
+
+  it("does not treat a fold as an all-in just because the board ran out", () => {
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 0, allIn: false, viewerFolded: true, viewerId: "you" },
+        { reason: "showdown", board: [1, 2, 3, 4, 5], shown: [{ playerId: "house", allIn: false }] },
+      ),
+    ).toBe(false);
+  });
+
+  it("plays for remaining all-in players after the viewer folds", () => {
+    const live = { boardLen: 0, allIn: false, viewerFolded: true, viewerId: "you" };
+    const result = {
+      reason: "showdown",
+      board: [1, 2, 3, 4, 5],
+      allInPlayerIds: ["house-2", "house-5"],
+      runoutFromBoardLen: 0,
+    };
+    expect(shouldPlayAllInRunout(live, result)).toBe(true);
+    expect(runoutAllInPlayerIds(live, result)).toEqual(["house-2", "house-5"]);
+    expect(runoutAllInPlayerIds(live, result).includes("you")).toBe(false);
+  });
+
+  it("shows hole cards on every street of the runout", () => {
+    expect(runoutShowHoleCards("allin")).toBe(true);
+    expect(runoutShowHoleCards("flop")).toBe(true);
+    expect(runoutShowHoleCards("turn")).toBe(true);
+    expect(runoutShowHoleCards("river")).toBe(true);
+    expect(runoutShowHoleCards("hands")).toBe(true);
+    expect(runoutShowOutcome("flop")).toBe(false);
+    expect(runoutShowOutcome("hands")).toBe(true);
+    expect(
+      runoutHandsToShow(
+        [
+          { playerId: "you" },
+          { playerId: "dat-poker:house:2" },
+        ],
+        ["you", "dat-poker:house:2"],
+      ).map((row) => row.playerId),
+    ).toEqual(["you", "dat-poker:house:2"]);
+  });
+
+  it("keeps the caller on screen when only one player shoved", () => {
+    const shown = [{ playerId: "dat-poker:house:5" }, { playerId: "dat-poker:house:2" }];
+    expect(runoutHandsToShow(shown, ["dat-poker:house:5"]).map((row) => row.playerId)).toEqual([
+      "dat-poker:house:5",
+      "dat-poker:house:2",
+    ]);
+    expect(
+      runoutMatchupLine(["dat-poker:house:5"], ["dat-poker:house:5", "dat-poker:house:2"], (id) =>
+        id.endsWith(":5") ? "House 5" : "House 2",
+      ),
+    ).toBe("House 5 vs House 2");
+  });
+
+  it("hides cards while two players can still bet after an all-in", () => {
+    expect(
+      allInBettingClosed([
+        { folded: false, allIn: true, stackMojos: "0" },
+        { folded: false, allIn: false, stackMojos: "8000" },
+        { folded: false, allIn: false, stackMojos: "9000" },
+      ]),
+    ).toBe(false);
+    expect(
+      allInBettingClosed([
+        { folded: false, allIn: true, stackMojos: "0" },
+        { folded: false, allIn: false, stackMojos: "8000" },
+      ]),
+    ).toBe(true);
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 3, allIn: false, bettingClosed: false },
+        { reason: "showdown", board: [1, 2, 3, 4, 5], allInPlayerIds: ["house-5"] },
+      ),
+    ).toBe(false);
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 3, allIn: false },
+        { reason: "showdown", board: [1, 2, 3, 4, 5], allInPlayerIds: ["you"], runoutFromBoardLen: null },
+      ),
+    ).toBe(false);
+    expect(runoutStreets(4)).toEqual(["allin", "river", "hands"]);
+    expect(runoutShowHoleCards("turn", false)).toBe(false);
+    expect(runoutShowHoleCards("turn", true)).toBe(true);
+  });
+
+  it("treats a short call as an all-in and holds the table for the runout", () => {
+    expect(
+      isCallAllIn({ stackMojos: "400", betThisStreetMojos: "100" }, "800"),
+    ).toBe(true);
+    expect(
+      isCallAllIn({ stackMojos: "2000", betThisStreetMojos: "100" }, "800"),
+    ).toBe(false);
+    const live = { boardLen: 3, allIn: true, viewerId: "you" };
+    const result = {
+      reason: "showdown" as const,
+      board: [1, 2, 3, 4, 5],
+      allInPlayerIds: ["you"],
+      runoutFromBoardLen: 3,
+    };
+    expect(shouldHoldTableForRunout(live, result, false, false)).toBe(true);
+    expect(shouldHoldTableForRunout(live, result, true, true)).toBe(true);
+    expect(shouldHoldTableForRunout(live, result, false, true)).toBe(false);
+  });
+
+  it("formats hand categories for the showdown strip", () => {
+    expect(formatHandCategory("full_house")).toBe("full house");
+    expect(formatHandCategory("high_card")).toBe("high card");
+  });
+});
