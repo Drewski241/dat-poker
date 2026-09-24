@@ -84,10 +84,49 @@ export interface TableSeat {
 
 export interface TableConfigResponse {
   id: string;
+  variant?: string;
+  format?: "cash" | "sng" | "mtt";
+  maxSeats?: number;
   minBuyInMojos: string;
   maxBuyInMojos: string;
   smallBlindMojos: string;
   bigBlindMojos: string;
+}
+
+export interface SngPlacement {
+  playerId: string;
+  place: number;
+  prizeMojos: string;
+}
+
+export interface SngSnapshot {
+  status: "registering" | "running" | "finished";
+  fillHouse: boolean;
+  minHumansToStart: number;
+  housePolicy: string;
+  maxSeats: number;
+  buyInMojos: string;
+  startingStackMojos: string;
+  prizePoolMojos: string;
+  handNumber: number;
+  levelIndex: number;
+  smallBlindMojos: string;
+  bigBlindMojos: string;
+  handsPerLevel: number;
+  playersRemaining: number;
+  placements: SngPlacement[];
+}
+
+export interface TableState {
+  tableId: string;
+  format?: "cash" | "sng" | "mtt";
+  config?: TableConfigResponse;
+  players: number;
+  handInProgress: boolean;
+  seats: TableSeat[];
+  hand: HandState | null;
+  lastHandResult: HandResult | null;
+  sng: SngSnapshot | null;
 }
 
 export const api = {
@@ -145,21 +184,13 @@ export const api = {
       }),
     }),
 
-  createTable: () =>
-    request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
+  createTable: (body?: { format?: "cash" | "sng"; fillHouse?: boolean; minHumansToStart?: number }) =>
+    request<{ tableId: string; config: TableConfigResponse; sng: SngSnapshot | null }>("/v1/tables", {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify(body ?? {}),
     }),
 
-  getTable: (tableId: string) =>
-    request<{
-      tableId: string;
-      players: number;
-      handInProgress: boolean;
-      seats: TableSeat[];
-      hand: HandState | null;
-      lastHandResult: HandResult | null;
-    }>(`/v1/tables/${tableId}`),
+  getTable: (tableId: string) => request<TableState>(`/v1/tables/${tableId}`),
 
   seatPlayer: (
     tableId: string,
@@ -197,17 +228,24 @@ export const api = {
     }),
 
   deal: (tableId: string) =>
-    request<{ ok: boolean; hand: HandState }>(`/v1/tables/${tableId}/hands/deal`, {
+    request<{
+      ok: boolean;
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+    }>(`/v1/tables/${tableId}/hands/deal`, {
       method: "POST",
       body: "{}",
     }),
 
   action: (tableId: string, playerId: string, action: PlayerAction, amountMojos?: string) =>
-    request<{ ok: boolean; hand: HandState | null; lastHandResult: HandResult | null }>(
-      `/v1/tables/${tableId}/hands/action`,
-      {
-        method: "POST",
-        body: JSON.stringify({ playerId, action, amountMojos }),
-      },
-    ),
+    request<{
+      ok: boolean;
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+    }>(`/v1/tables/${tableId}/hands/action`, {
+      method: "POST",
+      body: JSON.stringify({ playerId, action, amountMojos }),
+    }),
 };

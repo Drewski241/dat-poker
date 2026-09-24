@@ -1,6 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import {
+  computeNlheBetRange,
+  DAT_SNG_DEFAULTS,
+  DAT_TABLE_DEFAULTS,
+  formatDatMojos,
+  isHousePlayerId,
+} from "@dat-poker/shared";
+import {
+  api,
+  type BuyInProof,
+  type DatTokenInfo,
+  type HandResult,
+  type HandState,
+  type PlayerAction,
+  type SngSnapshot,
+  type TableSeat,
+  type WithdrawResult,
+} from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
@@ -20,6 +36,10 @@ const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
 function playerLabel(id: string, youId: string | null): string {
   if (id === youId) return "You";
   if (id === HOUSE_PLAYER_ID) return "House";
+  if (isHousePlayerId(id)) {
+    const seat = id.split(":").pop();
+    return `House ${seat ?? ""}`.trim();
+  }
   return id.length > 16 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
 }
 
@@ -43,8 +63,11 @@ export function App() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [datBalance, setDatBalance] = useState<string | null>(null);
 
+  const [tableMode, setTableMode] = useState<"cash" | "sng">("sng");
   const [tableId, setTableId] = useState<string | null>(null);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
+  const [tableBigBlind, setTableBigBlind] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+  const [sng, setSng] = useState<SngSnapshot | null>(null);
   const [handInProgress, setHandInProgress] = useState(false);
   const [withdrawResult, setWithdrawResult] = useState<WithdrawResult | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
@@ -94,13 +117,17 @@ export function App() {
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
+    setSng(t.sng);
+    if (t.config?.bigBlindMojos) setTableBigBlind(BigInt(t.config.bigBlindMojos));
+    if (t.sng?.bigBlindMojos) setTableBigBlind(BigInt(t.sng.bigBlindMojos));
     if (t.lastHandResult) setHandResult(t.lastHandResult);
   }, []);
 
   const applyActionResponse = useCallback(
-    (response: { hand: HandState | null; lastHandResult: HandResult | null }) => {
+    (response: { hand: HandState | null; lastHandResult: HandResult | null; sng?: SngSnapshot | null }) => {
       setHand(response.hand);
       if (response.lastHandResult) setHandResult(response.lastHandResult);
+      if (response.sng !== undefined) setSng(response.sng);
     },
     [],
   );
@@ -108,27 +135,27 @@ export function App() {
   useEffect(() => {
     if (!tableId || !hand || !playerId || busy) return;
     const actor = hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded);
-    if (!actor || actor.playerId !== HOUSE_PLAYER_ID) return;
+    if (!actor || !isHousePlayerId(actor.playerId)) return;
 
     const timer = window.setTimeout(() => {
       void (async () => {
         setBusy(true);
         try {
           const currentBet = BigInt(hand.currentBetMojos);
-          const house = hand.players.find((p) => p.playerId === HOUSE_PLAYER_ID);
+          const house = hand.players.find((p) => p.playerId === actor.playerId);
           const houseBet = BigInt(house?.betThisStreetMojos ?? 0);
           const toCall = currentBet - houseBet;
           let response;
           if (toCall > 0n) {
-            response = await api.action(tableId, HOUSE_PLAYER_ID, "call");
+            response = await api.action(tableId, actor.playerId, "call");
           } else {
-            response = await api.action(tableId, HOUSE_PLAYER_ID, "check");
+            response = await api.action(tableId, actor.playerId, "check");
           }
           applyActionResponse(response);
           if (!response.hand) await refreshTable(tableId);
         } catch {
           try {
-            const response = await api.action(tableId, HOUSE_PLAYER_ID, "fold");
+            const response = await api.action(tableId, actor.playerId, "fold");
             applyActionResponse(response);
             if (!response.hand) await refreshTable(tableId);
           } catch {
@@ -191,8 +218,10 @@ export function App() {
       if (!playerId) throw new Error("Connect Sage and load DAT balance first");
       const ticker = datToken?.ticker ?? "DAT";
 
-      setStatus("Creating table…");
-      const { tableId: id, config: tableConfig } = await api.createTable();
+      setStatus(tableMode === "sng" ? "Opening 9-max SNG…" : "Creating table…");
+      const { tableId: id, config: tableConfig } = await api.createTable(
+        tableMode === "sng" ? { format: "sng", fillHouse: true, minHumansToStart: 1 } : { format: "cash" },
+      );
       const buyIn = tableConfig.minBuyInMojos;
 
       if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
@@ -239,7 +268,9 @@ export function App() {
         buyInProof,
         devAck: datToken?.devBuyInEnabled,
       });
-      await api.seatHouse(id, buyIn);
+      if (tableMode === "cash") {
+        await api.seatHouse(id, buyIn);
+      }
       setTableId(id);
       await refreshTable(id);
     } catch (e) {
@@ -256,9 +287,9 @@ export function App() {
       setHandResult(null);
       await api.startHand(tableId);
       await api.submitSeed(tableId, playerId);
-      await api.submitSeed(tableId, HOUSE_PLAYER_ID);
-      const { hand: dealt } = await api.deal(tableId);
-      setHand(dealt);
+      const dealt = await api.deal(tableId);
+      applyActionResponse(dealt);
+      if (!dealt.hand) await refreshTable(tableId);
     });
   };
 
@@ -273,16 +304,28 @@ export function App() {
 
   const myTableSeat = tableSeats.find((s) => s.playerId === playerId);
   const tableStackMojos = myTableSeat?.stackMojos ?? null;
+  const mySngPlace = sng?.placements.find((row) => row.playerId === playerId);
+  const withdrawAmountMojos = sng
+    ? mySngPlace && BigInt(mySngPlace.prizeMojos) > 0n
+      ? mySngPlace.prizeMojos
+      : null
+    : tableStackMojos;
+  const canWithdraw = Boolean(
+    tableId && !hand && !handInProgress && withdrawAmountMojos && (!sng || Boolean(mySngPlace)),
+  );
 
   const withdrawToSage = () => {
     if (!tableId || !playerId || !walletAddress) return;
     run("Withdrawing to Sage…", async () => {
       await refreshTable(tableId);
-      const seat = (await api.getTable(tableId)).seats.find((s) => s.playerId === playerId);
-      if (!seat) {
-        throw new Error("You are no longer seated at this table");
+      const latest = await api.getTable(tableId);
+      setSng(latest.sng);
+      const prize = latest.sng?.placements.find((row) => row.playerId === playerId)?.prizeMojos;
+      const seat = latest.seats.find((s) => s.playerId === playerId);
+      const stackMojos = prize && BigInt(prize) > 0n ? prize : seat?.stackMojos;
+      if (!stackMojos) {
+        throw new Error(latest.sng ? "No SNG prize to withdraw" : "You are no longer seated at this table");
       }
-      const stackMojos = seat.stackMojos;
 
       let withdrawProof: BuyInProof | undefined;
       if (!datToken?.devBuyInEnabled && session && wcConfig) {
@@ -325,6 +368,7 @@ export function App() {
       setWithdrawResult(result);
       setTableId(null);
       setTableSeats([]);
+      setSng(null);
       setHand(null);
       setHandResult(null);
 
@@ -350,12 +394,12 @@ export function App() {
   const betRange = useMemo(
     () =>
       computeNlheBetRange({
-        bigBlindMojos: DAT_BIG_BLIND_MOJOS,
+        bigBlindMojos: tableBigBlind,
         currentBetMojos: currentBet,
         myBetThisStreetMojos: myBet,
         myStackMojos: myStack,
       }),
-    [currentBet, myBet, myStack],
+    [currentBet, myBet, myStack, tableBigBlind],
   );
 
   const actionSeatPlayer =
@@ -384,7 +428,7 @@ export function App() {
     <div className="app">
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
+        <p className="tagline">Sage WalletConnect · DAT buy-in · 9-max SNG or cash vs house</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -437,26 +481,82 @@ export function App() {
       <section className="panel">
         <h2>Table</h2>
         {!tableId ? (
-          <button
-            type="button"
-            disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-            onClick={() => void joinTable()}
-          >
-            Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
-          </button>
+          <>
+            <div className="mode-toggle">
+              <button
+                type="button"
+                className={tableMode === "sng" ? undefined : "secondary"}
+                disabled={busy}
+                onClick={() => setTableMode("sng")}
+              >
+                9-max SNG
+              </button>
+              <button
+                type="button"
+                className={tableMode === "cash" ? undefined : "secondary"}
+                disabled={busy}
+                onClick={() => setTableMode("cash")}
+              >
+                Cash vs house
+              </button>
+            </div>
+            <p className="muted small">
+              {tableMode === "sng"
+                ? "You take one seat. House bots fill the other eight so we can build the sit-n-go flow without a full table of testers. Later we will require more humans."
+                : "Heads-up cash table against a single house seat."}
+            </p>
+            <button
+              type="button"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable()}
+            >
+              {tableMode === "sng" ? "Buy in & start 9-max SNG" : "Buy in & join cash table"}{" "}
+              ({formatDatMojos(datToken?.minBuyInMojos ?? DAT_SNG_DEFAULTS.buyInMojos.toString(), datToken?.ticker)})
+            </button>
+          </>
         ) : (
           <>
             <p className="mono">Table ID: {tableId}</p>
+            {sng && (
+              <p>
+                SNG {sng.status} · {sng.playersRemaining}/{sng.maxSeats} left · blinds{" "}
+                {formatDatMojos(sng.smallBlindMojos, datToken?.ticker)} /{" "}
+                {formatDatMojos(sng.bigBlindMojos, datToken?.ticker)}
+                {sng.handNumber > 0 && ` · hand ${sng.handNumber}`}
+              </p>
+            )}
+            {tableSeats.length > 0 && (
+              <ul className="seats">
+                {tableSeats.map((seat) => (
+                  <li key={`${seat.seatIndex}-${seat.playerId}`}>
+                    Seat {seat.seatIndex + 1}: {playerLabel(seat.playerId, playerId)}{" "}
+                    <span className="stack">{formatDatMojos(seat.stackMojos, datToken?.ticker)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             {tableStackMojos && (
               <p>
                 Your table stack:{" "}
                 <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
               </p>
             )}
-            {tableId && !hand && !handInProgress && tableStackMojos && (
+            {sng?.placements.length ? (
+              <ol className="placements">
+                {sng.placements.map((row) => (
+                  <li key={row.playerId}>
+                    {row.place}. {playerLabel(row.playerId, playerId)}
+                    {BigInt(row.prizeMojos) > 0n
+                      ? ` — ${formatDatMojos(row.prizeMojos, datToken?.ticker)}`
+                      : " — out"}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {canWithdraw && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawToSage}>
-                  Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
+                  Withdraw {formatDatMojos(withdrawAmountMojos!, datToken?.ticker)} to Sage
                 </button>
               </div>
             )}
@@ -489,9 +589,19 @@ export function App() {
                   {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
                 </div>
               )}
-              <button type="button" disabled={busy} onClick={startHandFlow}>
-                {handResult ? "New hand" : "Start hand vs house"}
+              <button
+                type="button"
+                disabled={busy || sng?.status === "finished" || Boolean(mySngPlace)}
+                onClick={startHandFlow}
+              >
+                {handResult ? "Next hand" : sng ? "Deal SNG hand" : "Start hand vs house"}
               </button>
+              {sng?.status === "finished" && (
+                <p className="muted">
+                  Sit-n-go finished
+                  {mySngPlace ? ` — you placed ${mySngPlace.place}` : ""}.
+                </p>
+              )}
             </>
           ) : (
             <>
@@ -503,7 +613,10 @@ export function App() {
               <ul className="players">
                 {hand.players.map((p) => (
                   <li key={p.playerId}>
-                    <strong>{p.playerId === playerId ? "You" : p.playerId === HOUSE_PLAYER_ID ? "House" : p.playerId}</strong>
+                    <strong>
+                      {playerLabel(p.playerId, playerId)}
+                      {hand.actionSeat === p.seatIndex ? " (to act)" : ""}
+                    </strong>
                     {p.playerId === playerId && p.holeCards.length > 0 && (
                       <span className="cards"> {p.holeCards.map(cardLabel).join(" ")}</span>
                     )}
@@ -533,7 +646,7 @@ export function App() {
                         label={betRange.isOpeningBet ? "Bet size" : "Raise to"}
                         minMojos={betRange.minRaiseTo}
                         maxMojos={betRange.maxRaiseTo}
-                        stepMojos={DAT_BIG_BLIND_MOJOS}
+                        stepMojos={tableBigBlind}
                         valueMojos={betAmountMojos}
                         ticker={datToken?.ticker}
                         disabled={busy}

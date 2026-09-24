@@ -89,4 +89,68 @@ describe("NlheTableEngine", () => {
     table.startHand("hand-4");
     expect(() => table.cashOutPlayer("alice")).toThrow(/active hand/i);
   });
+
+  it("gives the big blind an option in a 3-handed pot", () => {
+    const table = new NlheTableEngine({ ...config, maxSeats: 9 });
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.seatPlayer("carol", 2, 5_000_000_000_000n);
+
+    deal(table, "hand-5", ["alice", "bob", "carol"]);
+    const pre = table.getHandState()!;
+    expect(pre.dealerSeat).toBe(0);
+    expect(pre.actionSeat).toBe(0);
+
+    table.applyAction("alice", "call");
+    table.applyAction("bob", "call");
+    const stillPre = table.getHandState()!;
+    expect(stillPre.street).toBe("preflop");
+    expect(stillPre.actionSeat).toBe(2);
+
+    table.applyAction("carol", "check");
+    expect(table.getHandState()?.street).toBe("flop");
+    expect(table.getHandState()?.actionSeat).toBe(1);
+  });
+
+  it("awards a short all-in only the main pot", () => {
+    const shortConfig: TableConfig = {
+      ...config,
+      minBuyInMojos: 100n,
+      maxBuyInMojos: 20_000_000_000_000n,
+      smallBlindMojos: 50n,
+      bigBlindMojos: 100n,
+    };
+    const table = new NlheTableEngine(shortConfig);
+    table.seatPlayer("short", 0, 150n);
+    table.seatPlayer("mid", 1, 1_000n);
+    table.seatPlayer("deep", 2, 1_000n);
+
+    deal(table, "hand-6", ["short", "mid", "deep"]);
+    table.applyAction("short", "all-in");
+    table.applyAction("mid", "raise", 400n);
+    table.applyAction("deep", "call");
+    table.applyAction("mid", "check");
+    table.applyAction("deep", "check");
+    table.applyAction("mid", "check");
+    table.applyAction("deep", "check");
+    table.applyAction("mid", "check");
+    table.applyAction("deep", "check");
+
+    expect(table.isHandInProgress()).toBe(false);
+    const stacks = {
+      short: table.getPlayerStack("short")!,
+      mid: table.getPlayerStack("mid")!,
+      deep: table.getPlayerStack("deep")!,
+    };
+    expect(stacks.short + stacks.mid + stacks.deep).toBe(2_150n);
+    expect(stacks.short === 0n || stacks.short === 450n).toBe(true);
+  });
 });
+
+function deal(table: NlheTableEngine, handId: string, players: string[]): void {
+  table.startHand(handId);
+  for (const playerId of players) {
+    table.submitPlayerSeed(playerId, generateServerSeed());
+  }
+  table.revealAndDeal();
+}
