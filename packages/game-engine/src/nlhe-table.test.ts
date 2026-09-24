@@ -378,7 +378,7 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()?.players.filter((p) => !p.folded).length).toBe(2);
   });
 
-  it("reveals every live hole card after a showdown", () => {
+  it("reveals contesting hole cards after a showdown", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);
     table.seatPlayer("dat-poker:house", 1, 5_000_000_000_000n);
@@ -440,6 +440,91 @@ describe("NlheTableEngine", () => {
     const shownIds = new Set(result?.shown.map((p) => p.playerId) ?? []);
     expect(shownIds.has(result!.winnerId)).toBe(true);
     expect(shownIds.size).toBe(3);
+    expect(result?.shown.every((p) => p.holeCards.length === 2)).toBe(true);
+  });
+
+  it("does not reveal folded players at showdown", () => {
+    const tiny: TableConfig = {
+      ...config,
+      maxSeats: 4,
+      smallBlindMojos: 1n,
+      bigBlindMojos: 2n,
+      minBuyInMojos: 50n,
+      maxBuyInMojos: 500n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("alice", 0, 100n);
+    table.seatPlayer("bob", 1, 100n);
+    table.seatPlayer("carol", 2, 100n);
+    table.seatPlayer("dave", 3, 100n);
+    table.startHand("hand-muck-folds");
+    for (const id of ["alice", "bob", "carol", "dave"]) {
+      table.submitPlayerSeed(id, generateServerSeed());
+    }
+    table.revealAndDeal();
+
+    const folded = new Set<string>();
+    for (let i = 0; i < 60; i++) {
+      const hand = table.getHandState();
+      if (!hand || hand.actionSeat == null) break;
+      const actor = hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded);
+      if (!actor) break;
+      const live = hand.players.filter((p) => !p.folded);
+      if (live.length > 2 && actor.playerId !== "alice" && actor.playerId !== "bob") {
+        table.applyAction(actor.playerId, "fold");
+        folded.add(actor.playerId);
+        continue;
+      }
+      table.applyAction(actor.playerId, "all-in");
+    }
+
+    const result = table.getLastHandResult();
+    expect(result?.reason).toBe("showdown");
+    const shownIds = new Set(result?.shown.map((p) => p.playerId) ?? []);
+    expect(shownIds.has("carol")).toBe(false);
+    expect(shownIds.has("dave")).toBe(false);
+    expect(shownIds.has("alice") || shownIds.has("bob")).toBe(true);
+    expect(result?.shown.every((p) => p.holeCards.length === 2)).toBe(true);
+    expect(folded.size).toBeGreaterThan(0);
+    for (const id of folded) {
+      expect(shownIds.has(id)).toBe(false);
+    }
+  });
+
+  it("on a checked-down multi-way pot shows the winning and losing hands, not every player", () => {
+    const tiny: TableConfig = {
+      ...config,
+      maxSeats: 4,
+      smallBlindMojos: 1n,
+      bigBlindMojos: 2n,
+      minBuyInMojos: 50n,
+      maxBuyInMojos: 500n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("alice", 0, 200n);
+    table.seatPlayer("bob", 1, 200n);
+    table.seatPlayer("carol", 2, 200n);
+    table.seatPlayer("dave", 3, 200n);
+    table.startHand("hand-check-down");
+    for (const id of ["alice", "bob", "carol", "dave"]) {
+      table.submitPlayerSeed(id, generateServerSeed());
+    }
+    table.revealAndDeal();
+
+    for (let i = 0; i < 80; i++) {
+      const hand = table.getHandState();
+      if (!hand || hand.actionSeat == null) break;
+      const actor = hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded);
+      if (!actor) break;
+      const toCall = hand.currentBetMojos - actor.betThisStreetMojos;
+      table.applyAction(actor.playerId, toCall > 0n ? "call" : "check");
+    }
+
+    const result = table.getLastHandResult();
+    expect(result?.reason).toBe("showdown");
+    expect(result?.shown.length).toBe(2);
+    expect(result?.shown.some((p) => p.playerId === result.winnerId)).toBe(true);
+    expect(result?.shown.some((p) => p.playerId !== result.winnerId)).toBe(true);
     expect(result?.shown.every((p) => p.holeCards.length === 2)).toBe(true);
   });
 

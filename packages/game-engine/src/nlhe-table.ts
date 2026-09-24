@@ -725,11 +725,7 @@ export class NlheTableEngine {
       potMojos,
       reason: "showdown",
       board: [...h.board],
-      shown: live.map((p) => ({
-        playerId: p.playerId,
-        holeCards: [...p.holeCards],
-        category: evaluateBestHand([...p.holeCards, ...h.board]).category,
-      })),
+      shown: this.showdownHandsToReveal(h, live, awardedByPlayer),
       participants,
     };
     this.recordHandPlayed(h);
@@ -836,6 +832,49 @@ export class NlheTableEngine {
     }
 
     return { primaryWinnerId, awardedByPlayer };
+  }
+
+  /**
+   * Hole cards that actually went to showdown: not folded, and either contested
+   * a bet / all-in or (on a check-down) the winning and losing hands.
+   */
+  private showdownHandsToReveal(
+    h: TableHandState,
+    live: PlayerHandState[],
+    awardedByPlayer: Map<PlayerId, bigint>,
+  ): ShownHand[] {
+    const contestants = live.filter((p) => !p.folded && p.holeCards.length === 2);
+    const bigBlind = this.config.bigBlindMojos;
+    const putMoneyIn = contestants.filter(
+      (p) => p.allIn || p.totalBetHandMojos > bigBlind,
+    );
+    const winners = contestants.filter((p) => (awardedByPlayer.get(p.playerId) ?? 0n) > 0n);
+    const reveal = new Map<PlayerId, PlayerHandState>();
+    for (const p of putMoneyIn) reveal.set(p.playerId, p);
+    for (const p of winners) reveal.set(p.playerId, p);
+
+    if (reveal.size < 2 && contestants.length >= 2) {
+      const remaining = contestants.filter((p) => !reveal.has(p.playerId));
+      remaining.sort((a, b) => {
+        const evA = evaluateBestHand([...a.holeCards, ...h.board]);
+        const evB = evaluateBestHand([...b.holeCards, ...h.board]);
+        return compareHands(evB, evA);
+      });
+      const bestLoser = remaining[0];
+      if (bestLoser) reveal.set(bestLoser.playerId, bestLoser);
+      if (reveal.size < 2) {
+        const winner = contestants.find((p) => p.playerId === winners[0]?.playerId) ?? contestants[0];
+        if (winner) reveal.set(winner.playerId, winner);
+      }
+    }
+
+    return [...reveal.values()]
+      .sort((a, b) => a.seatIndex - b.seatIndex)
+      .map((p) => ({
+        playerId: p.playerId,
+        holeCards: [...p.holeCards],
+        category: evaluateBestHand([...p.holeCards, ...h.board]).category,
+      }));
   }
 
   private showdownWinnersForPot(contenders: PlayerHandState[], board: Card[]): PlayerHandState[] {
