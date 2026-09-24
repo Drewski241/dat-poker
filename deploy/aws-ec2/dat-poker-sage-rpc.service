@@ -2,6 +2,8 @@
 Description=DAT POKER treasury Sage RPC
 After=network.target
 # Keep Sage RPC up with the website so treasury can build DAT offers.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -12,7 +14,7 @@ Environment=HOME=/home/ec2-user
 Environment=XDG_DATA_HOME=/home/ec2-user/.local/share
 ExecStart=/opt/dat-poker/deploy/aws-ec2/start-sage-rpc.sh
 Restart=always
-RestartSec=3
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

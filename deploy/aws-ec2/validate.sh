@@ -249,14 +249,25 @@ if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'TREASURY_WALLET_CERT_PATH' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'dat-poker-sage-rpc' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'install_prebuilt_sage_cli' "$DIR/enable-treasury-sage.sh" \
-  && grep -q 'free_sage_build_space' "$DIR/enable-treasury-sage.sh"; then
+  && grep -q 'free_sage_build_space' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'sage_runs' "$DIR/enable-treasury-sage.sh"; then
   ok "enable-treasury-sage.sh writes Sage RPC cert paths and uses prebuilt sage-cli"
 else
   bad "enable-treasury-sage.sh cert paths"
 fi
 
+if grep -q 'StartLimitBurst=5' "$DIR/dat-poker-sage-rpc.service"; then
+  ok "dat-poker-sage-rpc.service stops crash-looping after 5 failures"
+else
+  bad "dat-poker-sage-rpc.service StartLimitBurst"
+fi
+
 if [[ -x "$DIR/bin/sage-linux-x86_64" ]]; then
-  ok "prebuilt sage-cli binary is present"
+  if objdump -T "$DIR/bin/sage-linux-x86_64" 2>/dev/null | grep -q 'GLIBC_2.38'; then
+    bad "prebuilt sage-cli requires GLIBC_2.38 (Amazon Linux 2023 is 2.34)"
+  else
+    ok "prebuilt sage-cli binary is present and does not need glibc 2.38"
+  fi
 else
   bad "prebuilt sage-cli binary missing at deploy/aws-ec2/bin/sage-linux-x86_64"
 fi

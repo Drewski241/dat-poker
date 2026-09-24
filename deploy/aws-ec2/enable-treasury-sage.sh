@@ -59,6 +59,12 @@ find_certs() {
   return 1
 }
 
+sage_runs() {
+  local bin="$1"
+  [[ -n "$bin" && -x "$bin" ]] || return 1
+  "$bin" --help >/dev/null 2>&1
+}
+
 find_sage_bin() {
   local bin
   for bin in \
@@ -67,7 +73,7 @@ find_sage_bin() {
     /usr/bin/sage \
     "${SAGE_HOME}/.cargo/bin/sage"
   do
-    if [[ -n "$bin" && -x "$bin" ]]; then
+    if sage_runs "$bin"; then
       printf '%s\n' "$bin"
       return 0
     fi
@@ -90,11 +96,13 @@ install_prebuilt_sage_cli() {
   fi
   echo "Installing prebuilt sage-cli ${SAGE_VERSION} from $prebuilt"
   install -m 0755 "$prebuilt" /usr/local/bin/sage
-  if [[ ! -x /usr/local/bin/sage ]]; then
-    echo "failed to install /usr/local/bin/sage" >&2
+  if ! sage_runs /usr/local/bin/sage; then
+    echo "prebuilt sage-cli cannot run on this host:" >&2
+    /usr/local/bin/sage --help >&2 || true
+    echo "This binary must be built for Amazon Linux 2023 (glibc 2.34)." >&2
+    echo "Redeploy this branch, then re-run: sudo SAGE_INSTALL=1 bash $0" >&2
     return 1
   fi
-  /usr/local/bin/sage --help >/dev/null
   echo "sage-cli installed at /usr/local/bin/sage"
 }
 
