@@ -140,6 +140,10 @@ export async function treasuryWalletRpcRequest<T>(
         });
       },
     );
+    req.setTimeout(12_000, () => {
+      req.destroy();
+      reject(new Error("Treasury Sage RPC timed out waiting for an offer"));
+    });
     req.on("error", reject);
     req.write(body);
     req.end();

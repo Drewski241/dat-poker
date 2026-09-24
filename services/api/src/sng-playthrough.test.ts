@@ -359,7 +359,7 @@ describe("SNG play-through unlocks", () => {
 
   it("does not call treasury or debit leftover when on-chain Sage payout is off", async () => {
     process.env.DAT_TREASURY_PAYOUT_URL = "http://127.0.0.1:9/payout";
-    delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+    process.env.DAT_ENABLE_ONCHAIN_WITHDRAW = "false";
     const app = await buildApp();
     const alice = issueTestSession("xch1sngledger");
     tryRedeemDaily(alice.session.playerId, 5_000_000n);
@@ -498,6 +498,111 @@ describe("SNG play-through unlocks", () => {
       address: "xch1playerwalletaddress00",
       amountMojos: "2000",
     });
+    await app.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
+
+  it("uses the player Sage address from the withdraw body when the session is an account", async () => {
+    const received: unknown[] = [];
+    const server = createServer((req, res) => {
+      if (req.url === "/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "ok", offerMode: "mock" }));
+        return;
+      }
+      if (req.method === "POST" && req.url === "/payout") {
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk) => chunks.push(chunk as Buffer));
+        req.on("end", () => {
+          received.push(JSON.parse(Buffer.concat(chunks).toString()));
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ offer: "offer1frombody" }));
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    process.env.DAT_TREASURY_PAYOUT_URL = `http://127.0.0.1:${port}/payout`;
+    process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID = "d".repeat(64);
+    delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+
+    const app = await buildApp();
+    const alice = issueTestSession("alice-account");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    const joined = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-sng",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    const tableId = JSON.parse(joined.body).tableId as string;
+    await playSngFolds(app, tableId, alice.session.playerId, alice.token, 2);
+    const withdrawn = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers: auth(alice.token),
+      payload: {
+        playerId: alice.session.playerId,
+        fromAccount: true,
+        devAck: true,
+        address: "xch1frombodyaddress000000",
+      },
+    });
+    expect(withdrawn.statusCode).toBe(200);
+    expect(JSON.parse(withdrawn.body).offer).toBe("offer1frombody");
+    expect(received[0]).toMatchObject({
+      address: "xch1frombodyaddress000000",
+      amountMojos: "2000",
+    });
+    await app.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
+
+  it("keeps unlocked DAT and errors when treasury HTTP is up but Sage RPC is down", async () => {
+    const server = createServer((req, res) => {
+      if (req.url === "/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "ok", offerMode: "rpc", walletRpcReachable: false }));
+        return;
+      }
+      res.writeHead(500);
+      res.end("should not payout");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    process.env.DAT_TREASURY_PAYOUT_URL = `http://127.0.0.1:${port}/payout`;
+    process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID = "d".repeat(64);
+    delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+
+    const app = await buildApp();
+    const alice = issueTestSession("xch1playerrpcdown");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    const joined = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-sng",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    const tableId = JSON.parse(joined.body).tableId as string;
+    await playSngFolds(app, tableId, alice.session.playerId, alice.token, 2);
+    const before = getAccountBalance(alice.session.playerId);
+    const withdrawn = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, fromAccount: true, devAck: true },
+    });
+    expect(withdrawn.statusCode).toBe(502);
+    expect(JSON.parse(withdrawn.body).error).toMatch(/Sage RPC/i);
+    expect(getAccountBalance(alice.session.playerId)).toBe(before);
+    expect(getPlaythrough(alice.session.playerId).handsPlayed).toBe(2);
     await app.close();
     await new Promise<void>((resolve, reject) =>
       server.close((err) => (err ? reject(err) : resolve())),

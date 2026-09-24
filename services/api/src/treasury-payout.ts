@@ -30,7 +30,11 @@ export type TreasuryPing = {
   healthUrl: string;
   host: string;
   error: string | null;
+  walletRpcReachable: boolean | null;
+  offerMode: string | null;
 };
+
+const emptyWalletHealth = { walletRpcReachable: null as boolean | null, offerMode: null as string | null };
 
 export function treasuryPayoutHealthUrl(payoutUrl: string): string {
   const trimmed = payoutUrl.trim();
@@ -74,7 +78,23 @@ export async function inspectTreasuryPayout(payoutUrl: string): Promise<Treasury
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
       if (res.ok) {
-        return { reachable: true, healthUrl: url, host, error: null };
+        let walletRpcReachable: boolean | null = null;
+        let offerMode: string | null = null;
+        try {
+          const body = (await res.json()) as {
+            walletRpcReachable?: boolean | null;
+            offerMode?: string | null;
+          };
+          if (typeof body.walletRpcReachable === "boolean") {
+            walletRpcReachable = body.walletRpcReachable;
+          }
+          if (typeof body.offerMode === "string") {
+            offerMode = body.offerMode;
+          }
+        } catch {
+          /* health may be a bare 200 */
+        }
+        return { reachable: true, healthUrl: url, host, error: null, walletRpcReachable, offerMode };
       }
       error = `HTTP ${res.status} from ${host}`;
     } catch (e) {
@@ -86,7 +106,7 @@ export async function inspectTreasuryPayout(payoutUrl: string): Promise<Treasury
           : raw;
     }
   }
-  return { reachable: false, healthUrl, host, error };
+  return { reachable: false, healthUrl, host, error, ...emptyWalletHealth };
 }
 
 export async function pingTreasuryPayout(payoutUrl: string): Promise<boolean> {
@@ -137,15 +157,27 @@ export async function requestTreasuryOffer(params: {
     return null;
   }
 
-  const res = await fetch(params.treasuryPayoutUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      assetId: params.assetId,
-      address: params.recipientAddress,
-      amountMojos: params.amountMojos.toString(),
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(params.treasuryPayoutUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        assetId: params.assetId,
+        address: params.recipientAddress,
+        amountMojos: params.amountMojos.toString(),
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (e) {
+    const raw = (e as Error).message || "request failed";
+    if (/timeout|aborted/i.test(raw) || (e as { name?: string }).name === "TimeoutError") {
+      throw new Error(
+        "Treasury Sage did not finish the offer in 20s. On the AWS host, confirm Sage RPC :9257 is logged in, then try again.",
+      );
+    }
+    throw e;
+  }
 
   if (!res.ok) {
     const text = await res.text();

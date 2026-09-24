@@ -133,6 +133,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     treasuryReachable: boolean;
     treasuryHost: string | null;
     treasuryError: string | null;
+    treasuryWalletRpcReachable: boolean | null;
     onChainPayoutEnabled: boolean;
   } | null>(null);
 
@@ -223,6 +224,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             treasuryReachable: Boolean(config.withdraw.treasuryReachable),
             treasuryHost: config.withdraw.treasuryHost ?? null,
             treasuryError: config.withdraw.treasuryError ?? null,
+            treasuryWalletRpcReachable: config.withdraw.treasuryWalletRpcReachable ?? null,
             onChainPayoutEnabled: Boolean(config.withdraw.onChainPayoutEnabled),
           });
         }
@@ -246,6 +248,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             const existing = await restoreSession(config.walletConnect.projectId);
             if (existing) {
               setSession(existing);
+              try {
+                const loaded = await loadPlayerWallet(
+                  existing,
+                  config.walletConnect.projectId,
+                  config.walletConnect.chainId,
+                  dat.assetId,
+                );
+                setWalletAddress(loaded.address);
+                setDatBalance(loaded.balance.spendable);
+              } catch {
+                /* pairing is enough; Link Sage can still fill the address */
+              }
             }
           } catch {
             /* Stale WalletConnect storage must not mark the API offline — Connect Sage still works. */
@@ -264,10 +278,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     try {
       await fn();
     } catch (e) {
-      setError((e as Error).message);
+      const raw = (e as Error).message || "Request failed";
+      setError(
+        /timeout|aborted/i.test(raw)
+          ? "Withdraw timed out waiting for treasury. On the AWS host, confirm Sage RPC :9257 is logged in, then try again."
+          : raw,
+      );
+      setStatus("");
     } finally {
       setBusy(false);
-      setStatus("");
     }
   }, []);
 
@@ -279,6 +298,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         treasuryReachable: Boolean(config.withdraw.treasuryReachable),
         treasuryHost: config.withdraw.treasuryHost ?? null,
         treasuryError: config.withdraw.treasuryError ?? null,
+        treasuryWalletRpcReachable: config.withdraw.treasuryWalletRpcReachable ?? null,
         onChainPayoutEnabled: Boolean(config.withdraw.onChainPayoutEnabled),
       });
     }
@@ -473,7 +493,19 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         setPairingOpen(false);
         setWcUri(null);
         setPairingError(null);
-        setStatus("");
+        try {
+          const loaded = await loadPlayerWallet(
+            next,
+            wcConfig.projectId,
+            wcConfig.chainId,
+            datToken?.assetId,
+          );
+          setWalletAddress(loaded.address);
+          setDatBalance(loaded.balance.spendable);
+        } catch {
+          /* Link Sage still works if the address read fails */
+        }
+        setStatus("Sage paired. Link the address if withdraw still asks for it.");
       } catch (e) {
         if (pairingGen.current !== gen) return;
         const message = mapWalletConnectError(e).message;
@@ -495,6 +527,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setSession(null);
       setWalletAddress(null);
       setDatBalance(null);
+      setStatus("");
     });
 
   const signOut = () =>
@@ -510,6 +543,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setRedeemedToday(false);
       setPlayerId(null);
       setUsername(null);
+      setStatus("");
       setTableId(null);
       setTableSeats([]);
       setHand(null);
@@ -712,6 +746,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setPlayerId(linked.playerId);
       setDatBalance(balance.spendable);
       await refreshAccount(linked.playerId);
+      setStatus("Sage address linked. You can withdraw unlocked DAT.");
     });
 
   const redeemDaily = () =>
@@ -1100,10 +1135,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         };
       }
 
-      setStatus("Cashing out table stack…");
+      setStatus(
+        withdrawConfig?.treasuryReachable
+          ? "Asking treasury for a DAT offer…"
+          : "Cashing out table stack…",
+      );
       const result = await api.withdraw(tableId, playerId, {
         withdrawProof,
         devAck: datToken?.devBuyInEnabled,
+        address: walletAddress,
       });
 
       if (result.mode === "offer" && result.offer) {
@@ -1135,7 +1175,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   };
 
   const withdrawUnlockedFromAccount = () => {
-    if (!playerId) return;
+    if (!playerId) {
+      setError("Sign in first, then withdraw.");
+      return;
+    }
     run("Withdrawing unlocked DAT…", async () => {
       const withdrawable = accountUnlockedMojos;
       if (withdrawable <= 0n) {
@@ -1146,12 +1189,30 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         }
         throw new Error("Play sit-n-go or cash hands to unlock DAT first");
       }
+      let address = walletAddress;
+      if (!address && session && wcConfig) {
+        setStatus("Reading player Sage address…");
+        const loaded = await loadPlayerWallet(
+          session,
+          wcConfig.projectId,
+          wcConfig.chainId,
+          datToken?.assetId,
+        );
+        address = loaded.address;
+        setWalletAddress(address);
+        setDatBalance(loaded.balance.spendable);
+      }
+      if (withdrawConfig?.onChainPayoutEnabled && !address) {
+        throw new Error(
+          "Link a player Sage address first (Connect Sage → Link Sage address). Withdraw needs that address to build the offer.",
+        );
+      }
       const stackMojos = withdrawable.toString();
       let withdrawProof: BuyInProof | undefined;
-      if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
+      if (!datToken?.devBuyInEnabled && session && wcConfig && address) {
         const { message } = await api.withdrawMessage({
           tableId: tableId ?? undefined,
-          address: walletAddress,
+          address,
           stackMojos,
           fromAccount: true,
         });
@@ -1161,22 +1222,28 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           wcConfig.projectId,
           wcConfig.chainId,
           message,
-          walletAddress,
+          address,
         );
         withdrawProof = {
-          address: walletAddress,
+          address,
           message,
           signature: signed.signature,
           pubkey: signed.pubkey,
         };
       }
+      setStatus(
+        withdrawConfig?.treasuryReachable
+          ? "Asking treasury for a DAT offer…"
+          : "Releasing unlocked DAT in your table account…",
+      );
       const result = await api.withdraw(tableId, playerId, {
         withdrawProof,
         devAck: datToken?.devBuyInEnabled,
         fromAccount: true,
+        address: address ?? undefined,
       });
       if (result.mode === "offer" && result.offer) {
-        setStatus("Treasury offer is ready. Import it in your player Sage wallet — not the treasury key.");
+        setStatus("Treasury offer is ready. Import it in your player Sage — Offers → Import.");
       } else {
         setStatus(result.note);
       }
@@ -1556,11 +1623,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <p>
               Treasury:{" "}
               {withdrawConfig.treasuryReachable
-                ? `active at ${withdrawConfig.treasuryHost ?? "payout service"} — withdraw can send a DAT offer to your player Sage`
+                ? withdrawConfig.treasuryWalletRpcReachable === false
+                  ? `HTTP is up at ${withdrawConfig.treasuryHost ?? "payout service"}, but Sage RPC is not logged in. Enable RPC :9257 on the AWS host, then try again.`
+                  : `active at ${withdrawConfig.treasuryHost ?? "payout service"} — withdraw can send a DAT offer to your player Sage`
                 : withdrawConfig.treasuryConfigured
                   ? `configured but not reachable at ${withdrawConfig.treasuryHost ?? "the payout URL"}${
                       withdrawConfig.treasuryError ? ` (${withdrawConfig.treasuryError})` : ""
-                    }. Start treasury on that host (Sage RPC + pnpm treasury:start, or sudo bash /opt/dat-poker/deploy/aws-ec2/start-treasury.sh), then check again.`
+                    }. Redeploy so dat-poker-treasury stays up with the website, then check again.`
                   : "not configured. Set DAT_TREASURY_PAYOUT_URL and start treasury."}
             </p>
             {withdrawConfig.treasuryConfigured && !withdrawConfig.treasuryReachable && (
@@ -1618,21 +1687,59 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 )}
               </p>
             )}
+            {error && (
+              <div className="banner error" role="alert">
+                {error}
+              </div>
+            )}
+            {status && /withdraw|treasury|offer|Sage address/i.test(status) && (
+              <p className="banner info" role="status">
+                {status}
+              </p>
+            )}
             {accountUnlockedMojos > 0n && (
               <div className="row">
                 <button
                   type="button"
-                  disabled={busy || (Boolean(withdrawConfig?.treasuryReachable) && !walletAddress)}
+                  disabled={busy}
                   onClick={withdrawUnlockedFromAccount}
                 >
-                  {withdrawConfig?.treasuryReachable
-                    ? `Withdraw ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} to player Sage`
-                    : `Release ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked in table account`}
+                  {busy
+                    ? "Withdrawing…"
+                    : withdrawConfig?.treasuryReachable
+                      ? `Withdraw ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} to player Sage`
+                      : `Release ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked in table account`}
                 </button>
               </div>
             )}
             {withdrawConfig?.treasuryReachable && !walletAddress && (
-              <p className="muted small">Link a player Sage address first (not the treasury key).</p>
+              <p className="muted small">Link a player Sage address first (not the treasury key), then click Withdraw. A click without that address now shows an error instead of hanging.</p>
+            )}
+            {withdrawResult && (
+              <div className="banner win">
+                {withdrawResult.mode === "offer" && withdrawResult.offer
+                  ? "Offer ready — import it in player Sage."
+                  : withdrawResult.note}
+                {withdrawResult.offer && (
+                  <div className="sage-offer-box">
+                    <p>
+                      In <strong>player Sage</strong> (not treasury): Offers → Import. Paste this offer and
+                      accept it.
+                    </p>
+                    <textarea readOnly rows={4} value={withdrawResult.offer} />
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(withdrawResult.offer ?? "");
+                        setStatus("Offer copied. Import it in player Sage.");
+                      }}
+                    >
+                      Copy offer
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </>
         )}
@@ -1872,9 +1979,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             {(tableFormat === "sng" || tableFormat === "mtt") && accountUnlockedMojos > 0n && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawUnlockedFromAccount}>
-                  {withdrawConfig?.treasuryReachable
-                    ? `Withdraw ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} to player Sage`
-                    : `Release ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked from SNG play`}
+                  {busy
+                    ? "Withdrawing…"
+                    : withdrawConfig?.treasuryReachable
+                      ? `Withdraw ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} to player Sage`
+                      : `Release ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked from SNG play`}
                 </button>
               </div>
             )}

@@ -25,7 +25,6 @@ import {
   looksLikeXchAddress,
   onChainSageWithdrawEnabled,
   inspectTreasuryPayout,
-  pingTreasuryPayout,
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
   sageLedgerWithdrawNote,
@@ -51,10 +50,16 @@ function playthroughView(playerId: string) {
   return playthroughFields(playerId);
 }
 
-async function playerSagePayoutAddress(session: {
-  playerId: string;
-  displayAddress: string;
-}): Promise<string | null> {
+async function playerSagePayoutAddress(
+  session: {
+    playerId: string;
+    displayAddress: string;
+  },
+  requested?: string,
+): Promise<string | null> {
+  if (requested && looksLikeXchAddress(requested)) {
+    return requested.trim();
+  }
   if (looksLikeXchAddress(session.displayAddress)) {
     return session.displayAddress.trim();
   }
@@ -71,19 +76,30 @@ async function requestPlayerTreasuryOffer(params: {
   amountMojos: bigint;
   assetId: string;
   treasuryPayoutUrl: string;
+  requestedAddress?: string;
 }): Promise<{ offer: string } | { error: string; status: number } | { skipped: string }> {
   if (!onChainSageWithdrawEnabled()) {
     return { skipped: sageLedgerWithdrawNote("table") };
   }
-  const reachable = await pingTreasuryPayout(params.treasuryPayoutUrl);
-  if (!reachable) {
-    return { skipped: sageLedgerWithdrawNote("table") };
+  const ping = await inspectTreasuryPayout(params.treasuryPayoutUrl);
+  if (!ping.reachable) {
+    return {
+      status: 502,
+      error: `Treasury is not reachable at ${ping.host}${ping.error ? ` (${ping.error})` : ""}.`,
+    };
   }
-  const address = await playerSagePayoutAddress(params);
+  if (ping.offerMode === "rpc" && ping.walletRpcReachable === false) {
+    return {
+      status: 502,
+      error:
+        "Treasury HTTP is up, but Sage RPC is not logged in on that host. Enable RPC :9257 and TREASURY_SAGE_FINGERPRINT, then try again.",
+    };
+  }
+  const address = await playerSagePayoutAddress(params, params.requestedAddress);
   if (!address) {
     return {
       status: 400,
-      error: "Link a player Sage wallet first. Treasury will build an offer for that address.",
+      error: "Link a player Sage wallet first (not the treasury key). Then click Withdraw again.",
     };
   }
   const self = treasurySelfPayoutError(address);
@@ -98,7 +114,10 @@ async function requestPlayerTreasuryOffer(params: {
       treasuryPayoutUrl: params.treasuryPayoutUrl,
     });
     if (!offer) {
-      return { skipped: sageLedgerWithdrawNote("table") };
+      return {
+        status: 502,
+        error: "Treasury did not return an offer. Check Sage RPC and DAT balance on the AWS host.",
+      };
     }
     return { offer };
   } catch (e) {
@@ -170,9 +189,18 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
           ? await inspectTreasuryPayout(payout.treasuryPayoutUrl).then((ping) => ({
               treasuryReachable: ping.reachable,
               treasuryHost: ping.host,
-              treasuryError: ping.error,
+              treasuryError:
+                ping.reachable && ping.offerMode === "rpc" && ping.walletRpcReachable === false
+                  ? "Sage RPC is not logged in on the treasury host"
+                  : ping.error,
+              treasuryWalletRpcReachable: ping.walletRpcReachable,
             }))
-          : { treasuryReachable: false, treasuryHost: null, treasuryError: null }),
+          : {
+              treasuryReachable: false,
+              treasuryHost: null,
+              treasuryError: null,
+              treasuryWalletRpcReachable: null,
+            }),
         onChainPayoutEnabled: onChainSageWithdrawEnabled(),
         feeMojos: payout.withdrawFeeMojos.toString(),
       },
@@ -361,11 +389,12 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       devAck?: boolean;
       toAccount?: boolean;
       fromAccount?: boolean;
+      address?: string;
     };
   }>("/v1/wallet/withdraw", async (req, reply) => {
     const session = requirePlayer(req, reply);
     if (!session) return;
-    const { tableId, withdrawProof, devAck, toAccount, fromAccount } = req.body;
+    const { tableId, withdrawProof, devAck, toAccount, fromAccount, address } = req.body;
     if (!sessionMatchesClaim(session, req.body.playerId)) {
       return reply.status(403).send({ error: "playerId does not match the signed-in account" });
     }
@@ -447,10 +476,6 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         }
       }
 
-      consumePlaythroughWithdraw(playerId, withdrawMojos);
-      if (table && seatedStack !== null) {
-        table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
-      }
       let mode: "ledger" | "offer" = "ledger";
       let offer: string | undefined;
       let accountMojos = getAccountBalance(playerId);
@@ -462,6 +487,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
           amountMojos: withdrawMojos,
           assetId: dat.assetId,
           treasuryPayoutUrl: payoutConfig.treasuryPayoutUrl,
+          requestedAddress: address,
         });
         if ("error" in payout) {
           return reply.status(payout.status).send({ error: payout.error });
@@ -473,6 +499,10 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         } else {
           offerNote = payout.skipped;
         }
+      }
+      consumePlaythroughWithdraw(playerId, withdrawMojos);
+      if (table && seatedStack !== null) {
+        table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
       }
       syncPlaythroughHeld(playerId, getAccountBalance(playerId));
 
@@ -581,6 +611,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         amountMojos: payoutMojos,
         assetId: dat.assetId,
         treasuryPayoutUrl: payoutConfig.treasuryPayoutUrl,
+        requestedAddress: address,
       });
       if ("error" in payout) {
         return reply.status(payout.status).send({ error: payout.error });

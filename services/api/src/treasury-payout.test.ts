@@ -61,5 +61,28 @@ describe("onChainSageWithdrawEnabled", () => {
     expect(ping.reachable).toBe(false);
     expect(ping.host).toBe("127.0.0.1:9");
     expect(ping.error).toMatch(/127\.0\.0\.1:9/i);
+    expect(ping.walletRpcReachable).toBeNull();
+  });
+
+  it("reads walletRpcReachable from treasury /health", async () => {
+    const { createServer } = await import("node:http");
+    const server = createServer((req, res) => {
+      if (req.url === "/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "ok", offerMode: "rpc", walletRpcReachable: false }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    const ping = await inspectTreasuryPayout(`http://127.0.0.1:${port}/payout`);
+    expect(ping.reachable).toBe(true);
+    expect(ping.offerMode).toBe("rpc");
+    expect(ping.walletRpcReachable).toBe(false);
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    );
   });
 });

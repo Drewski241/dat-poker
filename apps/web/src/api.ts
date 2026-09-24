@@ -35,15 +35,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (authToken && !headers.has("authorization")) {
     headers.set("authorization", `Bearer ${authToken}`);
   }
-  const res = await fetch(`${apiBase}${path}`, {
-    ...init,
-    headers,
-  });
-  const body = (await res.json()) as T & { error?: string };
-  if (!res.ok) {
-    throw new Error((body as { error?: string }).error ?? res.statusText);
+  try {
+    const res = await fetch(`${apiBase}${path}`, {
+      ...init,
+      headers,
+    });
+    const body = (await res.json()) as T & { error?: string };
+    if (!res.ok) {
+      throw new Error((body as { error?: string }).error ?? res.statusText);
+    }
+    return body;
+  } catch (e) {
+    const raw = (e as Error).message || "Request failed";
+    if ((e as { name?: string }).name === "TimeoutError" || /timeout|aborted/i.test(raw)) {
+      throw new Error("Request timed out");
+    }
+    throw e;
   }
-  return body;
 }
 
 export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in";
@@ -246,6 +254,7 @@ export const api = {
         treasuryReachable?: boolean;
         treasuryHost?: string | null;
         treasuryError?: string | null;
+        treasuryWalletRpcReachable?: boolean | null;
         onChainPayoutEnabled?: boolean;
         feeMojos: string;
       };
@@ -509,7 +518,13 @@ export const api = {
   withdraw: (
     tableId: string | null,
     playerId: string,
-    options?: { withdrawProof?: WithdrawProof; devAck?: boolean; toAccount?: boolean; fromAccount?: boolean },
+    options?: {
+      withdrawProof?: WithdrawProof;
+      devAck?: boolean;
+      toAccount?: boolean;
+      fromAccount?: boolean;
+      address?: string;
+    },
   ) =>
     request<WithdrawResult>("/v1/wallet/withdraw", {
       method: "POST",
@@ -518,6 +533,7 @@ export const api = {
         playerId,
         ...options,
       }),
+      signal: AbortSignal.timeout(25_000),
     }),
 
   lobbyPresence: () =>
