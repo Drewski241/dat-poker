@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import { describe, expect, it, beforeEach } from "vitest";
 import Fastify from "fastify";
 import { serializeForJson } from "./serialize.js";
@@ -133,6 +134,10 @@ describe("SNG play-through unlocks", () => {
     process.env.DAT_SNG_FILL_HOUSE = "true";
     process.env.DAT_MIN_BUY_IN_MOJOS = "1000000";
     process.env.DAT_DAILY_REDEEM_MOJOS = "5000000";
+    delete process.env.DAT_TREASURY_PAYOUT_URL;
+    delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+    delete process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID;
+    delete process.env.TREASURY_XCH_ADDRESS;
     resetMailOutboxForTests();
     resetTablesForTests();
     resetAccountsForTests();
@@ -435,5 +440,109 @@ describe("SNG play-through unlocks", () => {
     expect(withdrawn.statusCode).toBe(200);
     expect(JSON.parse(withdrawn.body).stackMojos).toBe("2000");
     await app.close();
+  });
+
+  it("builds a treasury offer for a player Sage wallet when treasury is active", async () => {
+    const received: unknown[] = [];
+    const server = createServer((req, res) => {
+      if (req.url === "/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "ok" }));
+        return;
+      }
+      if (req.method === "POST" && req.url === "/payout") {
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk) => chunks.push(chunk as Buffer));
+        req.on("end", () => {
+          received.push(JSON.parse(Buffer.concat(chunks).toString()));
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ offer: "offer1playerpayout" }));
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    process.env.DAT_TREASURY_PAYOUT_URL = `http://127.0.0.1:${port}/payout`;
+    process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID = "d".repeat(64);
+    process.env.TREASURY_XCH_ADDRESS = "xch1treasurywalletaddress";
+    delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+
+    const app = await buildApp();
+    const alice = issueTestSession("xch1playerwalletaddress00");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    const joined = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-sng",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    const tableId = JSON.parse(joined.body).tableId as string;
+    await playSngFolds(app, tableId, alice.session.playerId, alice.token, 2);
+    const before = getAccountBalance(alice.session.playerId);
+    const withdrawn = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, fromAccount: true, devAck: true },
+    });
+    expect(withdrawn.statusCode).toBe(200);
+    const out = JSON.parse(withdrawn.body) as { mode: string; offer?: string; note: string };
+    expect(out.mode).toBe("offer");
+    expect(out.offer).toBe("offer1playerpayout");
+    expect(out.note).toMatch(/Import/i);
+    expect(getAccountBalance(alice.session.playerId)).toBe(before - 2000n);
+    expect(received[0]).toMatchObject({
+      address: "xch1playerwalletaddress00",
+      amountMojos: "2000",
+    });
+    await app.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
+
+  it("rejects a treasury offer to the treasury Sage address", async () => {
+    const server = createServer((req, res) => {
+      if (req.url === "/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "ok" }));
+        return;
+      }
+      res.writeHead(500);
+      res.end("should not payout");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    process.env.DAT_TREASURY_PAYOUT_URL = `http://127.0.0.1:${port}/payout`;
+    process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID = "d".repeat(64);
+    process.env.TREASURY_XCH_ADDRESS = "xch1sngselfpay";
+    delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+
+    const app = await buildApp();
+    const alice = issueTestSession("xch1sngselfpay");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    const joined = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-sng",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    const tableId = JSON.parse(joined.body).tableId as string;
+    await playSngFolds(app, tableId, alice.session.playerId, alice.token, 2);
+    const withdrawn = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, fromAccount: true, devAck: true },
+    });
+    expect(withdrawn.statusCode).toBe(400);
+    expect(JSON.parse(withdrawn.body).error).toMatch(/treasury wallet/i);
+    await app.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    );
   });
 });

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { computeWithdrawPayout, onChainSageWithdrawEnabled } from "./treasury-payout.js";
+import {
+  computeWithdrawPayout,
+  looksLikeXchAddress,
+  onChainSageWithdrawEnabled,
+  treasurySelfPayoutError,
+} from "./treasury-payout.js";
 
 describe("computeWithdrawPayout", () => {
   it("pays net winnings for virtual buy-in", () => {
@@ -18,15 +23,32 @@ describe("computeWithdrawPayout", () => {
 describe("onChainSageWithdrawEnabled", () => {
   afterEach(() => {
     delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+    delete process.env.DAT_TREASURY_PAYOUT_URL;
+    delete process.env.TREASURY_XCH_ADDRESS;
   });
 
-  it("is off by default so unused treasury offers are not created", () => {
+  it("is off when no treasury URL is configured", () => {
     delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+    delete process.env.DAT_TREASURY_PAYOUT_URL;
     expect(onChainSageWithdrawEnabled()).toBe(false);
   });
 
-  it("turns on only when explicitly enabled", () => {
-    process.env.DAT_ENABLE_ONCHAIN_WITHDRAW = "true";
+  it("defaults on when a treasury URL is set", () => {
+    delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+    process.env.DAT_TREASURY_PAYOUT_URL = "http://127.0.0.1:4200/payout";
     expect(onChainSageWithdrawEnabled()).toBe(true);
+  });
+
+  it("can be forced off even when a treasury URL is set", () => {
+    process.env.DAT_ENABLE_ONCHAIN_WITHDRAW = "false";
+    process.env.DAT_TREASURY_PAYOUT_URL = "http://127.0.0.1:4200/payout";
+    expect(onChainSageWithdrawEnabled()).toBe(false);
+  });
+
+  it("rejects the treasury Sage address", () => {
+    process.env.TREASURY_XCH_ADDRESS = "xch1treasurywalletaddress";
+    expect(treasurySelfPayoutError("xch1treasurywalletaddress")).toMatch(/treasury wallet/i);
+    expect(treasurySelfPayoutError("xch1playerwalletaddress00")).toBeNull();
+    expect(looksLikeXchAddress("xch1sngunlock")).toBe(true);
   });
 });

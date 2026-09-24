@@ -2371,3 +2371,16 @@ html.play-table-screen body {
     transform: rotate(180deg);
   }
 }
+
+.sage-offer-box {
+  margin-top: 0.75rem;
+  text-align: left;
+}
+
+.sage-offer-box textarea {
+  width: 100%;
+  margin: 0.5rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  word-break: break-all;
+}

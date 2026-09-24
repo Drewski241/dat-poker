@@ -14,19 +14,52 @@ export function readTreasuryPayoutConfig(): TreasuryPayoutConfig {
 }
 
 /**
- * WalletConnect takeOffer is disabled on the game host. Creating a treasury
- * offer anyway locks DAT (worse when the player paired the treasury Sage key)
- * and never lands in the player wallet.
+ * Host → player Sage payouts use a treasury offer the player imports in Sage.
+ * WalletConnect takeOffer stays disabled. Default on when a treasury URL is set;
+ * set DAT_ENABLE_ONCHAIN_WITHDRAW=false to force ledger-only.
  */
 export function onChainSageWithdrawEnabled(): boolean {
   const raw = process.env.DAT_ENABLE_ONCHAIN_WITHDRAW?.trim().toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes";
+  if (raw === "0" || raw === "false" || raw === "no") return false;
+  if (raw === "1" || raw === "true" || raw === "yes") return true;
+  return Boolean(process.env.DAT_TREASURY_PAYOUT_URL?.trim());
+}
+
+export function treasuryPayoutHealthUrl(payoutUrl: string): string {
+  return payoutUrl.replace(/\/payout\/?$/i, "/health");
+}
+
+export async function pingTreasuryPayout(payoutUrl: string): Promise<boolean> {
+  try {
+    const res = await fetch(treasuryPayoutHealthUrl(payoutUrl), {
+      signal: AbortSignal.timeout(2500),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export function looksLikeXchAddress(value: string): boolean {
+  return /^xch1[0-9a-z]{8,}$/i.test(value.trim());
+}
+
+export function treasurySelfPayoutError(address: string): string | null {
+  const treasury = process.env.TREASURY_XCH_ADDRESS?.trim();
+  if (treasury && treasury.toLowerCase() === address.trim().toLowerCase()) {
+    return "That Sage address is the treasury wallet. Connect a separate player Sage key to receive DAT.";
+  }
+  return null;
 }
 
 export function sageLedgerWithdrawNote(kind: "sng" | "table"): string {
   return kind === "sng"
-    ? "Unlocked DAT stays in your table account. On-chain Sage payout is off on this host, so it will not appear in Sage. A payout to the treasury Sage key also cannot show as a new deposit."
-    : "Unlocked DAT stays in your table account. On-chain Sage payout is off on this host, so it will not appear in Sage.";
+    ? "Unlocked DAT stays in your table account. Start the treasury payout service to send an offer to a player Sage wallet."
+    : "Unlocked DAT stays in your table account. Start the treasury payout service to send an offer to a player Sage wallet.";
+}
+
+export function sageOfferWithdrawNote(): string {
+  return "Treasury created a DAT offer. In your player Sage wallet (not the treasury key), open Offers → Import, paste the offer, and accept it.";
 }
 
 export function computeWithdrawPayout(

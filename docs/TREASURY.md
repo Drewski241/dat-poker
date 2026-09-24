@@ -29,7 +29,9 @@ sequenceDiagram
 
 Use a **separate Sage key/fingerprint** for treasury — not the same profile players use to play.
 
-A payout to the treasury Sage address cannot show as a new deposit (it is a self-transfer, and an untaken offer can lock those coins). Set `TREASURY_XCH_ADDRESS` so `/payout` rejects that address. The game host keeps `DAT_ENABLE_ONCHAIN_WITHDRAW` off while WalletConnect `takeOffer` is disabled.
+A payout to the treasury Sage address cannot show as a new deposit (it is a self-transfer, and an untaken offer can lock those coins). Set `TREASURY_XCH_ADDRESS` so `/payout` rejects that address.
+
+WalletConnect `takeOffer` stays disabled. When treasury is reachable, withdraw returns an `offer1…` string. The player imports it in **their** Sage (Offers → Import) and accepts.
 
 **Treasury Sage and player Sage are always on different machines in production.** The player wallet is on the user's phone or PC; the treasury wallet stays on an operator-controlled host. They never share a device.
 
@@ -296,9 +298,11 @@ sage rpc get_keys '{}'
 
 ## Step 5 — Player withdraw
 
-1. Player connects **their own Sage** via WalletConnect → buy in → play → win.
-2. Click **Withdraw … to Sage** → sign withdraw message.
-3. Accept **treasury offer** in Sage → DAT arrives on-chain.
+1. Start treasury (`pnpm treasury:check` then `pnpm treasury:start`) with DAT + XCH in that Sage.
+2. On the game host, point the API at treasury (`DAT_TREASURY_PAYOUT_URL`, optional `TREASURY_XCH_ADDRESS`).
+3. Player links a **separate** Sage address, unlocks DAT, clicks withdraw.
+4. Copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
+5. Player Sage DAT balance increases. Treasury Sage DAT decreases.
 
 Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (`50000` mojos).
 

@@ -128,6 +128,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [datToken, setDatToken] = useState<DatTokenInfo | null>(null);
   const [wcConfig, setWcConfig] = useState<{ projectId: string; chainId: string } | null>(null);
+  const [withdrawConfig, setWithdrawConfig] = useState<{
+    treasuryConfigured: boolean;
+    treasuryReachable: boolean;
+    onChainPayoutEnabled: boolean;
+  } | null>(null);
 
   const [session, setSession] = useState<WcSession | null>(null);
   const [wcUri, setWcUri] = useState<string | null>(null);
@@ -210,6 +215,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       try {
         const [config, dat] = await Promise.all([api.walletConfig(), api.datToken()]);
         setDatToken(dat);
+        if (config.withdraw) {
+          setWithdrawConfig({
+            treasuryConfigured: Boolean(config.withdraw.treasuryConfigured),
+            treasuryReachable: Boolean(config.withdraw.treasuryReachable),
+            onChainPayoutEnabled: Boolean(config.withdraw.onChainPayoutEnabled),
+          });
+        }
         if (restoreApiAuthToken()) {
           try {
             const me = await api.me();
@@ -1078,9 +1090,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
 
       if (result.mode === "offer" && result.offer) {
-        setStatus(
-          "On-chain Sage takeOffer is disabled on this host so DAT cannot leave your wallet. Stack is in your table account.",
-        );
+        setStatus("Treasury offer is ready. Import it in your player Sage wallet — not the treasury key.");
       }
 
       setWithdrawResult(result);
@@ -1148,14 +1158,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         devAck: datToken?.devBuyInEnabled,
         fromAccount: true,
       });
-      if (result.mode === "offer") {
-        setStatus(
-          "On-chain Sage takeOffer is disabled. If this used the treasury Sage key, cancel the pending offer there. Unlocked DAT stays in your table account.",
-        );
+      if (result.mode === "offer" && result.offer) {
+        setStatus("Treasury offer is ready. Import it in your player Sage wallet — not the treasury key.");
       } else {
-        setStatus(
-          "Unlocked DAT stays in your table account. Sage will not show a new deposit on this host.",
-        );
+        setStatus(result.note);
       }
       setWithdrawResult(result);
       if (result.playthrough) setAccountPlaythrough(result.playthrough);
@@ -1525,17 +1531,28 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         )}
         <p className="muted small">
           Pairing only signs a message. This site cannot send DAT or XCH from Sage.
-          Unlocked DAT stays in your table account — it will not appear as a new
-          Sage deposit. Do not pair the treasury Sage key as your player wallet;
-          a payout to that same address cannot show as a new deposit.
+          When treasury is active, withdraw builds an offer you import in a{" "}
+          <strong>player</strong> Sage wallet. Do not use the treasury Sage key.
         </p>
+        {withdrawConfig && (
+          <p className={withdrawConfig.treasuryReachable ? "ok-text" : "muted small"}>
+            Treasury:{" "}
+            {withdrawConfig.treasuryReachable
+              ? "active — withdraw can send a DAT offer to your player Sage"
+              : withdrawConfig.treasuryConfigured
+                ? "configured but not reachable. Start the treasury payout service, then refresh."
+                : "not configured. Set DAT_TREASURY_PAYOUT_URL and start treasury."}
+          </p>
+        )}
         {playerId && handsRequired > 0 && (
           <p>
             Unlocked in table account:{" "}
             <strong>{formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)}</strong>
             {unlockedDat > 0n && accountUnlockedMojos === 0n
               ? " — leftover account chips or a 1st–3rd prize are required"
-              : " — on-chain Sage payout is off on this host"}
+              : withdrawConfig?.treasuryReachable
+                ? " — ready for a player Sage offer"
+                : " — leftover stays here until treasury is active"}
           </p>
         )}
         {!wcConfig ? (
@@ -1570,13 +1587,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               <div className="row">
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || (Boolean(withdrawConfig?.treasuryReachable) && !walletAddress)}
                   onClick={withdrawUnlockedFromAccount}
                 >
-                  Release {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
-                  in table account
+                  {withdrawConfig?.treasuryReachable
+                    ? `Withdraw ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} to player Sage`
+                    : `Release ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked in table account`}
                 </button>
               </div>
+            )}
+            {withdrawConfig?.treasuryReachable && !walletAddress && (
+              <p className="muted small">Link a player Sage address first (not the treasury key).</p>
             )}
           </>
         )}
@@ -1816,8 +1837,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             {(tableFormat === "sng" || tableFormat === "mtt") && accountUnlockedMojos > 0n && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawUnlockedFromAccount}>
-                  Release {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
-                  from SNG play
+                  {withdrawConfig?.treasuryReachable
+                    ? `Withdraw ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} to player Sage`
+                    : `Release ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked from SNG play`}
                 </button>
               </div>
             )}
@@ -1830,10 +1852,29 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               <>
                 {" "}
                 · payout {formatDatMojos(withdrawResult.payoutMojos, datToken?.ticker)}
-                {withdrawResult.mode === "offer" ? " (offer created — Sage takeOffer is off)" : " (table account)"}
+                {withdrawResult.mode === "offer" ? " (treasury offer for player Sage)" : " (table account)"}
               </>
             )}
             . {withdrawResult.note}
+            {withdrawResult.offer && (
+              <div className="sage-offer-box">
+                <p>
+                  In <strong>player Sage</strong> (not treasury): Offers → Import. Paste this offer and
+                  accept it. DAT should then show in that wallet.
+                </p>
+                <textarea readOnly rows={4} value={withdrawResult.offer} />
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(withdrawResult.offer ?? "");
+                    setStatus("Offer copied. Import it in player Sage.");
+                  }}
+                >
+                  Copy offer
+                </button>
+              </div>
+            )}
           </div>
         )}
       </section>
