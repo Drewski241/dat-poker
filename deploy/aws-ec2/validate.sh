@@ -248,11 +248,17 @@ bash -n "$DIR/public-url.sh" && ok "public-url.sh bash syntax" || bad "public-ur
 if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'TREASURY_WALLET_CERT_PATH' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'dat-poker-sage-rpc' "$DIR/enable-treasury-sage.sh" \
-  && grep -q 'install_c_toolchain' "$DIR/enable-treasury-sage.sh" \
-  && grep -q 'dnf install -y gcc' "$DIR/enable-treasury-sage.sh"; then
-  ok "enable-treasury-sage.sh writes Sage RPC cert paths and installs cc"
+  && grep -q 'install_prebuilt_sage_cli' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'free_sage_build_space' "$DIR/enable-treasury-sage.sh"; then
+  ok "enable-treasury-sage.sh writes Sage RPC cert paths and uses prebuilt sage-cli"
 else
   bad "enable-treasury-sage.sh cert paths"
+fi
+
+if [[ -x "$DIR/bin/sage-linux-x86_64" ]]; then
+  ok "prebuilt sage-cli binary is present"
+else
+  bad "prebuilt sage-cli binary missing at deploy/aws-ec2/bin/sage-linux-x86_64"
 fi
 
 python3 - <<'PY' && ok "public-url.sh prints HTTPS home and /play" || bad "public-url.sh output"

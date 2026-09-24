@@ -402,6 +402,9 @@ certs are missing, treasury HTTP is up but Sage is not installed on this box:
 sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 ```
 
+That copies the prebuilt `sage-cli` from this repo. Do not `cargo install`
+sage-cli on the 20 GB beta volume — the compile fills the disk.
+
 `walletRpcReachable: false` means Sage is installed but RPC is not logged in.
 
 ## Website address

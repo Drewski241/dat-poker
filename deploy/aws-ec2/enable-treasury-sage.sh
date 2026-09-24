@@ -6,6 +6,10 @@
 #   sudo TREASURY_SAGE_FINGERPRINT=1234567890 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #
+# SAGE_INSTALL copies the prebuilt sage-cli shipped in this repo. Do not compile
+# on the t3.small — cargo fills the 20 GB root volume.
+# SAGE_COMPILE=1 is an emergency fallback only (needs ~15 GB free).
+#
 # Do not expose :9257. Import a dedicated treasury key (not the player Sage).
 set -euo pipefail
 
@@ -71,6 +75,29 @@ find_sage_bin() {
   return 1
 }
 
+free_sage_build_space() {
+  echo "Freeing leftover sage-cli compile files (they filled the disk)…"
+  rm -rf /tmp/cargo-install* /tmp/cargo-installfFFTDp /tmp/sage-target /tmp/sage-cargo /tmp/sage-prefix
+  rm -rf "${SAGE_HOME}/.cargo/registry" "${SAGE_HOME}/.cargo/git"
+  rm -rf /root/.cargo/registry /root/.cargo/git
+  df -h / /tmp || true
+}
+
+install_prebuilt_sage_cli() {
+  local prebuilt="$INSTALL_ROOT/deploy/aws-ec2/bin/sage-linux-x86_64"
+  if [[ ! -f "$prebuilt" ]]; then
+    return 1
+  fi
+  echo "Installing prebuilt sage-cli ${SAGE_VERSION} from $prebuilt"
+  install -m 0755 "$prebuilt" /usr/local/bin/sage
+  if [[ ! -x /usr/local/bin/sage ]]; then
+    echo "failed to install /usr/local/bin/sage" >&2
+    return 1
+  fi
+  /usr/local/bin/sage --help >/dev/null
+  echo "sage-cli installed at /usr/local/bin/sage"
+}
+
 install_c_toolchain() {
   if command -v cc >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1; then
     return 0
@@ -84,6 +111,25 @@ install_c_toolchain() {
 }
 
 install_sage_cli() {
+  free_sage_build_space
+  if install_prebuilt_sage_cli; then
+    return 0
+  fi
+  if [[ "${SAGE_COMPILE:-}" != "1" ]]; then
+    echo "Prebuilt sage-cli is missing. Redeploy this branch, then re-run:" >&2
+    echo "  sudo SAGE_INSTALL=1 bash $0" >&2
+    echo "Do not compile on this 20 GB host (cargo fills the disk)." >&2
+    echo "Emergency only: sudo SAGE_INSTALL=1 SAGE_COMPILE=1 bash $0" >&2
+    exit 1
+  fi
+  local avail_kb
+  avail_kb="$(df -Pk /tmp | awk 'NR==2 {print $4}')"
+  if [[ "${avail_kb:-0}" -lt 15000000 ]]; then
+    echo "/tmp has less than 15 GB free. cargo install will fail with ENOSPC." >&2
+    echo "Grow the EBS volume or use the prebuilt binary from this repo." >&2
+    df -h / /tmp >&2 || true
+    exit 1
+  fi
   echo "Installing sage-cli ${SAGE_VERSION} as ${SAGE_USER} (Rust compile — can take a while)…"
   install_c_toolchain
   if ! command -v rustc >/dev/null 2>&1 && [[ ! -x "${SAGE_HOME}/.cargo/bin/rustc" ]]; then
@@ -130,7 +176,7 @@ else
     echo "Install headless Sage, then re-run this script:" >&2
     echo "  sudo SAGE_INSTALL=1 bash $0" >&2
     echo >&2
-    echo "That compiles sage-cli with Rust (needs RAM + swap; can take a while)." >&2
+    echo "That copies the prebuilt sage-cli (do not cargo-compile on this host)." >&2
     echo "After it starts, import the *treasury* key (not the player Sage):" >&2
     echo "  sudo -u ${SAGE_USER} -H sage rpc get_keys '{}'" >&2
     echo "  sudo TREASURY_SAGE_FINGERPRINT=<id> bash $0" >&2

@@ -8,6 +8,7 @@ for bin in \
   "${SAGE_BIN:-}" \
   /usr/local/bin/sage \
   /usr/bin/sage \
+  /opt/dat-poker/deploy/aws-ec2/bin/sage-linux-x86_64 \
   /home/ec2-user/.cargo/bin/sage \
   "$HOME/.cargo/bin/sage"
 do

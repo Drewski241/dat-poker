@@ -69,7 +69,7 @@ need Sage RPC on **this** AWS host:
 
 ```bash
 sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
-# first time, compile sage-cli (installs gcc first — Amazon Linux has no cc):
+# first time, copies the prebuilt sage-cli (do not cargo-compile on the 20 GB host):
 sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 # after you import the treasury key:
 sudo TREASURY_SAGE_FINGERPRINT=1234567890 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
@@ -208,7 +208,8 @@ Sage RPC (`9257`) stays **localhost-only**. Firewall `:4200` so **only the game 
 Install Sage CLI and run RPC in the foreground (do **not** run GUI RPC at the same time):
 
 ```bash
-cargo install --git https://github.com/xch-dev/sage --tag v0.11.1 sage-cli
+# On the AWS website host, use the prebuilt binary (cargo install fills a 20 GB volume):
+sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 sage rpc start
 # In another terminal, login to treasury fingerprint:
 sage rpc login '{"fingerprint": YOUR_TREASURY_FINGERPRINT}'
