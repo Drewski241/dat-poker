@@ -32,8 +32,9 @@ export function AllInRunout({
   const streets = runoutStreets(fromBoardLen);
   const [index, setIndex] = useState(0);
   const street: RunoutStreet = streets[Math.min(index, streets.length - 1)] ?? "hands";
-  const visible = (result.board ?? []).slice(0, runoutVisibleCount(street));
+  const visible = (result.board ?? []).slice(0, runoutVisibleCount(street, fromBoardLen));
   const revealHands = street === "hands";
+  const lost = result.winnerId !== playerId;
   const onFinishedRef = useRef(onFinished);
   onFinishedRef.current = onFinished;
   const finishedRef = useRef(false);
@@ -46,19 +47,23 @@ export function AllInRunout({
 
   useEffect(() => {
     if (index >= streets.length - 1) {
-      const done = window.setTimeout(finish, runoutHoldMs("hands"));
+      const done = window.setTimeout(finish, runoutHoldMs("hands", lost));
       return () => window.clearTimeout(done);
     }
-    const wait = window.setTimeout(() => setIndex((n) => n + 1), runoutHoldMs(street));
+    const wait = window.setTimeout(() => setIndex((n) => n + 1), runoutHoldMs(street, lost));
     return () => window.clearTimeout(wait);
-  }, [index, street, streets.length]);
+  }, [index, street, streets.length, lost]);
 
   return (
-    <div className={`all-in-runout all-in-runout-${street}`} role="img" aria-label="All-in runout">
-      <ActionSticker kind={street} />
+    <div
+      className={`all-in-runout all-in-runout-${street}${lost ? " all-in-runout-lost" : " all-in-runout-won"}`}
+      role="img"
+      aria-label={lost ? "All-in runout — you lost" : "All-in runout — you won"}
+    >
+      <ActionSticker kind={street === "hands" ? "allin" : street} />
       <p className="all-in-runout-banner">
-        {street === "hands" ? "Showdown" : street.toUpperCase()}
-        <span> · all-in</span>
+        {street === "allin" ? "ALL IN" : street === "hands" ? "Showdown" : street.toUpperCase()}
+        <span>{lost ? " · study the hands" : " · all-in"}</span>
       </p>
       <div className="all-in-runout-board">
         {Array.from({ length: 5 }, (_, i) => {
@@ -81,7 +86,7 @@ export function AllInRunout({
             >
               <span className="table-room-showdown-name">
                 {playerLabel(shown.playerId, playerId, seatDisplay(shown.playerId))}
-                {shown.playerId === result.winnerId ? " ★" : ""}
+                {shown.playerId === result.winnerId ? " ★" : shown.playerId === playerId ? " (you)" : ""}
               </span>
               <CardRow cards={shown.holeCards} size="sm" />
               <span className="all-in-runout-cat">{formatHandCategory(shown.category)}</span>
@@ -91,6 +96,7 @@ export function AllInRunout({
       )}
       {revealHands && (
         <p className="all-in-runout-winner">
+          {lost ? "You lost · " : ""}
           {playerLabel(result.winnerId, playerId, seatDisplay(result.winnerId))}
           {result.winnerId === playerId ? " win " : " wins "}
           {formatDatMojos(result.potMojos, datToken?.ticker)}
@@ -132,8 +138,9 @@ function ActionSticker({ kind }: { kind: RunoutStreet }) {
     );
   }
   return (
-    <div className="action-gif action-gif-hands" aria-hidden="true">
+    <div className="action-gif action-gif-allin" aria-hidden="true">
       <span className="action-gif-fire" />
+      <span className="action-gif-fire action-gif-fire-2" />
       <strong>ALL IN</strong>
     </div>
   );

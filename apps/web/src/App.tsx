@@ -157,6 +157,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [handResult, setHandResult] = useState<HandResult | null>(null);
   const [runoutFromBoardLen, setRunoutFromBoardLen] = useState<number | null>(null);
   const liveHandMeta = useRef({ handId: "", boardLen: 0, allIn: false });
+  const runoutFromBoardLenRef = useRef<number | null>(null);
   const playedRunouts = useRef(new Set<string>());
   const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
   const [handHistoryOpen, setHandHistoryOpen] = useState(false);
@@ -341,11 +342,20 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   }, [sng?.status, playerId, refreshAccount]);
 
   useEffect(() => {
+    runoutFromBoardLenRef.current = runoutFromBoardLen;
+  }, [runoutFromBoardLen]);
+
+  useEffect(() => {
     if (hand) {
+      const sameHand = liveHandMeta.current.handId === hand.handId;
+      const flagged = sameHand && liveHandMeta.current.allIn;
+      const allIn = flagged || hand.players.some((p) => p.allIn && !p.folded);
       liveHandMeta.current = {
         handId: hand.handId,
-        boardLen: hand.board.length,
-        allIn: hand.players.some((p) => p.allIn && !p.folded),
+        // Freeze the board at the all-in moment so an instant server runout
+        // still replays flop/turn/river instead of flashing the finished board.
+        boardLen: allIn && sameHand ? liveHandMeta.current.boardLen : hand.board.length,
+        allIn,
       };
       return;
     }
@@ -798,6 +808,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
+    if (runoutFromBoardLenRef.current != null) return;
     run("Dealing hand…", async () => {
       setHandResult(null);
       const dealt = await api.goHand(tableId, playerId);
@@ -812,6 +823,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const sendAction = (action: PlayerAction, amountMojos?: string) => {
     if (!tableId || !playerId) return;
+    if (action === "all-in" && hand) {
+      liveHandMeta.current = {
+        handId: hand.handId,
+        boardLen: liveHandMeta.current.handId === hand.handId ? liveHandMeta.current.boardLen : hand.board.length,
+        allIn: true,
+      };
+    }
     run(action, async () => {
       const response = await api.action(tableId, playerId, action, amountMojos);
       applyActionResponse(response);

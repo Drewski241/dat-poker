@@ -129,8 +129,9 @@ export function TableRoom({
       : null;
 
   const canStepToLobby = !hand && !handInProgress;
-  const showDeal = !hand && !canRebuy && canDeal && runoutFromBoardLen == null;
-  const showBetweenFooter = !hand && (showDeal || canRebuy);
+  const runoutPlaying = Boolean(handResult && runoutFromBoardLen != null && onRunoutFinished);
+  const showDeal = !hand && !canRebuy && canDeal && !runoutPlaying;
+  const showBetweenFooter = !hand && (showDeal || canRebuy) && !runoutPlaying;
   const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
 
   const me = hand?.players.find((p) => p.playerId === playerId);
@@ -149,7 +150,7 @@ export function TableRoom({
 
   return (
     <div
-      className={`table-room ${hand ? "table-room-in-hand" : "table-room-between-hands"}${hand && isMyAction ? " table-room-has-actions" : ""}${showBetweenFooter ? " table-room-has-actions" : ""}`}
+      className={`table-room ${hand ? "table-room-in-hand" : "table-room-between-hands"}${hand && isMyAction ? " table-room-has-actions" : ""}${showBetweenFooter ? " table-room-has-actions" : ""}${runoutPlaying ? " table-room-runout-playing" : ""}`}
     >
       <header className="table-room-header">
         <div className="table-room-header-main">
@@ -207,7 +208,7 @@ export function TableRoom({
         </div>
       </header>
 
-      {!hand && (
+      {!hand && !runoutPlaying && (
         <div className="table-room-seats" aria-label="Seats">
           {Array.from({ length: maxSeats }, (_, i) => {
             const seated = tableSeats.find((s) => s.seatIndex === i);
@@ -307,7 +308,7 @@ export function TableRoom({
                 )}
               </div>
             )}
-            {tableStackMojos != null && BigInt(tableStackMojos) === 0n && !canRebuy && (
+            {tableStackMojos != null && BigInt(tableStackMojos) === 0n && !canRebuy && !runoutPlaying && (
               <p className="banner info table-room-bust">
                 {canDeal
                   ? "You have no chips at this table. Wait for the hand to finish, then buy in again, or open Lobby to redeem DAT."
