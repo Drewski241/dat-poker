@@ -27,6 +27,8 @@ corepack prepare pnpm@9.15.0 --activate
 pnpm install --frozen-lockfile
 pnpm --filter @dat-poker/api^... build
 pnpm --filter @dat-poker/api build
+pnpm --filter @dat-poker/treasury-payout^... build
+pnpm --filter @dat-poker/treasury-payout build
 pnpm --filter @dat-poker/web build
 
 rm -rf "${WEB_ROOT:?}/"*
@@ -44,6 +46,11 @@ fi
 chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
 systemctl reset-failed dat-poker-api 2>/dev/null || true
 systemctl restart dat-poker-api
+if systemctl list-unit-files dat-poker-treasury.service >/dev/null 2>&1 \
+  && systemctl is-enabled --quiet dat-poker-treasury 2>/dev/null; then
+  systemctl reset-failed dat-poker-treasury 2>/dev/null || true
+  systemctl restart dat-poker-treasury || true
+fi
 # Parse KEY=VALUE; do not `source` caddy.env. An unquoted
 # DAT_POKER_SITE=host, www.host is an assignment plus a command, and
 # `set -e` would abort after the API restart.

@@ -300,6 +300,11 @@ sage rpc get_keys '{}'
 
 1. Start treasury (`pnpm treasury:check` then `pnpm treasury:start`) with DAT + XCH in that Sage.
 2. On the game host, point the API at treasury (`DAT_TREASURY_PAYOUT_URL`, optional `TREASURY_XCH_ADDRESS`).
+   Same-host test (Sage RPC on the game box):
+   ```bash
+   sudo bash /opt/dat-poker/deploy/aws-ec2/start-treasury.sh
+   ```
+   If the play page says treasury is not reachable at `localhost:4200` / `127.0.0.1:4200`, that service is not running on the game host.
 3. Player links a **separate** Sage address, unlocks DAT, clicks withdraw.
 4. Copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
 5. Player Sage DAT balance increases. Treasury Sage DAT decreases.

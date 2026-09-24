@@ -131,6 +131,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [withdrawConfig, setWithdrawConfig] = useState<{
     treasuryConfigured: boolean;
     treasuryReachable: boolean;
+    treasuryHost: string | null;
+    treasuryError: string | null;
     onChainPayoutEnabled: boolean;
   } | null>(null);
 
@@ -219,6 +221,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           setWithdrawConfig({
             treasuryConfigured: Boolean(config.withdraw.treasuryConfigured),
             treasuryReachable: Boolean(config.withdraw.treasuryReachable),
+            treasuryHost: config.withdraw.treasuryHost ?? null,
+            treasuryError: config.withdraw.treasuryError ?? null,
             onChainPayoutEnabled: Boolean(config.withdraw.onChainPayoutEnabled),
           });
         }
@@ -264,6 +268,19 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     } finally {
       setBusy(false);
       setStatus("");
+    }
+  }, []);
+
+  const refreshTreasuryStatus = useCallback(async () => {
+    const config = await api.walletConfig();
+    if (config.withdraw) {
+      setWithdrawConfig({
+        treasuryConfigured: Boolean(config.withdraw.treasuryConfigured),
+        treasuryReachable: Boolean(config.withdraw.treasuryReachable),
+        treasuryHost: config.withdraw.treasuryHost ?? null,
+        treasuryError: config.withdraw.treasuryError ?? null,
+        onChainPayoutEnabled: Boolean(config.withdraw.onChainPayoutEnabled),
+      });
     }
   }, []);
 
@@ -1535,14 +1552,32 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           <strong>player</strong> Sage wallet. Do not use the treasury Sage key.
         </p>
         {withdrawConfig && (
-          <p className={withdrawConfig.treasuryReachable ? "ok-text" : "muted small"}>
-            Treasury:{" "}
-            {withdrawConfig.treasuryReachable
-              ? "active — withdraw can send a DAT offer to your player Sage"
-              : withdrawConfig.treasuryConfigured
-                ? "configured but not reachable. Start the treasury payout service, then refresh."
-                : "not configured. Set DAT_TREASURY_PAYOUT_URL and start treasury."}
-          </p>
+          <div className={withdrawConfig.treasuryReachable ? "ok-text" : "muted small"}>
+            <p>
+              Treasury:{" "}
+              {withdrawConfig.treasuryReachable
+                ? `active at ${withdrawConfig.treasuryHost ?? "payout service"} — withdraw can send a DAT offer to your player Sage`
+                : withdrawConfig.treasuryConfigured
+                  ? `configured but not reachable at ${withdrawConfig.treasuryHost ?? "the payout URL"}${
+                      withdrawConfig.treasuryError ? ` (${withdrawConfig.treasuryError})` : ""
+                    }. Start treasury on that host (Sage RPC + pnpm treasury:start, or sudo bash /opt/dat-poker/deploy/aws-ec2/start-treasury.sh), then check again.`
+                  : "not configured. Set DAT_TREASURY_PAYOUT_URL and start treasury."}
+            </p>
+            {withdrawConfig.treasuryConfigured && !withdrawConfig.treasuryReachable && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() =>
+                  run("Checking treasury…", async () => {
+                    await refreshTreasuryStatus();
+                  })
+                }
+              >
+                Check treasury again
+              </button>
+            )}
+          </div>
         )}
         {playerId && handsRequired > 0 && (
           <p>

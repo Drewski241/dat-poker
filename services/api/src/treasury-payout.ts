@@ -25,19 +25,72 @@ export function onChainSageWithdrawEnabled(): boolean {
   return Boolean(process.env.DAT_TREASURY_PAYOUT_URL?.trim());
 }
 
+export type TreasuryPing = {
+  reachable: boolean;
+  healthUrl: string;
+  host: string;
+  error: string | null;
+};
+
 export function treasuryPayoutHealthUrl(payoutUrl: string): string {
-  return payoutUrl.replace(/\/payout\/?$/i, "/health");
+  const trimmed = payoutUrl.trim();
+  if (/\/payout\/?$/i.test(trimmed)) {
+    return trimmed.replace(/\/payout\/?$/i, "/health");
+  }
+  try {
+    const parsed = new URL(trimmed);
+    parsed.pathname = "/health";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return `${trimmed.replace(/\/$/, "")}/health`;
+  }
+}
+
+export function describeTreasuryTarget(payoutUrl: string): { healthUrl: string; host: string } {
+  const healthUrl = treasuryPayoutHealthUrl(payoutUrl);
+  try {
+    const parsed = new URL(healthUrl);
+    const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+    return { healthUrl, host: `${parsed.hostname}:${port}` };
+  } catch {
+    return { healthUrl, host: payoutUrl };
+  }
+}
+
+function pingCandidates(healthUrl: string): string[] {
+  const urls = [healthUrl];
+  if (healthUrl.includes("://localhost")) {
+    urls.push(healthUrl.replace("://localhost", "://127.0.0.1"));
+  }
+  return [...new Set(urls)];
+}
+
+export async function inspectTreasuryPayout(payoutUrl: string): Promise<TreasuryPing> {
+  const { healthUrl, host } = describeTreasuryTarget(payoutUrl);
+  let error = `connection refused — nothing is listening on ${host}`;
+  for (const url of pingCandidates(healthUrl)) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
+      if (res.ok) {
+        return { reachable: true, healthUrl: url, host, error: null };
+      }
+      error = `HTTP ${res.status} from ${host}`;
+    } catch (e) {
+      const raw = (e as Error).message || "connection failed";
+      error = /fetch failed|ECONNREFUSED|ECONNRESET/i.test(raw)
+        ? `connection refused — nothing is listening on ${host}`
+        : /timeout|aborted/i.test(raw)
+          ? `timed out reaching ${host}`
+          : raw;
+    }
+  }
+  return { reachable: false, healthUrl, host, error };
 }
 
 export async function pingTreasuryPayout(payoutUrl: string): Promise<boolean> {
-  try {
-    const res = await fetch(treasuryPayoutHealthUrl(payoutUrl), {
-      signal: AbortSignal.timeout(2500),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  return (await inspectTreasuryPayout(payoutUrl)).reachable;
 }
 
 export function looksLikeXchAddress(value: string): boolean {

@@ -24,6 +24,7 @@ import {
   computeWithdrawPayout,
   looksLikeXchAddress,
   onChainSageWithdrawEnabled,
+  inspectTreasuryPayout,
   pingTreasuryPayout,
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
@@ -165,9 +166,13 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       withdraw: {
         payoutMode: payout.payoutMode,
         treasuryConfigured: Boolean(payout.treasuryPayoutUrl),
-        treasuryReachable: payout.treasuryPayoutUrl
-          ? await pingTreasuryPayout(payout.treasuryPayoutUrl)
-          : false,
+        ...(payout.treasuryPayoutUrl
+          ? await inspectTreasuryPayout(payout.treasuryPayoutUrl).then((ping) => ({
+              treasuryReachable: ping.reachable,
+              treasuryHost: ping.host,
+              treasuryError: ping.error,
+            }))
+          : { treasuryReachable: false, treasuryHost: null, treasuryError: null }),
         onChainPayoutEnabled: onChainSageWithdrawEnabled(),
         feeMojos: payout.withdrawFeeMojos.toString(),
       },
@@ -272,9 +277,13 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       dat,
       walletConnectConfigured: Boolean(process.env.WALLETCONNECT_PROJECT_ID?.trim()),
       withdrawTreasuryConfigured: Boolean(payout.treasuryPayoutUrl),
-      treasuryReachable: payout.treasuryPayoutUrl
-        ? await pingTreasuryPayout(payout.treasuryPayoutUrl)
-        : false,
+      ...(payout.treasuryPayoutUrl
+        ? await inspectTreasuryPayout(payout.treasuryPayoutUrl).then((ping) => ({
+            treasuryReachable: ping.reachable,
+            treasuryHost: ping.host,
+            treasuryError: ping.error,
+          }))
+        : { treasuryReachable: false, treasuryHost: null, treasuryError: null }),
       onChainPayoutEnabled: onChainSageWithdrawEnabled(),
       chiaGamingLobby: lobbyOk ? "up" : "down",
     };

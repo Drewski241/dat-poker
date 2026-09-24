@@ -244,6 +244,8 @@ export const api = {
         payoutMode: "net" | "full";
         treasuryConfigured: boolean;
         treasuryReachable?: boolean;
+        treasuryHost?: string | null;
+        treasuryError?: string | null;
         onChainPayoutEnabled?: boolean;
         feeMojos: string;
       };
