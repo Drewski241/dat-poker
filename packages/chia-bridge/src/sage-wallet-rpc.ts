@@ -84,11 +84,33 @@ export function describeSageLoginNeeded(fingerprintSet: boolean): string {
     );
   }
   return (
-    "Sage RPC certs are present, but no treasury key is imported (sageFingerprint is null). " +
-    "This is a dedicated host key, not the player Sage. Create or import it: " +
-    "sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh " +
-    "or sudo TREASURY_SAGE_MNEMONIC='word word …' bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh"
+    "Sage RPC certs are present, but no treasury spend key is imported (sageFingerprint is null). " +
+    "Put the dedicated treasury private key or mnemonic in /opt/dat-poker/.env as " +
+    "TREASURY_SAGE_PRIVATE_KEY or TREASURY_SAGE_MNEMONIC (not TREASURY_WALLET_KEY_PATH — that is only the RPC TLS cert), " +
+    "then: sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh"
   );
+}
+
+export function readSageTreasurySecretFromEnv(): string | undefined {
+  const privateKey = process.env.TREASURY_SAGE_PRIVATE_KEY?.trim();
+  if (privateKey) return privateKey;
+  const mnemonic = process.env.TREASURY_SAGE_MNEMONIC?.trim();
+  if (mnemonic) return mnemonic;
+  return undefined;
+}
+
+export function buildSageImportKeyRequest(key: string): {
+  name: string;
+  key: string;
+  save_secrets: boolean;
+  login: boolean;
+} {
+  return {
+    name: "treasury",
+    key,
+    save_secrets: true,
+    login: true,
+  };
 }
 
 export function readTreasuryWalletRpcConfigFromEnv(): TreasuryWalletRpcConfig {
@@ -205,4 +227,56 @@ export async function ensureSageTreasuryLoggedIn(config: TreasuryWalletRpcConfig
     return;
   }
   await treasuryWalletRpcRequest(config, "login", { fingerprint: config.sageFingerprint });
+}
+
+export async function importSageTreasuryKey(
+  config: TreasuryWalletRpcConfig,
+  key: string,
+): Promise<number> {
+  const imported = await treasuryWalletRpcRequest<{ fingerprint?: number }>(
+    config,
+    "import_key",
+    buildSageImportKeyRequest(key),
+  );
+  if (!imported.fingerprint) {
+    throw new Error("Sage import_key did not return a fingerprint");
+  }
+  return imported.fingerprint;
+}
+
+export async function ensureSageTreasuryReady(
+  config: TreasuryWalletRpcConfig,
+): Promise<TreasuryWalletRpcConfig> {
+  if (config.backend !== "sage") {
+    return config;
+  }
+  let fingerprint = config.sageFingerprint;
+  const secret = readSageTreasurySecretFromEnv();
+  if (secret) {
+    try {
+      fingerprint = await importSageTreasuryKey(config, secret);
+    } catch {
+      /* key may already be in Sage — fall through to get_keys / login */
+    }
+  }
+  if (!fingerprint) {
+    try {
+      const listed = await treasuryWalletRpcRequest<{ keys?: Array<{ fingerprint?: number }> }>(
+        config,
+        "get_keys",
+        {},
+      );
+      const fingerprints = (listed.keys ?? [])
+        .map((key) => key.fingerprint)
+        .filter((value): value is number => typeof value === "number");
+      if (fingerprints.length === 1) {
+        fingerprint = fingerprints[0];
+      }
+    } catch {
+      /* Sage RPC may still be starting */
+    }
+  }
+  const next = { ...config, sageFingerprint: fingerprint };
+  await ensureSageTreasuryLoggedIn(next);
+  return next;
 }

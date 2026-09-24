@@ -71,11 +71,10 @@ need Sage RPC on **this** AWS host:
 sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 # first time, copies the prebuilt sage-cli built for Amazon Linux 2023 (glibc 2.34):
 sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
-# then create or import a dedicated treasury key (not the player Sage):
-sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
-# or: sudo TREASURY_SAGE_MNEMONIC='word word …' bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
-# or, if the key is already on this Sage:
-sudo TREASURY_SAGE_FINGERPRINT=1234567890 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# Put the dedicated treasury spend key in /opt/dat-poker/.env (not wallet.key):
+#   TREASURY_SAGE_PRIVATE_KEY=...
+#   # or TREASURY_SAGE_MNEMONIC=word word …
+sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 ```
 
 `dat-poker-sage-rpc` stays enabled with the website (`:9257`, localhost only).
@@ -275,7 +274,9 @@ WALLETCONNECT_PROJECT_ID=...
 
 | Variable | Notes |
 |----------|--------|
-| `TREASURY_SAGE_FINGERPRINT` | Treasury key fingerprint — service calls `login` before `make_offer` |
+| `TREASURY_SAGE_PRIVATE_KEY` | Dedicated treasury spend key (hex/bech32). Imported into Sage RPC. Not `wallet.key`. |
+| `TREASURY_SAGE_MNEMONIC` | Same as the private key, if you have 12/24 words instead |
+| `TREASURY_SAGE_FINGERPRINT` | Set after import — service calls `login` before `make_offer` |
 | `TREASURY_OFFER_MODE=mock` | Dev only — fake offers, no on-chain DAT |
 | `DAT_WITHDRAW_PAYOUT_MODE=net` | Pay winnings only (virtual buy-in): stack − buy-in |
 | `TREASURY_WALLET_BACKEND=chia` | Legacy reference wallet only (not recommended) |

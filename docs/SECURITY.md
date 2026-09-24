@@ -69,7 +69,9 @@ does not move on-chain DAT.
    `127.0.0.1:4200` (`DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout`).
    Do not expose `:4200` or Sage RPC `:9257` on the public security group.
 2. Player Sage stays off this box. Treasury Sage on this host is a dedicated
-   fingerprint (`TREASURY_SAGE_FINGERPRINT`, optional `TREASURY_XCH_ADDRESS`).
+   spend key in `.env` (`TREASURY_SAGE_PRIVATE_KEY` or `TREASURY_SAGE_MNEMONIC`,
+   mode `640`). `TREASURY_WALLET_KEY_PATH` / `wallet.key` is only the RPC TLS
+   cert. Optional `TREASURY_SAGE_FINGERPRINT` / `TREASURY_XCH_ADDRESS`.
 3. Accounts file: `data/accounts.json` (or `DAT_ACCOUNTS_PATH`). Ledger:
    `data/ledger.json` (or `DAT_LEDGER_PATH`). Keep mode `600`. Do not delete
    these on redeploy.

@@ -5,6 +5,7 @@
 #   sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_FINGERPRINT=1234567890 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+#   sudo TREASURY_SAGE_PRIVATE_KEY=hex_or_secret bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_MNEMONIC='word word …' bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #
@@ -36,11 +37,36 @@ fi
 
 set_kv() {
   local key="$1" val="$2"
-  if grep -q "^${key}=" "$ENV_FILE"; then
-    sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
-  else
-    printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE"
-  fi
+  python3 -c '
+from pathlib import Path
+import sys
+path, key, val = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+lines = path.read_text().splitlines() if path.exists() else []
+out, found = [], False
+for line in lines:
+    if line.startswith(key + "="):
+        out.append(f"{key}={val}")
+        found = True
+    else:
+        out.append(line)
+if not found:
+    out.append(f"{key}={val}")
+path.write_text("\n".join(out) + ("\n" if out else ""))
+' "$ENV_FILE" "$key" "$val"
+}
+
+read_env_kv() {
+  python3 -c '
+from pathlib import Path
+import sys
+path, key = Path(sys.argv[1]), sys.argv[2]
+if not path.exists():
+    raise SystemExit(0)
+for line in path.read_text().splitlines():
+    if line.startswith(key + "="):
+        print(line.split("=", 1)[1], end="")
+        break
+' "$ENV_FILE" "$1"
 }
 
 find_certs() {
@@ -212,13 +238,20 @@ ensure_sage_rpc_running() {
   return 1
 }
 
-import_treasury_mnemonic() {
-  local mnemonic="$1"
+import_treasury_key() {
+  local secret="$1"
   local out fingerprint
-  echo "Importing dedicated treasury key (not the player Sage)…"
-  out="$(sage_rpc import_key "$(python3 -c 'import json,sys; print(json.dumps({"name":"treasury","key":sys.argv[1],"save_secrets":True,"login":True}))' "$mnemonic")")"
+  echo "Importing dedicated treasury spend key from env into Sage RPC…"
+  out="$(sage_rpc import_key "$(python3 -c 'import json,sys; print(json.dumps({"name":"treasury","key":sys.argv[1],"save_secrets":True,"login":True}))' "$secret")")"
   fingerprint="$(printf '%s\n' "$out" | json_field fingerprint)" || {
-    echo "import_key failed: $out" >&2
+    echo "import_key failed (do not paste the private key into chat). Is Sage RPC up?" >&2
+    printf '%s\n' "$out" | python3 -c 'import json,sys
+try:
+  data=json.loads(sys.stdin.read())
+  print(data.get("error") or data)
+except Exception:
+  print("Sage import_key returned a non-JSON error")
+' >&2
     return 1
   }
   TREASURY_SAGE_FINGERPRINT="$fingerprint"
@@ -237,7 +270,7 @@ create_treasury_key() {
   echo "WRITE THIS TREASURY MNEMONIC DOWN. It is not stored again:"
   echo "$mnemonic"
   echo
-  import_treasury_mnemonic "$mnemonic"
+  import_treasury_key "$mnemonic"
 }
 
 login_treasury_key() {
@@ -311,13 +344,21 @@ if find_sage_bin >/dev/null; then
 fi
 
 if [[ -z "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
-  TREASURY_SAGE_FINGERPRINT="$(grep '^TREASURY_SAGE_FINGERPRINT=' "$ENV_FILE" | tail -n1 | cut -d= -f2- || true)"
+  TREASURY_SAGE_FINGERPRINT="$(read_env_kv TREASURY_SAGE_FINGERPRINT)"
+fi
+if [[ -z "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
+  TREASURY_SAGE_PRIVATE_KEY="$(read_env_kv TREASURY_SAGE_PRIVATE_KEY)"
+fi
+if [[ -z "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
+  TREASURY_SAGE_MNEMONIC="$(read_env_kv TREASURY_SAGE_MNEMONIC)"
 fi
 
 if find_sage_bin >/dev/null; then
   ensure_sage_rpc_running || true
-  if [[ -n "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
-    import_treasury_mnemonic "$TREASURY_SAGE_MNEMONIC"
+  if [[ -n "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
+    import_treasury_key "$TREASURY_SAGE_PRIVATE_KEY"
+  elif [[ -n "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
+    import_treasury_key "$TREASURY_SAGE_MNEMONIC"
   elif [[ "${SAGE_CREATE_KEY:-}" == "1" ]]; then
     create_treasury_key
   fi
@@ -338,11 +379,12 @@ if find_sage_bin >/dev/null; then
       fi
     fi
   else
-    echo "No treasury key on this Sage yet. walletRpcReachable stays false until you import one."
-    echo "Create a dedicated key (write the mnemonic down):"
-    echo "  sudo SAGE_CREATE_KEY=1 bash $0"
-    echo "Or import an existing dedicated treasury mnemonic:"
-    echo "  sudo TREASURY_SAGE_MNEMONIC='word word …' bash $0"
+    echo "No treasury spend key on this Sage yet. walletRpcReachable stays false until you import one."
+    echo "Put the dedicated treasury private key or mnemonic in $ENV_FILE:"
+    echo "  TREASURY_SAGE_PRIVATE_KEY=your_hex_or_bech32_secret"
+    echo "  # or TREASURY_SAGE_MNEMONIC=word word …"
+    echo "Then: sudo bash $0"
+    echo "wallet.key in Sage ssl/ is only the RPC TLS cert — it is not this spend key."
   fi
 fi
 
@@ -357,6 +399,12 @@ set_kv DAT_TREASURY_PAYOUT_URL "http://127.0.0.1:4200/payout"
 set_kv DAT_ENABLE_ONCHAIN_WITHDRAW true
 if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
   set_kv TREASURY_SAGE_FINGERPRINT "$TREASURY_SAGE_FINGERPRINT"
+fi
+if [[ -n "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
+  set_kv TREASURY_SAGE_PRIVATE_KEY "$TREASURY_SAGE_PRIVATE_KEY"
+fi
+if [[ -n "${TREASURY_SAGE_MNEMONIC:-}" && -z "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
+  set_kv TREASURY_SAGE_MNEMONIC "$TREASURY_SAGE_MNEMONIC"
 fi
 if [[ -n "${TREASURY_XCH_ADDRESS:-}" ]]; then
   set_kv TREASURY_XCH_ADDRESS "$TREASURY_XCH_ADDRESS"
@@ -390,9 +438,8 @@ if printf '%s' "$HEALTH" | python3 -c 'import json,sys; d=json.load(sys.stdin); 
   echo "walletConfigured and walletRpcReachable are true. Refresh /play and withdraw again."
   echo "Keep DAT + fee XCH on the treasury address. Player Sage is a different key."
 else
-  echo "walletRpcReachable is still false. Sage has certs but no logged-in treasury key." >&2
-  echo "Create one (write the mnemonic down) or import a dedicated key:" >&2
-  echo "  sudo SAGE_CREATE_KEY=1 bash $0" >&2
-  echo "  sudo TREASURY_SAGE_MNEMONIC='word word …' bash $0" >&2
+  echo "walletRpcReachable is still false. Sage has TLS certs but no logged-in spend key." >&2
+  echo "Add TREASURY_SAGE_PRIVATE_KEY or TREASURY_SAGE_MNEMONIC to $ENV_FILE, then:" >&2
+  echo "  sudo bash $0" >&2
   exit 1
 fi

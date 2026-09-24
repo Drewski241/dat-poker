@@ -7,7 +7,7 @@ import { buildPayoutOffer, readTreasuryServiceConfig, type PayoutRequestBody } f
 import {
   describeMissingSageCerts,
   describeSageLoginNeeded,
-  ensureSageTreasuryLoggedIn,
+  ensureSageTreasuryReady,
   pingTreasuryWalletRpc,
 } from "@dat-poker/chia-bridge";
 
@@ -16,6 +16,13 @@ loadEnv({ path: resolve(__dirname, "../../../.env") });
 
 async function main(): Promise<void> {
   const config = readTreasuryServiceConfig();
+  if (config.offerMode === "rpc") {
+    try {
+      config.walletRpc = await ensureSageTreasuryReady(config.walletRpc);
+    } catch {
+      /* Sage may not have a key yet — /health reports reachable false */
+    }
+  }
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
 
@@ -24,9 +31,9 @@ async function main(): Promise<void> {
     let walletRpcReachable: boolean | null = null;
     if (config.offerMode === "rpc" && walletConfigured) {
       try {
-        await ensureSageTreasuryLoggedIn(config.walletRpc);
+        config.walletRpc = await ensureSageTreasuryReady(config.walletRpc);
       } catch {
-        /* login is best-effort on /health */
+        /* login / import is best-effort on /health */
       }
       walletRpcReachable = await pingTreasuryWalletRpc(config.walletRpc);
     }

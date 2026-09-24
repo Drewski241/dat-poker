@@ -405,12 +405,15 @@ sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 That copies the prebuilt `sage-cli` from this repo. Do not `cargo install`
 sage-cli on the 20 GB beta volume — the compile fills the disk.
 
-`walletRpcReachable: false` and `sageFingerprint: null` means Sage RPC is up
-but this host has no treasury key yet. Create or import a **dedicated** key
-(not the player Sage):
+`walletRpcReachable: false` and `sageFingerprint: null` means Sage RPC TLS
+certs are present (`wallet.key` is not the Chia spend key). Put the dedicated
+treasury private key in `/opt/dat-poker/.env`:
 
 ```bash
-sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# edit /opt/dat-poker/.env
+TREASURY_SAGE_PRIVATE_KEY=your_hex_or_bech32_secret
+# or TREASURY_SAGE_MNEMONIC=word word …
+sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 ```
 
 ## Website address
