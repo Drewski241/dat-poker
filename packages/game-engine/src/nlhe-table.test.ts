@@ -622,6 +622,53 @@ describe("NlheTableEngine", () => {
     expect(table.getPlayerStack("bob")).toBe(5_000_000_000_000n);
   });
 
+  it("marks a short call as all-in and records a runout from that street", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 50n,
+      bigBlindMojos: 100n,
+      minBuyInMojos: 200n,
+      maxBuyInMojos: 20_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("alice", 0, 400n);
+    table.seatPlayer("bob", 1, 10_000n);
+    table.startHand("hand-short-call");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+    const pre = table.getHandState()!;
+    const first = pre.players.find((p) => p.seatIndex === pre.actionSeat)!;
+    const second = pre.players.find((p) => p.playerId !== first.playerId)!;
+    table.applyAction(first.playerId, "call");
+    table.applyAction(second.playerId, "check");
+    const flop = table.getHandState()!;
+    expect(flop.street).toBe("flop");
+    const shover = flop.players.find((p) => p.playerId === "bob" && p.seatIndex === flop.actionSeat)
+      ?? flop.players.find((p) => p.seatIndex === flop.actionSeat)!;
+    if (shover.playerId !== "bob") {
+      table.applyAction(shover.playerId, "check");
+    }
+    const toShove = table.getHandState()!;
+    const actor = toShove.players.find((p) => p.seatIndex === toShove.actionSeat)!;
+    if (actor.playerId === "bob") {
+      table.applyAction("bob", "all-in");
+    } else {
+      table.applyAction(actor.playerId, "check");
+      table.applyAction("bob", "all-in");
+    }
+    const facing = table.getHandState();
+    if (facing) {
+      const caller = facing.players.find((p) => p.seatIndex === facing.actionSeat)!;
+      table.applyAction(caller.playerId, "call");
+    }
+    expect(table.getHandState()).toBeNull();
+    const result = table.getLastHandResult();
+    expect(result?.reason).toBe("showdown");
+    expect(result?.allInPlayerIds).toContain("alice");
+    expect(result?.runoutFromBoardLen).toBe(3);
+  });
+
   it("runs remaining streets from the flop when heads-up all-in betting closes", () => {
     const tiny: TableConfig = {
       ...config,

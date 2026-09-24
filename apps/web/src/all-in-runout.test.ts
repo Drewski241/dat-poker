@@ -11,6 +11,8 @@ import {
   runoutVisibleCount,
   shouldPlayAllInRunout,
   allInBettingClosed,
+  isCallAllIn,
+  shouldHoldTableForRunout,
 } from "./all-in-runout.js";
 
 describe("all-in runout", () => {
@@ -165,6 +167,25 @@ describe("all-in runout", () => {
     expect(runoutStreets(4)).toEqual(["allin", "river", "hands"]);
     expect(runoutShowHoleCards("turn", false)).toBe(false);
     expect(runoutShowHoleCards("turn", true)).toBe(true);
+  });
+
+  it("treats a short call as an all-in and holds the table for the runout", () => {
+    expect(
+      isCallAllIn({ stackMojos: "400", betThisStreetMojos: "100" }, "800"),
+    ).toBe(true);
+    expect(
+      isCallAllIn({ stackMojos: "2000", betThisStreetMojos: "100" }, "800"),
+    ).toBe(false);
+    const live = { boardLen: 3, allIn: true, viewerId: "you" };
+    const result = {
+      reason: "showdown" as const,
+      board: [1, 2, 3, 4, 5],
+      allInPlayerIds: ["you"],
+      runoutFromBoardLen: 3,
+    };
+    expect(shouldHoldTableForRunout(live, result, false, false)).toBe(true);
+    expect(shouldHoldTableForRunout(live, result, true, true)).toBe(true);
+    expect(shouldHoldTableForRunout(live, result, false, true)).toBe(false);
   });
 
   it("formats hand categories for the showdown strip", () => {

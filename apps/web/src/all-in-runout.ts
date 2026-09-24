@@ -57,6 +57,33 @@ export function runoutAllInPlayerIds(live: RunoutLive, result: RunoutResult | nu
   return [...ids];
 }
 
+export function isCallAllIn(
+  player: { stackMojos?: string; betThisStreetMojos?: string } | undefined,
+  currentBetMojos?: string,
+): boolean {
+  if (!player) return false;
+  try {
+    const stack = BigInt(player.stackMojos ?? "0");
+    const bet = BigInt(player.betThisStreetMojos ?? "0");
+    const current = BigInt(currentBetMojos ?? "0");
+    const toCall = current > bet ? current - bet : 0n;
+    return toCall > 0n && toCall >= stack && stack > 0n;
+  } catch {
+    return false;
+  }
+}
+
+export function shouldHoldTableForRunout(
+  live: RunoutLive,
+  result: RunoutResult | null,
+  runoutPlaying: boolean,
+  alreadyPlayed: boolean,
+): boolean {
+  if (runoutPlaying) return true;
+  if (alreadyPlayed) return false;
+  return shouldPlayAllInRunout(live, result);
+}
+
 export function shouldPlayAllInRunout(live: RunoutLive, result: RunoutResult | null): boolean {
   if (!result || result.reason !== "showdown") return false;
   const finalLen = result.board?.length ?? 0;

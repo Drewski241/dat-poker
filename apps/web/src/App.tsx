@@ -23,7 +23,7 @@ import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
 import { TableRoom } from "./components/TableRoom.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
-import { allInBettingClosed, shouldPlayAllInRunout } from "./all-in-runout.js";
+import { allInBettingClosed, isCallAllIn, shouldHoldTableForRunout, shouldPlayAllInRunout } from "./all-in-runout.js";
 import { sngShouldAutoDeal } from "./sng-auto-deal.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -165,6 +165,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     bettingClosed: false,
   });
   const runoutFromBoardLenRef = useRef<number | null>(null);
+  const holdTableForRunoutRef = useRef(false);
   const playedRunouts = useRef(new Set<string>());
   const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
   const [handHistoryOpen, setHandHistoryOpen] = useState(false);
@@ -275,7 +276,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (t.maxSeats) setTableMaxSeats(t.maxSeats);
     setSng(t.sng ?? null);
     if (t.sng?.status === "finished" && playerId && !t.seats.some((s) => s.playerId === playerId)) {
-      setTableFocusMode(false);
+      const hold = holdTableForRunoutRef.current || shouldHoldTableForRunout(
+        { ...liveHandMeta.current, viewerId: playerId },
+        t.lastHandResult ?? null,
+        runoutFromBoardLenRef.current != null,
+        Boolean(t.lastHandResult && playedRunouts.current.has(t.lastHandResult.handId)),
+      );
+      if (!hold) setTableFocusMode(false);
     }
     if (t.smallBlindMojos) {
       try {
@@ -379,6 +386,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
     if (!handResult || playedRunouts.current.has(handResult.handId)) return;
     if (!shouldPlayAllInRunout({ ...liveHandMeta.current, viewerId: playerId }, handResult)) return;
+    holdTableForRunoutRef.current = true;
     playedRunouts.current.add(handResult.handId);
     setRunoutFromBoardLen(
       typeof handResult.runoutFromBoardLen === "number"
@@ -873,7 +881,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const sendAction = (action: PlayerAction, amountMojos?: string) => {
     if (!tableId || !playerId) return;
-    if (action === "all-in" && hand) {
+    const me = hand?.players.find((p) => p.playerId === playerId);
+    const callIsAllIn = action === "call" && isCallAllIn(me, hand?.currentBetMojos);
+    if ((action === "all-in" || callIsAllIn) && hand) {
       const nextPlayers = hand.players.map((p) =>
         p.playerId === playerId ? { ...p, allIn: true, stackMojos: "0" } : p,
       );
@@ -1355,7 +1365,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             }
             sng={tableFormat === "sng" || tableFormat === "mtt" ? sng : null}
             runoutFromBoardLen={runoutFromBoardLen}
-            onRunoutFinished={() => setRunoutFromBoardLen(null)}
+            onRunoutFinished={() => {
+              holdTableForRunoutRef.current = false;
+              setRunoutFromBoardLen(null);
+            }}
             playthroughHandsPlayed={handsPlayed}
             playthroughHandsRequired={handsRequired}
             playthroughUnlockedMojos={unlockedMojos}
