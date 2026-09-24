@@ -652,6 +652,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
       setAccountMojos(result.balanceMojos);
       setRedeemedToday(true);
+      if (result.playthrough) setAccountPlaythrough(result.playthrough);
       await refreshAccount(playerId);
       setStatus(result.note);
     });
@@ -1255,7 +1256,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       <header>
         {onNavigate && <SiteNav page="play" onNavigate={onNavigate} />}
         <h1>DAT Poker{isBeta ? " beta" : ""}</h1>
-        <p className="tagline">Account · daily 5000 DAT · 6-max · Sage only to withdraw</p>
+        <p className="tagline">Account · daily 5000 DAT · play-through accumulates · Sage only to withdraw</p>
         {lobbyPresence != null && apiOk && (
           <p className="lobby-presence" role="status">
             {lobbyPresence.seatedHumans === 0
@@ -1338,11 +1339,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 {redeemedToday ? " · redeem available in 24h" : ""}
               </p>
             )}
-            {accountPlaythrough && accountPlaythrough.handsRequired > 0 && !tableId && (
+            {accountPlaythrough && accountPlaythrough.handsRequired > 0 && (
               <p className="muted small">
                 Play-through: {accountPlaythrough.handsPlayed}/{accountPlaythrough.handsRequired}{" "}
                 hands · {formatDatMojos(accountPlaythrough.unlockedMojos, datToken?.ticker)} unlocked
-                (saved across redeploys)
+                (1 redeemed DAT = 1 hand; stays until you withdraw to Sage)
               </p>
             )}
             <div className="row">

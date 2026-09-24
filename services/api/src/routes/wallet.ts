@@ -189,6 +189,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       balanceMojos: result.balance.toString(),
       ticker: dat.ticker,
       nextRedeemAt: nextRedeemAvailableAt(playerId, now),
+      playthrough: playthroughView(playerId),
       note: "In-game table credits (beta faucet). DAT CAT does not leave a treasury wallet on this host.",
     };
   });

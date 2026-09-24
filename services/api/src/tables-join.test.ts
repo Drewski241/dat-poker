@@ -219,7 +219,7 @@ describe("6-max join + daily redeem", () => {
     expect(
       joined.seats.find((s: { playerId: string }) => s.playerId === carol.session.playerId)
         .handsRequired,
-    ).toBe(1);
+    ).toBe(5000);
 
     const blocked = await app.inject({
       method: "POST",
@@ -559,7 +559,7 @@ describe("6-max join + daily redeem", () => {
       ).body,
     );
     const seat0 = joined.seats.find((s: { playerId: string }) => s.playerId === created.playerId);
-    expect(seat0.handsRequired).toBe(1000);
+    expect(seat0.handsRequired).toBe(5000);
     expect(seat0.handsPlayed).toBe(0);
     expect(seat0.unlockedMojos).toBe("0");
 
@@ -601,7 +601,7 @@ describe("6-max join + daily redeem", () => {
     );
     const seatedMid = mid.seats.find((s: { playerId: string }) => s.playerId === created.playerId);
     expect(seatedMid.handsPlayed).toBe(2);
-    expect(seatedMid.handsRequired).toBe(1000);
+    expect(seatedMid.handsRequired).toBe(5000);
     expect(seatedMid.unlockedMojos).toBe("2000");
 
     const { returned } = returnAllStacksToAccounts();
@@ -618,7 +618,7 @@ describe("6-max join + daily redeem", () => {
       ).body,
     );
     expect(acc.playthrough.handsPlayed).toBe(2);
-    expect(acc.playthrough.handsRequired).toBe(1000);
+    expect(acc.playthrough.handsRequired).toBe(5000);
     expect(acc.playthrough.unlockedMojos).toBe("2000");
 
     const rejoin = JSON.parse(
@@ -635,7 +635,7 @@ describe("6-max join + daily redeem", () => {
       (s: { playerId: string }) => s.playerId === created.playerId,
     );
     expect(seatedAgain.handsPlayed).toBe(2);
-    expect(seatedAgain.handsRequired).toBe(1000);
+    expect(seatedAgain.handsRequired).toBe(5000);
     expect(seatedAgain.unlockedMojos).toBe("2000");
 
     const withdrawn = await app.inject({

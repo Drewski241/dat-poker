@@ -148,7 +148,7 @@ describe("SNG play-through unlocks", () => {
     });
     expect(joined.statusCode).toBe(200);
     const body = JSON.parse(joined.body) as { tableId: string; playthrough?: { handsRequired: number } };
-    expect(body.playthrough?.handsRequired).toBe(1000);
+    expect(body.playthrough?.handsRequired).toBe(5000);
 
     const after = await playSngFolds(app, body.tableId, alice.session.playerId, alice.token, 2);
     const seated = after.seats.find((s) => s.playerId === alice.session.playerId);

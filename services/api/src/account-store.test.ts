@@ -12,6 +12,7 @@ import {
   reloadLedgerFromDiskForTests,
   resetAccountsForTests,
   setPlaythroughHands,
+  syncPlaythroughHeld,
   tryRedeemDaily,
 } from "./account-store.js";
 import { playthroughUnlockedMojos } from "@dat-poker/shared";
@@ -50,6 +51,27 @@ describe("account-store", () => {
     const second = tryRedeemDaily("xch1a", 5_000_000n, afterCooldown);
     expect(second.credited).toBe(true);
     expect(second.balance).toBe(10_000_000n);
+  });
+
+  it("locks 5000 hands on redeem and adds another 5000 the next day", () => {
+    const noon = new Date("2026-09-16T12:00:00.000Z");
+    tryRedeemDaily("xch1pt", 5_000_000n, noon);
+    expect(getPlaythrough("xch1pt")).toEqual({ poolMojos: 5_000_000n, handsPlayed: 0 });
+    expect(playthroughUnlockedMojos(0, 5_000_000n)).toBe(0n);
+
+    setPlaythroughHands("xch1pt", 12);
+    expect(getPlaythrough("xch1pt").handsPlayed).toBe(12);
+
+    const nextDay = new Date("2026-09-17T12:00:01.000Z");
+    const second = tryRedeemDaily("xch1pt", 5_000_000n, nextDay);
+    expect(second.credited).toBe(true);
+    expect(getPlaythrough("xch1pt")).toEqual({ poolMojos: 10_000_000n, handsPlayed: 12 });
+  });
+
+  it("does not shrink play-through when chips are lost", () => {
+    tryRedeemDaily("xch1hold", 5_000_000n);
+    syncPlaythroughHeld("xch1hold", 0n);
+    expect(getPlaythrough("xch1hold").poolMojos).toBe(5_000_000n);
   });
 
   it("reloads DAT balances and daily redeem from disk", () => {

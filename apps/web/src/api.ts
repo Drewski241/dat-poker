@@ -448,6 +448,7 @@ export const api = {
       balanceMojos: string;
       ticker: string;
       nextRedeemAt: string;
+      playthrough?: PlaythroughInfo;
       note: string;
     }>("/v1/wallet/redeem", {
       method: "POST",

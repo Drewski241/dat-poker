@@ -177,6 +177,8 @@ export function tryRedeemDaily(
   }
   lastRedeemAt.set(address, now.toISOString());
   const balance = creditAccount(address, amount);
+  const pt = getPlaythrough(address);
+  writePlaythrough(address, pt.poolMojos + amount, pt.handsPlayed);
   return { credited: true, balance, alreadyRedeemed: false };
 }
 
@@ -242,12 +244,12 @@ export function setPlaythroughHands(playerId: string, handsPlayed: number): void
   writePlaythrough(playerId, pt.poolMojos, handsPlayed);
 }
 
-/** Drop obligation that exceeds chips the player still holds (lost pots). */
-export function syncPlaythroughHeld(playerId: string, heldMojos: bigint): void {
+/**
+ * Play-through is locked when DAT is redeemed (and on fresh buy-in).
+ * Lost pots and table cash-outs must not shrink it — only a Sage withdraw does.
+ */
+export function syncPlaythroughHeld(_playerId: string, _heldMojos: bigint): void {
   loadLedger();
-  const pt = getPlaythrough(playerId);
-  if (pt.poolMojos <= heldMojos) return;
-  writePlaythrough(playerId, heldMojos < 0n ? 0n : heldMojos, pt.handsPlayed);
 }
 
 /** Spend unlocked DAT that left the in-game ledger (Sage withdraw). */

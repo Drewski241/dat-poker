@@ -67,8 +67,9 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
         <ul className="notes">
           <li>Share this site only with people you invited. It is not a worldwide launch.</li>
           <li>
-            Default buy-in is 1000 DAT. Each completed hand unlocks 1 DAT to withdraw.
-            Progress is kept across redeploys. Sage is optional until you withdraw DAT to a wallet.
+            Redeem 5000 DAT to start a 5000-hand play-through. The next day’s redeem
+            adds another 5000. Each completed hand unlocks 1 DAT. Progress stays
+            until you withdraw to Sage.
           </li>
           <li>
             Server restarts wipe open tables, but your account DAT (redeemed
