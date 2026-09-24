@@ -112,4 +112,15 @@ describe("SngTournament", () => {
   it("names house seats per index", () => {
     expect(houseSeatPlayerId(4)).toBe("dat-poker:house:4");
   });
+
+  it("has no house seats left when humans fill the table", () => {
+    const sng = SngTournament.create("sng-full", { maxSeats: 2, fillHouse: true, minHumansToStart: 1 });
+    sng.engine.seatPlayer("alice", 0, DAT_SNG_DEFAULTS.startingStackMojos);
+    sng.fillHouseSeats();
+    sng.claimHouseSeat("bob");
+    const snap = sng.snapshot();
+    expect(snap.humanCount).toBe(2);
+    expect(snap.houseSeatsAvailable).toBe(0);
+    expect(sng.engine.getActivePlayerCount()).toBe(2);
+  });
 });

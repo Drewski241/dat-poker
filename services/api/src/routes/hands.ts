@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
-import { generateServerSeed, type PlayerAction } from "@dat-poker/game-engine";
+import { generateServerSeed, publicHandView, type PlayerAction } from "@dat-poker/game-engine";
 import { getTableSession } from "./tables.js";
 import { finalizeIfHandOver, playHouseActors, seedHousePlayers } from "../table-session.js";
 
@@ -45,7 +45,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
     }
   });
 
-  app.post<{ Params: { tableId: string } }>(
+  app.post<{ Params: { tableId: string }; Body: { playerId?: string } }>(
     "/v1/tables/:tableId/hands/deal",
     async (req, reply) => {
       const session = getTableSession(req.params.tableId);
@@ -57,7 +57,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         finalizeIfHandOver(session);
         return {
           ok: true,
-          hand: session.engine.getHandState(),
+          hand: publicHandView(session.engine.getHandState(), req.body.playerId),
           lastHandResult: session.engine.getLastHandResult(),
           sng: session.sng?.snapshot() ?? null,
         };
@@ -69,7 +69,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
 
   app.post<{
     Params: { tableId: string };
-    Body: { playerId: string; action: PlayerAction; amountMojos?: string };
+    Body: { playerId: string; action: PlayerAction; amountMojos?: string; viewerId?: string };
   }>("/v1/tables/:tableId/hands/action", async (req, reply) => {
     const session = getTableSession(req.params.tableId);
     if (!session) return reply.status(404).send({ error: "Table not found" });
@@ -80,7 +80,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       finalizeIfHandOver(session);
       return {
         ok: true,
-        hand: session.engine.getHandState(),
+        hand: publicHandView(session.engine.getHandState(), req.body.viewerId ?? req.body.playerId),
         lastHandResult: session.engine.getLastHandResult(),
         sng: session.sng?.snapshot() ?? null,
       };

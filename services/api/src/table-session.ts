@@ -2,6 +2,7 @@ import type { TableConfig } from "@dat-poker/shared";
 import {
   generateServerSeed,
   playHouseUntilHuman,
+  publicHandView,
   type NlheTableEngine,
   type SngTournament,
 } from "@dat-poker/game-engine";
@@ -34,6 +35,20 @@ export function finalizeIfHandOver(session: TableSession): void {
   if (session.engine.isHandInProgress() || !session.sng) return;
   if (session.sng.getStatus() !== "running") return;
   session.sng.afterHand();
+}
+
+export function tablePayload(tableId: string, session: TableSession, viewerId?: string | null) {
+  return {
+    tableId,
+    format: session.engine.getConfig().format,
+    config: tableConfigPayload(session.engine.getConfig()),
+    players: session.engine.getActivePlayerCount(),
+    handInProgress: session.engine.isHandInProgress(),
+    seats: session.engine.getSeatedPlayers(),
+    hand: publicHandView(session.engine.getHandState(), viewerId),
+    lastHandResult: session.engine.getLastHandResult(),
+    sng: session.sng?.snapshot() ?? null,
+  };
 }
 
 export function tableConfigPayload(config: TableConfig) {

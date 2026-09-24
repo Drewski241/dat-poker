@@ -18,6 +18,7 @@ export interface HandPlayer {
   playerId: string;
   seatIndex: number;
   holeCards: { rank: string; suit: string }[];
+  holeCardCount?: number;
   stackMojos: string;
   betThisStreetMojos: string;
   folded: boolean;
@@ -127,6 +128,8 @@ export interface LobbyTable {
   players: number;
   humanCount: number;
   houseSeatsAvailable: number;
+  humanPlayerIds?: string[];
+  full?: boolean;
   buyInMojos: string;
   smallBlindMojos: string;
   bigBlindMojos: string;
@@ -205,7 +208,10 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
 
-  getTable: (tableId: string) => request<TableState>(`/v1/tables/${tableId}`),
+  getTable: (tableId: string, playerId?: string | null) => {
+    const q = playerId ? `?playerId=${encodeURIComponent(playerId)}` : "";
+    return request<TableState>(`/v1/tables/${tableId}${q}`);
+  },
 
   listTables: () => request<{ tables: LobbyTable[] }>("/v1/tables"),
 
@@ -262,7 +268,7 @@ export const api = {
       body: JSON.stringify({ playerId }),
     }),
 
-  deal: (tableId: string) =>
+  deal: (tableId: string, playerId?: string) =>
     request<{
       ok: boolean;
       hand: HandState | null;
@@ -270,10 +276,16 @@ export const api = {
       sng?: SngSnapshot | null;
     }>(`/v1/tables/${tableId}/hands/deal`, {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify({ playerId }),
     }),
 
-  action: (tableId: string, playerId: string, action: PlayerAction, amountMojos?: string) =>
+  action: (
+    tableId: string,
+    playerId: string,
+    action: PlayerAction,
+    amountMojos?: string,
+    viewerId?: string,
+  ) =>
     request<{
       ok: boolean;
       hand: HandState | null;
@@ -281,6 +293,6 @@ export const api = {
       sng?: SngSnapshot | null;
     }>(`/v1/tables/${tableId}/hands/action`, {
       method: "POST",
-      body: JSON.stringify({ playerId, action, amountMojos }),
+      body: JSON.stringify({ playerId, action, amountMojos, viewerId }),
     }),
 };

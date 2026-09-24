@@ -120,7 +120,7 @@ export function App() {
   }, []);
 
   const refreshTable = useCallback(async (id: string) => {
-    const t = await api.getTable(id);
+    const t = await api.getTable(id, playerId);
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
@@ -128,7 +128,7 @@ export function App() {
     if (t.config?.bigBlindMojos) setTableBigBlind(BigInt(t.config.bigBlindMojos));
     if (t.sng?.bigBlindMojos) setTableBigBlind(BigInt(t.sng.bigBlindMojos));
     if (t.lastHandResult) setHandResult(t.lastHandResult);
-  }, []);
+  }, [playerId]);
 
   useEffect(() => {
     if (!apiOk) return;
@@ -169,15 +169,15 @@ export function App() {
           const toCall = currentBet - houseBet;
           let response;
           if (toCall > 0n) {
-            response = await api.action(tableId, actor.playerId, "call");
+            response = await api.action(tableId, actor.playerId, "call", undefined, playerId ?? undefined);
           } else {
-            response = await api.action(tableId, actor.playerId, "check");
+            response = await api.action(tableId, actor.playerId, "check", undefined, playerId ?? undefined);
           }
           applyActionResponse(response);
           if (!response.hand) await refreshTable(tableId);
         } catch {
           try {
-            const response = await api.action(tableId, actor.playerId, "fold");
+            const response = await api.action(tableId, actor.playerId, "fold", undefined, playerId ?? undefined);
             applyActionResponse(response);
             if (!response.hand) await refreshTable(tableId);
           } catch {
@@ -383,7 +383,7 @@ export function App() {
       setHandResult(null);
       await api.startHand(tableId);
       await api.submitSeed(tableId, playerId);
-      const dealt = await api.deal(tableId);
+      const dealt = await api.deal(tableId, playerId);
       applyActionResponse(dealt);
       if (!dealt.hand) await refreshTable(tableId);
     });
@@ -392,7 +392,7 @@ export function App() {
   const sendAction = (action: PlayerAction, amountMojos?: string) => {
     if (!tableId || !playerId) return;
     run(action, async () => {
-      const response = await api.action(tableId, playerId, action, amountMojos);
+      const response = await api.action(tableId, playerId, action, amountMojos, playerId);
       applyActionResponse(response);
       if (!response.hand) await refreshTable(tableId);
     });
@@ -625,29 +625,53 @@ export function App() {
               {tableMode === "sng" ? "Buy in & start 9-max SNG" : "Buy in & join cash table"}{" "}
               ({formatDatMojos(datToken?.minBuyInMojos ?? DAT_SNG_DEFAULTS.buyInMojos.toString(), datToken?.ticker)})
             </button>
-            {tableMode === "sng" && lobbyTables.filter((row) => row.format === "sng" && row.houseSeatsAvailable > 0).length > 0 && (
+            {tableMode === "sng" && (
               <div className="lobby">
-                <h3>Open sit-n-gos</h3>
-                <p className="muted small">Take over a house bot. If a hand is running, wait for it to finish.</p>
-                <ul className="lobby-list">
-                  {lobbyTables
-                    .filter((row) => row.format === "sng" && row.houseSeatsAvailable > 0)
-                    .map((row) => (
-                      <li key={row.tableId}>
-                        <span>
-                          {row.humanCount} human{row.humanCount === 1 ? "" : "s"} · {row.houseSeatsAvailable} house
-                          {row.handInProgress ? " · hand in progress" : ""} · {row.sngStatus}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={busy || !playerId || !datToken?.buyInReady}
-                          onClick={() => void takeHouseSeat(row)}
-                        >
-                          Take house seat
-                        </button>
-                      </li>
-                    ))}
-                </ul>
+                <h3>Active sit-n-gos</h3>
+                <p className="muted small">
+                  Join a table by taking a house seat. If a sit-n-go is full of humans, start a new one.
+                </p>
+                {lobbyTables.filter((row) => row.format === "sng").length === 0 ? (
+                  <p className="muted">No active sit-n-gos yet.</p>
+                ) : (
+                  <ul className="lobby-list">
+                    {lobbyTables
+                      .filter((row) => row.format === "sng")
+                      .map((row) => {
+                        const full = Boolean(row.full) || row.houseSeatsAvailable === 0;
+                        return (
+                          <li key={row.tableId}>
+                            <span>
+                              {row.humanCount} human{row.humanCount === 1 ? "" : "s"}
+                              {row.humanPlayerIds?.length
+                                ? ` (${row.humanPlayerIds.map((id) => playerLabel(id, playerId)).join(", ")})`
+                                : ""}
+                              {" · "}
+                              {full ? "full" : `${row.houseSeatsAvailable} house`}
+                              {row.handInProgress ? " · hand in progress" : ""} · {row.sngStatus}
+                            </span>
+                            {full ? (
+                              <button
+                                type="button"
+                                disabled={busy || !playerId || !datToken?.buyInReady}
+                                onClick={() => void joinTable()}
+                              >
+                                Start new SNG
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={busy || !playerId || !datToken?.buyInReady || row.handInProgress}
+                                onClick={() => void takeHouseSeat(row)}
+                              >
+                                {row.handInProgress ? "Wait for hand" : "Take house seat"}
+                              </button>
+                            )}
+                          </li>
+                        );
+                      })}
+                  </ul>
+                )}
               </div>
             )}
           </>
@@ -756,9 +780,11 @@ export function App() {
                       {playerLabel(p.playerId, playerId)}
                       {hand.actionSeat === p.seatIndex ? " (to act)" : ""}
                     </strong>
-                    {p.playerId === playerId && p.holeCards.length > 0 && (
+                    {p.playerId === playerId && p.holeCards.length > 0 ? (
                       <span className="cards"> {p.holeCards.map(cardLabel).join(" ")}</span>
-                    )}
+                    ) : p.holeCardCount ? (
+                      <span className="muted"> · {p.holeCardCount} cards</span>
+                    ) : null}
                     {p.folded ? " — folded" : ""}
                     <span className="stack"> stack {formatDatMojos(p.stackMojos, datToken?.ticker)}</span>
                   </li>

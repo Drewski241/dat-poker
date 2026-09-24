@@ -10,7 +10,7 @@ import {
 } from "@dat-poker/shared";
 import { NlheTableEngine, SngTournament } from "@dat-poker/game-engine";
 import { recordBuyIn } from "../buy-in-store.js";
-import { tableConfigPayload, type TableSession } from "../table-session.js";
+import { tableConfigPayload, tablePayload, type TableSession } from "../table-session.js";
 import {
   type BuyInProof,
   readDatTokenConfig,
@@ -88,13 +88,16 @@ export function registerTableRoutes(app: FastifyInstance): void {
       .filter((row) => row.sngStatus !== "finished"),
   }));
 
-  app.get<{ Params: { tableId: string } }>("/v1/tables/:tableId", async (req, reply) => {
-    const session = sessions.get(req.params.tableId);
-    if (!session) {
-      return reply.status(404).send({ error: "Table not found" });
-    }
-    return serializeTable(req.params.tableId, session);
-  });
+  app.get<{ Params: { tableId: string }; Querystring: { playerId?: string } }>(
+    "/v1/tables/:tableId",
+    async (req, reply) => {
+      const session = sessions.get(req.params.tableId);
+      if (!session) {
+        return reply.status(404).send({ error: "Table not found" });
+      }
+      return tablePayload(req.params.tableId, session, req.query.playerId);
+    },
+  );
 
   app.post<{
     Params: { tableId: string };
@@ -128,7 +131,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     try {
       session.engine.seatPlayer(req.body.playerId, req.body.seatIndex, BigInt(req.body.buyInMojos));
       autoFillAndStart(session);
-      return { ok: true, ...serializeTable(req.params.tableId, session) };
+      return { ok: true, ...tablePayload(req.params.tableId, session, req.body.playerId) };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
     }
@@ -147,7 +150,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       if (session.sng) {
         const filled = session.sng.fillHouseSeats();
         autoFillAndStart(session);
-        return { ok: true, playerId: filled[0] ?? HOUSE_PLAYER_ID, filled, ...serializeTable(req.params.tableId, session) };
+        return { ok: true, playerId: filled[0] ?? HOUSE_PLAYER_ID, filled, ...tablePayload(req.params.tableId, session) };
       }
       session.engine.seatPlayer(HOUSE_PLAYER_ID, 1, buyInMojos);
       return { ok: true, playerId: HOUSE_PLAYER_ID };
@@ -199,7 +202,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
         replacedPlayerId: claimed.replacedPlayerId,
         seatIndex: claimed.seatIndex,
         stackMojos: claimed.stackMojos,
-        ...serializeTable(req.params.tableId, session),
+        ...tablePayload(req.params.tableId, session, req.body.playerId),
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -214,7 +217,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     try {
       const filled = session.sng.fillHouseSeats();
       autoFillAndStart(session);
-      return { ok: true, filled, ...serializeTable(req.params.tableId, session) };
+      return { ok: true, filled, ...tablePayload(req.params.tableId, session) };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
     }
@@ -302,6 +305,8 @@ function serializeLobbyTable(tableId: string, session: TableSession) {
     players: seats.length,
     humanCount: humans.length,
     houseSeatsAvailable: houseSeats.length,
+    humanPlayerIds: humans.map((p) => p.playerId),
+    full: houseSeats.length === 0 && seats.length >= (session.sng?.maxSeats ?? session.engine.getConfig().maxSeats),
     buyInMojos: (session.sng?.buyInMojos ?? session.engine.getConfig().minBuyInMojos).toString(),
     smallBlindMojos: session.engine.getConfig().smallBlindMojos.toString(),
     bigBlindMojos: session.engine.getConfig().bigBlindMojos.toString(),
@@ -317,20 +322,6 @@ function autoFillAndStart(session: TableSession): void {
   if (sng.canStart()) {
     sng.start();
   }
-}
-
-function serializeTable(tableId: string, session: TableSession) {
-  return {
-    tableId,
-    format: session.engine.getConfig().format,
-    config: tableConfigPayload(session.engine.getConfig()),
-    players: session.engine.getActivePlayerCount(),
-    handInProgress: session.engine.isHandInProgress(),
-    seats: session.engine.getSeatedPlayers(),
-    hand: session.engine.getHandState(),
-    lastHandResult: session.engine.getLastHandResult(),
-    sng: session.sng?.snapshot() ?? null,
-  };
 }
 
 export function getTableSession(tableId: string): TableSession | undefined {
