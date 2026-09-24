@@ -136,7 +136,7 @@ export function unseatInactivePlayers(
   nowMs: number,
 ): UnseatInactiveResult {
   const unseated: UnseatedInactivePlayer[] = [];
-  if (table.isHandInProgress()) {
+  if (table.isHandInProgress() || isSngTable(table)) {
     return { unseated };
   }
   const threshold = inactiveUnseatMs();
@@ -857,6 +857,9 @@ export function registerTableRoutes(app: FastifyInstance): void {
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
+    if (isSngTable(table)) {
+      return reply.status(400).send({ error: "Sit-n-go stacks cannot be rebought" });
+    }
     const playerId = session.playerId;
     if (!table.hasPlayer(playerId)) {
       return reply.status(403).send({ error: "You are not seated at this table" });
@@ -991,10 +994,22 @@ function autoFillAndStartSng(sng: SngTournament): void {
   }
 }
 
-function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): void {
+function settleSngPrizes(sng: SngTournament): void {
+  for (const row of sng.unpaidHumanPrizes()) {
+    creditAccount(row.playerId, row.prizeMojos);
+    sng.markPrizePaid(row.playerId);
+  }
+}
+
+export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): void {
   const sng = sngByTable.get(tableId);
-  if (!sng || table.isHandInProgress() || sng.getStatus() !== "running") return;
-  sng.afterHand();
+  if (!sng || table.isHandInProgress()) return;
+  if (sng.getStatus() === "running") {
+    sng.afterHand();
+  }
+  if (sng.getStatus() === "finished") {
+    settleSngPrizes(sng);
+  }
 }
 
 export function getSng(tableId: string): SngTournament | undefined {

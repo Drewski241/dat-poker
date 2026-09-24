@@ -257,6 +257,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (t.format) setTableFormat(t.format);
     if (t.maxSeats) setTableMaxSeats(t.maxSeats);
     setSng(t.sng ?? null);
+    if (t.sng?.status === "finished" && playerId && !t.seats.some((s) => s.playerId === playerId)) {
+      setTableFocusMode(false);
+    }
     if (t.smallBlindMojos) {
       try {
         const sb = BigInt(t.smallBlindMojos);
@@ -285,9 +288,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   }, [playerId]);
 
   const applyActionResponse = useCallback(
-    (response: { hand: HandState | null; lastHandResult: HandResult | null }) => {
+    (response: { hand: HandState | null; lastHandResult: HandResult | null; sng?: SngSnapshot | null }) => {
       setHand(response.hand);
       if (response.lastHandResult) setHandResult(response.lastHandResult);
+      if (response.sng !== undefined) setSng(response.sng);
     },
     [],
   );
@@ -318,6 +322,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     const timer = window.setInterval(load, 15_000);
     return () => window.clearInterval(timer);
   }, [apiOk, atTableRoom, tableId, handInProgress]);
+
+  useEffect(() => {
+    if (sng?.status !== "finished" || !playerId) return;
+    void refreshAccount(playerId);
+  }, [sng?.status, playerId, refreshAccount]);
 
   useEffect(() => {
     if (hand || handInProgress) {
@@ -791,12 +800,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     })();
   const canRebuyAtTable = Boolean(
     tableId &&
+      tableFormat !== "sng" &&
       playerId &&
       !hand &&
       !handInProgress &&
       datToken?.buyInReady &&
       tableStackIsZero,
   );
+  const mySngPlace = sng?.placements.find((row) => row.playerId === playerId);
+  const sngEliminated = Boolean(tableFormat === "sng" && playerId && !myTableSeat && (sng?.status === "finished" || mySngPlace));
   const handsPlayed = myTableSeat?.handsPlayed ?? accountPlaythrough?.handsPlayed ?? 0;
   const handsRequired = myTableSeat?.handsRequired ?? accountPlaythrough?.handsRequired ?? 0;
   const playthroughRemaining = myTableSeat?.playthroughRemaining ?? accountPlaythrough?.playthroughRemaining ?? 0;
@@ -808,6 +820,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       return 0n;
     }
   })();
+
+  const leaveTableView = () => {
+    setTableId(null);
+    setTableSeats([]);
+    setSng(null);
+    setHand(null);
+    setHandResult(null);
+    setTableFormat("cash");
+    setTableMaxSeats(6);
+    setTableFocusMode(true);
+    if (playerId) void refreshAccount(playerId);
+  };
 
   const cashOutToAccount = () => {
     if (!tableId || !playerId) return;
@@ -1108,6 +1132,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onSendAction={sendAction}
             onStartHand={startHandFlow}
             canRebuy={canRebuyAtTable}
+            canDeal={Boolean(myTableSeat) && sng?.status !== "finished"}
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => setTableFocusMode(false)}
@@ -1355,6 +1380,36 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 SNG {sng.status} · {sng.playersRemaining}/{sng.maxSeats} left · {sng.humanCount} human
                 {sng.humanCount === 1 ? "" : "s"} · {sng.houseSeatsAvailable} house
               </p>
+            )}
+            {sngEliminated && (
+              <div className="banner info">
+                You are out
+                {mySngPlace ? ` — place ${mySngPlace.place}` : ""}
+                {mySngPlace && BigInt(mySngPlace.prizeMojos) > 0n
+                  ? ` · ${formatDatMojos(mySngPlace.prizeMojos, datToken?.ticker)} paid to your account`
+                  : ". Buy-in stays in the prize pool."}
+              </div>
+            )}
+            {sng?.placements.length ? (
+              <ol className="placements">
+                {sng.placements
+                  .filter((row) => !isHousePlayerId(row.playerId))
+                  .map((row) => (
+                    <li key={row.playerId}>
+                      {row.place}. {playerLabel(row.playerId, playerId)}
+                      {BigInt(row.prizeMojos) > 0n
+                        ? ` — ${formatDatMojos(row.prizeMojos, datToken?.ticker)}`
+                        : " — out"}
+                    </li>
+                  ))}
+              </ol>
+            ) : null}
+            {(sngEliminated || sng?.status === "finished") && (
+              <div className="row">
+                <button type="button" disabled={busy} onClick={leaveTableView}>
+                  Back to lobby
+                </button>
+              </div>
             )}
             <ol className="seat-list">
               {Array.from({ length: tableMaxSeats }, (_, i) => {

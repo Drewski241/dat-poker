@@ -27,6 +27,7 @@ type Props = {
   onSendAction: (action: PlayerAction, amountMojos?: string) => void;
   onStartHand: () => void;
   canRebuy: boolean;
+  canDeal?: boolean;
   onRebuy: () => void;
   rebuyLabel: string;
   onOpenLobby: () => void;
@@ -62,6 +63,7 @@ export function TableRoom({
   onSendAction,
   onStartHand,
   canRebuy,
+  canDeal = true,
   onRebuy,
   rebuyLabel,
   onOpenLobby,
@@ -208,8 +210,9 @@ export function TableRoom({
             )}
             {tableStackMojos != null && BigInt(tableStackMojos) === 0n && !canRebuy && (
               <p className="banner info table-room-bust">
-                You have no chips at this table. Wait for the hand to finish, then buy in again, or open{" "}
-                <strong>Lobby</strong> to redeem DAT.
+                {canDeal
+                  ? "You have no chips at this table. Wait for the hand to finish, then buy in again, or open Lobby to redeem DAT."
+                  : "You are out of this sit-n-go. Open Lobby to return to your account."}
               </p>
             )}
             {canRebuy && (
@@ -222,7 +225,7 @@ export function TableRoom({
                 Buy in again ({rebuyLabel})
               </button>
             )}
-            {!canRebuy && (
+            {!canRebuy && canDeal && (
               <button
                 type="button"
                 className="table-room-deal-btn"

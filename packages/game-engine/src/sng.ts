@@ -62,6 +62,7 @@ export class SngTournament {
   private handNumber = 0;
   private levelIndex = 0;
   private placements: SngPlacement[] = [];
+  private paidPrizes = new Set<PlayerId>();
 
   constructor(engine: NlheTableEngine, options: SngOptions = {}) {
     this.engine = engine;
@@ -161,13 +162,24 @@ export class SngTournament {
     this.recordEliminations(busted);
 
     const remaining = this.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n);
-    if (remaining.length <= 1) {
-      this.finishByStacks(remaining);
-    } else if (this.humanCount() === 0) {
+    const humansLeft = remaining.filter((p) => !isHousePlayerId(p.playerId)).length;
+    if (remaining.length <= 1 || humansLeft === 0) {
       this.finishByStacks(remaining);
     }
 
     return this.snapshot();
+  }
+
+  /** Human prize rows that have not been credited to an account yet. */
+  unpaidHumanPrizes(): SngPlacement[] {
+    return this.placements.filter(
+      (row) =>
+        !isHousePlayerId(row.playerId) && row.prizeMojos > 0n && !this.paidPrizes.has(row.playerId),
+    );
+  }
+
+  markPrizePaid(playerId: PlayerId): void {
+    this.paidPrizes.add(playerId);
   }
 
   prizeFor(playerId: PlayerId): bigint | null {
@@ -234,6 +246,17 @@ export class SngTournament {
       this.pushPlacement(row.playerId, index + 1);
     });
     this.status = "finished";
+    this.clearRemainingSeats();
+  }
+
+  private clearRemainingSeats(): void {
+    for (const seated of [...this.engine.getSeatedPlayers()]) {
+      try {
+        this.engine.cashOutPlayer(seated.playerId);
+      } catch {
+        /* already standing */
+      }
+    }
   }
 
   private pushPlacement(playerId: PlayerId, place: number): void {

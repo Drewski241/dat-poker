@@ -109,6 +109,22 @@ describe("SngTournament", () => {
     expect(() => sng.claimHouseSeat("carol")).toThrow(/current hand/i);
   });
 
+  it("ends the tournament when the last human busts and clears house seats", () => {
+    const sng = SngTournament.create("sng-last-human", { maxSeats: 3, fillHouse: true, minHumansToStart: 1 });
+    sng.engine.seatPlayer("alice", 0, DAT_SNG_DEFAULTS.startingStackMojos);
+    sng.fillHouseSeats();
+    sng.start();
+    sng.engine.setPlayerStack("alice", 0n);
+    sng.afterHand();
+
+    const snap = sng.snapshot();
+    expect(snap.status).toBe("finished");
+    expect(snap.humanCount).toBe(0);
+    expect(sng.engine.getActivePlayerCount()).toBe(0);
+    expect(sng.engine.houseSeats()).toHaveLength(0);
+    expect(snap.placements.find((p) => p.playerId === "alice")?.place).toBe(3);
+  });
+
   it("names house seats per index", () => {
     expect(houseSeatPlayerId(4)).toBe("dat-poker:house:4");
   });

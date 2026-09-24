@@ -4,6 +4,7 @@ import { generateServerSeed, type NlheTableEngine, type PlayerAction } from "@da
 import { maybeRecordCompletedHand } from "../hand-history-store.js";
 import {
   ensureHouseFunded,
+  finalizeSngIfNeeded,
   getSng,
   getTableEngine,
   persistTablePlaythrough,
@@ -95,15 +96,14 @@ export function registerHandRoutes(app: FastifyInstance): void {
       playHouseIfDue(table);
       persistTablePlaythrough(table);
       maybeRecordCompletedHand(req.params.tableId, table);
-      if (sng && !table.isHandInProgress() && sng.getStatus() === "running") {
-        sng.afterHand();
-      }
+      finalizeSngIfNeeded(req.params.tableId, table);
       return {
         ok: true,
         handId,
         commitHash,
         hand: redactHandForViewer(table.getHandState(), session.playerId),
         lastHandResult: table.getLastHandResult(),
+        sng: getSng(req.params.tableId)?.snapshot() ?? null,
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -162,16 +162,14 @@ export function registerHandRoutes(app: FastifyInstance): void {
       persistTablePlaythrough(table);
       if (!table.isHandInProgress()) {
         unseatInactivePlayers(req.params.tableId, table, Date.now());
-        const sng = getSng(req.params.tableId);
-        if (sng && sng.getStatus() === "running") {
-          sng.afterHand();
-        }
       }
       maybeRecordCompletedHand(req.params.tableId, table);
+      finalizeSngIfNeeded(req.params.tableId, table);
       return {
         ok: true,
         hand: redactHandForViewer(table.getHandState(), session.playerId),
         lastHandResult: table.getLastHandResult(),
+        sng: getSng(req.params.tableId)?.snapshot() ?? null,
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
