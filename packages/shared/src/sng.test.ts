@@ -7,10 +7,9 @@ import {
   HOUSE_PLAYER_ID,
   sngHandsUntilNextLevel,
   sngNextLevelAtMs,
-  sngPayoutsForHumans,
   sngPrizes,
   sngTargetBlindLevel,
-  assignSngHumanPrizes,
+  assignSngItmPrizes,
 } from "./sng.js";
 
 describe("SNG helpers", () => {
@@ -52,26 +51,20 @@ describe("SNG helpers", () => {
     expect(sngHandsUntilNextLevel({ handNumber: 4, levelIndex: 0, handsPerLevel: 4, levelCount: 9 })).toBe(1);
   });
 
-  it("pays top three humans 50/30/20 and skips house seats", () => {
-    expect(sngPayoutsForHumans(1)).toEqual([{ place: 1, bps: 10_000 }]);
-    expect(sngPayoutsForHumans(2)).toEqual([
-      { place: 1, bps: 7_000 },
-      { place: 2, bps: 3_000 },
-    ]);
-    expect(sngPayoutsForHumans(3)).toEqual(defaultSngPayouts(9));
-    const awarded = assignSngHumanPrizes(
+  it("pays only humans who finish 1st–3rd overall; house ITM shares stay unpaid", () => {
+    const awarded = assignSngItmPrizes(
       [
         { playerId: "dat-poker:house:1", place: 1, prizeMojos: 0n },
-        { playerId: "carol", place: 2, prizeMojos: 0n },
-        { playerId: "dat-poker:house:2", place: 3, prizeMojos: 0n },
+        { playerId: "dat-poker:house:2", place: 2, prizeMojos: 0n },
+        { playerId: "carol", place: 3, prizeMojos: 0n },
         { playerId: "bob", place: 4, prizeMojos: 0n },
         { playerId: "alice", place: 9, prizeMojos: 0n },
       ],
       3_000_000n,
     );
-    expect(awarded.find((row) => row.playerId === "carol")?.prizeMojos).toBe(1_500_000n);
-    expect(awarded.find((row) => row.playerId === "bob")?.prizeMojos).toBe(900_000n);
-    expect(awarded.find((row) => row.playerId === "alice")?.prizeMojos).toBe(600_000n);
+    expect(awarded.find((row) => row.playerId === "carol")?.prizeMojos).toBe(600_000n);
+    expect(awarded.find((row) => row.playerId === "bob")?.prizeMojos).toBe(0n);
+    expect(awarded.find((row) => row.playerId === "alice")?.prizeMojos).toBe(0n);
     expect(awarded.filter((row) => row.playerId.startsWith("dat-poker:house")).every((row) => row.prizeMojos === 0n)).toBe(
       true,
     );

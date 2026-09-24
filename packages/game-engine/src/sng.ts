@@ -1,7 +1,7 @@
 import type { PlayerId, TableConfig } from "@dat-poker/shared";
 import {
   DAT_SNG_DEFAULTS,
-  assignSngHumanPrizes,
+  assignSngItmPrizes,
   defaultSngPayouts,
   houseSeatPlayerId,
   isHousePlayerId,
@@ -309,7 +309,7 @@ export class SngTournament {
   }
 
   private assignHumanPrizes(): void {
-    this.placements = assignSngHumanPrizes(this.placements, this.prizePoolMojos);
+    this.placements = assignSngItmPrizes(this.placements, this.prizePoolMojos, this.payoutShares);
   }
 
   private applyBlindLevel(): void {

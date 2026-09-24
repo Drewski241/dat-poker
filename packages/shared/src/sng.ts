@@ -66,33 +66,21 @@ export function defaultSngPayouts(maxSeats: number): SngPayoutShare[] {
   ];
 }
 
-/** Settlement table: house never takes a share; leftover places collapse to the remaining humans. */
-export function sngPayoutsForHumans(humanCount: number): SngPayoutShare[] {
-  if (humanCount <= 0) return [];
-  if (humanCount === 1) return [{ place: 1, bps: 10_000 }];
-  if (humanCount === 2) {
-    return [
-      { place: 1, bps: 7_000 },
-      { place: 2, bps: 3_000 },
-    ];
-  }
-  return defaultSngPayouts(9);
-}
-
-export function assignSngHumanPrizes(
+/**
+ * 1st / 2nd / 3rd of the whole table get 50/30/20.
+ * House seats in the money are not paid, and that share is not moved to a lower human.
+ */
+export function assignSngItmPrizes(
   placements: SngPlacement[],
   prizePoolMojos: bigint,
+  payouts: SngPayoutShare[] = defaultSngPayouts(9),
 ): SngPlacement[] {
-  const humans = placements
-    .filter((row) => !isHousePlayerId(row.playerId))
-    .sort((a, b) => a.place - b.place);
-  const prizes = sngPrizes(prizePoolMojos, sngPayoutsForHumans(humans.length));
+  const prizes = sngPrizes(prizePoolMojos, payouts);
   return placements.map((row) => {
     if (isHousePlayerId(row.playerId)) {
       return { ...row, prizeMojos: 0n };
     }
-    const rank = humans.findIndex((human) => human.playerId === row.playerId);
-    return { ...row, prizeMojos: rank >= 0 ? (prizes.get(rank + 1) ?? 0n) : 0n };
+    return { ...row, prizeMojos: prizes.get(row.place) ?? 0n };
   });
 }
 

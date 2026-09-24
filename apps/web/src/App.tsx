@@ -1326,7 +1326,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             </button>
             <p className="muted small">
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
-              Prize pool is each human buy-in. Top 3 humans are paid 50% / 30% / 20%.
+              Prize pool is each human buy-in. Finish 1st, 2nd, or 3rd overall to get paid
+              50% / 30% / 20%. House seats in the money are not paid.
             </p>
             <div className="lobby">
               <h3>Active sit-n-gos</h3>
@@ -1415,7 +1416,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 {mySngPlace ? ` — place ${mySngPlace.place}` : ""}
                 {mySngPlace && BigInt(mySngPlace.prizeMojos) > 0n
                   ? ` · ${formatDatMojos(mySngPlace.prizeMojos, datToken?.ticker)} paid to your account`
-                  : ". Top 3 humans are paid 50/30/20; this finish is outside the money."}
+                  : ". You have to finish 1st–3rd overall to get paid."}
               </div>
             )}
             {sng?.placements.length ? (

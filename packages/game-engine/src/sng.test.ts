@@ -42,10 +42,10 @@ describe("SngTournament", () => {
     const snap = sng.snapshot();
     expect(snap.status).toBe("finished");
     expect(snap.placements.find((p) => p.playerId === "alice")?.place).toBe(1);
-    expect(sng.prizeFor("alice")).toBe(DAT_SNG_DEFAULTS.buyInMojos);
+    expect(sng.prizeFor("alice")).toBe(500_000n);
     expect(snap.placements.filter((p) => isHousePlayerId(p.playerId)).every((p) => p.prizeMojos === 0n)).toBe(true);
     const paid = snap.placements.reduce((sum, row) => sum + row.prizeMojos, 0n);
-    expect(paid).toBe(sng.prizePoolMojos);
+    expect(paid).toBe(500_000n);
   });
 
   it("pays 50/30/20 to the top three humans in a 9-max", () => {
@@ -80,24 +80,32 @@ describe("SngTournament", () => {
     expect(paid).toBe(snap.prizePoolMojos);
   });
 
-  it("still pays the three humans when house bots take the top overall seats", () => {
+  it("pays only the human in third when house bots take first and second", () => {
     const sng = SngTournament.create("sng-house-lead");
     sng.engine.seatPlayer("alice", 0, DAT_SNG_DEFAULTS.startingStackMojos);
-    sng.engine.seatPlayer("bob", 1, DAT_SNG_DEFAULTS.startingStackMojos);
-    sng.engine.seatPlayer("carol", 2, DAT_SNG_DEFAULTS.startingStackMojos);
     sng.fillHouseSeats();
     sng.start();
+    const keepHouse = sng.engine
+      .getSeatedPlayers()
+      .filter((seat) => isHousePlayerId(seat.playerId))
+      .slice(0, 2)
+      .map((seat) => seat.playerId);
+    for (const seat of sng.engine.getSeatedPlayers()) {
+      if (seat.playerId === "alice" || keepHouse.includes(seat.playerId)) continue;
+      sng.engine.setPlayerStack(seat.playerId, 0n);
+    }
+    sng.afterHand();
+    expect(sng.getStatus()).toBe("running");
     sng.engine.setPlayerStack("alice", 0n);
-    sng.engine.setPlayerStack("bob", 0n);
-    sng.engine.setPlayerStack("carol", 0n);
     sng.afterHand();
 
     const snap = sng.snapshot();
     expect(snap.status).toBe("finished");
-    const humans = snap.placements.filter((p) => !isHousePlayerId(p.playerId)).sort((a, b) => a.place - b.place);
-    expect(humans).toHaveLength(3);
-    expect(humans.map((row) => row.prizeMojos)).toEqual([1_500_000n, 900_000n, 600_000n]);
+    expect(snap.placements.find((p) => p.playerId === "alice")).toMatchObject({ place: 3, prizeMojos: 200_000n });
     expect(snap.placements.filter((p) => isHousePlayerId(p.playerId)).every((p) => p.prizeMojos === 0n)).toBe(true);
+    expect(sng.unpaidHumanPrizes()).toEqual([
+      expect.objectContaining({ playerId: "alice", place: 3, prizeMojos: 200_000n }),
+    ]);
   });
 
   it("plays house actors until the human or the hand ends", () => {
@@ -178,7 +186,7 @@ describe("SngTournament", () => {
     expect(sng.engine.getActivePlayerCount()).toBe(0);
     expect(sng.engine.houseSeats()).toHaveLength(0);
     expect(snap.placements.find((p) => p.playerId === "alice")?.place).toBe(3);
-    expect(sng.prizeFor("alice")).toBe(DAT_SNG_DEFAULTS.buyInMojos);
+    expect(sng.prizeFor("alice")).toBe(200_000n);
   });
 
   it("raises blinds on the clock between hands and waits if a hand is live", () => {
