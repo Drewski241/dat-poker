@@ -84,6 +84,9 @@ describe("9-max SNG blind clock", () => {
         levelDurationMs: number;
         startedAtMs: number;
         nextLevelAtMs: number;
+        buyInMojos: string;
+        prizePoolMojos: string;
+        payouts: { place: number; bps: number; prizeMojos: string }[];
       };
     };
     expect(body.format).toBe("sng");
@@ -96,6 +99,13 @@ describe("9-max SNG blind clock", () => {
     expect(body.sng.nextBigBlindMojos).toBe("30000");
     expect(body.sng.levelDurationMs).toBe(180_000);
     expect(body.sng.nextLevelAtMs).toBe(body.sng.startedAtMs + 180_000);
+    expect(body.sng.buyInMojos).toBe("1000000");
+    expect(body.sng.prizePoolMojos).toBe("1000000");
+    expect(body.sng.payouts).toEqual([
+      { place: 1, bps: 5000, prizeMojos: "500000" },
+      { place: 2, bps: 3000, prizeMojos: "300000" },
+      { place: 3, bps: 2000, prizeMojos: "200000" },
+    ]);
 
     const sng = getSng(body.tableId);
     expect(sng).toBeDefined();

@@ -1321,8 +1321,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
               onClick={() => void joinSng()}
             >
-              Buy in &amp; start 9-max SNG
+              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
+              9-max SNG
             </button>
+            <p className="muted small">
+              Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
+              Prize pool is each human buy-in. Top 3 humans are paid 50% / 30% / 20%.
+            </p>
             <div className="lobby">
               <h3>Active sit-n-gos</h3>
               <p className="muted small">
@@ -1347,6 +1352,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                               : ""}
                             {" · "}
                             {full ? "full" : `${house} house`}
+                            {row.sng?.buyInMojos
+                              ? ` · buy-in ${formatDatMojos(row.sng.buyInMojos, datToken?.ticker)}`
+                              : ""}
+                            {row.sng?.prizePoolMojos
+                              ? ` · pool ${formatDatMojos(row.sng.prizePoolMojos, datToken?.ticker)}`
+                              : ""}
                             {row.sng?.smallBlindMojos && row.sng?.bigBlindMojos
                               ? ` · blinds ${formatDatAmount(row.sng.smallBlindMojos)}/${formatDatAmount(row.sng.bigBlindMojos)}`
                               : ""}
@@ -1381,7 +1392,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <p className="mono">Table ID: {tableId}</p>
             {sng && (
               <p>
-                SNG {sng.status} · blinds {formatDatAmount(sng.smallBlindMojos)}/{formatDatAmount(sng.bigBlindMojos)}
+                SNG {sng.status} · buy-in {formatDatMojos(sng.buyInMojos, datToken?.ticker)} · pool{" "}
+                {formatDatMojos(sng.prizePoolMojos, datToken?.ticker)} · pays 1st–3rd 50/30/20
+                {sng.payouts?.length
+                  ? ` (${sng.payouts
+                      .map((row) => `${row.place}: ${formatDatMojos(row.prizeMojos, datToken?.ticker)}`)
+                      .join(" · ")})`
+                  : ""}
+                {" · "}
+                blinds {formatDatAmount(sng.smallBlindMojos)}/{formatDatAmount(sng.bigBlindMojos)}
                 {sng.nextSmallBlindMojos && sng.nextBigBlindMojos
                   ? ` · next ${formatDatAmount(sng.nextSmallBlindMojos)}/${formatDatAmount(sng.nextBigBlindMojos)}`
                   : ""}
@@ -1396,7 +1415,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 {mySngPlace ? ` — place ${mySngPlace.place}` : ""}
                 {mySngPlace && BigInt(mySngPlace.prizeMojos) > 0n
                   ? ` · ${formatDatMojos(mySngPlace.prizeMojos, datToken?.ticker)} paid to your account`
-                  : ". Buy-in stays in the prize pool."}
+                  : ". Top 3 humans are paid 50/30/20; this finish is outside the money."}
               </div>
             )}
             {sng?.placements.length ? (

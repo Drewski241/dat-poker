@@ -1430,6 +1430,13 @@ html.play-table-screen body {
   font-weight: 600;
 }
 
+.table-room-sng-payouts {
+  margin: 0.15rem 0 0;
+  font-size: clamp(0.7rem, 2.8vmin, 0.85rem);
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .table-room-header-actions {
   display: flex;
   flex-shrink: 0;

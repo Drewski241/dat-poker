@@ -142,6 +142,17 @@ export function TableRoom({
             Blinds {formatDatAmount(smallBlindMojos)}/{formatDatAmount(bigBlindMojos)}
             {sng ? ` · ${sngBlindClockLine(sng, nowMs)}` : ""}
           </p>
+          {sng && (
+            <p className="table-room-sng-payouts">
+              Buy-in {formatDatMojos(sng.buyInMojos, datToken?.ticker)} · pool{" "}
+              {formatDatMojos(sng.prizePoolMojos, datToken?.ticker)} · pays 1st–3rd 50/30/20
+              {sng.payouts?.length
+                ? ` (${sng.payouts
+                    .map((row) => `${row.place} ${formatDatMojos(row.prizeMojos, datToken?.ticker)}`)
+                    .join(" · ")})`
+                : ""}
+            </p>
+          )}
         </div>
         <div className="table-room-header-actions">
           <button

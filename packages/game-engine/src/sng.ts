@@ -1,6 +1,7 @@
 import type { PlayerId, TableConfig } from "@dat-poker/shared";
 import {
   DAT_SNG_DEFAULTS,
+  assignSngHumanPrizes,
   defaultSngPayouts,
   houseSeatPlayerId,
   isHousePlayerId,
@@ -38,6 +39,7 @@ export interface SngSnapshot {
   buyInMojos: bigint;
   startingStackMojos: bigint;
   prizePoolMojos: bigint;
+  payouts: Array<SngPayoutShare & { prizeMojos: bigint }>;
   handNumber: number;
   levelIndex: number;
   levelCount: number;
@@ -65,10 +67,9 @@ export class SngTournament {
   readonly maxSeats: number;
   readonly buyInMojos: bigint;
   readonly startingStackMojos: bigint;
-  readonly prizePoolMojos: bigint;
   private readonly blindLevels: SngBlindLevel[];
   private readonly payoutShares: SngPayoutShare[];
-  private readonly prizesByPlace: Map<number, bigint>;
+  private readonly humanEntrants = new Set<PlayerId>();
   private readonly handsPerLevel: number;
   private readonly levelDurationMs: number;
   private status: SngStatus = "registering";
@@ -90,8 +91,6 @@ export class SngTournament {
     this.levelDurationMs = options.levelDurationMs ?? DAT_SNG_DEFAULTS.levelDurationMs;
     this.blindLevels = options.blindLevels ?? [...DAT_SNG_DEFAULTS.blindLevels];
     this.payoutShares = options.payouts ?? defaultSngPayouts(this.maxSeats);
-    this.prizePoolMojos = this.buyInMojos * BigInt(this.maxSeats);
-    this.prizesByPlace = sngPrizes(this.prizePoolMojos, this.payoutShares);
     const level = this.blindLevels[0];
     this.engine.setBlinds(level.smallBlindMojos, level.bigBlindMojos);
   }
@@ -121,7 +120,14 @@ export class SngTournament {
     if (this.status === "finished") {
       throw new Error("SNG is finished");
     }
-    return this.engine.claimHouseSeat(playerId, seatIndex);
+    const claimed = this.engine.claimHouseSeat(playerId, seatIndex);
+    this.noteHumanEntrant(playerId);
+    return claimed;
+  }
+
+  get prizePoolMojos(): bigint {
+    this.syncHumanEntrants();
+    return this.buyInMojos * BigInt(this.humanEntrants.size);
   }
 
   fillHouseSeats(): string[] {
@@ -152,6 +158,7 @@ export class SngTournament {
     }
     this.status = "running";
     this.startedAtMs = nowMs;
+    this.syncHumanEntrants();
     this.applyBlindLevel();
   }
 
@@ -189,6 +196,9 @@ export class SngTournament {
     const humansLeft = remaining.filter((p) => !isHousePlayerId(p.playerId)).length;
     if (remaining.length <= 1 || humansLeft === 0) {
       this.finishByStacks(remaining);
+    }
+    if (this.status === "finished") {
+      this.assignHumanPrizes();
     }
 
     return this.syncBlindClock();
@@ -236,6 +246,7 @@ export class SngTournament {
       buyInMojos: this.buyInMojos,
       startingStackMojos: this.startingStackMojos,
       prizePoolMojos: this.prizePoolMojos,
+      payouts: this.payoutPreview(),
       handNumber: this.handNumber,
       levelIndex: this.levelIndex,
       levelCount: this.blindLevels.length,
@@ -275,6 +286,30 @@ export class SngTournament {
       handsPerLevel: this.handsPerLevel,
       levelCount: this.blindLevels.length,
     });
+  }
+
+  private syncHumanEntrants(): void {
+    for (const seated of this.engine.getSeatedPlayers()) {
+      this.noteHumanEntrant(seated.playerId);
+    }
+  }
+
+  private noteHumanEntrant(playerId: PlayerId): void {
+    if (!isHousePlayerId(playerId)) {
+      this.humanEntrants.add(playerId);
+    }
+  }
+
+  private payoutPreview(): Array<SngPayoutShare & { prizeMojos: bigint }> {
+    const prizes = sngPrizes(this.prizePoolMojos, this.payoutShares);
+    return this.payoutShares.map((row) => ({
+      ...row,
+      prizeMojos: prizes.get(row.place) ?? 0n,
+    }));
+  }
+
+  private assignHumanPrizes(): void {
+    this.placements = assignSngHumanPrizes(this.placements, this.prizePoolMojos);
   }
 
   private applyBlindLevel(): void {
@@ -321,7 +356,7 @@ export class SngTournament {
     this.placements.push({
       playerId,
       place,
-      prizeMojos: this.prizesByPlace.get(place) ?? 0n,
+      prizeMojos: 0n,
     });
     this.placements.sort((a, b) => a.place - b.place);
   }

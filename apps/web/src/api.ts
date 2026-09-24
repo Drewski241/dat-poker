@@ -180,6 +180,7 @@ export interface SngSnapshot {
   maxSeats: number;
   buyInMojos: string;
   prizePoolMojos: string;
+  payouts?: { place: number; bps: number; prizeMojos: string }[];
   handNumber: number;
   smallBlindMojos: string;
   bigBlindMojos: string;
