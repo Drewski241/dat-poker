@@ -28,6 +28,16 @@ else
   bad "user-data.sh API health retry"
 fi
 
+if grep -q 'wait_for_treasury()' "$DIR/user-data.sh" \
+  && grep -q 'write_treasury_unit()' "$DIR/user-data.sh" \
+  && grep -q 'systemctl enable --now dat-poker-treasury' "$DIR/user-data.sh" \
+  && grep -q 'DAT_TREASURY_PAYOUT_URL' "$DIR/user-data.sh" \
+  && grep -q '@dat-poker/treasury-payout' "$DIR/user-data.sh"; then
+  ok "user-data.sh enables always-on treasury with the website"
+else
+  bad "user-data.sh always-on treasury"
+fi
+
 python3 - <<'PY' && ok "wait_for_api succeeds after a delayed /health listener" || bad "wait_for_api delayed listener"
 import http.server
 import os
@@ -91,6 +101,94 @@ if grep -q 'seq 1 30' "$DIR/redeploy.sh" \
 else
   bad "redeploy.sh API health retry"
 fi
+
+if grep -q 'systemctl enable dat-poker-treasury' "$DIR/redeploy.sh" \
+  && grep -q 'systemctl restart dat-poker-treasury' "$DIR/redeploy.sh" \
+  && grep -q 'http://127.0.0.1:4200/health' "$DIR/redeploy.sh" \
+  && grep -q 'DAT_TREASURY_PAYOUT_URL' "$DIR/redeploy.sh" \
+  && ! grep -q 'is-enabled --quiet dat-poker-treasury' "$DIR/redeploy.sh"; then
+  ok "redeploy.sh always enables and waits for treasury :4200/health"
+else
+  bad "redeploy.sh always-on treasury"
+fi
+
+if grep -q 'Restart=always' "$DIR/dat-poker-treasury.service" \
+  && grep -q 'ExecStart=/usr/local/bin/node /opt/dat-poker/services/treasury-payout/dist/index.js' "$DIR/dat-poker-treasury.service" \
+  && grep -q 'WantedBy=multi-user.target' "$DIR/dat-poker-treasury.service"; then
+  ok "dat-poker-treasury.service restarts always and starts on boot"
+else
+  bad "dat-poker-treasury.service always-on"
+fi
+
+if grep -q 'DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout' "$ROOT/.env.beta.example" \
+  && grep -q 'DAT_ENABLE_ONCHAIN_WITHDRAW=true' "$ROOT/.env.beta.example"; then
+  ok ".env.beta.example points the API at local treasury"
+else
+  bad ".env.beta.example treasury URL"
+fi
+
+if grep -q 'dat-poker-treasury' "$ROOT/docs/BETA.md" \
+  && grep -q '127.0.0.1:4200' "$ROOT/docs/BETA.md" \
+  && grep -q 'always-on treasury' "$ROOT/docs/BETA.md"; then
+  ok "docs/BETA.md covers always-on AWS treasury"
+else
+  bad "docs/BETA.md always-on treasury"
+fi
+
+python3 - <<'PY' && ok "wait_for_treasury succeeds after a delayed /health listener" || bad "wait_for_treasury delayed listener"
+import http.server
+import os
+import socket
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+port = sock.getsockname()[1]
+sock.close()
+body = b'{"status":"ok","offerMode":"mock","walletRpcReachable":false}'
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_error(404)
+    def log_message(self, *args):
+        pass
+
+httpd_holder = {}
+
+def start():
+    time.sleep(2)
+    httpd_holder["s"] = http.server.HTTPServer(("127.0.0.1", port), Handler)
+    httpd_holder["s"].serve_forever()
+
+thread = threading.Thread(target=start, daemon=True)
+thread.start()
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "user-data.sh").read_text()
+fn_start = script.index("wait_for_treasury() {")
+fn_end = script.index("\n}", fn_start) + 2
+fn = script[fn_start:fn_end]
+proc = subprocess.run(
+    ["bash", "-c", fn + f'\nwait_for_treasury http://127.0.0.1:{port}/health 10\n'],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+if "s" in httpd_holder:
+    httpd_holder["s"].shutdown()
+assert proc.returncode == 0, proc.stderr + proc.stdout
+assert "Treasury healthy after" in proc.stdout
+assert "after 1s" not in proc.stdout
+print(proc.stdout.strip())
+PY
 
 if grep -q 'dat-poker-bootstrap.web-only' "$ROOT/docs/BETA.md" \
   && grep -q 'systemctl status dat-poker-api' "$ROOT/docs/BETA.md"; then

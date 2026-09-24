@@ -17,16 +17,17 @@ the Apache tutorial.
 | `httpd-dat-poker.conf` | Optional Apache reverse proxy after the tutorial page works |
 | `console-user-data.sh` | **Paste this** into Launch instance → User data |
 | `user-data.sh` | Full bootstrap (pulled by the paste snippet) |
-| `redeploy.sh` | `git fetch` + rebuild + restart API on an existing beta host |
+| `redeploy.sh` | `git fetch` + rebuild + restart API and always-on treasury on an existing beta host |
 | `enable-https.sh` | Caddy + Let’s Encrypt (`datspiritpoker.com` or `sslip.io`) so Sage can pair. Writes quoted `DAT_POKER_SITE` in `/etc/caddy/caddy.env` so `host, www.host` is not parsed as a command |
 | `enable-sage.sh` | Write WalletConnect project ID + DAT asset id, restart API |
-| `enable-onchain-withdraw.sh` | Point API at treasury `/payout` so testers can import a DAT offer in player Sage |
-| `start-treasury.sh` | Build/start `dat-poker-treasury` on this host (`127.0.0.1:4200`) and point the API at it |
+| `enable-onchain-withdraw.sh` | Persist `DAT_TREASURY_PAYOUT_URL` (defaults to `127.0.0.1:4200`) so testers can import a DAT offer in player Sage |
+| `start-treasury.sh` | Repair path to start `dat-poker-treasury` (`127.0.0.1:4200`); bootstrap and redeploy already enable it |
 | `Caddyfile` / `caddy.service` | TLS reverse proxy in front of the API + static UI |
 | `landing.html` | Static DAT POKER page used by the nginx kit **before** the SPA build is copied |
 | `public-url.sh` | Print the HTTPS Home / Play URLs to share with testers |
 | `nginx.conf` | Port 80 → static UI + `/health` and `/v1` to the API |
 | `dat-poker-api.service` | systemd unit for the REST API |
+| `dat-poker-treasury.service` | systemd unit for treasury payout (`Restart=always`, boot-enabled with the website) |
 | `cloudformation.yaml` | Optional first-server stack |
 | `beta-cloudformation.yaml` | Beta stack with Elastic IP (`CAPABILITY_IAM`) |
 | `validate.sh` | Local checks (no AWS keys) |

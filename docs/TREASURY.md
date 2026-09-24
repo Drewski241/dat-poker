@@ -33,13 +33,43 @@ A payout to the treasury Sage address cannot show as a new deposit (it is a self
 
 WalletConnect `takeOffer` stays disabled. When treasury is reachable, withdraw returns an `offer1…` string. The player imports it in **their** Sage (Offers → Import) and accepts.
 
-**Treasury Sage and player Sage are always on different machines in production.** The player wallet is on the user's phone or PC; the treasury wallet stays on an operator-controlled host. They never share a device.
+**Player Sage stays on the user's phone or PC.** Treasury Sage is operator-controlled and never shares that device.
+
+---
+
+## AWS website host (beta)
+
+On the public beta EC2 box, treasury HTTP is part of the website:
+
+| Unit | Bind | Lifetime |
+|------|------|----------|
+| `dat-poker-api` | `:4000` (proxied by nginx/Caddy) | Enabled at boot, restarted on every redeploy |
+| `dat-poker-treasury` | `127.0.0.1:4200` | Same — enabled at boot, `Restart=always`, restarted on every redeploy |
+
+`user-data.sh` and `redeploy.sh` persist:
+
+```env
+DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout
+DAT_ENABLE_ONCHAIN_WITHDRAW=true
+TREASURY_HOST=127.0.0.1
+TREASURY_PORT=4200
+```
+
+Do not expose `:4200` or Sage RPC `:9257` in the security group. After redeploy:
+
+```bash
+sudo DAT_POKER_REPO_REF=cursor/sng-sage-unlock-3440 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+curl -sS http://127.0.0.1:4200/health
+curl -sS http://127.0.0.1:4000/v1/wallet/status
+```
+
+Treasury HTTP can be healthy while `walletRpcReachable` is false. Real offers need Sage RPC on **this** AWS host (`TREASURY_SAGE_FINGERPRINT`, RPC `:9257`). `start-treasury.sh` is only a repair path if the unit is down.
 
 ---
 
 ## Treasury host quick start
 
-Use a **dedicated machine** (or VM) that players never access directly.
+Use the AWS website host above for beta. A dedicated machine is optional if you later split treasury off the game box.
 
 1. **Clone the repo** on the treasury host and install deps:
    ```bash
@@ -110,7 +140,7 @@ Use a **dedicated machine** (or VM) that players never access directly.
 | Machine | Runs | Must NOT |
 |---------|------|----------|
 | **Player phone/PC** | Sage (player key), browser → your web app | Hold treasury DAT |
-| **Game host** | `dev:api`, `dev:web` (or deployed equivalents) | Expose Sage RPC; hold treasury keys |
+| **Game host** | `dev:api`, `dev:web` (or deployed equivalents) | Expose Sage RPC or `:4200` publicly |
 | **Treasury host** | Sage (treasury key), `pnpm dev:treasury` | Be reachable by players directly |
 
 ### Game host `.env` (API + web)
@@ -298,13 +328,14 @@ sage rpc get_keys '{}'
 
 ## Step 5 — Player withdraw
 
-1. Start treasury (`pnpm treasury:check` then `pnpm treasury:start`) with DAT + XCH in that Sage.
-2. On the game host, point the API at treasury (`DAT_TREASURY_PAYOUT_URL`, optional `TREASURY_XCH_ADDRESS`).
-   Same-host test (Sage RPC on the game box):
+1. On AWS, redeploy so `dat-poker-treasury` is enabled with the website. Confirm `:4200/health`.
+   Repair only if the unit is down:
    ```bash
    sudo bash /opt/dat-poker/deploy/aws-ec2/start-treasury.sh
    ```
-   If the play page says treasury is not reachable at `localhost:4200` / `127.0.0.1:4200`, that service is not running on the game host.
+   Locally: `pnpm treasury:check` then `pnpm treasury:start` with DAT + XCH in treasury Sage.
+2. API already points at `http://127.0.0.1:4200/payout` on the website host. Set `TREASURY_XCH_ADDRESS` so payouts cannot target the treasury key.
+   If the play page says treasury is not reachable at `127.0.0.1:4200`, the systemd unit is down — redeploy or run `start-treasury.sh`.
 3. Player links a **separate** Sage address, unlocks DAT, clicks withdraw.
 4. Copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
 5. Player Sage DAT balance increases. Treasury Sage DAT decreases.
@@ -322,14 +353,14 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 | Login / fingerprint errors | Set `TREASURY_SAGE_FINGERPRINT`; run `sage rpc login` manually |
 | No offer returned | Treasury Sage needs spendable DAT + XCH for fees |
 | GUI + CLI RPC conflict | Run only one Sage RPC at a time |
-| Player sees no offer | Set `DAT_TREASURY_PAYOUT_URL`; ensure treasury service is up |
+| Player sees no offer | Confirm `dat-poker-treasury` is active; API `DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout` |
 
 ---
 
 ## Security
 
 - **Never expose Sage RPC port 9257** to the network — treasury service talks to `127.0.0.1` on the treasury host only.
-- Restrict treasury service port **4200** to the game API server IP (VPN or private subnet).
+- On the AWS website host, bind treasury to **127.0.0.1:4200** only. If treasury later moves off-box, restrict **4200** to the game API server IP.
 - Players never touch the treasury host; offers are delivered through the API → web → WalletConnect.
 - Use a dedicated treasury fingerprint with limited DAT balance.
 

@@ -11,7 +11,7 @@ EnvironmentFile=-/opt/dat-poker/.env
 Environment=TREASURY_HOST=127.0.0.1
 Environment=TREASURY_PORT=4200
 ExecStart=/usr/local/bin/node /opt/dat-poker/services/treasury-payout/dist/index.js
-Restart=on-failure
+Restart=always
 RestartSec=3
 
 [Install]

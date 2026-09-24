@@ -1,7 +1,8 @@
 #!/bin/bash
-# Start the treasury payout service on this host at 127.0.0.1:4200 and point
-# the game API at it. Treasury Sage must be open on THIS machine with RPC on
-# :9257 (Settings → Advanced). Do not expose :4200 or :9257 publicly.
+# Repair path: start dat-poker-treasury at 127.0.0.1:4200 and point the API
+# at it. Bootstrap and redeploy already enable this unit for the life of
+# the website. Treasury Sage RPC on THIS machine (:9257) is required for
+# real offers. Do not expose :4200 or :9257 publicly.
 #
 #   sudo bash /opt/dat-poker/deploy/aws-ec2/start-treasury.sh
 set -euo pipefail

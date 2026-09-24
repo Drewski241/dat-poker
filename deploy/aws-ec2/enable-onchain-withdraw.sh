@@ -1,10 +1,11 @@
 #!/bin/bash
-# Point the game API at a running treasury payout service so testers can
-# withdraw unlocked DAT to a *player* Sage wallet (import the offer).
-# Do not put treasury Sage keys on this machine.
+# Point the game API at the always-on treasury payout service so testers
+# can withdraw unlocked DAT to a *player* Sage wallet (import the offer).
+# On AWS beta the treasury HTTP process runs on this website host.
+# Player Sage stays on the tester's phone/PC.
 #
-#   sudo DAT_TREASURY_PAYOUT_URL=http://TREASURY_HOST:4200/payout \
-#        TREASURY_XCH_ADDRESS=xch1treasury… \
+#   sudo bash /opt/dat-poker/deploy/aws-ec2/enable-onchain-withdraw.sh
+#   sudo TREASURY_XCH_ADDRESS=xch1treasury… \
 #        bash /opt/dat-poker/deploy/aws-ec2/enable-onchain-withdraw.sh
 set -euo pipefail
 
@@ -15,13 +16,8 @@ fi
 
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/dat-poker}"
 ENV_FILE="${ENV_FILE:-$INSTALL_ROOT/.env}"
-PAYOUT_URL="${DAT_TREASURY_PAYOUT_URL:-}"
+PAYOUT_URL="${DAT_TREASURY_PAYOUT_URL:-http://127.0.0.1:4200/payout}"
 TREASURY_ADDR="${TREASURY_XCH_ADDRESS:-}"
-
-if [[ -z "$PAYOUT_URL" ]]; then
-  echo "Set DAT_TREASURY_PAYOUT_URL (example http://10.0.0.50:4200/payout)" >&2
-  exit 1
-fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "missing $ENV_FILE — run bootstrap first" >&2
@@ -62,7 +58,7 @@ if [[ "$ok" -ne 1 ]]; then
   exit 1
 fi
 
-echo "On-chain withdraw enabled. Treasury Sage must be running on the payout host."
+echo "On-chain withdraw enabled. Treasury HTTP must stay up with the website (dat-poker-treasury)."
 echo "Player test: link a *player* Sage address, withdraw unlocked DAT, import the offer in that Sage."
 curl -fsS http://127.0.0.1:4000/v1/wallet/status
 echo

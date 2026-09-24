@@ -172,6 +172,15 @@ clone_repo() {
     || git clone --depth 1 "$REPO_URL" "$INSTALL_ROOT"
 }
 
+set_env_kv() {
+  local key="$1" val="$2"
+  if grep -q "^${key}=" "$INSTALL_ROOT/.env"; then
+    sed -i "s|^${key}=.*|${key}=${val}|" "$INSTALL_ROOT/.env"
+  else
+    printf '%s=%s\n' "$key" "$val" >> "$INSTALL_ROOT/.env"
+  fi
+}
+
 write_env() {
   if [[ ! -f "$INSTALL_ROOT/.env" ]]; then
     if [[ -f "$INSTALL_ROOT/.env.beta.example" ]]; then
@@ -180,9 +189,12 @@ write_env() {
       cp "$INSTALL_ROOT/.env.example" "$INSTALL_ROOT/.env"
     fi
   fi
-  sed -i 's/^DAT_ALLOW_DEV_BUYIN=.*/DAT_ALLOW_DEV_BUYIN=true/' "$INSTALL_ROOT/.env"
-  grep -q '^DAT_ALLOW_DEV_BUYIN=' "$INSTALL_ROOT/.env" \
-    || echo 'DAT_ALLOW_DEV_BUYIN=true' >> "$INSTALL_ROOT/.env"
+  set_env_kv DAT_ALLOW_DEV_BUYIN true
+  # Treasury stays on this website host for the life of the site.
+  set_env_kv DAT_TREASURY_PAYOUT_URL "http://127.0.0.1:4200/payout"
+  set_env_kv DAT_ENABLE_ONCHAIN_WITHDRAW true
+  set_env_kv TREASURY_HOST "127.0.0.1"
+  set_env_kv TREASURY_PORT "4200"
 }
 
 install_app() {
@@ -195,6 +207,8 @@ install_app() {
   pnpm install --frozen-lockfile
   pnpm --filter @dat-poker/api^... build
   pnpm --filter @dat-poker/api build
+  pnpm --filter @dat-poker/treasury-payout^... build
+  pnpm --filter @dat-poker/treasury-payout build
   pnpm --filter @dat-poker/web build
   rm -rf "${WEB_ROOT:?}/"*
   cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
@@ -221,6 +235,34 @@ WantedBy=multi-user.target
 UNIT
 }
 
+write_treasury_unit() {
+  local src="$INSTALL_ROOT/deploy/aws-ec2/dat-poker-treasury.service"
+  if [[ -f "$src" ]]; then
+    cp "$src" /etc/systemd/system/dat-poker-treasury.service
+    return 0
+  fi
+  cat > /etc/systemd/system/dat-poker-treasury.service <<'UNIT'
+[Unit]
+Description=DAT POKER treasury payout (Sage offers)
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/dat-poker
+EnvironmentFile=-/opt/dat-poker/.env
+Environment=TREASURY_HOST=127.0.0.1
+Environment=TREASURY_PORT=4200
+ExecStart=/usr/local/bin/node /opt/dat-poker/services/treasury-payout/dist/index.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
 # systemd enable --now returns when the process is spawned, not when Fastify
 # is listening. A single immediate curl to :4000 races and falsely marks web-only.
 wait_for_api() {
@@ -237,11 +279,32 @@ wait_for_api() {
   return 1
 }
 
+wait_for_treasury() {
+  local url="${1:-http://127.0.0.1:4200/health}"
+  local attempts="${2:-30}"
+  local i
+  for i in $(seq 1 "$attempts"); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      echo "Treasury healthy after ${i}s at ${url}"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 dump_api_logs() {
   echo "--- dat-poker-api status ---" >&2
   systemctl status dat-poker-api --no-pager >&2 || true
   echo "--- dat-poker-api journal ---" >&2
   journalctl -u dat-poker-api -n 80 --no-pager >&2 || true
+}
+
+dump_treasury_logs() {
+  echo "--- dat-poker-treasury status ---" >&2
+  systemctl status dat-poker-treasury --no-pager >&2 || true
+  echo "--- dat-poker-treasury journal ---" >&2
+  journalctl -u dat-poker-treasury -n 80 --no-pager >&2 || true
 }
 
 install_swap
@@ -259,18 +322,27 @@ clone_repo
 write_env
 install_app
 write_api_unit
+write_treasury_unit
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 systemctl daemon-reload
+systemctl enable --now dat-poker-treasury
 systemctl enable --now dat-poker-api
 nginx -s reload
 set -e
 
 if systemctl is-active --quiet dat-poker-api && wait_for_api http://127.0.0.1:4000/health 30; then
   echo "DAT POKER API is healthy"
+  if systemctl is-active --quiet dat-poker-treasury && wait_for_treasury http://127.0.0.1:4200/health 30; then
+    echo "DAT POKER treasury is healthy"
+  else
+    echo "API is up; treasury HTTP is still starting or the build failed. See journalctl -u dat-poker-treasury" >&2
+    dump_treasury_logs
+  fi
   rm -f /var/lib/dat-poker-bootstrap.web-only
   touch /var/lib/dat-poker-bootstrap.ok
 else
   echo "nginx is serving the web client; API still starting or build failed. See /var/log/dat-poker-bootstrap.log" >&2
   dump_api_logs
+  dump_treasury_logs
   touch /var/lib/dat-poker-bootstrap.web-only
 fi

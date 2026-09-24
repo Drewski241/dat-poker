@@ -4,11 +4,13 @@ Use this after the $20 **Launch an instance using EC2** credit is in **Billing
 → Credits** and the tutorial `my-web-server` instance is gone.
 
 The beta is a small always-on Amazon Linux box that serves the DAT POKER web
-client and REST API so you can develop the poker software against a public
-URL. Open tables are **in memory** and reset on restart; account DAT (redeem
-and cash-out) and play-through progress (hands that already unlocked DAT) are
-kept in `data/ledger.json`. Dev buy-in is on.
-Keep treasury Sage off this machine ([docs/TREASURY.md](./TREASURY.md)).
+client, REST API, and treasury payout service so you can develop the poker
+software against a public URL. Open tables are **in memory** and reset on
+restart; account DAT (redeem and cash-out) and play-through progress (hands
+that already unlocked DAT) are kept in `data/ledger.json`. Dev buy-in is on.
+`dat-poker-treasury` stays enabled for the life of the website
+([docs/TREASURY.md](./TREASURY.md)). Player Sage stays on the tester's
+phone or PC.
 
 This Cloud Agent cannot click Launch in your account.
 
@@ -20,6 +22,7 @@ This Cloud Agent cannot click Launch in your account.
 | Elastic IP | Stable public IPv4 (point `datspiritpoker.com` here) |
 | nginx `:80` / Caddy `:443` | Public website (`https://datspiritpoker.com/` and `/play`) + API |
 | systemd `dat-poker-api` | NLHE 6-max; house bot (bets/folds) or humans |
+| systemd `dat-poker-treasury` | Always-on payout offers on `127.0.0.1:4200` (starts with the site) |
 | Daily redeem | 5000 DAT / UTC day into the in-game table account |
 | `VITE_APP_STAGE=beta` | Yellow beta banner on Home and Play |
 | Session Manager | Same browser shell you used for the tutorial (recreate the IAM role) |
@@ -179,11 +182,13 @@ security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
 In Session Manager:
 
 ```bash
-sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+sudo DAT_POKER_REPO_REF=cursor/sng-sage-unlock-3440 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 ```
 
 Use this feature branch name instead of `main` until it is merged. Restarting
 the API clears open tables; account DAT and play-through unlocks stay in `data/ledger.json`.
+Redeploy also enables and restarts `dat-poker-treasury` and waits for
+`:4200/health`.
 
 Wait until it prints `beta redeploy ok`. If it dies on
 `www.datspiritpoker.com: command not found`, the API already restarted —
@@ -228,8 +233,10 @@ aws cloudformation delete-stack --stack-name dat-poker-beta
 
 ## HTTPS + Sage (WalletConnect)
 
-Player Sage stays on **your phone or PC**. Do not install Sage or paste
-treasury keys on the EC2 box. Buy-in is still a **signed message + DAT
+Player Sage stays on **your phone or PC**. Treasury HTTP (`dat-poker-treasury`)
+runs on this EC2 box for the life of the website. Real DAT offers also need
+treasury Sage RPC on the same host (`:9257`, `TREASURY_SAGE_FINGERPRINT`).
+Buy-in is still a **signed message + DAT
 balance check** — DAT does not leave Sage until on-chain escrow is wired.
 Default table minimum is **1000 DAT** (1000000 CAT mojos). If you funded
 less, set `DAT_MIN_BUY_IN_MOJOS=1000` (1 DAT) when you run `enable-sage.sh`.
@@ -380,8 +387,16 @@ wallet + Calpoker state channels (`chia_selectCoins`,
 request `chia_send` / `chia_takeOffer`. See
 [docs/WALLETCONNECT.md](./WALLETCONNECT.md) and [docs/SECURITY.md](./SECURITY.md).
 
-Withdraw to Sage needs a **separate treasury host** later
-([docs/TREASURY.md](./TREASURY.md)). Do not enable Sage RPC on this EC2 box.
+Withdraw to Sage uses the always-on treasury on this website host
+([docs/TREASURY.md](./TREASURY.md)). After redeploy, confirm both:
+
+```bash
+curl -sS http://127.0.0.1:4000/health
+curl -sS http://127.0.0.1:4200/health
+```
+
+You want API `status: ok` and treasury listening. `walletRpcReachable: false`
+means treasury HTTP is up but Sage RPC on this box is not logged in yet.
 
 ## Website address
 

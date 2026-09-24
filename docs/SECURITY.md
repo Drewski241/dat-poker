@@ -21,8 +21,9 @@ is disabled on the game host.
 
 Daily redeem and table stacks are **ledger credits**, not CAT sends. Account
 DAT is stored on the game host (`data/ledger.json`) so a redeploy does not
-wipe testers’ balances or play-through unlocks. Open tables still reset. Treasury Sage stays on a
-separate machine ([TREASURY.md](./TREASURY.md)).
+wipe testers’ balances or play-through unlocks. Open tables still reset.
+Treasury HTTP (`dat-poker-treasury`) runs on this website host
+([TREASURY.md](./TREASURY.md)). Player Sage stays on the tester's device.
 
 Testers should still **read Sage prompts**. If Sage ever asks to send coins or
 take an offer during this beta, tap reject and report it on `/feedback`.
@@ -64,8 +65,11 @@ does not move on-chain DAT.
 
 ## Operator checklist
 
-1. No `TREASURY_*` or Sage RPC certs on this EC2 box.
-2. Leave `DAT_TREASURY_PAYOUT_URL` empty on the game host.
+1. Keep `dat-poker-treasury` enabled while the website is up. Bind it to
+   `127.0.0.1:4200` (`DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout`).
+   Do not expose `:4200` or Sage RPC `:9257` on the public security group.
+2. Player Sage stays off this box. Treasury Sage on this host is a dedicated
+   fingerprint (`TREASURY_SAGE_FINGERPRINT`, optional `TREASURY_XCH_ADDRESS`).
 3. Accounts file: `data/accounts.json` (or `DAT_ACCOUNTS_PATH`). Ledger:
    `data/ledger.json` (or `DAT_LEDGER_PATH`). Keep mode `600`. Do not delete
    these on redeploy.
