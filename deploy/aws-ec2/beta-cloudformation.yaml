@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  DAT POKER public beta (Amazon Linux 2023, nginx, API, Elastic IP, SSM).
+  Use after the $20 Launch-an-instance activity. See docs/BETA.md.
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t2.micro
+    Description: t3.small (2 GiB) is recommended for pnpm builds.
+
+  RepoUrl:
+    Type: String
+    Default: https://github.com/Drewski241/dat-poker.git
+
+  RepoRef:
+    Type: String
+    Default: main
+
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+  SsmRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: dat-poker-beta-ssm
+
+  SsmInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref SsmRole
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: DAT POKER beta — HTTP and HTTPS (SSM does not need port 22)
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS (for a domain later)
+      Tags:
+        - Key: Name
+          Value: dat-poker-beta-web
+
+  BetaInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref SsmInstanceProfile
+      SecurityGroupIds:
+        - !Ref WebSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          exec > >(tee /var/log/dat-poker-bootstrap.log) 2>&1
+          export DAT_POKER_REPO_URL="${RepoUrl}"
+          export DAT_POKER_REPO_REF="${RepoRef}"
+          export DAT_POKER_STAGE=beta
+          dnf install -y nginx git tar xz curl
+          mkdir -p /usr/share/nginx/html
+          printf '%s\n' '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>DAT POKER beta</title></head><body style="font-family:sans-serif;background:#0b1f16;color:#e8f5ee;padding:2rem"><h1>DAT POKER beta</h1><p>nginx is up. App bootstrap continues.</p></body></html>' > /usr/share/nginx/html/index.html
+          systemctl enable --now nginx
+          rm -rf /tmp/dat-poker-src
+          git clone --depth 1 --branch "${RepoRef}" "${RepoUrl}" /tmp/dat-poker-src || git clone --depth 1 "${RepoUrl}" /tmp/dat-poker-src
+          if [[ -f /tmp/dat-poker-src/deploy/aws-ec2/user-data.sh ]]; then
+            bash /tmp/dat-poker-src/deploy/aws-ec2/user-data.sh
+          else
+            echo "user-data.sh not in ${RepoRef} yet; landing page is live" >&2
+          fi
+      Tags:
+        - Key: Name
+          Value: dat-poker-beta
+
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref BetaInstance
+      Tags:
+        - Key: Name
+          Value: dat-poker-beta
+
+Outputs:
+  InstanceId:
+    Value: !Ref BetaInstance
+  ElasticIp:
+    Description: Stable public IPv4 — bookmark http://THIS_IP/
+    Value: !Ref ElasticIp
+  WebsiteUrl:
+    Value: !Sub http://${ElasticIp}/
