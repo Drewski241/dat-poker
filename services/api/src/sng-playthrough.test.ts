@@ -1,7 +1,13 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import Fastify from "fastify";
 import { serializeForJson } from "./serialize.js";
-import { getAccountBalance, getPlaythrough, resetAccountsForTests, tryRedeemDaily } from "./account-store.js";
+import {
+  creditAccount,
+  getAccountBalance,
+  getPlaythrough,
+  resetAccountsForTests,
+  tryRedeemDaily,
+} from "./account-store.js";
 import { getSng, registerTableRoutes, resetTablesForTests } from "./routes/tables.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
@@ -227,10 +233,10 @@ describe("SNG play-through unlocks", () => {
 
     const pt = getPlaythrough(alice.session.playerId);
     expect(pt.handsPlayed).toBe(3);
-    expect(pt.poolMojos).toBeGreaterThan(0n);
+    expect(pt.poolMojos).toBe(1_000_000n);
+    expect(getAccountBalance(alice.session.playerId)).toBe(0n);
 
-    const prize = getAccountBalance(alice.session.playerId);
-    expect(prize).toBeGreaterThan(0n);
+    creditAccount(alice.session.playerId, 5_000_000n);
 
     const withdrawn = await app.inject({
       method: "POST",
