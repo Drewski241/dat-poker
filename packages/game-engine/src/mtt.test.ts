@@ -37,11 +37,13 @@ describe("16-player MTT", () => {
       .getSeatedPlayers()
       .filter((p) => p.playerId !== "alice")
       .slice(0, 4);
-    const extraBustsB = event.engineFor(b)!.getSeatedPlayers().slice(0, 4);
     for (const row of extraBusts) bust(event, a, row.playerId);
     event.afterHand(a);
     expect(event.relocatedTo(a)).toBeNull();
+    expect(event.engineFor(a)!.getSeatedPlayers().filter((p) => p.stackMojos > 0n)).toHaveLength(6);
+    expect(event.engineFor(b)!.getSeatedPlayers().filter((p) => p.stackMojos > 0n)).toHaveLength(6);
 
+    const extraBustsB = event.engineFor(b)!.getSeatedPlayers().slice(0, 4);
     for (const row of extraBustsB) bust(event, b, row.playerId);
     const snap = event.afterHand(b);
     const finalId = event.consumePendingTables()[0]?.getConfig().id;
@@ -75,9 +77,32 @@ describe("16-player MTT", () => {
     event.engineFor(b)!.startHand("hand-hold");
     event.afterHand(a);
     expect(event.relocatedTo(a)).toBeNull();
+    expect(event.shouldPauseDeals(a)).toBe(true);
+    expect(event.snapshot(a).pendingFinalTable).toBe(true);
     event.engineFor(b)!.abortHandRefundBets();
     event.afterHand(b);
     expect(event.consumePendingTables()).toHaveLength(1);
+  });
+
+  it("balances a 4-max table against an 8-max table instead of waiting for eight left", () => {
+    const event = MttEvent.create();
+    const [a, b] = event.tableIds();
+    event.seatPlayer(a, "alice", 0);
+    event.fillHouseSeats();
+    event.start();
+    const busts = event
+      .engineFor(a)!
+      .getSeatedPlayers()
+      .filter((p) => p.playerId !== "alice")
+      .slice(0, 4);
+    for (const row of busts) bust(event, a, row.playerId);
+    event.afterHand(a);
+    expect(event.snapshot(a).isFinalTable).toBe(false);
+    expect(event.snapshot(a).eventPlayersRemaining).toBe(12);
+    expect(event.engineFor(a)!.hasPlayer("alice")).toBe(true);
+    expect(event.engineFor(a)!.getSeatedPlayers().filter((p) => p.stackMojos > 0n)).toHaveLength(6);
+    expect(event.engineFor(b)!.getSeatedPlayers().filter((p) => p.stackMojos > 0n)).toHaveLength(6);
+    expect(event.shouldPauseDeals(a)).toBe(false);
   });
 
   it("pays overall 1st–3rd when the last human busts", () => {

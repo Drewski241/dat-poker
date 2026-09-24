@@ -8,6 +8,7 @@ export function sngShouldAutoDeal(input: {
   stackIsZero: boolean;
   runoutPlaying: boolean;
   eliminated: boolean;
+  pauseDeals?: boolean;
 }): boolean {
   return Boolean(
     input.atTableRoom &&
@@ -18,6 +19,7 @@ export function sngShouldAutoDeal(input: {
       !input.busy &&
       !input.stackIsZero &&
       !input.runoutPlaying &&
-      !input.eliminated,
+      !input.eliminated &&
+      !input.pauseDeals,
   );
 }

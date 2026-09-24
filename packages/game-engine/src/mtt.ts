@@ -57,6 +57,7 @@ export class MttEvent {
   private readonly levelDurationMs: number;
   private readonly tables: MttTable[] = [];
   private readonly relocations = new Map<string, string>();
+  private readonly playerMoves = new Map<PlayerId, string>();
   private readonly pendingRegister: NlheTableEngine[] = [];
   private status: SngStatus = "registering";
   private handNumber = 0;
@@ -106,8 +107,18 @@ export class MttEvent {
     return this.pendingRegister.splice(0, this.pendingRegister.length);
   }
 
-  relocatedTo(tableId: string): string | null {
-    return this.relocations.get(tableId) ?? null;
+  relocatedTo(tableId: string, playerId?: PlayerId): string | null {
+    const tableMove = this.relocations.get(tableId) ?? null;
+    if (tableMove) return tableMove;
+    if (!playerId) return null;
+    const dest = this.playerMoves.get(playerId) ?? null;
+    return dest && dest !== tableId ? dest : null;
+  }
+
+  shouldPauseDeals(tableId: string): boolean {
+    if (this.status !== "running" || this.finalTableId) return false;
+    this.requireTable(tableId);
+    return this.needsFinalTable() || this.needsBalance();
   }
 
   get prizePoolMojos(): bigint {
@@ -207,6 +218,7 @@ export class MttEvent {
       this.levelIndex = target;
     }
     this.applyBlindLevel();
+    this.maintain();
   }
 
   afterHand(tableId: string, nowMs = Date.now()): SngSnapshot {
@@ -217,8 +229,7 @@ export class MttEvent {
     if (!table.closed && this.status === "running") {
       const busted = table.engine.unseatBustedPlayers();
       this.recordEliminations(busted);
-      this.tryFormFinalTable();
-      this.tryFinish();
+      this.maintain();
     }
     if (this.status === "finished") {
       this.assignHumanPrizes();
@@ -249,7 +260,67 @@ export class MttEvent {
     return this.status;
   }
 
-  snapshot(tableId: string, nowMs = Date.now()): SngSnapshot {
+  private maintain(): void {
+    this.tryFormFinalTable();
+    this.tryBalanceTables();
+    this.tryFinish();
+  }
+
+  private needsFinalTable(): boolean {
+    if (this.finalTableId || this.status !== "running") return false;
+    if (this.openTables().length < 2) return false;
+    return this.alivePlayers().length <= this.finalTableSeats;
+  }
+
+  private needsBalance(): boolean {
+    if (this.finalTableId || this.status !== "running") return false;
+    const open = this.openTables();
+    if (open.length < 2) return false;
+    if (this.alivePlayers().length <= this.finalTableSeats) return false;
+    const counts = open.map(
+      (row) => row.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n).length,
+    );
+    return Math.max(...counts) - Math.min(...counts) >= 2;
+  }
+
+  private tryBalanceTables(): void {
+    if (!this.needsBalance()) return;
+    const open = this.openTables();
+    if (open.some((row) => row.engine.isHandInProgress())) return;
+    const ranked = open
+      .map((table) => ({
+        table,
+        n: table.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n).length,
+      }))
+      .sort((a, b) => a.n - b.n);
+    const short = ranked[0];
+    const tall = ranked[ranked.length - 1];
+    if (!short || !tall || tall.n - short.n < 2) return;
+    const moveCount = Math.floor((tall.n - short.n) / 2);
+    const movers = tall.table.engine
+      .getSeatedPlayers()
+      .filter((p) => p.stackMojos > 0n)
+      .sort((a, b) => {
+        if (a.stackMojos === b.stackMojos) return a.playerId.localeCompare(b.playerId);
+        return a.stackMojos < b.stackMojos ? -1 : 1;
+      })
+      .slice(0, moveCount);
+    for (const mover of movers) {
+      const seatIndex = short.table.engine.emptySeatIndex();
+      if (seatIndex == null) break;
+      const handsPlayed = tall.table.engine.getHandsPlayed(mover.playerId);
+      try {
+        tall.table.engine.cashOutPlayer(mover.playerId);
+      } catch {
+        continue;
+      }
+      short.table.engine.restoreSeat(mover.playerId, seatIndex, mover.stackMojos);
+      short.table.engine.setHandsPlayed(mover.playerId, handsPlayed);
+      this.playerMoves.set(mover.playerId, short.table.tableId);
+    }
+  }
+
+  snapshot(tableId: string, nowMs = Date.now(), viewerId?: PlayerId): SngSnapshot {
     const table = this.requireTable(tableId);
     const level = this.blindLevels[this.levelIndex] ?? this.blindLevels[this.blindLevels.length - 1];
     const target = this.targetLevel(nowMs);
@@ -302,8 +373,16 @@ export class MttEvent {
       startingTableCount: this.startingTableCount,
       tableIndex: this.tables.findIndex((row) => row.tableId === tableId) + 1,
       tableCount: open.length,
-      relocatedToTableId: this.relocations.get(tableId) ?? null,
+      relocatedToTableId: this.relocatedTo(tableId, viewerId),
       eventPlayersRemaining: this.alivePlayers().length,
+      otherTablePlayers: open
+        .filter((row) => row.tableId !== tableId)
+        .reduce(
+          (sum, row) => sum + row.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n).length,
+          0,
+        ),
+      pauseDeals: this.shouldPauseDeals(tableId),
+      pendingFinalTable: this.needsFinalTable(),
     };
   }
 
@@ -376,6 +455,7 @@ export class MttEvent {
         }
         final.engine.restoreSeat(row.playerId, index, row.stackMojos);
         final.engine.setHandsPlayed(row.playerId, row.handsPlayed);
+        this.playerMoves.set(row.playerId, final.tableId);
       });
 
     for (const table of this.tables) {

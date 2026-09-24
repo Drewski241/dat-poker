@@ -58,6 +58,9 @@ export function registerHandRoutes(app: FastifyInstance): void {
           if (status === "finished") {
             return reply.status(400).send({ error: "SNG is finished" });
           }
+          if (mtt?.shouldPauseDeals(req.params.tableId)) {
+            return reply.status(400).send({ error: "Waiting to redraw tables" });
+          }
           onTournamentHandStarted(req.params.tableId);
         } else {
           ensureHouseFunded(table);
@@ -90,6 +93,9 @@ export function registerHandRoutes(app: FastifyInstance): void {
           if (status === "finished") {
             return reply.status(400).send({ error: "SNG is finished" });
           }
+          if (mtt?.shouldPauseDeals(req.params.tableId)) {
+            return reply.status(400).send({ error: "Waiting to redraw tables" });
+          }
           onTournamentHandStarted(req.params.tableId);
         } else {
           ensureHouseFunded(table);
@@ -111,7 +117,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         commitHash,
         hand: redactHandForViewer(table.getHandState(), session.playerId),
         lastHandResult: table.getLastHandResult(),
-        sng: tournamentFields(req.params.tableId),
+        sng: tournamentFields(req.params.tableId, session.playerId),
         playthrough: playthroughFields(session.playerId, table.getHandsPlayed(session.playerId)),
       };
     } catch (e) {
@@ -178,7 +184,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         ok: true,
         hand: redactHandForViewer(table.getHandState(), session.playerId),
         lastHandResult: table.getLastHandResult(),
-        sng: tournamentFields(req.params.tableId),
+        sng: tournamentFields(req.params.tableId, session.playerId),
         playthrough: playthroughFields(session.playerId, table.getHandsPlayed(session.playerId)),
       };
     } catch (e) {

@@ -175,6 +175,18 @@ export function TableRoom({
           </p>
           {sng && (
             <p className="table-room-sng-payouts">
+              {sng.kind === "mtt"
+                ? `${sng.eventPlayersRemaining ?? sng.playersRemaining} left in the 16-player SNG`
+                : `${sng.playersRemaining}/${sng.maxSeats} left`}
+              {sng.kind === "mtt" && !sng.isFinalTable && sng.otherTablePlayers != null
+                ? ` · ${sng.otherTablePlayers} at the other table`
+                : ""}
+              {sng.pendingFinalTable
+                ? " · final table after this hand"
+                : sng.pauseDeals
+                  ? " · redrawing tables"
+                  : ""}
+              {" · "}
               Buy-in {formatDatMojos(sng.buyInMojos, datToken?.ticker)} · pool{" "}
               {formatDatMojos(sng.prizePoolMojos, datToken?.ticker)} · pays 1st–3rd 50/30/20
               {sng.payouts?.length

@@ -67,6 +67,9 @@ export interface SngSnapshot {
   tableCount?: number;
   relocatedToTableId?: string | null;
   eventPlayersRemaining?: number;
+  otherTablePlayers?: number | null;
+  pauseDeals?: boolean;
+  pendingFinalTable?: boolean;
 }
 
 export class SngTournament {

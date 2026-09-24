@@ -29,5 +29,6 @@ describe("sngShouldAutoDeal", () => {
     expect(sngShouldAutoDeal({ ...ready, sngStatus: "finished" })).toBe(false);
     expect(sngShouldAutoDeal({ ...ready, tableFormat: "cash" })).toBe(false);
     expect(sngShouldAutoDeal({ ...ready, tableFormat: "mtt" })).toBe(true);
+    expect(sngShouldAutoDeal({ ...ready, pauseDeals: true })).toBe(false);
   });
 });

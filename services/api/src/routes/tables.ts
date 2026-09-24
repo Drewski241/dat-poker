@@ -222,7 +222,7 @@ function tableSnapshot(
     smallBlindMojos: table.getSmallBlindMojos().toString(),
     bigBlindMojos: table.getBigBlindMojos().toString(),
     format: table.getConfig().format,
-    sng: tournamentSnapshot(tableId),
+    sng: tournamentSnapshot(tableId, viewerId),
     houseSeatsAvailable: table.houseSeats().length,
     full:
       table.houseSeats().length === 0 &&
@@ -1179,8 +1179,12 @@ function autoFillAndStartMtt(mtt: MttEvent): void {
   }
 }
 
-function tournamentSnapshot(tableId: string) {
-  return sngByTable.get(tableId)?.snapshot() ?? mttByTable.get(tableId)?.snapshot(tableId) ?? null;
+function tournamentSnapshot(tableId: string, viewerId?: string) {
+  return (
+    sngByTable.get(tableId)?.snapshot() ??
+    mttByTable.get(tableId)?.snapshot(tableId, Date.now(), viewerId) ??
+    null
+  );
 }
 
 function autoFillAndStartSng(sng: SngTournament): void {
@@ -1249,6 +1253,6 @@ export function onTournamentHandStarted(tableId: string): void {
   mttByTable.get(tableId)?.onHandStarted(tableId);
 }
 
-export function tournamentFields(tableId: string) {
-  return tournamentSnapshot(tableId);
+export function tournamentFields(tableId: string, viewerId?: string) {
+  return tournamentSnapshot(tableId, viewerId);
 }

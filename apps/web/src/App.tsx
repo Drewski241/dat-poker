@@ -930,7 +930,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     (tableFormat === "sng" || tableFormat === "mtt") &&
       playerId &&
       !myTableSeat &&
-      (sng?.status === "finished" || mySngPlace),
+      (sng?.status === "finished" || mySngPlace) &&
+      !sng?.relocatedToTableId,
   );
   const sngCanAutoDeal = sngShouldAutoDeal({
     atTableRoom,
@@ -942,6 +943,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     stackIsZero: tableStackIsZero,
     runoutPlaying: runoutFromBoardLen != null,
     eliminated: sngEliminated,
+    pauseDeals: Boolean(sng?.pauseDeals),
   });
 
   useEffect(() => {
@@ -1648,7 +1650,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   ? ` · next ${formatDatAmount(sng.nextSmallBlindMojos)}/${formatDatAmount(sng.nextBigBlindMojos)}`
                   : ""}
                 {" · "}
-                {sng.playersRemaining}/{sng.maxSeats} left · {sng.humanCount} human
+                {sng.kind === "mtt"
+                  ? `${sng.eventPlayersRemaining ?? sng.playersRemaining} left in the field`
+                  : `${sng.playersRemaining}/${sng.maxSeats} left`}
+                {sng.kind === "mtt" && !sng.isFinalTable && sng.otherTablePlayers != null
+                  ? ` · ${sng.otherTablePlayers} at the other table`
+                  : ""}
+                {" · "}
+                {sng.humanCount} human
                 {sng.humanCount === 1 ? "" : "s"} · {sng.houseSeatsAvailable} house
               </p>
             )}
