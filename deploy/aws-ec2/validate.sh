@@ -231,7 +231,7 @@ assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
 assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
-for f in landing.html nginx.conf dat-poker-api.service dat-poker-treasury.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh enable-onchain-withdraw.sh start-treasury.sh public-url.sh; do
+for f in landing.html nginx.conf dat-poker-api.service dat-poker-treasury.service dat-poker-sage-rpc.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh enable-onchain-withdraw.sh start-treasury.sh start-sage-rpc.sh enable-treasury-sage.sh public-url.sh; do
   [[ -s "$DIR/$f" ]] && ok "$f exists" || bad "$f missing"
 done
 
@@ -241,7 +241,17 @@ bash -n "$DIR/enable-https.sh" && ok "enable-https.sh bash syntax" || bad "enabl
 bash -n "$DIR/enable-sage.sh" && ok "enable-sage.sh bash syntax" || bad "enable-sage.sh bash syntax"
 bash -n "$DIR/enable-onchain-withdraw.sh" && ok "enable-onchain-withdraw.sh bash syntax" || bad "enable-onchain-withdraw.sh bash syntax"
 bash -n "$DIR/start-treasury.sh" && ok "start-treasury.sh bash syntax" || bad "start-treasury.sh bash syntax"
+bash -n "$DIR/start-sage-rpc.sh" && ok "start-sage-rpc.sh bash syntax" || bad "start-sage-rpc.sh bash syntax"
+bash -n "$DIR/enable-treasury-sage.sh" && ok "enable-treasury-sage.sh bash syntax" || bad "enable-treasury-sage.sh bash syntax"
 bash -n "$DIR/public-url.sh" && ok "public-url.sh bash syntax" || bad "public-url.sh bash syntax"
+
+if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'TREASURY_WALLET_CERT_PATH' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'dat-poker-sage-rpc' "$DIR/enable-treasury-sage.sh"; then
+  ok "enable-treasury-sage.sh writes Sage RPC cert paths"
+else
+  bad "enable-treasury-sage.sh cert paths"
+fi
 
 python3 - <<'PY' && ok "public-url.sh prints HTTPS home and /play" || bad "public-url.sh output"
 import os

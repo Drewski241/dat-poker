@@ -31,10 +31,15 @@ export type TreasuryPing = {
   host: string;
   error: string | null;
   walletRpcReachable: boolean | null;
+  walletConfigured: boolean | null;
   offerMode: string | null;
 };
 
-const emptyWalletHealth = { walletRpcReachable: null as boolean | null, offerMode: null as string | null };
+const emptyWalletHealth = {
+  walletRpcReachable: null as boolean | null,
+  walletConfigured: null as boolean | null,
+  offerMode: null as string | null,
+};
 
 export function treasuryPayoutHealthUrl(payoutUrl: string): string {
   const trimmed = payoutUrl.trim();
@@ -79,22 +84,43 @@ export async function inspectTreasuryPayout(payoutUrl: string): Promise<Treasury
       const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
       if (res.ok) {
         let walletRpcReachable: boolean | null = null;
+        let walletConfigured: boolean | null = null;
         let offerMode: string | null = null;
+        let walletError: string | null = null;
         try {
           const body = (await res.json()) as {
             walletRpcReachable?: boolean | null;
+            walletConfigured?: boolean | null;
+            walletError?: string | null;
             offerMode?: string | null;
           };
           if (typeof body.walletRpcReachable === "boolean") {
             walletRpcReachable = body.walletRpcReachable;
           }
+          if (typeof body.walletConfigured === "boolean") {
+            walletConfigured = body.walletConfigured;
+          }
           if (typeof body.offerMode === "string") {
             offerMode = body.offerMode;
+          }
+          if (typeof body.walletError === "string" && body.walletError.trim()) {
+            walletError = body.walletError.trim();
           }
         } catch {
           /* health may be a bare 200 */
         }
-        return { reachable: true, healthUrl: url, host, error: null, walletRpcReachable, offerMode };
+        const missingCerts = offerMode === "rpc" && walletConfigured === false;
+        return {
+          reachable: true,
+          healthUrl: url,
+          host,
+          error: missingCerts
+            ? (walletError ?? "Sage RPC certs missing on the treasury host")
+            : null,
+          walletRpcReachable,
+          walletConfigured,
+          offerMode,
+        };
       }
       error = `HTTP ${res.status} from ${host}`;
     } catch (e) {

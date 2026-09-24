@@ -63,7 +63,21 @@ curl -sS http://127.0.0.1:4200/health
 curl -sS http://127.0.0.1:4000/v1/wallet/status
 ```
 
-Treasury HTTP can be healthy while `walletRpcReachable` is false. Real offers need Sage RPC on **this** AWS host (`TREASURY_SAGE_FINGERPRINT`, RPC `:9257`). `start-treasury.sh` is only a repair path if the unit is down.
+Treasury HTTP can be healthy while Sage RPC certs are missing. That is the
+`Sage treasury RPC not configured` / `wallet.crt` withdraw error. Real offers
+need Sage RPC on **this** AWS host:
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# first time, compile sage-cli:
+sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# after you import the treasury key:
+sudo TREASURY_SAGE_FINGERPRINT=1234567890 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+```
+
+`dat-poker-sage-rpc` stays enabled with the website (`:9257`, localhost only).
+Player Sage stays on the tester phone/PC. `start-treasury.sh` is only a repair
+path if the HTTP unit is down.
 
 ---
 

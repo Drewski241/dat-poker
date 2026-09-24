@@ -22,6 +22,8 @@ the Apache tutorial.
 | `enable-sage.sh` | Write WalletConnect project ID + DAT asset id, restart API |
 | `enable-onchain-withdraw.sh` | Persist `DAT_TREASURY_PAYOUT_URL` (defaults to `127.0.0.1:4200`) so testers can import a DAT offer in player Sage |
 | `start-treasury.sh` | Repair path to start `dat-poker-treasury` (`127.0.0.1:4200`); bootstrap and redeploy already enable it |
+| `enable-treasury-sage.sh` | Find or start Sage RPC on this host, write `wallet.crt` paths, restart treasury |
+| `dat-poker-sage-rpc.service` / `start-sage-rpc.sh` | systemd Sage RPC (`:9257`, localhost) so offers work while the site is up |
 | `Caddyfile` / `caddy.service` | TLS reverse proxy in front of the API + static UI |
 | `landing.html` | Static DAT POKER page used by the nginx kit **before** the SPA build is copied |
 | `public-url.sh` | Print the HTTPS Home / Play URLs to share with testers |

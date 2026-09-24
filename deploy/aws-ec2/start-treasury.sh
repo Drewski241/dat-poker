@@ -75,4 +75,5 @@ echo
 curl -fsS http://127.0.0.1:4000/v1/wallet/status
 echo
 echo "Open the play page and click Check treasury again."
-echo "If walletRpcReachable is false: open Sage on this host, enable RPC :9257, set TREASURY_SAGE_FINGERPRINT, restart treasury."
+echo "If health says walletConfigured is false: sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh"
+echo "If walletRpcReachable is false: Sage RPC is up but not logged in — set TREASURY_SAGE_FINGERPRINT and re-run enable-treasury-sage.sh."

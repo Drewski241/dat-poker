@@ -24,6 +24,19 @@ describe("buildPayoutOffer", () => {
     ).rejects.toThrow(/positive/i);
   });
 
+  it("tells the AWS host to enable Sage RPC when certs are missing", async () => {
+    await expect(
+      buildPayoutOffer(
+        {
+          ...baseConfig,
+          offerMode: "rpc",
+          walletRpc: { ...baseConfig.walletRpc, certPath: undefined, keyPath: undefined },
+        },
+        { address: "xch1abc", amountMojos: "2000" },
+      ),
+    ).rejects.toThrow(/enable-treasury-sage\.sh/);
+  });
+
   it("rejects a payout to the treasury Sage address", async () => {
     await expect(
       buildPayoutOffer(

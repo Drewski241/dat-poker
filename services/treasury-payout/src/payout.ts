@@ -1,5 +1,6 @@
 import {
   createTreasuryCatPayoutOffer,
+  describeMissingSageCerts,
   readTreasuryWalletRpcConfigFromEnv,
   type TreasuryWalletRpcConfig,
 } from "@dat-poker/chia-bridge";
@@ -68,9 +69,7 @@ export async function buildPayoutOffer(
 
   const hasCerts = Boolean(config.walletRpc.certPath && config.walletRpc.keyPath);
   if (!hasCerts) {
-    throw new Error(
-      "Sage treasury RPC not configured — enable RPC in Sage (Settings → Advanced), or set TREASURY_WALLET_CERT_PATH and TREASURY_WALLET_KEY_PATH (or TREASURY_OFFER_MODE=mock for dev)",
-    );
+    throw new Error(describeMissingSageCerts());
   }
 
   const offer = await createTreasuryCatPayoutOffer(config.walletRpc, {

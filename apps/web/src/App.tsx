@@ -1619,20 +1619,24 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           <strong>player</strong> Sage wallet. Do not use the treasury Sage key.
         </p>
         {withdrawConfig && (
-          <div className={withdrawConfig.treasuryReachable ? "ok-text" : "muted small"}>
+          <div className={
+            withdrawConfig.treasuryReachable && !withdrawConfig.treasuryError ? "ok-text" : "muted small"
+          }>
             <p>
               Treasury:{" "}
               {withdrawConfig.treasuryReachable
-                ? withdrawConfig.treasuryWalletRpcReachable === false
-                  ? `HTTP is up at ${withdrawConfig.treasuryHost ?? "payout service"}, but Sage RPC is not logged in. Enable RPC :9257 on the AWS host, then try again.`
-                  : `active at ${withdrawConfig.treasuryHost ?? "payout service"} — withdraw can send a DAT offer to your player Sage`
+                ? withdrawConfig.treasuryError
+                  ? `HTTP is up at ${withdrawConfig.treasuryHost ?? "payout service"}, but Sage RPC is not ready (${withdrawConfig.treasuryError}). On the AWS host: sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh`
+                  : withdrawConfig.treasuryWalletRpcReachable === false
+                    ? `HTTP is up at ${withdrawConfig.treasuryHost ?? "payout service"}, but Sage RPC is not logged in. Enable RPC :9257 on the AWS host, then try again.`
+                    : `active at ${withdrawConfig.treasuryHost ?? "payout service"} — withdraw can send a DAT offer to your player Sage`
                 : withdrawConfig.treasuryConfigured
                   ? `configured but not reachable at ${withdrawConfig.treasuryHost ?? "the payout URL"}${
                       withdrawConfig.treasuryError ? ` (${withdrawConfig.treasuryError})` : ""
                     }. Redeploy so dat-poker-treasury stays up with the website, then check again.`
                   : "not configured. Set DAT_TREASURY_PAYOUT_URL and start treasury."}
             </p>
-            {withdrawConfig.treasuryConfigured && !withdrawConfig.treasuryReachable && (
+            {withdrawConfig.treasuryConfigured && (!withdrawConfig.treasuryReachable || withdrawConfig.treasuryError) && (
               <button
                 type="button"
                 className="secondary"

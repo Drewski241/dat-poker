@@ -395,8 +395,14 @@ curl -sS http://127.0.0.1:4000/health
 curl -sS http://127.0.0.1:4200/health
 ```
 
-You want API `status: ok` and treasury listening. `walletRpcReachable: false`
-means treasury HTTP is up but Sage RPC on this box is not logged in yet.
+You want API `status: ok` and treasury listening. If withdraw says Sage RPC
+certs are missing, treasury HTTP is up but Sage is not installed on this box:
+
+```bash
+sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+```
+
+`walletRpcReachable: false` means Sage is installed but RPC is not logged in.
 
 ## Website address
 

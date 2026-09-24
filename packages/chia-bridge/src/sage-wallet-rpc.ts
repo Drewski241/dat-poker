@@ -37,14 +37,28 @@ export function expandWalletPath(path: string | undefined): string | undefined {
   return trimmed;
 }
 
-export function defaultSageCertPaths(): { certPath?: string; keyPath?: string } {
-  const candidates = [
-    join(homedir(), ".local/share/sage/ssl"),
-    join(homedir(), ".local/share/com.rigidnetwork.sage/ssl"),
-    join(homedir(), "Library/Application Support/com.rigidnetwork.sage/ssl"),
-  ];
+export function sageCertSearchDirs(): string[] {
+  const homes = new Set<string>();
+  homes.add(homedir());
+  if (process.env.HOME) homes.add(process.env.HOME);
+  if (process.env.TREASURY_SAGE_HOME) homes.add(process.env.TREASURY_SAGE_HOME);
+  homes.add("/home/ec2-user");
+  homes.add("/root");
 
-  for (const dir of candidates) {
+  const dirs: string[] = [];
+  for (const home of homes) {
+    dirs.push(join(home, ".local/share/sage/ssl"));
+    dirs.push(join(home, ".local/share/com.rigidnetwork.sage/ssl"));
+    dirs.push(join(home, "Library/Application Support/com.rigidnetwork.sage/ssl"));
+  }
+  dirs.push("/opt/dat-poker/data/sage/ssl");
+  dirs.push("/opt/sage/ssl");
+  dirs.push("/var/lib/sage/ssl");
+  return [...new Set(dirs)];
+}
+
+export function defaultSageCertPaths(): { certPath?: string; keyPath?: string } {
+  for (const dir of sageCertSearchDirs()) {
     const certPath = join(dir, "wallet.crt");
     const keyPath = join(dir, "wallet.key");
     if (existsSync(certPath) && existsSync(keyPath)) {
@@ -52,6 +66,14 @@ export function defaultSageCertPaths(): { certPath?: string; keyPath?: string } 
     }
   }
   return {};
+}
+
+export function describeMissingSageCerts(): string {
+  return (
+    "Sage RPC certs (wallet.crt / wallet.key) were not found for the treasury process. " +
+    "Treasury HTTP is up, but it cannot talk to Sage on :9257. " +
+    "On the AWS host run: sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh"
+  );
 }
 
 export function readTreasuryWalletRpcConfigFromEnv(): TreasuryWalletRpcConfig {

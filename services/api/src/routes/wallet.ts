@@ -88,6 +88,14 @@ async function requestPlayerTreasuryOffer(params: {
       error: `Treasury is not reachable at ${ping.host}${ping.error ? ` (${ping.error})` : ""}.`,
     };
   }
+  if (ping.offerMode === "rpc" && ping.walletConfigured === false) {
+    return {
+      status: 502,
+      error:
+        ping.error ??
+        "Sage RPC certs are missing on the AWS host. Run: sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh",
+    };
+  }
   if (ping.offerMode === "rpc" && ping.walletRpcReachable === false) {
     return {
       status: 502,
@@ -190,9 +198,12 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
               treasuryReachable: ping.reachable,
               treasuryHost: ping.host,
               treasuryError:
-                ping.reachable && ping.offerMode === "rpc" && ping.walletRpcReachable === false
-                  ? "Sage RPC is not logged in on the treasury host"
-                  : ping.error,
+                ping.reachable && ping.offerMode === "rpc" && ping.walletConfigured === false
+                  ? (ping.error ??
+                    "Sage RPC certs missing. Run sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh")
+                  : ping.reachable && ping.offerMode === "rpc" && ping.walletRpcReachable === false
+                    ? "Sage RPC is not logged in on the treasury host"
+                    : ping.error,
               treasuryWalletRpcReachable: ping.walletRpcReachable,
             }))
           : {
