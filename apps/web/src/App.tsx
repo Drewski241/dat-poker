@@ -505,6 +505,21 @@ export function App() {
                 ? "You take one seat. House bots fill the other eight so we can build the sit-n-go flow without a full table of testers. Later we will require more humans."
                 : "Heads-up cash table against a single house seat."}
             </p>
+            {datToken?.devBuyInEnabled && !playerId && (
+              <div className="row">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy || !apiOk}
+                  onClick={() => {
+                    setPlayerId("dev-human");
+                    setWalletAddress("dev-human");
+                  }}
+                >
+                  Dev sit (no Sage)
+                </button>
+              </div>
+            )}
             <button
               type="button"
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}

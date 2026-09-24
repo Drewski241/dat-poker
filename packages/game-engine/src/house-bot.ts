@@ -62,7 +62,18 @@ export function playHouseUntilHuman(
     const actorId = engine.actorPlayerId();
     if (!actorId || !isHousePlayerId(actorId)) return;
     const decision = chooseHouseAction(hand, actorId, policy, bigBlind);
-    engine.applyAction(actorId, decision.action, decision.amountMojos ?? 0n);
+    try {
+      engine.applyAction(actorId, decision.action, decision.amountMojos ?? 0n);
+    } catch {
+      const latest = engine.getHandState();
+      const actor = latest?.players.find((p) => p.playerId === actorId);
+      const toCall = latest && actor ? latest.currentBetMojos - actor.betThisStreetMojos : 0n;
+      try {
+        engine.applyAction(actorId, toCall > 0n ? "call" : "check");
+      } catch {
+        engine.applyAction(actorId, "fold");
+      }
+    }
   }
 }
 

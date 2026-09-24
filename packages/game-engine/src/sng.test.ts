@@ -68,6 +68,27 @@ describe("SngTournament", () => {
     }
   });
 
+  it("finishes house play after the human folds", () => {
+    const sng = SngTournament.create("sng-5", { housePolicy: "mixed" });
+    sng.engine.seatPlayer("human", 0, DAT_SNG_DEFAULTS.startingStackMojos);
+    sng.fillHouseSeats();
+    sng.start();
+    sng.onHandStarted();
+    sng.engine.startHand("sng-hand-fold");
+    for (const seat of sng.engine.getSeatedPlayers()) {
+      sng.engine.submitPlayerSeed(seat.playerId, generateServerSeed());
+    }
+    sng.engine.revealAndDeal();
+    playHouseUntilHuman(sng.engine, "mixed");
+    if (sng.engine.isHandInProgress()) {
+      expect(sng.engine.actorPlayerId()).toBe("human");
+      sng.engine.applyAction("human", "fold");
+      playHouseUntilHuman(sng.engine, "mixed");
+    }
+    expect(sng.engine.isHandInProgress()).toBe(false);
+    expect(sng.engine.getLastHandResult()?.winnerId).toBeTruthy();
+  });
+
   it("names house seats per index", () => {
     expect(houseSeatPlayerId(4)).toBe("dat-poker:house:4");
   });
