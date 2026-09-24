@@ -1423,6 +1423,13 @@ html.play-table-screen body {
   color: var(--text);
 }
 
+.table-room-blind-clock {
+  margin: 0.2rem 0 0;
+  font-size: clamp(0.75rem, 3vmin, 0.9rem);
+  color: var(--text);
+  font-weight: 600;
+}
+
 .table-room-header-actions {
   display: flex;
   flex-shrink: 0;

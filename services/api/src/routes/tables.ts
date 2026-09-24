@@ -177,6 +177,7 @@ function maintainTable(
   viewerId?: string,
 ): UnseatInactiveResult {
   const nowMs = Date.now();
+  sngByTable.get(tableId)?.syncBlindClock(nowMs);
   if (viewerId && table.hasPlayer(viewerId)) {
     touchPlayerActivity(viewerId, nowMs);
   }

@@ -1,7 +1,36 @@
-import type { DatTokenInfo, HandResult, HandState, PlayerAction, TableSeat } from "../api.js";
-import { computeNlheBetRange, formatDatMojos } from "@dat-poker/shared";
+import { useEffect, useState } from "react";
+import type { DatTokenInfo, HandResult, HandState, PlayerAction, SngSnapshot, TableSeat } from "../api.js";
+import { computeNlheBetRange, formatDatAmount, formatDatMojos } from "@dat-poker/shared";
 import { BetSlider } from "./BetSlider.js";
 import { CardRow, PlayingCard } from "./PlayingCard.js";
+
+function formatBlindCountdown(ms: number): string {
+  const sec = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(sec / 60);
+  const seconds = sec % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function sngBlindClockLine(sng: SngSnapshot, nowMs: number): string {
+  const level = (sng.levelIndex ?? 0) + 1;
+  const nextBlinds =
+    sng.nextSmallBlindMojos && sng.nextBigBlindMojos
+      ? `next ${formatDatAmount(sng.nextSmallBlindMojos)}/${formatDatAmount(sng.nextBigBlindMojos)}`
+      : "";
+  if (sng.status === "registering") {
+    return `L${level}${nextBlinds ? ` · ${nextBlinds} after start` : ""}`;
+  }
+  if (sng.status !== "running") {
+    return `L${level}`;
+  }
+  if (sng.blindsUpNextHand || sng.handsUntilNextLevel === 1) {
+    return `L${level}${nextBlinds ? ` · ${nextBlinds}` : ""} · next hand`;
+  }
+  if (sng.nextLevelAtMs != null) {
+    return `L${level}${nextBlinds ? ` · ${nextBlinds}` : ""} in ${formatBlindCountdown(sng.nextLevelAtMs - nowMs)}`;
+  }
+  return `L${level} · final`;
+}
 
 type Props = {
   datToken: DatTokenInfo | null;
@@ -37,6 +66,7 @@ type Props = {
   seatPositionLabel: (seatIndex: number, hand: HandState | null, dealerButtonSeat: number | null) => string;
   maxSeats?: number;
   tableTitle?: string;
+  sng?: SngSnapshot | null;
 };
 
 export function TableRoom({
@@ -48,7 +78,7 @@ export function TableRoom({
   hand,
   handResult,
   handInProgress,
-  smallBlindMojos: _smallBlindMojos,
+  smallBlindMojos,
   bigBlindMojos,
   busy,
   liveHandLabel,
@@ -73,7 +103,14 @@ export function TableRoom({
   seatPositionLabel,
   maxSeats = 6,
   tableTitle = "6-max",
+  sng = null,
 }: Props) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!sng || sng.status !== "running" || sng.nextLevelAtMs == null) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [sng?.status, sng?.nextLevelAtMs]);
   const actionSeatPlayer =
     hand?.actionSeat != null
       ? hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded)
@@ -101,6 +138,10 @@ export function TableRoom({
               </>
             )}
           </h1>
+          <p className="table-room-blind-clock">
+            Blinds {formatDatAmount(smallBlindMojos)}/{formatDatAmount(bigBlindMojos)}
+            {sng ? ` · ${sngBlindClockLine(sng, nowMs)}` : ""}
+          </p>
         </div>
         <div className="table-room-header-actions">
           <button
@@ -248,7 +289,8 @@ export function TableRoom({
                 <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
                 <span className="hand-blinds-line">
                   {" "}
-                  · D{hand.dealerSeat + 1} SB{hand.smallBlindSeat + 1} BB{hand.bigBlindSeat + 1}
+                  · {formatDatAmount(smallBlindMojos)}/{formatDatAmount(bigBlindMojos)} · D
+                  {hand.dealerSeat + 1} SB{hand.smallBlindSeat + 1} BB{hand.bigBlindSeat + 1}
                 </span>
               </p>
             </div>

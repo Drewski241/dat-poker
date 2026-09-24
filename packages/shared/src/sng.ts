@@ -36,6 +36,8 @@ export const DAT_SNG_DEFAULTS = {
   buyInMojos: DAT_TABLE_DEFAULTS.minBuyInMojos,
   startingStackMojos: DAT_TABLE_DEFAULTS.minBuyInMojos,
   handsPerLevel: 4,
+  /** Blind clock: next level after this many ms, applied between hands. */
+  levelDurationMs: 3 * 60 * 1000,
   fillHouse: true,
   minHumansToStart: 1,
   housePolicy: "mixed" as HousePolicy,
@@ -78,4 +80,47 @@ export function sngPrizes(prizePoolMojos: bigint, payouts: SngPayoutShare[]): Ma
     prizes.set(first, (prizes.get(first) ?? 0n) + (prizePoolMojos - allocated));
   }
   return prizes;
+}
+
+/** Level index from elapsed clock time and/or hands played (whichever is further). */
+export function sngTargetBlindLevel(input: {
+  nowMs: number;
+  startedAtMs: number | null;
+  handNumber: number;
+  levelDurationMs: number;
+  handsPerLevel: number;
+  levelCount: number;
+}): number {
+  if (input.levelCount <= 1) return 0;
+  const last = input.levelCount - 1;
+  const elapsed = input.startedAtMs == null ? 0 : Math.max(0, input.nowMs - input.startedAtMs);
+  const timeLevel =
+    input.levelDurationMs <= 0 ? 0 : Math.floor(elapsed / input.levelDurationMs);
+  const handLevel =
+    input.handNumber <= 0 || input.handsPerLevel <= 0
+      ? 0
+      : Math.floor((input.handNumber - 1) / input.handsPerLevel);
+  return Math.min(last, Math.max(timeLevel, handLevel));
+}
+
+export function sngNextLevelAtMs(input: {
+  startedAtMs: number | null;
+  levelIndex: number;
+  levelDurationMs: number;
+  levelCount: number;
+}): number | null {
+  if (input.startedAtMs == null || input.levelDurationMs <= 0) return null;
+  if (input.levelIndex >= input.levelCount - 1) return null;
+  return input.startedAtMs + (input.levelIndex + 1) * input.levelDurationMs;
+}
+
+export function sngHandsUntilNextLevel(input: {
+  handNumber: number;
+  levelIndex: number;
+  handsPerLevel: number;
+  levelCount: number;
+}): number | null {
+  if (input.levelIndex >= input.levelCount - 1 || input.handsPerLevel <= 0) return null;
+  const nextHandTrigger = (input.levelIndex + 1) * input.handsPerLevel + 1;
+  return Math.max(1, nextHandTrigger - input.handNumber);
 }

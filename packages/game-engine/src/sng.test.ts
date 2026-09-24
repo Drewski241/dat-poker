@@ -125,6 +125,73 @@ describe("SngTournament", () => {
     expect(snap.placements.find((p) => p.playerId === "alice")?.place).toBe(3);
   });
 
+  it("raises blinds on the clock between hands and waits if a hand is live", () => {
+    const sng = SngTournament.create("sng-clock", {
+      maxSeats: 2,
+      fillHouse: true,
+      minHumansToStart: 1,
+      levelDurationMs: 60_000,
+      handsPerLevel: 99,
+    });
+    sng.engine.seatPlayer("alice", 0, DAT_SNG_DEFAULTS.startingStackMojos);
+    sng.fillHouseSeats();
+    sng.start(1_000);
+
+    expect(sng.snapshot(1_000).levelIndex).toBe(0);
+    expect(sng.snapshot(1_000).smallBlindMojos).toBe(10_000n);
+    expect(sng.snapshot(1_000).nextLevelAtMs).toBe(61_000);
+    expect(sng.engine.getSmallBlindMojos()).toBe(10_000n);
+
+    sng.syncBlindClock(61_000);
+    expect(sng.snapshot(61_000).levelIndex).toBe(1);
+    expect(sng.engine.getSmallBlindMojos()).toBe(15_000n);
+    expect(sng.engine.getBigBlindMojos()).toBe(30_000n);
+    expect(sng.snapshot(61_000).nextSmallBlindMojos).toBe(25_000n);
+
+    sng.onHandStarted(70_000);
+    sng.engine.startHand("clock-hand");
+    for (const seat of sng.engine.getSeatedPlayers()) {
+      sng.engine.submitPlayerSeed(seat.playerId, generateServerSeed());
+    }
+    sng.engine.revealAndDeal();
+    const mid = sng.syncBlindClock(130_000);
+    expect(mid.levelIndex).toBe(1);
+    expect(mid.blindsUpNextHand).toBe(true);
+    expect(sng.engine.getSmallBlindMojos()).toBe(15_000n);
+
+    while (sng.engine.isHandInProgress()) {
+      const actor = sng.engine.actorPlayerId();
+      if (!actor) break;
+      sng.engine.applyAction(actor, "fold");
+    }
+    expect(sng.engine.isHandInProgress()).toBe(false);
+    const after = sng.syncBlindClock(130_000);
+    expect(after.levelIndex).toBe(2);
+    expect(after.blindsUpNextHand).toBe(false);
+    expect(sng.engine.getSmallBlindMojos()).toBe(25_000n);
+    expect(sng.engine.getBigBlindMojos()).toBe(50_000n);
+  });
+
+  it("still raises blinds after enough hands when the clock has not elapsed", () => {
+    const sng = SngTournament.create("sng-hands", {
+      maxSeats: 2,
+      fillHouse: true,
+      minHumansToStart: 1,
+      levelDurationMs: 3_600_000,
+      handsPerLevel: 2,
+    });
+    sng.engine.seatPlayer("alice", 0, DAT_SNG_DEFAULTS.startingStackMojos);
+    sng.fillHouseSeats();
+    sng.start(0);
+    sng.onHandStarted(1_000);
+    expect(sng.snapshot(1_000).levelIndex).toBe(0);
+    sng.onHandStarted(2_000);
+    expect(sng.snapshot(2_000).levelIndex).toBe(0);
+    sng.onHandStarted(3_000);
+    expect(sng.snapshot(3_000).levelIndex).toBe(1);
+    expect(sng.engine.getSmallBlindMojos()).toBe(15_000n);
+  });
+
   it("names house seats per index", () => {
     expect(houseSeatPlayerId(4)).toBe("dat-poker:house:4");
   });

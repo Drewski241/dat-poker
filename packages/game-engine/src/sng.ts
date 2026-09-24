@@ -4,7 +4,10 @@ import {
   defaultSngPayouts,
   houseSeatPlayerId,
   isHousePlayerId,
+  sngHandsUntilNextLevel,
+  sngNextLevelAtMs,
   sngPrizes,
+  sngTargetBlindLevel,
   type HousePolicy,
   type SngBlindLevel,
   type SngPlacement,
@@ -21,6 +24,7 @@ export interface SngOptions {
   minHumansToStart?: number;
   housePolicy?: HousePolicy;
   handsPerLevel?: number;
+  levelDurationMs?: number;
   blindLevels?: SngBlindLevel[];
   payouts?: SngPayoutShare[];
 }
@@ -36,9 +40,17 @@ export interface SngSnapshot {
   prizePoolMojos: bigint;
   handNumber: number;
   levelIndex: number;
+  levelCount: number;
   smallBlindMojos: bigint;
   bigBlindMojos: bigint;
+  nextSmallBlindMojos: bigint | null;
+  nextBigBlindMojos: bigint | null;
   handsPerLevel: number;
+  levelDurationMs: number;
+  startedAtMs: number | null;
+  nextLevelAtMs: number | null;
+  blindsUpNextHand: boolean;
+  handsUntilNextLevel: number | null;
   playersRemaining: number;
   humanCount: number;
   houseSeatsAvailable: number;
@@ -58,9 +70,11 @@ export class SngTournament {
   private readonly payoutShares: SngPayoutShare[];
   private readonly prizesByPlace: Map<number, bigint>;
   private readonly handsPerLevel: number;
+  private readonly levelDurationMs: number;
   private status: SngStatus = "registering";
   private handNumber = 0;
   private levelIndex = 0;
+  private startedAtMs: number | null = null;
   private placements: SngPlacement[] = [];
   private paidPrizes = new Set<PlayerId>();
 
@@ -73,6 +87,7 @@ export class SngTournament {
     this.minHumansToStart = options.minHumansToStart ?? DAT_SNG_DEFAULTS.minHumansToStart;
     this.housePolicy = options.housePolicy ?? DAT_SNG_DEFAULTS.housePolicy;
     this.handsPerLevel = options.handsPerLevel ?? DAT_SNG_DEFAULTS.handsPerLevel;
+    this.levelDurationMs = options.levelDurationMs ?? DAT_SNG_DEFAULTS.levelDurationMs;
     this.blindLevels = options.blindLevels ?? [...DAT_SNG_DEFAULTS.blindLevels];
     this.payoutShares = options.payouts ?? defaultSngPayouts(this.maxSeats);
     this.prizePoolMojos = this.buyInMojos * BigInt(this.maxSeats);
@@ -129,29 +144,38 @@ export class SngTournament {
     return this.humanCount() >= this.minHumansToStart;
   }
 
-  start(): void {
+  start(nowMs = Date.now()): void {
     if (!this.canStart()) {
       throw new Error(
         `SNG not ready (need ${this.maxSeats} seats and ${this.minHumansToStart} human${this.minHumansToStart === 1 ? "" : "s"})`,
       );
     }
     this.status = "running";
+    this.startedAtMs = nowMs;
     this.applyBlindLevel();
   }
 
-  onHandStarted(): void {
+  onHandStarted(nowMs = Date.now()): void {
     if (this.status !== "running") {
       throw new Error("SNG is not running");
     }
     this.handNumber += 1;
-    const nextLevel = Math.min(
-      this.blindLevels.length - 1,
-      Math.floor((this.handNumber - 1) / this.handsPerLevel),
-    );
-    if (nextLevel !== this.levelIndex) {
-      this.levelIndex = nextLevel;
-      this.applyBlindLevel();
+    this.syncBlindClock(nowMs);
+  }
+
+  /**
+   * Move blinds to the clock/hand target. Does not change stakes mid-hand;
+   * the next deal picks up the pending level.
+   */
+  syncBlindClock(nowMs = Date.now()): SngSnapshot {
+    if (this.status === "running" && !this.engine.isHandInProgress()) {
+      const target = this.targetLevel(nowMs);
+      if (target !== this.levelIndex) {
+        this.levelIndex = target;
+        this.applyBlindLevel();
+      }
     }
+    return this.snapshot(nowMs);
   }
 
   afterHand(): SngSnapshot {
@@ -167,7 +191,7 @@ export class SngTournament {
       this.finishByStacks(remaining);
     }
 
-    return this.snapshot();
+    return this.syncBlindClock();
   }
 
   /** Human prize rows that have not been credited to an account yet. */
@@ -197,8 +221,12 @@ export class SngTournament {
     return this.status;
   }
 
-  snapshot(): SngSnapshot {
+  snapshot(nowMs = Date.now()): SngSnapshot {
     const level = this.blindLevels[this.levelIndex] ?? this.blindLevels[this.blindLevels.length - 1];
+    const target = this.targetLevel(nowMs);
+    const pending = this.status === "running" && target > this.levelIndex;
+    const nextIndex = pending ? target : this.levelIndex + 1;
+    const next = nextIndex < this.blindLevels.length ? this.blindLevels[nextIndex] : null;
     return {
       status: this.status,
       fillHouse: this.fillHouse,
@@ -210,14 +238,43 @@ export class SngTournament {
       prizePoolMojos: this.prizePoolMojos,
       handNumber: this.handNumber,
       levelIndex: this.levelIndex,
+      levelCount: this.blindLevels.length,
       smallBlindMojos: level.smallBlindMojos,
       bigBlindMojos: level.bigBlindMojos,
+      nextSmallBlindMojos: next?.smallBlindMojos ?? null,
+      nextBigBlindMojos: next?.bigBlindMojos ?? null,
       handsPerLevel: this.handsPerLevel,
+      levelDurationMs: this.levelDurationMs,
+      startedAtMs: this.startedAtMs,
+      nextLevelAtMs: sngNextLevelAtMs({
+        startedAtMs: this.startedAtMs,
+        levelIndex: this.levelIndex,
+        levelDurationMs: this.levelDurationMs,
+        levelCount: this.blindLevels.length,
+      }),
+      blindsUpNextHand: pending && this.engine.isHandInProgress(),
+      handsUntilNextLevel: sngHandsUntilNextLevel({
+        handNumber: this.handNumber,
+        levelIndex: this.levelIndex,
+        handsPerLevel: this.handsPerLevel,
+        levelCount: this.blindLevels.length,
+      }),
       playersRemaining: this.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n).length,
       humanCount: this.humanCount(),
       houseSeatsAvailable: this.engine.houseSeats().length,
       placements: [...this.placements],
     };
+  }
+
+  private targetLevel(nowMs: number): number {
+    return sngTargetBlindLevel({
+      nowMs,
+      startedAtMs: this.startedAtMs,
+      handNumber: this.handNumber,
+      levelDurationMs: this.levelDurationMs,
+      handsPerLevel: this.handsPerLevel,
+      levelCount: this.blindLevels.length,
+    });
   }
 
   private applyBlindLevel(): void {

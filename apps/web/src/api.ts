@@ -183,6 +183,16 @@ export interface SngSnapshot {
   handNumber: number;
   smallBlindMojos: string;
   bigBlindMojos: string;
+  nextSmallBlindMojos?: string | null;
+  nextBigBlindMojos?: string | null;
+  levelIndex?: number;
+  levelCount?: number;
+  handsPerLevel?: number;
+  levelDurationMs?: number;
+  startedAtMs?: number | null;
+  nextLevelAtMs?: number | null;
+  blindsUpNextHand?: boolean;
+  handsUntilNextLevel?: number | null;
   playersRemaining: number;
   humanCount: number;
   houseSeatsAvailable: number;

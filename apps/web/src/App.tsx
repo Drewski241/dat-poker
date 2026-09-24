@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos, isHousePlayerId } from "@dat-poker/shared";
+import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatAmount, formatDatMojos, isHousePlayerId } from "@dat-poker/shared";
 import {
   api,
   restoreApiAuthToken,
@@ -1142,6 +1142,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             seatPositionLabel={seatPositionLabel}
             maxSeats={tableMaxSeats}
             tableTitle={tableFormat === "sng" ? "9-max SNG" : "6-max"}
+            sng={tableFormat === "sng" ? sng : null}
           />
         </>
       ) : (
@@ -1346,6 +1347,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                               : ""}
                             {" · "}
                             {full ? "full" : `${house} house`}
+                            {row.sng?.smallBlindMojos && row.sng?.bigBlindMojos
+                              ? ` · blinds ${formatDatAmount(row.sng.smallBlindMojos)}/${formatDatAmount(row.sng.bigBlindMojos)}`
+                              : ""}
                             {row.handInProgress ? " · hand in progress" : ""} · {row.sng?.status ?? "running"}
                           </span>
                           {full ? (
@@ -1377,7 +1381,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <p className="mono">Table ID: {tableId}</p>
             {sng && (
               <p>
-                SNG {sng.status} · {sng.playersRemaining}/{sng.maxSeats} left · {sng.humanCount} human
+                SNG {sng.status} · blinds {formatDatAmount(sng.smallBlindMojos)}/{formatDatAmount(sng.bigBlindMojos)}
+                {sng.nextSmallBlindMojos && sng.nextBigBlindMojos
+                  ? ` · next ${formatDatAmount(sng.nextSmallBlindMojos)}/${formatDatAmount(sng.nextBigBlindMojos)}`
+                  : ""}
+                {" · "}
+                {sng.playersRemaining}/{sng.maxSeats} left · {sng.humanCount} human
                 {sng.humanCount === 1 ? "" : "s"} · {sng.houseSeatsAvailable} house
               </p>
             )}
