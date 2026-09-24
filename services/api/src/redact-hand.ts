@@ -7,7 +7,6 @@ export function redactHandForViewer(
   if (!hand) {
     return null;
   }
-  const showdown = hand.street === "showdown";
   return {
     ...hand,
     serverSeed: null,
@@ -15,7 +14,7 @@ export function redactHandForViewer(
     playerSeeds: {},
     players: hand.players.map((p) => ({
       ...p,
-      holeCards: p.playerId === viewerId || showdown ? p.holeCards : [],
+      holeCards: p.playerId === viewerId ? p.holeCards : [],
     })),
   };
 }

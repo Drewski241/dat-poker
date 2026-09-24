@@ -378,7 +378,7 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()?.players.filter((p) => !p.folded).length).toBe(2);
   });
 
-  it("reveals remaining hole cards after a showdown", () => {
+  it("reveals only winning hole cards after a showdown", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);
     table.seatPlayer("dat-poker:house", 1, 5_000_000_000_000n);
@@ -401,11 +401,49 @@ describe("NlheTableEngine", () => {
     const result = table.getLastHandResult();
     expect(result?.reason).toBe("showdown");
     expect(result?.board).toHaveLength(5);
-    expect(result?.shown).toHaveLength(2);
+    expect(result?.shown.length).toBeGreaterThanOrEqual(1);
     expect(result?.shown.every((p) => p.holeCards.length === 2)).toBe(true);
-    expect(result?.shown.some((p) => p.playerId === "dat-poker:house")).toBe(true);
-    expect(result?.shown.map((p) => p.playerId).sort()).toEqual(["alice", "dat-poker:house"]);
+    expect(result?.shown.every((p) => p.playerId === result.winnerId)).toBe(true);
     expect(result?.shown.find((p) => p.playerId === result.winnerId)?.category).toBeTruthy();
+  });
+
+  it("does not include losing hole cards in a multi-way showdown", () => {
+    const tiny: TableConfig = {
+      ...config,
+      maxSeats: 3,
+      smallBlindMojos: 1n,
+      bigBlindMojos: 2n,
+      minBuyInMojos: 50n,
+      maxBuyInMojos: 500n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("alice", 0, 100n);
+    table.seatPlayer("bob", 1, 100n);
+    table.seatPlayer("carol", 2, 100n);
+    table.startHand("hand-multi-show");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.submitPlayerSeed("carol", generateServerSeed());
+    table.revealAndDeal();
+
+    for (let i = 0; i < 40; i++) {
+      const hand = table.getHandState();
+      if (!hand || hand.actionSeat == null) break;
+      const actor = hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded);
+      if (!actor) break;
+      table.applyAction(actor.playerId, "all-in");
+    }
+
+    const result = table.getLastHandResult();
+    expect(result?.reason).toBe("showdown");
+    const shownIds = new Set(result?.shown.map((p) => p.playerId) ?? []);
+    expect(shownIds.has(result!.winnerId)).toBe(true);
+    expect(shownIds.size).toBeLessThan(3);
+    for (const id of ["alice", "bob", "carol"]) {
+      if (id !== result!.winnerId && table.getPlayerStack(id) === 0n) {
+        expect(shownIds.has(id)).toBe(false);
+      }
+    }
   });
 
   it("posts small and big blind relative to the dealer button", () => {
