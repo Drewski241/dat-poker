@@ -24,6 +24,7 @@ import { TableRoom } from "./components/TableRoom.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import { shouldPlayAllInRunout } from "./all-in-runout.js";
+import { sngShouldAutoDeal } from "./sng-auto-deal.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
   actionSecondsRemaining,
@@ -801,9 +802,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       const dealt = await api.goHand(tableId, playerId);
       setHand(dealt.hand);
       if (dealt.lastHandResult) setHandResult(dealt.lastHandResult);
+      if (dealt.playthrough) setAccountPlaythrough(dealt.playthrough);
       await refreshTable(tableId);
     });
   };
+  const startHandFlowRef = useRef(startHandFlow);
+  startHandFlowRef.current = startHandFlow;
 
   const sendAction = (action: PlayerAction, amountMojos?: string) => {
     if (!tableId || !playerId) return;
@@ -835,6 +839,26 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   );
   const mySngPlace = sng?.placements.find((row) => row.playerId === playerId);
   const sngEliminated = Boolean(tableFormat === "sng" && playerId && !myTableSeat && (sng?.status === "finished" || mySngPlace));
+  const sngCanAutoDeal = sngShouldAutoDeal({
+    atTableRoom,
+    tableFormat,
+    sngStatus: sng?.status,
+    seated: Boolean(myTableSeat),
+    handLive: Boolean(hand || handInProgress),
+    busy,
+    stackIsZero: tableStackIsZero,
+    runoutPlaying: runoutFromBoardLen != null,
+    eliminated: sngEliminated,
+  });
+
+  useEffect(() => {
+    if (!sngCanAutoDeal) return;
+    const delay = handResult ? 1600 : 400;
+    const id = window.setTimeout(() => {
+      startHandFlowRef.current();
+    }, delay);
+    return () => window.clearTimeout(id);
+  }, [sngCanAutoDeal, handResult]);
   const handsPlayed = myTableSeat?.handsPlayed ?? accountPlaythrough?.handsPlayed ?? 0;
   const handsRequired = myTableSeat?.handsRequired ?? accountPlaythrough?.handsRequired ?? 0;
   const playthroughRemaining = myTableSeat?.playthroughRemaining ?? accountPlaythrough?.playthroughRemaining ?? 0;

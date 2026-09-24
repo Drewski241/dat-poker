@@ -129,6 +129,8 @@ export function TableRoom({
       : null;
 
   const canStepToLobby = !hand && !handInProgress;
+  const showDeal = !hand && !canRebuy && canDeal && runoutFromBoardLen == null;
+  const showBetweenFooter = !hand && (showDeal || canRebuy);
   const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
 
   const me = hand?.players.find((p) => p.playerId === playerId);
@@ -147,7 +149,7 @@ export function TableRoom({
 
   return (
     <div
-      className={`table-room ${hand ? "table-room-in-hand" : "table-room-between-hands"}${hand && isMyAction ? " table-room-has-actions" : ""}`}
+      className={`table-room ${hand ? "table-room-in-hand" : "table-room-between-hands"}${hand && isMyAction ? " table-room-has-actions" : ""}${showBetweenFooter ? " table-room-has-actions" : ""}`}
     >
       <header className="table-room-header">
         <div className="table-room-header-main">
@@ -312,30 +314,6 @@ export function TableRoom({
                   : "You are out of this sit-n-go. Open Lobby to return to your account."}
               </p>
             )}
-            {canRebuy && (
-              <button
-                type="button"
-                className="table-room-deal-btn table-room-rebuy-btn"
-                disabled={busy}
-                onClick={onRebuy}
-              >
-                Buy in again ({rebuyLabel})
-              </button>
-            )}
-            {!canRebuy && canDeal && runoutFromBoardLen == null && (
-              <button
-                type="button"
-                className="table-room-deal-btn"
-                disabled={
-                  busy ||
-                  tableSeats.length < 2 ||
-                  (tableStackMojos != null && BigInt(tableStackMojos) === 0n)
-                }
-                onClick={onStartHand}
-              >
-                {handResult ? "New hand" : "Deal hand"}
-              </button>
-            )}
           </div>
         ) : (
           <section className="table-room-felt" aria-label="Hand">
@@ -443,6 +421,34 @@ export function TableRoom({
         )}
       </main>
 
+      {showBetweenFooter && (
+        <footer className="table-room-actions table-room-between-footer">
+          {canRebuy && (
+            <button
+              type="button"
+              className="table-room-deal-btn table-room-rebuy-btn"
+              disabled={busy}
+              onClick={onRebuy}
+            >
+              Buy in again ({rebuyLabel})
+            </button>
+          )}
+          {showDeal && (
+            <button
+              type="button"
+              className="table-room-deal-btn"
+              disabled={
+                busy ||
+                tableSeats.length < 2 ||
+                (tableStackMojos != null && BigInt(tableStackMojos) === 0n)
+              }
+              onClick={onStartHand}
+            >
+              {handResult ? "New hand" : "Deal hand"}
+            </button>
+          )}
+        </footer>
+      )}
       {hand && isMyAction && (
         <footer className="table-room-actions">
           <div className="actions your-turn">

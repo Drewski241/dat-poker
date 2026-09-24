@@ -669,6 +669,7 @@ export const api = {
       commitHash: string;
       hand: HandState | null;
       lastHandResult: HandResult | null;
+      playthrough?: PlaythroughInfo | null;
     }>(`/v1/tables/${tableId}/hands/go`, {
       method: "POST",
       body: JSON.stringify({ playerId }),
