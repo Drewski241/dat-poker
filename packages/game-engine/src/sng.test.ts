@@ -89,6 +89,26 @@ describe("SngTournament", () => {
     expect(sng.engine.getLastHandResult()?.winnerId).toBeTruthy();
   });
 
+  it("lets a human take over a house seat and keep that stack", () => {
+    const sng = SngTournament.create("sng-claim");
+    sng.engine.seatPlayer("alice", 0, DAT_SNG_DEFAULTS.startingStackMojos);
+    sng.fillHouseSeats();
+    sng.start();
+    sng.engine.setPlayerStack(houseSeatPlayerId(3), 750_000n);
+
+    const claimed = sng.claimHouseSeat("bob", 3);
+    expect(claimed.replacedPlayerId).toBe(houseSeatPlayerId(3));
+    expect(claimed.stackMojos).toBe(750_000n);
+    expect(sng.engine.getPlayerStack("bob")).toBe(750_000n);
+    expect(sng.engine.getPlayerStack(houseSeatPlayerId(3))).toBeNull();
+    expect(sng.humanCount()).toBe(2);
+    expect(sng.snapshot().houseSeatsAvailable).toBe(7);
+
+    expect(() => sng.claimHouseSeat("alice")).toThrow(/already seated/i);
+    sng.engine.startHand("claim-block");
+    expect(() => sng.claimHouseSeat("carol")).toThrow(/current hand/i);
+  });
+
   it("names house seats per index", () => {
     expect(houseSeatPlayerId(4)).toBe("dat-poker:house:4");
   });

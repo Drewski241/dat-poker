@@ -5,6 +5,7 @@ import {
   DAT_SNG_DEFAULTS,
   DAT_TABLE_DEFAULTS,
   HOUSE_PLAYER_ID,
+  isHousePlayerId,
   resolveDatMinBuyInMojos,
 } from "@dat-poker/shared";
 import { NlheTableEngine, SngTournament } from "@dat-poker/game-engine";
@@ -81,6 +82,12 @@ export function registerTableRoutes(app: FastifyInstance): void {
     return { tableId: id, config: tableConfigPayload(config), sng: null };
   });
 
+  app.get("/v1/tables", async () => ({
+    tables: [...sessions.entries()]
+      .map(([tableId, session]) => serializeLobbyTable(tableId, session))
+      .filter((row) => row.sngStatus !== "finished"),
+  }));
+
   app.get<{ Params: { tableId: string } }>("/v1/tables/:tableId", async (req, reply) => {
     const session = sessions.get(req.params.tableId);
     if (!session) {
@@ -107,62 +114,19 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return reply.status(400).send({ error: "SNG registration is closed" });
     }
 
-    const dat = readDatTokenConfig();
-    const buyInMojos = BigInt(req.body.buyInMojos);
-    const minBuyIn = session.sng
-      ? session.sng.startingStackMojos
-      : resolveDatMinBuyInMojos(dat.minBuyInMojos);
-
-    if (buyInMojos < minBuyIn) {
-      return reply.status(400).send({
-        error: `Buy-in below minimum (${minBuyIn.toString()} mojos)`,
-      });
+    const buyInError = validateSeatBuyIn(req.params.tableId, session, {
+      playerId: req.body.playerId,
+      seatIndex: req.body.seatIndex,
+      buyInMojos: req.body.buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyInError) {
+      return reply.status(buyInError.status).send({ error: buyInError.error });
     }
-
-    if (!dat.devBuyInEnabled) {
-      if (!dat.assetId) {
-        return reply.status(503).send({ error: "DAT token not configured" });
-      }
-      if (!req.body.buyInProof) {
-        return reply.status(400).send({ error: "Wallet buy-in proof required" });
-      }
-      const proofError = validateBuyInProof(req.body.buyInProof, {
-        tableId: req.params.tableId,
-        seatIndex: req.body.seatIndex,
-        buyInMojos: req.body.buyInMojos,
-        playerId: req.body.playerId,
-      });
-      if (proofError) {
-        return reply.status(400).send({ error: proofError });
-      }
-      if (req.body.buyInProof.datBalanceMojos) {
-        const balance = BigInt(req.body.buyInProof.datBalanceMojos);
-        if (balance < buyInMojos) {
-          return reply.status(400).send({ error: "Insufficient DAT balance for buy-in" });
-        }
-      }
-    } else if (!req.body.devAck && dat.assetId && req.body.buyInProof) {
-      const proofError = validateBuyInProof(req.body.buyInProof, {
-        tableId: req.params.tableId,
-        seatIndex: req.body.seatIndex,
-        buyInMojos: req.body.buyInMojos,
-        playerId: req.body.playerId,
-      });
-      if (proofError) {
-        return reply.status(400).send({ error: proofError });
-      }
-    }
-
-    const buyInProof = req.body.buyInProof ?? {
-      address: req.body.playerId,
-      message: "",
-      signature: "",
-      pubkey: "",
-    };
-    recordBuyIn(req.params.tableId, req.body.playerId, buyInProof, req.body.buyInMojos);
 
     try {
-      session.engine.seatPlayer(req.body.playerId, req.body.seatIndex, buyInMojos);
+      session.engine.seatPlayer(req.body.playerId, req.body.seatIndex, BigInt(req.body.buyInMojos));
       autoFillAndStart(session);
       return { ok: true, ...serializeTable(req.params.tableId, session) };
     } catch (e) {
@@ -192,6 +156,56 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
   });
 
+  app.post<{
+    Params: { tableId: string };
+    Body: {
+      playerId: string;
+      seatIndex?: number;
+      buyInMojos: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+    };
+  }>("/v1/tables/:tableId/claim-house", async (req, reply) => {
+    const session = sessions.get(req.params.tableId);
+    if (!session) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+    if (!req.body.playerId || !req.body.buyInMojos) {
+      return reply.status(400).send({ error: "playerId and buyInMojos required" });
+    }
+    if (isHousePlayerId(req.body.playerId)) {
+      return reply.status(400).send({ error: "House bots cannot claim a seat" });
+    }
+
+    const previewSeat =
+      req.body.seatIndex ?? session.engine.houseSeats()[0]?.seatIndex ?? 0;
+    const buyInError = validateSeatBuyIn(req.params.tableId, session, {
+      playerId: req.body.playerId,
+      seatIndex: previewSeat,
+      buyInMojos: req.body.buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyInError) {
+      return reply.status(buyInError.status).send({ error: buyInError.error });
+    }
+
+    try {
+      const claimed = session.sng
+        ? session.sng.claimHouseSeat(req.body.playerId, req.body.seatIndex)
+        : session.engine.claimHouseSeat(req.body.playerId, req.body.seatIndex);
+      return {
+        ok: true,
+        replacedPlayerId: claimed.replacedPlayerId,
+        seatIndex: claimed.seatIndex,
+        stackMojos: claimed.stackMojos,
+        ...serializeTable(req.params.tableId, session),
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
   app.post<{ Params: { tableId: string } }>("/v1/tables/:tableId/fill-house", async (req, reply) => {
     const session = sessions.get(req.params.tableId);
     if (!session?.sng) {
@@ -205,6 +219,93 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return reply.status(400).send({ error: (e as Error).message });
     }
   });
+}
+
+function validateSeatBuyIn(
+  tableId: string,
+  session: TableSession,
+  body: {
+    playerId: string;
+    seatIndex: number;
+    buyInMojos: string;
+    buyInProof?: BuyInProof;
+    devAck?: boolean;
+  },
+): { status: number; error: string } | null {
+  const dat = readDatTokenConfig();
+  const buyInMojos = BigInt(body.buyInMojos);
+  const minBuyIn = session.sng
+    ? session.sng.buyInMojos
+    : resolveDatMinBuyInMojos(dat.minBuyInMojos);
+
+  if (buyInMojos < minBuyIn) {
+    return { status: 400, error: `Buy-in below minimum (${minBuyIn.toString()} mojos)` };
+  }
+
+  if (!dat.devBuyInEnabled) {
+    if (!dat.assetId) {
+      return { status: 503, error: "DAT token not configured" };
+    }
+    if (!body.buyInProof) {
+      return { status: 400, error: "Wallet buy-in proof required" };
+    }
+    const proofError = validateBuyInProof(body.buyInProof, {
+      tableId,
+      seatIndex: body.seatIndex,
+      buyInMojos: body.buyInMojos,
+      playerId: body.playerId,
+    });
+    if (proofError) {
+      return { status: 400, error: proofError };
+    }
+    if (body.buyInProof.datBalanceMojos) {
+      const balance = BigInt(body.buyInProof.datBalanceMojos);
+      if (balance < buyInMojos) {
+        return { status: 400, error: "Insufficient DAT balance for buy-in" };
+      }
+    }
+  } else if (!body.devAck && dat.assetId && body.buyInProof) {
+    const proofError = validateBuyInProof(body.buyInProof, {
+      tableId,
+      seatIndex: body.seatIndex,
+      buyInMojos: body.buyInMojos,
+      playerId: body.playerId,
+    });
+    if (proofError) {
+      return { status: 400, error: proofError };
+    }
+  }
+
+  recordBuyIn(
+    tableId,
+    body.playerId,
+    body.buyInProof ?? {
+      address: body.playerId,
+      message: "",
+      signature: "",
+      pubkey: "",
+    },
+    body.buyInMojos,
+  );
+  return null;
+}
+
+function serializeLobbyTable(tableId: string, session: TableSession) {
+  const seats = session.engine.getSeatedPlayers();
+  const houseSeats = seats.filter((p) => isHousePlayerId(p.playerId) && p.stackMojos > 0n);
+  const humans = seats.filter((p) => !isHousePlayerId(p.playerId));
+  return {
+    tableId,
+    format: session.engine.getConfig().format,
+    sngStatus: session.sng?.getStatus() ?? null,
+    handInProgress: session.engine.isHandInProgress(),
+    players: seats.length,
+    humanCount: humans.length,
+    houseSeatsAvailable: houseSeats.length,
+    buyInMojos: (session.sng?.buyInMojos ?? session.engine.getConfig().minBuyInMojos).toString(),
+    smallBlindMojos: session.engine.getConfig().smallBlindMojos.toString(),
+    bigBlindMojos: session.engine.getConfig().bigBlindMojos.toString(),
+  };
 }
 
 function autoFillAndStart(session: TableSession): void {

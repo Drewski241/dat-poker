@@ -1,4 +1,4 @@
-import type { HandId, PlayerId, Street, TableConfig } from "@dat-poker/shared";
+import { isHousePlayerId, type HandId, type PlayerId, type Street, type TableConfig } from "@dat-poker/shared";
 import { standardDeck, type Card } from "./card.js";
 import { compareHands, evaluateBestHand } from "./hand-evaluator.js";
 import {
@@ -126,6 +126,35 @@ export class NlheTableEngine {
       if (!taken.has(i)) open.push(i);
     }
     return open;
+  }
+
+  houseSeats(): { playerId: PlayerId; seatIndex: number; stackMojos: bigint }[] {
+    return this.getSeatedPlayers().filter((p) => isHousePlayerId(p.playerId) && p.stackMojos > 0n);
+  }
+
+  claimHouseSeat(
+    playerId: PlayerId,
+    seatIndex?: number,
+  ): { seatIndex: number; stackMojos: bigint; replacedPlayerId: PlayerId } {
+    if (this.hand) {
+      throw new Error("Wait for the current hand to finish before taking a house seat");
+    }
+    if ([...this.seats.values()].includes(playerId)) {
+      throw new Error("Already seated");
+    }
+    const houses = this.houseSeats();
+    const target =
+      seatIndex === undefined ? houses[0] : houses.find((row) => row.seatIndex === seatIndex);
+    if (!target) {
+      throw new Error(houses.length === 0 ? "No house seats left to take" : "That seat is not a house seat");
+    }
+    this.cashOutPlayer(target.playerId);
+    this.restoreSeat(playerId, target.seatIndex, target.stackMojos);
+    return {
+      seatIndex: target.seatIndex,
+      stackMojos: target.stackMojos,
+      replacedPlayerId: target.playerId,
+    };
   }
 
   cashOutPlayer(playerId: PlayerId): { stackMojos: bigint; seatIndex: number } {

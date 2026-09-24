@@ -40,6 +40,8 @@ export interface SngSnapshot {
   bigBlindMojos: bigint;
   handsPerLevel: number;
   playersRemaining: number;
+  humanCount: number;
+  houseSeatsAvailable: number;
   placements: SngPlacement[];
 }
 
@@ -94,6 +96,16 @@ export class SngTournament {
       rakeBps: 0,
     };
     return new SngTournament(new NlheTableEngine(config), options);
+  }
+
+  claimHouseSeat(
+    playerId: PlayerId,
+    seatIndex?: number,
+  ): { seatIndex: number; stackMojos: bigint; replacedPlayerId: PlayerId } {
+    if (this.status === "finished") {
+      throw new Error("SNG is finished");
+    }
+    return this.engine.claimHouseSeat(playerId, seatIndex);
   }
 
   fillHouseSeats(): string[] {
@@ -190,6 +202,8 @@ export class SngTournament {
       bigBlindMojos: level.bigBlindMojos,
       handsPerLevel: this.handsPerLevel,
       playersRemaining: this.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n).length,
+      humanCount: this.humanCount(),
+      houseSeatsAvailable: this.engine.houseSeats().length,
       placements: [...this.placements],
     };
   }

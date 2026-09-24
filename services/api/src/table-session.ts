@@ -1,4 +1,4 @@
-import { isHousePlayerId, type TableConfig } from "@dat-poker/shared";
+import type { TableConfig } from "@dat-poker/shared";
 import {
   generateServerSeed,
   playHouseUntilHuman,
@@ -12,10 +12,14 @@ export interface TableSession {
 }
 
 export function seedHousePlayers(engine: NlheTableEngine): void {
+  seedMissingPlayers(engine);
+}
+
+export function seedMissingPlayers(engine: NlheTableEngine): void {
   const hand = engine.getHandState();
   if (!hand) return;
   for (const player of hand.players) {
-    if (isHousePlayerId(player.playerId) && !hand.playerSeeds[player.playerId]) {
+    if (!hand.playerSeeds[player.playerId]) {
       engine.submitPlayerSeed(player.playerId, generateServerSeed());
     }
   }

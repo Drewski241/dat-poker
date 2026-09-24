@@ -51,6 +51,32 @@ body {
   font-size: 0.9rem;
 }
 
+.lobby {
+  margin-top: 1rem;
+}
+
+.lobby h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.lobby-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.lobby-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.9rem;
+}
+
 header h1 {
   margin: 0 0 0.25rem;
   font-size: 1.75rem;

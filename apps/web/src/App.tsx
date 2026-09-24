@@ -12,6 +12,7 @@ import {
   type DatTokenInfo,
   type HandResult,
   type HandState,
+  type LobbyTable,
   type PlayerAction,
   type SngSnapshot,
   type TableSeat,
@@ -68,6 +69,7 @@ export function App() {
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
   const [tableBigBlind, setTableBigBlind] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
   const [sng, setSng] = useState<SngSnapshot | null>(null);
+  const [lobbyTables, setLobbyTables] = useState<LobbyTable[]>([]);
   const [handInProgress, setHandInProgress] = useState(false);
   const [withdrawResult, setWithdrawResult] = useState<WithdrawResult | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
@@ -112,6 +114,11 @@ export function App() {
     }
   }, []);
 
+  const refreshLobby = useCallback(async () => {
+    const { tables } = await api.listTables();
+    setLobbyTables(tables);
+  }, []);
+
   const refreshTable = useCallback(async (id: string) => {
     const t = await api.getTable(id);
     setHand(t.hand);
@@ -122,6 +129,21 @@ export function App() {
     if (t.sng?.bigBlindMojos) setTableBigBlind(BigInt(t.sng.bigBlindMojos));
     if (t.lastHandResult) setHandResult(t.lastHandResult);
   }, []);
+
+  useEffect(() => {
+    if (!apiOk) return;
+    const tick = () => {
+      if (busy) return;
+      if (tableId) {
+        void refreshTable(tableId).catch(() => undefined);
+      } else {
+        void refreshLobby().catch(() => undefined);
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 2000);
+    return () => window.clearInterval(timer);
+  }, [apiOk, tableId, busy, refreshTable, refreshLobby]);
 
   const applyActionResponse = useCallback(
     (response: { hand: HandState | null; lastHandResult: HandResult | null; sng?: SngSnapshot | null }) => {
@@ -273,6 +295,80 @@ export function App() {
       }
       setTableId(id);
       await refreshTable(id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const takeHouseSeat = async (openTable: LobbyTable) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!playerId) throw new Error("Connect Sage and load DAT balance first");
+      const ticker = datToken?.ticker ?? "DAT";
+      const latest = await api.getTable(openTable.tableId);
+      if (latest.handInProgress) {
+        throw new Error("Hand in progress — wait for it to finish, then take a house seat");
+      }
+      const houseSeat = latest.seats.find((seat) => isHousePlayerId(seat.playerId) && BigInt(seat.stackMojos) > 0n);
+      if (!houseSeat) {
+        throw new Error("No house seats left at this table");
+      }
+      const buyIn = latest.sng?.buyInMojos ?? latest.config?.minBuyInMojos ?? openTable.buyInMojos;
+      if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
+        throw new Error(`Need at least ${formatDatMojos(buyIn, ticker)} in wallet`);
+      }
+
+      let buyInProof: BuyInProof | undefined;
+      if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
+        const { message } = await api.buyInMessage({
+          tableId: openTable.tableId,
+          seatIndex: houseSeat.seatIndex,
+          buyInMojos: buyIn,
+          address: walletAddress,
+        });
+        buyInProof = {
+          address: walletAddress,
+          message,
+          signature: "",
+          pubkey: "",
+          datBalanceMojos: datBalance ?? undefined,
+        };
+        setStatus("Approve buy-in in Sage (check your phone)…");
+        try {
+          const signed = await signBuyInMessage(
+            session,
+            wcConfig.projectId,
+            wcConfig.chainId,
+            message,
+            walletAddress,
+          );
+          buyInProof.signature = signed.signature;
+          buyInProof.pubkey = signed.pubkey;
+        } catch (signErr) {
+          if (!datBalance || BigInt(datBalance) < BigInt(buyIn)) {
+            throw signErr;
+          }
+          setStatus("Signature skipped — using wallet balance attestation…");
+        }
+      }
+
+      setStatus("Taking a house seat…");
+      const claimed = await api.claimHouse(openTable.tableId, playerId, buyIn, {
+        seatIndex: houseSeat.seatIndex,
+        buyInProof,
+        devAck: datToken?.devBuyInEnabled,
+      });
+      setTableId(openTable.tableId);
+      setSng(claimed.sng);
+      setTableSeats(claimed.seats);
+      setHand(claimed.hand);
+      setHandInProgress(claimed.handInProgress);
+      if (claimed.config?.bigBlindMojos) setTableBigBlind(BigInt(claimed.config.bigBlindMojos));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -502,7 +598,7 @@ export function App() {
             </div>
             <p className="muted small">
               {tableMode === "sng"
-                ? "You take one seat. House bots fill the other eight so we can build the sit-n-go flow without a full table of testers. Later we will require more humans."
+                ? "Start a 9-max or take over a house seat on a live SNG. House bots hold empty seats until a human sits."
                 : "Heads-up cash table against a single house seat."}
             </p>
             {datToken?.devBuyInEnabled && !playerId && (
@@ -512,8 +608,9 @@ export function App() {
                   className="secondary"
                   disabled={busy || !apiOk}
                   onClick={() => {
-                    setPlayerId("dev-human");
-                    setWalletAddress("dev-human");
+                    const id = `dev-human-${crypto.randomUUID().slice(0, 8)}`;
+                    setPlayerId(id);
+                    setWalletAddress(id);
                   }}
                 >
                   Dev sit (no Sage)
@@ -528,13 +625,40 @@ export function App() {
               {tableMode === "sng" ? "Buy in & start 9-max SNG" : "Buy in & join cash table"}{" "}
               ({formatDatMojos(datToken?.minBuyInMojos ?? DAT_SNG_DEFAULTS.buyInMojos.toString(), datToken?.ticker)})
             </button>
+            {tableMode === "sng" && lobbyTables.filter((row) => row.format === "sng" && row.houseSeatsAvailable > 0).length > 0 && (
+              <div className="lobby">
+                <h3>Open sit-n-gos</h3>
+                <p className="muted small">Take over a house bot. If a hand is running, wait for it to finish.</p>
+                <ul className="lobby-list">
+                  {lobbyTables
+                    .filter((row) => row.format === "sng" && row.houseSeatsAvailable > 0)
+                    .map((row) => (
+                      <li key={row.tableId}>
+                        <span>
+                          {row.humanCount} human{row.humanCount === 1 ? "" : "s"} · {row.houseSeatsAvailable} house
+                          {row.handInProgress ? " · hand in progress" : ""} · {row.sngStatus}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={busy || !playerId || !datToken?.buyInReady}
+                          onClick={() => void takeHouseSeat(row)}
+                        >
+                          Take house seat
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
           </>
         ) : (
           <>
             <p className="mono">Table ID: {tableId}</p>
             {sng && (
               <p>
-                SNG {sng.status} · {sng.playersRemaining}/{sng.maxSeats} left · blinds{" "}
+                SNG {sng.status} · {sng.playersRemaining}/{sng.maxSeats} left ·{" "}
+                {sng.humanCount ?? tableSeats.filter((seat) => !isHousePlayerId(seat.playerId)).length} human
+                {(sng.humanCount ?? 1) === 1 ? "" : "s"} · {sng.houseSeatsAvailable ?? 0} house · blinds{" "}
                 {formatDatMojos(sng.smallBlindMojos, datToken?.ticker)} /{" "}
                 {formatDatMojos(sng.bigBlindMojos, datToken?.ticker)}
                 {sng.handNumber > 0 && ` · hand ${sng.handNumber}`}

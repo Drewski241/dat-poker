@@ -114,7 +114,22 @@ export interface SngSnapshot {
   bigBlindMojos: string;
   handsPerLevel: number;
   playersRemaining: number;
+  humanCount?: number;
+  houseSeatsAvailable?: number;
   placements: SngPlacement[];
+}
+
+export interface LobbyTable {
+  tableId: string;
+  format: "cash" | "sng" | "mtt";
+  sngStatus: "registering" | "running" | "finished" | null;
+  handInProgress: boolean;
+  players: number;
+  humanCount: number;
+  houseSeatsAvailable: number;
+  buyInMojos: string;
+  smallBlindMojos: string;
+  bigBlindMojos: string;
 }
 
 export interface TableState {
@@ -191,6 +206,26 @@ export const api = {
     }),
 
   getTable: (tableId: string) => request<TableState>(`/v1/tables/${tableId}`),
+
+  listTables: () => request<{ tables: LobbyTable[] }>("/v1/tables"),
+
+  claimHouse: (
+    tableId: string,
+    playerId: string,
+    buyInMojos: string,
+    options?: { seatIndex?: number; buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<TableState & { ok: boolean; replacedPlayerId: string; seatIndex: number; stackMojos: string }>(
+      `/v1/tables/${tableId}/claim-house`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          playerId,
+          buyInMojos,
+          ...options,
+        }),
+      },
+    ),
 
   seatPlayer: (
     tableId: string,
