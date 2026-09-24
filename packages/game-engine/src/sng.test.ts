@@ -170,6 +170,10 @@ describe("SngTournament", () => {
     expect(after.blindsUpNextHand).toBe(false);
     expect(sng.engine.getSmallBlindMojos()).toBe(25_000n);
     expect(sng.engine.getBigBlindMojos()).toBe(50_000n);
+
+    const stale = sng.syncBlindClock(1_000);
+    expect(stale.levelIndex).toBe(2);
+    expect(sng.engine.getSmallBlindMojos()).toBe(25_000n);
   });
 
   it("still raises blinds after enough hands when the clock has not elapsed", () => {

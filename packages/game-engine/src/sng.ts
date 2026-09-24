@@ -170,7 +170,7 @@ export class SngTournament {
   syncBlindClock(nowMs = Date.now()): SngSnapshot {
     if (this.status === "running" && !this.engine.isHandInProgress()) {
       const target = this.targetLevel(nowMs);
-      if (target !== this.levelIndex) {
+      if (target > this.levelIndex) {
         this.levelIndex = target;
         this.applyBlindLevel();
       }
