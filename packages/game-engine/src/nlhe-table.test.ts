@@ -378,7 +378,7 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()?.players.filter((p) => !p.folded).length).toBe(2);
   });
 
-  it("reveals only winning hole cards after a showdown", () => {
+  it("reveals every live hole card after a showdown", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);
     table.seatPlayer("dat-poker:house", 1, 5_000_000_000_000n);
@@ -401,13 +401,14 @@ describe("NlheTableEngine", () => {
     const result = table.getLastHandResult();
     expect(result?.reason).toBe("showdown");
     expect(result?.board).toHaveLength(5);
-    expect(result?.shown.length).toBeGreaterThanOrEqual(1);
+    expect(result?.shown.length).toBeGreaterThanOrEqual(2);
     expect(result?.shown.every((p) => p.holeCards.length === 2)).toBe(true);
-    expect(result?.shown.every((p) => p.playerId === result.winnerId)).toBe(true);
+    expect(result?.shown.some((p) => p.playerId === result.winnerId)).toBe(true);
+    expect(result?.shown.some((p) => p.playerId !== result.winnerId)).toBe(true);
     expect(result?.shown.find((p) => p.playerId === result.winnerId)?.category).toBeTruthy();
   });
 
-  it("does not include losing hole cards in a multi-way showdown", () => {
+  it("includes losing hole cards in a multi-way showdown", () => {
     const tiny: TableConfig = {
       ...config,
       maxSeats: 3,
@@ -438,12 +439,8 @@ describe("NlheTableEngine", () => {
     expect(result?.reason).toBe("showdown");
     const shownIds = new Set(result?.shown.map((p) => p.playerId) ?? []);
     expect(shownIds.has(result!.winnerId)).toBe(true);
-    expect(shownIds.size).toBeLessThan(3);
-    for (const id of ["alice", "bob", "carol"]) {
-      if (id !== result!.winnerId && table.getPlayerStack(id) === 0n) {
-        expect(shownIds.has(id)).toBe(false);
-      }
-    }
+    expect(shownIds.size).toBe(3);
+    expect(result?.shown.every((p) => p.holeCards.length === 2)).toBe(true);
   });
 
   it("posts small and big blind relative to the dealer button", () => {

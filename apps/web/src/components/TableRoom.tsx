@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { DatTokenInfo, HandResult, HandState, PlayerAction, SngSnapshot, TableSeat } from "../api.js";
 import { computeNlheBetRange, formatDatAmount, formatDatMojos } from "@dat-poker/shared";
+import { formatHandCategory } from "../all-in-runout.js";
+import { AllInRunout } from "./AllInRunout.js";
 import { BetSlider } from "./BetSlider.js";
 import { CardRow, PlayingCard } from "./PlayingCard.js";
 
@@ -67,6 +69,8 @@ type Props = {
   maxSeats?: number;
   tableTitle?: string;
   sng?: SngSnapshot | null;
+  runoutFromBoardLen?: number | null;
+  onRunoutFinished?: () => void;
 };
 
 export function TableRoom({
@@ -104,6 +108,8 @@ export function TableRoom({
   maxSeats = 6,
   tableTitle = "6-max",
   sng = null,
+  runoutFromBoardLen = null,
+  onRunoutFinished,
 }: Props) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -218,7 +224,18 @@ export function TableRoom({
       <main className={`table-room-main ${hand ? "table-room-main-in-hand" : "table-room-main-between"}`}>
         {!hand ? (
           <div className="table-room-between">
-            {handResult && (
+            {handResult && runoutFromBoardLen != null && onRunoutFinished && (
+              <AllInRunout
+                result={handResult}
+                fromBoardLen={runoutFromBoardLen}
+                datToken={datToken}
+                playerId={playerId}
+                playerLabel={playerLabel}
+                seatDisplay={(id) => tableSeats.find((s) => s.playerId === id)?.displayAddress}
+                onFinished={onRunoutFinished}
+              />
+            )}
+            {handResult && runoutFromBoardLen == null && (
               <div
                 className={
                   handResult.winnerId === playerId
@@ -244,7 +261,10 @@ export function TableRoom({
                 {handResult.reason === "showdown" && (handResult.shown?.length ?? 0) > 0 && (
                   <div className="table-room-showdown-strip">
                     {handResult.shown!.map((shown) => (
-                      <div key={shown.playerId} className="table-room-showdown-entry">
+                      <div
+                        key={shown.playerId}
+                        className={`table-room-showdown-entry ${shown.playerId === handResult.winnerId ? "is-winner" : "is-loser"}`}
+                      >
                         <span className="table-room-showdown-name">
                           {playerLabel(
                             shown.playerId,
@@ -254,6 +274,7 @@ export function TableRoom({
                           {shown.playerId === handResult.winnerId ? " ★" : ""}
                         </span>
                         <CardRow cards={shown.holeCards} size="sm" />
+                        <span className="table-room-showdown-cat">{formatHandCategory(shown.category)}</span>
                       </div>
                     ))}
                   </div>
@@ -277,7 +298,7 @@ export function TableRoom({
                 Buy in again ({rebuyLabel})
               </button>
             )}
-            {!canRebuy && canDeal && (
+            {!canRebuy && canDeal && runoutFromBoardLen == null && (
               <button
                 type="button"
                 className="table-room-deal-btn"

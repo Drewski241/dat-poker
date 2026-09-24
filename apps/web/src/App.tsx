@@ -23,6 +23,7 @@ import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
 import { TableRoom } from "./components/TableRoom.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
+import { shouldPlayAllInRunout } from "./all-in-runout.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
   actionSecondsRemaining,
@@ -153,6 +154,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [hand, setHand] = useState<HandState | null>(null);
   const [handResult, setHandResult] = useState<HandResult | null>(null);
+  const [runoutFromBoardLen, setRunoutFromBoardLen] = useState<number | null>(null);
+  const liveHandMeta = useRef({ handId: "", boardLen: 0, allIn: false });
+  const playedRunouts = useRef(new Set<string>());
   const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
   const [handHistoryOpen, setHandHistoryOpen] = useState(false);
   const [bigWin, setBigWin] = useState<BigWinOverlay | null>(null);
@@ -327,6 +331,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (sng?.status !== "finished" || !playerId) return;
     void refreshAccount(playerId);
   }, [sng?.status, playerId, refreshAccount]);
+
+  useEffect(() => {
+    if (hand) {
+      liveHandMeta.current = {
+        handId: hand.handId,
+        boardLen: hand.board.length,
+        allIn: hand.players.some((p) => p.allIn && !p.folded),
+      };
+      return;
+    }
+    if (!handResult || playedRunouts.current.has(handResult.handId)) return;
+    if (!shouldPlayAllInRunout(liveHandMeta.current, handResult)) return;
+    playedRunouts.current.add(handResult.handId);
+    setRunoutFromBoardLen(liveHandMeta.current.boardLen);
+  }, [hand, handResult]);
 
   useEffect(() => {
     if (hand || handInProgress) {
@@ -1143,6 +1162,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             maxSeats={tableMaxSeats}
             tableTitle={tableFormat === "sng" ? "9-max SNG" : "6-max"}
             sng={tableFormat === "sng" ? sng : null}
+            runoutFromBoardLen={runoutFromBoardLen}
+            onRunoutFinished={() => setRunoutFromBoardLen(null)}
           />
         </>
       ) : (

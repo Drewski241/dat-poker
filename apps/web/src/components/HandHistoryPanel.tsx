@@ -59,6 +59,22 @@ export function HandHistoryPanel({
               {hand.reason === "showdown" && (hand.board?.length ?? 0) > 0 && (
                 <CardRow cards={hand.board!} size="sm" />
               )}
+              {hand.reason === "showdown" && (hand.shown?.length ?? 0) > 0 && (
+                <div className="table-room-showdown-strip">
+                  {hand.shown!.map((shown) => (
+                    <div
+                      key={shown.playerId}
+                      className={`table-room-showdown-entry ${shown.playerId === hand.winnerId ? "is-winner" : "is-loser"}`}
+                    >
+                      <span className="table-room-showdown-name">
+                        {playerLabel(shown.playerId, playerId, seatDisplayFor(shown.playerId))}
+                        {shown.playerId === hand.winnerId ? " ★" : ""}
+                      </span>
+                      <CardRow cards={shown.holeCards} size="sm" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </li>
           );
         })}

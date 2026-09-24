@@ -725,16 +725,11 @@ export class NlheTableEngine {
       potMojos,
       reason: "showdown",
       board: [...h.board],
-      shown: live
-        .filter(
-          (p) =>
-            p.playerId === primaryWinnerId || (awardedByPlayer.get(p.playerId) ?? 0n) > 0n,
-        )
-        .map((p) => ({
-          playerId: p.playerId,
-          holeCards: [...p.holeCards],
-          category: evaluateBestHand([...p.holeCards, ...h.board]).category,
-        })),
+      shown: live.map((p) => ({
+        playerId: p.playerId,
+        holeCards: [...p.holeCards],
+        category: evaluateBestHand([...p.holeCards, ...h.board]).category,
+      })),
       participants,
     };
     this.recordHandPlayed(h);
