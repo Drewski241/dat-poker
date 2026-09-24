@@ -16,6 +16,7 @@ export interface ShownHand {
   playerId: PlayerId;
   holeCards: Card[];
   category: HandCategory;
+  allIn: boolean;
 }
 
 export interface HandResultParticipant {
@@ -33,6 +34,7 @@ export interface HandResult {
   reason: "fold" | "showdown";
   board: Card[];
   shown: ShownHand[];
+  allInPlayerIds: PlayerId[];
   participants: HandResultParticipant[];
 }
 
@@ -726,6 +728,7 @@ export class NlheTableEngine {
       reason: "showdown",
       board: [...h.board],
       shown: this.showdownHandsToReveal(h, live, awardedByPlayer),
+      allInPlayerIds: h.players.filter((p) => p.allIn && !p.folded).map((p) => p.playerId),
       participants,
     };
     this.recordHandPlayed(h);
@@ -758,6 +761,7 @@ export class NlheTableEngine {
       reason: "fold",
       board: [...h.board],
       shown: [],
+      allInPlayerIds: h.players.filter((p) => p.allIn && !p.folded).map((p) => p.playerId),
       participants,
     };
     this.recordHandPlayed(h);
@@ -874,6 +878,7 @@ export class NlheTableEngine {
         playerId: p.playerId,
         holeCards: [...p.holeCards],
         category: evaluateBestHand([...p.holeCards, ...h.board]).category,
+        allIn: p.allIn,
       }));
   }
 

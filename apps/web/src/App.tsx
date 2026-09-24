@@ -156,7 +156,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [hand, setHand] = useState<HandState | null>(null);
   const [handResult, setHandResult] = useState<HandResult | null>(null);
   const [runoutFromBoardLen, setRunoutFromBoardLen] = useState<number | null>(null);
-  const liveHandMeta = useRef({ handId: "", boardLen: 0, allIn: false });
+  const liveHandMeta = useRef({
+    handId: "",
+    boardLen: 0,
+    allIn: false,
+    allInPlayerIds: [] as string[],
+    viewerFolded: false,
+  });
   const runoutFromBoardLenRef = useRef<number | null>(null);
   const playedRunouts = useRef(new Set<string>());
   const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
@@ -352,22 +358,28 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   useEffect(() => {
     if (hand) {
       const sameHand = liveHandMeta.current.handId === hand.handId;
-      const flagged = sameHand && liveHandMeta.current.allIn;
-      const allIn = flagged || hand.players.some((p) => p.allIn && !p.folded);
+      const allInIds = hand.players.filter((p) => p.allIn && !p.folded).map((p) => p.playerId);
+      const me = playerId ? hand.players.find((p) => p.playerId === playerId) : undefined;
+      const viewerAllIn = Boolean(me?.allIn && !me.folded) || (sameHand && liveHandMeta.current.allIn);
+      const anyAllIn = allInIds.length > 0 || viewerAllIn;
       liveHandMeta.current = {
         handId: hand.handId,
         // Freeze the board at the all-in moment so an instant server runout
         // still replays flop/turn/river instead of flashing the finished board.
-        boardLen: allIn && sameHand ? liveHandMeta.current.boardLen : hand.board.length,
-        allIn,
+        boardLen: anyAllIn && sameHand ? liveHandMeta.current.boardLen : hand.board.length,
+        allIn: viewerAllIn,
+        allInPlayerIds: sameHand
+          ? [...new Set([...liveHandMeta.current.allInPlayerIds, ...allInIds])]
+          : allInIds,
+        viewerFolded: Boolean(me?.folded),
       };
       return;
     }
     if (!handResult || playedRunouts.current.has(handResult.handId)) return;
-    if (!shouldPlayAllInRunout(liveHandMeta.current, handResult)) return;
+    if (!shouldPlayAllInRunout({ ...liveHandMeta.current, viewerId: playerId }, handResult)) return;
     playedRunouts.current.add(handResult.handId);
     setRunoutFromBoardLen(liveHandMeta.current.boardLen);
-  }, [hand, handResult]);
+  }, [hand, handResult, playerId]);
 
   useEffect(() => {
     if (hand || handInProgress) {
@@ -860,6 +872,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         handId: hand.handId,
         boardLen: liveHandMeta.current.handId === hand.handId ? liveHandMeta.current.boardLen : hand.board.length,
         allIn: true,
+        allInPlayerIds: [...new Set([...liveHandMeta.current.allInPlayerIds, playerId])],
+        viewerFolded: false,
+      };
+    }
+    if (action === "fold") {
+      liveHandMeta.current = {
+        ...liveHandMeta.current,
+        allIn: false,
+        viewerFolded: true,
       };
     }
     run(action, async () => {

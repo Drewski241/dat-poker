@@ -441,6 +441,8 @@ describe("NlheTableEngine", () => {
     expect(shownIds.has(result!.winnerId)).toBe(true);
     expect(shownIds.size).toBe(3);
     expect(result?.shown.every((p) => p.holeCards.length === 2)).toBe(true);
+    expect(result?.allInPlayerIds).toEqual(expect.arrayContaining(["alice", "bob", "carol"]));
+    expect(result?.shown.every((p) => p.allIn)).toBe(true);
   });
 
   it("does not reveal folded players at showdown", () => {

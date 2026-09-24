@@ -82,7 +82,9 @@ export interface HandResult {
     playerId: string;
     holeCards: { rank: string; suit: string }[];
     category: string;
+    allIn?: boolean;
   }[];
+  allInPlayerIds?: string[];
   participants?: {
     playerId: string;
     totalBetHandMojos: string;

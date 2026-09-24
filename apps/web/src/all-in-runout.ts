@@ -1,25 +1,48 @@
 export type RunoutStreet = "allin" | "flop" | "turn" | "river" | "hands";
 
+export type RunoutLive = {
+  boardLen: number;
+  allIn: boolean;
+  allInPlayerIds?: string[];
+  viewerId?: string | null;
+  viewerFolded?: boolean;
+};
+
+export type RunoutResult = {
+  reason: string;
+  board?: unknown[];
+  winnerId?: string;
+  allInPlayerIds?: string[];
+  shown?: { playerId: string; allIn?: boolean }[];
+};
+
 export function formatHandCategory(category: string | undefined): string {
   if (!category) return "";
   return category.replace(/_/g, " ");
 }
 
-export function shouldPlayAllInRunout(
-  live: {
-    boardLen: number;
-    allIn: boolean;
-  },
-  result: { reason: string; board?: unknown[]; winnerId?: string } | null,
-): boolean {
+export function runoutAllInPlayerIds(live: RunoutLive, result: RunoutResult | null): string[] {
+  const ids = new Set<string>();
+  for (const id of live.allInPlayerIds ?? []) {
+    if (id) ids.add(id);
+  }
+  for (const id of result?.allInPlayerIds ?? []) {
+    if (id) ids.add(id);
+  }
+  for (const shown of result?.shown ?? []) {
+    if (shown.allIn && shown.playerId) ids.add(shown.playerId);
+  }
+  if (live.allIn && live.viewerId && !live.viewerFolded) {
+    ids.add(live.viewerId);
+  }
+  return [...ids];
+}
+
+export function shouldPlayAllInRunout(live: RunoutLive, result: RunoutResult | null): boolean {
   if (!result || result.reason !== "showdown") return false;
   const finalLen = result.board?.length ?? 0;
   if (finalLen < 5) return false;
-  // Win or lose: an all-in showdown always gets the cinema so the player can
-  // watch the cards and study the hands.
-  if (live.allIn) return true;
-  const skipped = finalLen - Math.max(0, live.boardLen);
-  return skipped >= 2;
+  return runoutAllInPlayerIds(live, result).length > 0;
 }
 
 export function runoutStreets(fromBoardLen: number): RunoutStreet[] {
