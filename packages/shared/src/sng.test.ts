@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  DAT_MTT_DEFAULTS,
   DAT_SNG_DEFAULTS,
   defaultSngPayouts,
   houseSeatPlayerId,
   isHousePlayerId,
+  isTournamentFormat,
   HOUSE_PLAYER_ID,
+  mttHousePlayerId,
   sngHandsUntilNextLevel,
   sngNextLevelAtMs,
   sngPrizes,
@@ -17,6 +20,15 @@ describe("SNG helpers", () => {
     expect(isHousePlayerId(HOUSE_PLAYER_ID)).toBe(true);
     expect(isHousePlayerId(houseSeatPlayerId(3))).toBe(true);
     expect(isHousePlayerId("xch1alice")).toBe(false);
+  });
+
+  it("defaults the 16-player MTT to two 8-max tables then a final eight", () => {
+    expect(DAT_MTT_DEFAULTS.fieldSize).toBe(16);
+    expect(DAT_MTT_DEFAULTS.startingTableSeats).toBe(8);
+    expect(DAT_MTT_DEFAULTS.startingTableCount).toBe(2);
+    expect(DAT_MTT_DEFAULTS.finalTableSeats).toBe(8);
+    expect(isTournamentFormat("mtt")).toBe(true);
+    expect(isHousePlayerId(mttHousePlayerId("table-a", 2))).toBe(true);
   });
 
   it("defaults to a 9-max fill-house SNG", () => {

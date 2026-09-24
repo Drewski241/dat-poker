@@ -57,6 +57,16 @@ export interface SngSnapshot {
   humanCount: number;
   houseSeatsAvailable: number;
   placements: SngPlacement[];
+  kind?: "sng" | "mtt";
+  eventId?: string;
+  tableLabel?: string;
+  isFinalTable?: boolean;
+  fieldSize?: number;
+  startingTableCount?: number;
+  tableIndex?: number;
+  tableCount?: number;
+  relocatedToTableId?: string | null;
+  eventPlayersRemaining?: number;
 }
 
 export class SngTournament {

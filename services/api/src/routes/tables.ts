@@ -5,11 +5,12 @@ import {
   DAT_SNG_DEFAULTS,
   DAT_TABLE_DEFAULTS,
   isHousePlayerId,
+  isTournamentFormat,
   playthroughHandsRequired,
   playthroughUnlockedMojos,
   resolveDatMinBuyInMojos,
 } from "@dat-poker/shared";
-import { NlheTableEngine, SngTournament } from "@dat-poker/game-engine";
+import { MttEvent, NlheTableEngine, SngTournament } from "@dat-poker/game-engine";
 import {
   applyBuyInPlaythrough,
   creditAccount,
@@ -55,6 +56,7 @@ export interface UnseatInactiveResult {
 
 const tables = new Map<string, NlheTableEngine>();
 const sngByTable = new Map<string, SngTournament>();
+const mttByTable = new Map<string, MttEvent>();
 const playerLabels = new Map<string, string>();
 export { HOUSE_PLAYER_ID };
 
@@ -67,7 +69,7 @@ function humanCount(table: NlheTableEngine): number {
 }
 
 function isSngTable(table: NlheTableEngine): boolean {
-  return table.getConfig().format === "sng";
+  return isTournamentFormat(table.getConfig().format);
 }
 
 export function lobbyPresence(): {
@@ -178,6 +180,7 @@ function maintainTable(
 ): UnseatInactiveResult {
   const nowMs = Date.now();
   sngByTable.get(tableId)?.syncBlindClock(nowMs);
+  mttByTable.get(tableId)?.syncBlindClock(nowMs);
   if (viewerId && table.hasPlayer(viewerId)) {
     touchPlayerActivity(viewerId, nowMs);
   }
@@ -219,7 +222,7 @@ function tableSnapshot(
     smallBlindMojos: table.getSmallBlindMojos().toString(),
     bigBlindMojos: table.getBigBlindMojos().toString(),
     format: table.getConfig().format,
-    sng: sngByTable.get(tableId)?.snapshot() ?? null,
+    sng: tournamentSnapshot(tableId),
     houseSeatsAvailable: table.houseSeats().length,
     full:
       table.houseSeats().length === 0 &&
@@ -557,6 +560,120 @@ export function registerTableRoutes(app: FastifyInstance): void {
   });
 
   app.post<{
+    Body: {
+      playerId?: string;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+    };
+  }>("/v1/tables/join-mtt", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many join requests from this network" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
+
+    const existing = findPlayerTable(playerId);
+    if (existing) {
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(existing.tableId, existing.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: true,
+        ...tableSnapshot(existing.tableId, existing.table, playerId, maintenance),
+      };
+    }
+
+    const dat = readDatTokenConfig();
+    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+
+    const joinable = [...mttByTable.values()].find((mtt) => {
+      if (mtt.getStatus() === "finished") return false;
+      return mtt.firstHouseSeat() !== null;
+    });
+
+    if (joinable) {
+      const house = joinable.firstHouseSeat()!;
+      const buyIn = takeBuyInFromAccountOrProof({
+        tableId: house.tableId,
+        playerId,
+        displayAddress: session.displayAddress,
+        seatIndex: house.seatIndex,
+        buyInMojos,
+        buyInProof: req.body.buyInProof,
+        devAck: req.body.devAck,
+      });
+      if (buyIn.error) {
+        return reply.status(400).send({ error: buyIn.error });
+      }
+      try {
+        joinable.claimHouseSeat(house.tableId, playerId, house.seatIndex);
+        joinable.engineFor(house.tableId)?.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+        touchPlayerActivity(playerId);
+        const table = tables.get(house.tableId)!;
+        const maintenance = maintainTable(house.tableId, table, playerId);
+        return {
+          ok: true,
+          joinedExisting: true,
+          ...tableSnapshot(house.tableId, table, playerId, maintenance),
+        };
+      } catch (e) {
+        if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+        if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+        return reply.status(400).send({ error: (e as Error).message });
+      }
+    }
+
+    const created = createMttEvent();
+    const open = created.firstOpenSeat();
+    if (!open) {
+      return reply.status(500).send({ error: "Could not open a 16-player SNG" });
+    }
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: open.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: open.seatIndex,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      for (const tableId of created.tableIds()) {
+        tables.delete(tableId);
+        mttByTable.delete(tableId);
+      }
+      return reply.status(400).send({ error: buyIn.error });
+    }
+    try {
+      created.seatPlayer(open.tableId, playerId, open.seatIndex);
+      created.engineFor(open.tableId)?.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      autoFillAndStartMtt(created);
+      const table = tables.get(open.tableId)!;
+      const maintenance = maintainTable(open.tableId, table, playerId);
+      return {
+        ok: true,
+        joinedExisting: false,
+        ...tableSnapshot(open.tableId, table, playerId, maintenance),
+      };
+    } catch (e) {
+      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+      if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+      for (const tableId of created.tableIds()) {
+        tables.delete(tableId);
+        mttByTable.delete(tableId);
+      }
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
     Params: { tableId: string };
     Body: {
       playerId?: string;
@@ -573,6 +690,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
     const table = tables.get(req.params.tableId);
     const sng = sngByTable.get(req.params.tableId);
+    const mtt = mttByTable.get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
@@ -597,9 +715,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return reply.status(400).send({ error: buyIn.error });
     }
     try {
-      const claimed = sng
-        ? sng.claimHouseSeat(playerId, req.body.seatIndex)
-        : table.claimHouseSeat(playerId, req.body.seatIndex);
+      const claimed = mtt
+        ? mtt.claimHouseSeat(req.params.tableId, playerId, req.body.seatIndex)
+        : sng
+          ? sng.claimHouseSeat(playerId, req.body.seatIndex)
+          : table.claimHouseSeat(playerId, req.body.seatIndex);
       table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
       touchPlayerActivity(playerId);
       const maintenance = maintainTable(req.params.tableId, table, playerId);
@@ -1003,6 +1123,7 @@ export function returnAllStacksToAccounts(): { returned: number } {
 export function resetTablesForTests(): void {
   tables.clear();
   sngByTable.clear();
+  mttByTable.clear();
   playerLabels.clear();
   resetHandHistoryForTests();
 }
@@ -1031,6 +1152,37 @@ function createSngTable(options?: { maxSeats?: number; fillHouse?: boolean; minH
   return { tableId, table: sng.engine, sng };
 }
 
+function registerMttTables(mtt: MttEvent): void {
+  for (const engine of [...mtt.engines(), ...mtt.consumePendingTables()]) {
+    const id = engine.getConfig().id;
+    tables.set(id, engine);
+    mttByTable.set(id, mtt);
+  }
+}
+
+function createMttEvent(): MttEvent {
+  const mtt = MttEvent.create({
+    fillHouse: readFillHouseDefault(),
+    minHumansToStart: 1,
+  });
+  registerMttTables(mtt);
+  return mtt;
+}
+
+function autoFillAndStartMtt(mtt: MttEvent): void {
+  if (mtt.getStatus() !== "registering") return;
+  if (mtt.fillHouse) {
+    mtt.fillHouseSeats();
+  }
+  if (mtt.canStart()) {
+    mtt.start();
+  }
+}
+
+function tournamentSnapshot(tableId: string) {
+  return sngByTable.get(tableId)?.snapshot() ?? mttByTable.get(tableId)?.snapshot(tableId) ?? null;
+}
+
 function autoFillAndStartSng(sng: SngTournament): void {
   if (sng.getStatus() !== "registering") return;
   if (sng.fillHouse) {
@@ -1048,19 +1200,55 @@ function settleSngPrizes(sng: SngTournament): void {
   }
 }
 
+function settleMttPrizes(mtt: MttEvent): void {
+  for (const row of mtt.unpaidHumanPrizes()) {
+    creditAccount(row.playerId, row.prizeMojos);
+    mtt.markPrizePaid(row.playerId);
+  }
+}
+
 export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): void {
   const sng = sngByTable.get(tableId);
-  if (!sng || table.isHandInProgress()) return;
-  persistTablePlaythrough(table);
-  if (sng.getStatus() === "running") {
-    sng.afterHand();
+  if (sng && !table.isHandInProgress()) {
+    persistTablePlaythrough(table);
+    if (sng.getStatus() === "running") {
+      sng.afterHand();
+    }
+    if (sng.getStatus() === "finished") {
+      settleSngPrizes(sng);
+      persistSngPlaythroughAfterSettle(sng);
+    }
+    return;
   }
-  if (sng.getStatus() === "finished") {
-    settleSngPrizes(sng);
-    persistSngPlaythroughAfterSettle(sng);
+  const mtt = mttByTable.get(tableId);
+  if (!mtt || table.isHandInProgress()) return;
+  persistTablePlaythrough(table);
+  if (mtt.getStatus() === "running") {
+    mtt.afterHand(tableId);
+    registerMttTables(mtt);
+  }
+  if (mtt.getStatus() === "finished") {
+    settleMttPrizes(mtt);
   }
 }
 
 export function getSng(tableId: string): SngTournament | undefined {
   return sngByTable.get(tableId);
+}
+
+export function getMtt(tableId: string): MttEvent | undefined {
+  return mttByTable.get(tableId);
+}
+
+export function onTournamentHandStarted(tableId: string): void {
+  const sng = sngByTable.get(tableId);
+  if (sng) {
+    sng.onHandStarted();
+    return;
+  }
+  mttByTable.get(tableId)?.onHandStarted(tableId);
+}
+
+export function tournamentFields(tableId: string) {
+  return tournamentSnapshot(tableId);
 }

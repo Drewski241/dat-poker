@@ -63,7 +63,7 @@ export function AllInRunout({
       <ActionSticker kind={street === "hands" ? "allin" : street} />
       <p className="all-in-runout-banner">
         {street === "allin" ? "ALL IN" : street === "hands" ? "Showdown" : street.toUpperCase()}
-        <span>{lost ? " · study the hands" : " · all-in"}</span>
+        {street !== "hands" ? <span> · all-in</span> : null}
       </p>
       <div className="all-in-runout-board">
         {Array.from({ length: 5 }, (_, i) => {

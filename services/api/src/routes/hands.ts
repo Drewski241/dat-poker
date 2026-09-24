@@ -5,8 +5,11 @@ import { maybeRecordCompletedHand } from "../hand-history-store.js";
 import {
   ensureHouseFunded,
   finalizeSngIfNeeded,
+  getMtt,
   getSng,
   getTableEngine,
+  onTournamentHandStarted,
+  tournamentFields,
   persistTablePlaythrough,
   playthroughFields,
   unseatInactivePlayers,
@@ -46,14 +49,16 @@ export function registerHandRoutes(app: FastifyInstance): void {
       if (!session) return;
       try {
         const sng = getSng(req.params.tableId);
-        if (sng) {
-          if (sng.getStatus() === "registering") {
+        const mtt = getMtt(req.params.tableId);
+        if (sng || mtt) {
+          const status = sng?.getStatus() ?? mtt?.getStatus();
+          if (status === "registering") {
             return reply.status(400).send({ error: "SNG has not started" });
           }
-          if (sng.getStatus() === "finished") {
+          if (status === "finished") {
             return reply.status(400).send({ error: "SNG is finished" });
           }
-          sng.onHandStarted();
+          onTournamentHandStarted(req.params.tableId);
         } else {
           ensureHouseFunded(table);
         }
@@ -76,14 +81,16 @@ export function registerHandRoutes(app: FastifyInstance): void {
       if (!session) return;
       try {
         const sng = getSng(req.params.tableId);
-        if (sng) {
-          if (sng.getStatus() === "registering") {
+        const mtt = getMtt(req.params.tableId);
+        if (sng || mtt) {
+          const status = sng?.getStatus() ?? mtt?.getStatus();
+          if (status === "registering") {
             return reply.status(400).send({ error: "SNG has not started" });
           }
-          if (sng.getStatus() === "finished") {
+          if (status === "finished") {
             return reply.status(400).send({ error: "SNG is finished" });
           }
-          sng.onHandStarted();
+          onTournamentHandStarted(req.params.tableId);
         } else {
           ensureHouseFunded(table);
         }
@@ -104,7 +111,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         commitHash,
         hand: redactHandForViewer(table.getHandState(), session.playerId),
         lastHandResult: table.getLastHandResult(),
-        sng: getSng(req.params.tableId)?.snapshot() ?? null,
+        sng: tournamentFields(req.params.tableId),
         playthrough: playthroughFields(session.playerId, table.getHandsPlayed(session.playerId)),
       };
     } catch (e) {
@@ -171,7 +178,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         ok: true,
         hand: redactHandForViewer(table.getHandState(), session.playerId),
         lastHandResult: table.getLastHandResult(),
-        sng: getSng(req.params.tableId)?.snapshot() ?? null,
+        sng: tournamentFields(req.params.tableId),
         playthrough: playthroughFields(session.playerId, table.getHandsPlayed(session.playerId)),
       };
     } catch (e) {

@@ -44,7 +44,7 @@ function playthroughView(playerId: string) {
 }
 
 function isSngEngine(table: NlheTableEngine | undefined): boolean {
-  return table?.getConfig().format === "sng";
+  return table?.getConfig().format === "sng" || table?.getConfig().format === "mtt";
 }
 
 function unlockedFromHeld(playerId: string, heldMojos: bigint): bigint {

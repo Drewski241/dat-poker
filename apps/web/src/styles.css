@@ -1663,6 +1663,33 @@ html.play-table-screen body {
   padding-bottom: 0.15rem;
 }
 
+.table-room-final-banner {
+  margin: 0 0 0.2rem;
+  text-align: center;
+  font-size: clamp(0.78rem, 3.2vmin, 0.95rem);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #14261c;
+  background: linear-gradient(90deg, #f5e6a3, #c9a227, #f5e6a3);
+  border-radius: 999px;
+  padding: 0.18rem 0.7rem;
+}
+
+.table-room-championship .table-room-title {
+  color: #f5e6a3;
+}
+
+.table-room-championship .table-room-felt {
+  background:
+    radial-gradient(ellipse at 50% 42%, #3ecf7a 0%, #1a7a45 48%, #0c3d24 100%);
+  border-radius: 46% / 40%;
+  box-shadow:
+    inset 0 0 0 8px #e4c76a,
+    inset 0 0 0 12px #8a6914,
+    0 0 36px rgba(228, 199, 106, 0.35);
+}
+
 .table-room-felt {
   flex: 1;
   min-height: 0;

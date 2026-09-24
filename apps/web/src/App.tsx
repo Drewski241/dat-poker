@@ -255,7 +255,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   }, []);
 
   const refreshTable = useCallback(async (id: string) => {
-    const t = await api.getTable(id, playerId ?? undefined);
+    let t = await api.getTable(id, playerId ?? undefined);
+    if (t.sng?.relocatedToTableId && t.sng.relocatedToTableId !== id) {
+      setTableId(t.sng.relocatedToTableId);
+      t = await api.getTable(t.sng.relocatedToTableId, playerId ?? undefined);
+    }
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
@@ -726,6 +730,34 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   };
 
+  const joinMtt = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!playerId) throw new Error("Create an account or sign in first");
+      const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      setStatus("Joining 16-player sit-n-go…");
+      const joined = await api.joinMtt(playerId, buyIn, {
+        devAck: datToken?.devBuyInEnabled,
+      });
+      setTableId(joined.tableId);
+      setTableFormat("mtt");
+      setTableMaxSeats(joined.maxSeats ?? 8);
+      setSng(joined.sng ?? null);
+      setTableFocusMode(true);
+      setTableSeats(joined.seats);
+      setHand(joined.hand);
+      setHandInProgress(joined.handInProgress);
+      await refreshAccount(playerId);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
   const joinSng = async () => {
     if (busy) return;
     setBusy(true);
@@ -766,7 +798,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         devAck: datToken?.devBuyInEnabled,
       });
       setTableId(openTable.tableId);
-      setTableFormat("sng");
+      setTableFormat(claimed.format === "mtt" ? "mtt" : "sng");
       setSng(claimed.sng ?? null);
       setTableFocusMode(true);
       setTableSeats(claimed.seats);
@@ -850,6 +882,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const canRebuyAtTable = Boolean(
     tableId &&
       tableFormat !== "sng" &&
+      tableFormat !== "mtt" &&
       playerId &&
       !hand &&
       !handInProgress &&
@@ -857,7 +890,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       tableStackIsZero,
   );
   const mySngPlace = sng?.placements.find((row) => row.playerId === playerId);
-  const sngEliminated = Boolean(tableFormat === "sng" && playerId && !myTableSeat && (sng?.status === "finished" || mySngPlace));
+  const sngEliminated = Boolean(
+    (tableFormat === "sng" || tableFormat === "mtt") &&
+      playerId &&
+      !myTableSeat &&
+      (sng?.status === "finished" || mySngPlace),
+  );
   const sngCanAutoDeal = sngShouldAutoDeal({
     atTableRoom,
     tableFormat,
@@ -1268,8 +1306,16 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             playerLabel={playerLabel}
             seatPositionLabel={seatPositionLabel}
             maxSeats={tableMaxSeats}
-            tableTitle={tableFormat === "sng" ? "9-max SNG" : "6-max"}
-            sng={tableFormat === "sng" ? sng : null}
+            tableTitle={
+              sng?.isFinalTable
+                ? "Final Table"
+                : sng?.kind === "mtt"
+                  ? (sng.tableLabel ?? "16-max SNG")
+                  : tableFormat === "sng"
+                    ? "9-max SNG"
+                    : "6-max"
+            }
+            sng={tableFormat === "sng" || tableFormat === "mtt" ? sng : null}
             runoutFromBoardLen={runoutFromBoardLen}
             onRunoutFinished={() => setRunoutFromBoardLen(null)}
             playthroughHandsPlayed={handsPlayed}
@@ -1468,6 +1514,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
               9-max SNG
             </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinMtt()}
+            >
+              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
+              16-player SNG
+            </button>
             <p className="muted small">
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
               Prize pool is each human buy-in. Finish 1st, 2nd, or 3rd overall to get paid
@@ -1479,12 +1534,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               <p className="muted small">
                 Take a house seat on a live SNG, or start a new one if a table is full.
               </p>
-              {lobbyTables.filter((row) => row.format === "sng" && row.sng?.status !== "finished").length === 0 ? (
+              {lobbyTables.filter((row) => (row.format === "sng" || row.format === "mtt") && row.sng?.status !== "finished").length === 0 ? (
                 <p className="muted">No active sit-n-gos yet.</p>
               ) : (
                 <ul className="lobby-list">
                   {lobbyTables
-                    .filter((row) => row.format === "sng" && row.sng?.status !== "finished")
+                    .filter((row) => (row.format === "sng" || row.format === "mtt") && row.sng?.status !== "finished")
                     .map((row) => {
                       const humans = row.humanCount ?? row.humans ?? 0;
                       const house = row.houseSeatsAvailable ?? 0;
@@ -1492,6 +1547,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                       return (
                         <li key={row.tableId}>
                           <span>
+                            {row.sng?.isFinalTable
+                              ? "Final Table"
+                              : row.sng?.kind === "mtt"
+                                ? (row.sng.tableLabel ?? "16-max")
+                                : "9-max"}
+                            {" · "}
                             {humans} human{humans === 1 ? "" : "s"}
                             {row.humanPlayerIds?.length
                               ? ` (${row.humanPlayerIds.map((id) => playerLabel(id, playerId)).join(", ")})`
@@ -1631,7 +1692,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   : " — fully unlocked"}
               </p>
             )}
-            {tableId && !hand && !handInProgress && tableStackMojos && tableFormat !== "sng" && (
+            {tableId && !hand && !handInProgress && tableStackMojos && tableFormat !== "sng" && tableFormat !== "mtt" && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={cashOutToAccount}>
                   Cash out {formatDatMojos(tableStackMojos, datToken?.ticker)} to account
@@ -1648,7 +1709,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 )}
               </div>
             )}
-            {tableFormat === "sng" && accountUnlockedMojos > 0n && (
+            {(tableFormat === "sng" || tableFormat === "mtt") && accountUnlockedMojos > 0n && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawUnlockedFromAccount}>
                   Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
@@ -1677,7 +1738,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         {isBeta ? (
           <p>
             DAT POKER public beta. Redeem 5000 DAT per UTC day into a table account (not an
-            on-chain CAT send). 6-max cash or a 9-max sit-n-go. Cash still plays the house or another human.
+            on-chain CAT send). 6-max cash, a 9-max sit-n-go, or a 16-player sit-n-go
+            (two tables of 8, then a championship final table). Cash still plays the house or another human.
             {" "}
             <a href="/feedback" onClick={(e) => { e.preventDefault(); onNavigate?.("feedback"); }}>
               Send feedback

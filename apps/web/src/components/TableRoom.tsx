@@ -150,10 +150,15 @@ export function TableRoom({
 
   return (
     <div
-      className={`table-room ${hand ? "table-room-in-hand" : "table-room-between-hands"}${hand && isMyAction ? " table-room-has-actions" : ""}${showBetweenFooter ? " table-room-has-actions" : ""}${runoutPlaying ? " table-room-runout-playing" : ""}`}
+      className={`table-room ${hand ? "table-room-in-hand" : "table-room-between-hands"}${hand && isMyAction ? " table-room-has-actions" : ""}${showBetweenFooter ? " table-room-has-actions" : ""}${runoutPlaying ? " table-room-runout-playing" : ""}${sng?.isFinalTable ? " table-room-championship" : ""}`}
     >
       <header className="table-room-header">
         <div className="table-room-header-main">
+          {sng?.isFinalTable && (
+            <p className="table-room-final-banner" role="status">
+              Final Table
+            </p>
+          )}
           <h1 className="table-room-title">
             {tableTitle}
             {tableStackMojos && (

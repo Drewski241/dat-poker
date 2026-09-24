@@ -198,6 +198,16 @@ export interface SngSnapshot {
   humanCount: number;
   houseSeatsAvailable: number;
   placements: { playerId: string; place: number; prizeMojos: string }[];
+  kind?: "sng" | "mtt";
+  eventId?: string;
+  tableLabel?: string;
+  isFinalTable?: boolean;
+  fieldSize?: number;
+  startingTableCount?: number;
+  tableIndex?: number;
+  tableCount?: number;
+  relocatedToTableId?: string | null;
+  eventPlayersRemaining?: number;
 }
 
 export interface LobbyTable {
@@ -538,6 +548,31 @@ export const api = {
       }),
     }),
 
+  joinMtt: (
+    playerId: string,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      maxSeats: number;
+      format?: string;
+      humans?: number;
+      handInProgress: boolean;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+    }>("/v1/tables/join-mtt", {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        buyInMojos,
+        ...options,
+      }),
+    }),
+
   claimHouse: (
     tableId: string,
     playerId: string,
@@ -547,6 +582,7 @@ export const api = {
     request<{
       ok: boolean;
       tableId: string;
+      format?: string;
       seats: TableSeat[];
       hand: HandState | null;
       sng?: SngSnapshot | null;

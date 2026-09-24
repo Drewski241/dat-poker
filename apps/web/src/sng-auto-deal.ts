@@ -11,7 +11,7 @@ export function sngShouldAutoDeal(input: {
 }): boolean {
   return Boolean(
     input.atTableRoom &&
-      input.tableFormat === "sng" &&
+      (input.tableFormat === "sng" || input.tableFormat === "mtt") &&
       input.sngStatus === "running" &&
       input.seated &&
       !input.handLive &&

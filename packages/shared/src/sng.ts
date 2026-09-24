@@ -54,6 +54,30 @@ export const DAT_SNG_DEFAULTS = {
   ] satisfies SngBlindLevel[],
 } as const;
 
+/** 16-player MTT: two 8-max tables, then an 8-max final table. */
+export const DAT_MTT_DEFAULTS = {
+  fieldSize: 16,
+  startingTableSeats: 8,
+  startingTableCount: 2,
+  finalTableSeats: 8,
+  buyInMojos: DAT_SNG_DEFAULTS.buyInMojos,
+  startingStackMojos: DAT_SNG_DEFAULTS.startingStackMojos,
+  handsPerLevel: DAT_SNG_DEFAULTS.handsPerLevel,
+  levelDurationMs: DAT_SNG_DEFAULTS.levelDurationMs,
+  fillHouse: true,
+  minHumansToStart: 1,
+  housePolicy: "mixed" as HousePolicy,
+  blindLevels: DAT_SNG_DEFAULTS.blindLevels,
+} as const;
+
+export function mttHousePlayerId(tableId: string, seatIndex: number): string {
+  return `${HOUSE_PLAYER_PREFIX}${tableId}:${seatIndex}`;
+}
+
+export function isTournamentFormat(format: string | null | undefined): boolean {
+  return format === "sng" || format === "mtt";
+}
+
 /** 9-max: 50 / 30 / 20. Three-handed tests use the same table so 2nd/3rd still pay. */
 export function defaultSngPayouts(maxSeats: number): SngPayoutShare[] {
   if (maxSeats < 3) {
