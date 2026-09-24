@@ -247,8 +247,10 @@ bash -n "$DIR/public-url.sh" && ok "public-url.sh bash syntax" || bad "public-ur
 
 if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'TREASURY_WALLET_CERT_PATH' "$DIR/enable-treasury-sage.sh" \
-  && grep -q 'dat-poker-sage-rpc' "$DIR/enable-treasury-sage.sh"; then
-  ok "enable-treasury-sage.sh writes Sage RPC cert paths"
+  && grep -q 'dat-poker-sage-rpc' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'install_c_toolchain' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'dnf install -y gcc' "$DIR/enable-treasury-sage.sh"; then
+  ok "enable-treasury-sage.sh writes Sage RPC cert paths and installs cc"
 else
   bad "enable-treasury-sage.sh cert paths"
 fi

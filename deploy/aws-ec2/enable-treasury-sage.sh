@@ -71,8 +71,21 @@ find_sage_bin() {
   return 1
 }
 
+install_c_toolchain() {
+  if command -v cc >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Installing a C toolchain (Amazon Linux has no cc by default)…"
+  dnf install -y gcc gcc-c++ make cmake openssl-devel clang perl pkgconf-pkg-config git
+  if ! command -v cc >/dev/null 2>&1; then
+    echo "cc is still missing after dnf install. Sage-cli cannot compile." >&2
+    exit 1
+  fi
+}
+
 install_sage_cli() {
   echo "Installing sage-cli ${SAGE_VERSION} as ${SAGE_USER} (Rust compile — can take a while)…"
+  install_c_toolchain
   if ! command -v rustc >/dev/null 2>&1 && [[ ! -x "${SAGE_HOME}/.cargo/bin/rustc" ]]; then
     sudo -u "$SAGE_USER" -H bash -lc \
       'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal'
