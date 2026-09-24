@@ -30,7 +30,7 @@ describe("sageCertSearchDirs", () => {
       login: true,
     });
     const previousKey = process.env.TREASURY_SAGE_PRIVATE_KEY;
-    process.env.TREASURY_SAGE_PRIVATE_KEY = "  hexkey  ";
+    process.env.TREASURY_SAGE_PRIVATE_KEY = '  "hexkey"  ';
     expect(readSageTreasurySecretFromEnv()).toBe("hexkey");
     if (previousKey === undefined) delete process.env.TREASURY_SAGE_PRIVATE_KEY;
     else process.env.TREASURY_SAGE_PRIVATE_KEY = previousKey;

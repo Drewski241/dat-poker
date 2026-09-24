@@ -91,12 +91,25 @@ export function describeSageLoginNeeded(fingerprintSet: boolean): string {
   );
 }
 
+function stripEnvSecret(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (
+    trimmed.length >= 2 &&
+    (trimmed.startsWith('"') || trimmed.startsWith("'")) &&
+    trimmed[0] === trimmed[trimmed.length - 1]
+  ) {
+    return trimmed.slice(1, -1).trim() || undefined;
+  }
+  return trimmed;
+}
+
 export function readSageTreasurySecretFromEnv(): string | undefined {
-  const privateKey = process.env.TREASURY_SAGE_PRIVATE_KEY?.trim();
-  if (privateKey) return privateKey;
-  const mnemonic = process.env.TREASURY_SAGE_MNEMONIC?.trim();
-  if (mnemonic) return mnemonic;
-  return undefined;
+  return (
+    stripEnvSecret(process.env.TREASURY_SAGE_PRIVATE_KEY) ??
+    stripEnvSecret(process.env.TREASURY_SAGE_SECRET_KEY) ??
+    stripEnvSecret(process.env.TREASURY_SAGE_MNEMONIC)
+  );
 }
 
 export function buildSageImportKeyRequest(key: string): {

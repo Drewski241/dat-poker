@@ -59,14 +59,78 @@ read_env_kv() {
   python3 -c '
 from pathlib import Path
 import sys
-path, key = Path(sys.argv[1]), sys.argv[2]
-if not path.exists():
-    raise SystemExit(0)
-for line in path.read_text().splitlines():
-    if line.startswith(key + "="):
-        print(line.split("=", 1)[1], end="")
-        break
+
+def parse_env(path: Path) -> dict[str, str]:
+    data = {}
+    if not path.exists():
+        return data
+    for raw in path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'\'":
+            val = val[1:-1]
+        data[key] = val
+    return data
+
+print(parse_env(Path(sys.argv[1])).get(sys.argv[2], ""), end="")
 ' "$ENV_FILE" "$1"
+}
+
+describe_env_secret() {
+  python3 -c '
+from pathlib import Path
+import string
+import sys
+
+path = Path(sys.argv[1])
+wanted = [
+    "TREASURY_SAGE_PRIVATE_KEY",
+    "TREASURY_SAGE_SECRET_KEY",
+    "TREASURY_SAGE_MNEMONIC",
+]
+text = path.read_text(encoding="utf-8-sig") if path.exists() else ""
+found = []
+names = []
+for raw in text.splitlines():
+    line = raw.strip()
+    if not line or line.startswith("#"):
+        continue
+    if line.startswith("export "):
+        line = line[7:].strip()
+    if "=" not in line:
+        continue
+    key, val = line.split("=", 1)
+    key = key.strip()
+    val = val.strip().strip("\"'\''")
+    if key.startswith("TREASURY_"):
+        names.append(key)
+    if key not in wanted or not val:
+        continue
+    hexpart = val[2:] if val.lower().startswith("0x") else val
+    words = val.split()
+    if all(c in string.hexdigits for c in hexpart) and len(hexpart) == 64:
+        kind = "bls-secret-hex"
+    elif all(c in string.hexdigits for c in hexpart) and len(hexpart) == 96:
+        kind = "public-key-hex-cannot-sign"
+    elif len(words) in (12, 24):
+        kind = "mnemonic"
+    else:
+        kind = "not-a-sage-secret"
+    found.append(f"{key} is set ({len(val)} chars, looks like {kind})")
+if found:
+    print(" ; ".join(found))
+else:
+    listed = ", ".join(names) if names else "(none)"
+    print(f"no TREASURY_SAGE_PRIVATE_KEY / TREASURY_SAGE_MNEMONIC in {path}. TREASURY_* names: {listed}")
+' "$ENV_FILE"
 }
 
 find_certs() {
@@ -349,9 +413,13 @@ fi
 if [[ -z "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
   TREASURY_SAGE_PRIVATE_KEY="$(read_env_kv TREASURY_SAGE_PRIVATE_KEY)"
 fi
+if [[ -z "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
+  TREASURY_SAGE_PRIVATE_KEY="$(read_env_kv TREASURY_SAGE_SECRET_KEY)"
+fi
 if [[ -z "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
   TREASURY_SAGE_MNEMONIC="$(read_env_kv TREASURY_SAGE_MNEMONIC)"
 fi
+echo "Sage spend-key env: $(describe_env_secret)"
 
 if find_sage_bin >/dev/null; then
   ensure_sage_rpc_running || true
