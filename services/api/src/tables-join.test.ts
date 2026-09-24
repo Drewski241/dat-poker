@@ -201,7 +201,6 @@ describe("6-max join + daily redeem", () => {
   });
 
   it("blocks withdraw until one hand per DAT token of buy-in is played", async () => {
-    process.env.DAT_MIN_BUY_IN_MOJOS = "1000";
     const app = await buildApp();
     const carol = issueTestSession("xch1carol");
     tryRedeemDaily(carol.session.playerId, 5_000_000n);
@@ -212,7 +211,7 @@ describe("6-max join + daily redeem", () => {
           method: "POST",
           url: "/v1/tables/join",
           headers: auth(carol.token),
-          payload: { playerId: carol.session.playerId, buyInMojos: "1000", devAck: true },
+          payload: { playerId: carol.session.playerId, buyInMojos: "1000000", devAck: true },
         })
       ).body,
     );
@@ -254,6 +253,7 @@ describe("6-max join + daily redeem", () => {
       payload: { tableId: joined.tableId, playerId: carol.session.playerId, devAck: true },
     });
     expect(allowed.statusCode).toBe(200);
+    expect(JSON.parse(allowed.body).stackMojos).toBe("1000");
     await app.close();
   });
 
