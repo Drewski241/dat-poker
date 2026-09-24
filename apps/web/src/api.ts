@@ -85,6 +85,7 @@ export interface HandResult {
     allIn?: boolean;
   }[];
   allInPlayerIds?: string[];
+  runoutFromBoardLen?: number | null;
   participants?: {
     playerId: string;
     totalBetHandMojos: string;

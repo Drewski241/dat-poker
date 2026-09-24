@@ -23,7 +23,7 @@ import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
 import { TableRoom } from "./components/TableRoom.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
-import { shouldPlayAllInRunout } from "./all-in-runout.js";
+import { allInBettingClosed, shouldPlayAllInRunout } from "./all-in-runout.js";
 import { sngShouldAutoDeal } from "./sng-auto-deal.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -162,6 +162,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     allIn: false,
     allInPlayerIds: [] as string[],
     viewerFolded: false,
+    bettingClosed: false,
   });
   const runoutFromBoardLenRef = useRef<number | null>(null);
   const playedRunouts = useRef(new Set<string>());
@@ -361,24 +362,29 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       const allInIds = hand.players.filter((p) => p.allIn && !p.folded).map((p) => p.playerId);
       const me = playerId ? hand.players.find((p) => p.playerId === playerId) : undefined;
       const viewerAllIn = Boolean(me?.allIn && !me.folded) || (sameHand && liveHandMeta.current.allIn);
-      const anyAllIn = allInIds.length > 0 || viewerAllIn;
+      const bettingClosed = allInBettingClosed(hand.players);
       liveHandMeta.current = {
         handId: hand.handId,
-        // Freeze the board at the all-in moment so an instant server runout
-        // still replays flop/turn/river instead of flashing the finished board.
-        boardLen: anyAllIn && sameHand ? liveHandMeta.current.boardLen : hand.board.length,
+        // Freeze the board only when no two remaining players can still bet.
+        boardLen:
+          bettingClosed && sameHand ? liveHandMeta.current.boardLen : hand.board.length,
         allIn: viewerAllIn,
         allInPlayerIds: sameHand
           ? [...new Set([...liveHandMeta.current.allInPlayerIds, ...allInIds])]
           : allInIds,
         viewerFolded: Boolean(me?.folded),
+        bettingClosed,
       };
       return;
     }
     if (!handResult || playedRunouts.current.has(handResult.handId)) return;
     if (!shouldPlayAllInRunout({ ...liveHandMeta.current, viewerId: playerId }, handResult)) return;
     playedRunouts.current.add(handResult.handId);
-    setRunoutFromBoardLen(liveHandMeta.current.boardLen);
+    setRunoutFromBoardLen(
+      typeof handResult.runoutFromBoardLen === "number"
+        ? handResult.runoutFromBoardLen
+        : liveHandMeta.current.boardLen,
+    );
   }, [hand, handResult, playerId]);
 
   useEffect(() => {
@@ -868,12 +874,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const sendAction = (action: PlayerAction, amountMojos?: string) => {
     if (!tableId || !playerId) return;
     if (action === "all-in" && hand) {
+      const nextPlayers = hand.players.map((p) =>
+        p.playerId === playerId ? { ...p, allIn: true, stackMojos: "0" } : p,
+      );
+      const bettingClosed = allInBettingClosed(nextPlayers);
       liveHandMeta.current = {
         handId: hand.handId,
-        boardLen: liveHandMeta.current.handId === hand.handId ? liveHandMeta.current.boardLen : hand.board.length,
+        boardLen: bettingClosed
+          ? hand.board.length
+          : liveHandMeta.current.handId === hand.handId
+            ? liveHandMeta.current.boardLen
+            : hand.board.length,
         allIn: true,
         allInPlayerIds: [...new Set([...liveHandMeta.current.allInPlayerIds, playerId])],
         viewerFolded: false,
+        bettingClosed,
       };
     }
     if (action === "fold") {

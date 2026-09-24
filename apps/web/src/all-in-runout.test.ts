@@ -10,6 +10,7 @@ import {
   runoutStreets,
   runoutVisibleCount,
   shouldPlayAllInRunout,
+  allInBettingClosed,
 } from "./all-in-runout.js";
 
 describe("all-in runout", () => {
@@ -96,6 +97,7 @@ describe("all-in runout", () => {
       reason: "showdown",
       board: [1, 2, 3, 4, 5],
       allInPlayerIds: ["house-2", "house-5"],
+      runoutFromBoardLen: 0,
     };
     expect(shouldPlayAllInRunout(live, result)).toBe(true);
     expect(runoutAllInPlayerIds(live, result)).toEqual(["house-2", "house-5"]);
@@ -132,6 +134,37 @@ describe("all-in runout", () => {
         id.endsWith(":5") ? "House 5" : "House 2",
       ),
     ).toBe("House 5 vs House 2");
+  });
+
+  it("hides cards while two players can still bet after an all-in", () => {
+    expect(
+      allInBettingClosed([
+        { folded: false, allIn: true, stackMojos: "0" },
+        { folded: false, allIn: false, stackMojos: "8000" },
+        { folded: false, allIn: false, stackMojos: "9000" },
+      ]),
+    ).toBe(false);
+    expect(
+      allInBettingClosed([
+        { folded: false, allIn: true, stackMojos: "0" },
+        { folded: false, allIn: false, stackMojos: "8000" },
+      ]),
+    ).toBe(true);
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 3, allIn: false, bettingClosed: false },
+        { reason: "showdown", board: [1, 2, 3, 4, 5], allInPlayerIds: ["house-5"] },
+      ),
+    ).toBe(false);
+    expect(
+      shouldPlayAllInRunout(
+        { boardLen: 3, allIn: false },
+        { reason: "showdown", board: [1, 2, 3, 4, 5], allInPlayerIds: ["you"], runoutFromBoardLen: null },
+      ),
+    ).toBe(false);
+    expect(runoutStreets(4)).toEqual(["allin", "river", "hands"]);
+    expect(runoutShowHoleCards("turn", false)).toBe(false);
+    expect(runoutShowHoleCards("turn", true)).toBe(true);
   });
 
   it("formats hand categories for the showdown strip", () => {

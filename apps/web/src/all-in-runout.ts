@@ -6,6 +6,7 @@ export type RunoutLive = {
   allInPlayerIds?: string[];
   viewerId?: string | null;
   viewerFolded?: boolean;
+  bettingClosed?: boolean;
 };
 
 export type RunoutResult = {
@@ -13,8 +14,26 @@ export type RunoutResult = {
   board?: unknown[];
   winnerId?: string;
   allInPlayerIds?: string[];
+  runoutFromBoardLen?: number | null;
   shown?: { playerId: string; allIn?: boolean }[];
 };
+
+export function allInBettingClosed(
+  players: Array<{ folded?: boolean; allIn?: boolean; stackMojos?: string }>,
+): boolean {
+  const live = players.filter((p) => !p.folded);
+  if (live.length < 2) return false;
+  if (!live.some((p) => p.allIn)) return false;
+  const canBet = live.filter((p) => {
+    if (p.allIn) return false;
+    try {
+      return BigInt(p.stackMojos ?? "0") > 0n;
+    } catch {
+      return false;
+    }
+  });
+  return canBet.length <= 1;
+}
 
 export function formatHandCategory(category: string | undefined): string {
   if (!category) return "";
@@ -42,6 +61,8 @@ export function shouldPlayAllInRunout(live: RunoutLive, result: RunoutResult | n
   if (!result || result.reason !== "showdown") return false;
   const finalLen = result.board?.length ?? 0;
   if (finalLen < 5) return false;
+  if (result.runoutFromBoardLen === null) return false;
+  if (live.bettingClosed === false && result.runoutFromBoardLen == null) return false;
   return runoutAllInPlayerIds(live, result).length > 0;
 }
 
@@ -61,8 +82,8 @@ export function runoutVisibleCount(street: RunoutStreet, fromBoardLen = 0): numb
   return 5;
 }
 
-export function runoutShowHoleCards(_street: RunoutStreet): boolean {
-  return true;
+export function runoutShowHoleCards(_street: RunoutStreet, bettingClosed = true): boolean {
+  return bettingClosed;
 }
 
 export function runoutShowOutcome(street: RunoutStreet): boolean {

@@ -35,6 +35,8 @@ export interface HandResult {
   board: Card[];
   shown: ShownHand[];
   allInPlayerIds: PlayerId[];
+  /** Board length when no two remaining players could still bet. Null if side betting continued. */
+  runoutFromBoardLen: number | null;
   participants: HandResultParticipant[];
 }
 
@@ -80,6 +82,8 @@ export class NlheTableEngine {
   private handsPlayed: Map<PlayerId, number> = new Map();
   private hand: TableHandState | null = null;
   private lastHandResult: HandResult | null = null;
+  /** Board length when all-in betting closed; used to start the cinema from that street. */
+  private allInRunoutFrom: number | null = null;
   /** Dealer button seat between hands; moves one occupied seat clockwise after each hand. */
   private buttonSeat: number | null = null;
 
@@ -350,6 +354,7 @@ export class NlheTableEngine {
     }
 
     this.lastHandResult = null;
+    this.allInRunoutFrom = null;
     const serverSeed = generateServerSeed();
     const { commitHash } = createCommit(serverSeed);
     const seated = [...this.seats.entries()].sort((a, b) => a[0] - b[0]);
@@ -512,6 +517,7 @@ export class NlheTableEngine {
     }
 
     this.recordActionOnStreet(h, player, currentBetBefore);
+    this.noteAllInRunout(h);
 
     h.seq++;
 
@@ -619,6 +625,21 @@ export class NlheTableEngine {
     return h.players.filter((p) => this.canPlayerAct(p));
   }
 
+  /** True when someone is all-in and no two remaining players can still bet. */
+  private noFurtherBetting(h: TableHandState): boolean {
+    const live = this.activePlayers(h);
+    if (live.length < 2) return false;
+    if (!live.some((p) => p.allIn)) return false;
+    return this.playersWhoCanBet(h).length <= 1;
+  }
+
+  private noteAllInRunout(h: TableHandState): void {
+    if (this.allInRunoutFrom != null) return;
+    if (this.noFurtherBetting(h)) {
+      this.allInRunoutFrom = h.board.length;
+    }
+  }
+
   private bettingRoundComplete(h: TableHandState): boolean {
     const contenders = this.playersWhoCanBet(h);
     if (contenders.length === 0) return true;
@@ -687,9 +708,10 @@ export class NlheTableEngine {
       h.board.push(this.draw(h));
     }
 
-    if (this.playersWhoCanBet(h).length === 0) {
+    if (this.playersWhoCanBet(h).length === 0 || this.noFurtherBetting(h)) {
       h.actionSeat = null;
       h.seq++;
+      this.noteAllInRunout(h);
       if (street === "river") {
         this.runShowdown(h);
       } else {
@@ -729,6 +751,7 @@ export class NlheTableEngine {
       board: [...h.board],
       shown: this.showdownHandsToReveal(h, live, awardedByPlayer),
       allInPlayerIds: h.players.filter((p) => p.allIn && !p.folded).map((p) => p.playerId),
+      runoutFromBoardLen: this.allInRunoutFrom,
       participants,
     };
     this.recordHandPlayed(h);
@@ -762,6 +785,7 @@ export class NlheTableEngine {
       board: [...h.board],
       shown: [],
       allInPlayerIds: h.players.filter((p) => p.allIn && !p.folded).map((p) => p.playerId),
+      runoutFromBoardLen: this.allInRunoutFrom,
       participants,
     };
     this.recordHandPlayed(h);
