@@ -12,6 +12,7 @@ export interface TreasuryServiceConfig {
   offerMode: TreasuryOfferMode;
   defaultAssetId: string | null;
   payoutFeeMojos: bigint;
+  treasuryAddress: string | null;
   walletRpc: TreasuryWalletRpcConfig;
 }
 
@@ -23,6 +24,7 @@ export function readTreasuryServiceConfig(): TreasuryServiceConfig {
     offerMode,
     defaultAssetId: process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID?.trim() || null,
     payoutFeeMojos: BigInt(process.env.TREASURY_PAYOUT_FEE_MOJOS ?? "0"),
+    treasuryAddress: process.env.TREASURY_XCH_ADDRESS?.trim() || null,
     walletRpc: readTreasuryWalletRpcConfigFromEnv(),
   };
 }
@@ -43,6 +45,14 @@ export async function buildPayoutOffer(
   }
   if (!body.address?.trim()) {
     throw new Error("address required");
+  }
+  if (
+    config.treasuryAddress &&
+    config.treasuryAddress.toLowerCase() === body.address.trim().toLowerCase()
+  ) {
+    throw new Error(
+      "Payout address is the treasury Sage wallet. Use a separate player Sage key — a self-payout cannot show as a new deposit.",
+    );
   }
   const amountMojos = BigInt(body.amountMojos);
   if (amountMojos <= 0n) {

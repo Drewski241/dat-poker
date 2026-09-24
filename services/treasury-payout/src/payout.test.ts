@@ -23,4 +23,13 @@ describe("buildPayoutOffer", () => {
       buildPayoutOffer(baseConfig, { address: "xch1abc", amountMojos: "0" }),
     ).rejects.toThrow(/positive/i);
   });
+
+  it("rejects a payout to the treasury Sage address", async () => {
+    await expect(
+      buildPayoutOffer(
+        { ...baseConfig, treasuryAddress: "xch1treasurykey" },
+        { address: "XCH1TREASURYKEY", amountMojos: "2000" },
+      ),
+    ).rejects.toThrow(/treasury Sage wallet/i);
+  });
 });

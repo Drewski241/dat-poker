@@ -29,6 +29,8 @@ sequenceDiagram
 
 Use a **separate Sage key/fingerprint** for treasury — not the same profile players use to play.
 
+A payout to the treasury Sage address cannot show as a new deposit (it is a self-transfer, and an untaken offer can lock those coins). Set `TREASURY_XCH_ADDRESS` so `/payout` rejects that address. The game host keeps `DAT_ENABLE_ONCHAIN_WITHDRAW` off while WalletConnect `takeOffer` is disabled.
+
 **Treasury Sage and player Sage are always on different machines in production.** The player wallet is on the user's phone or PC; the treasury wallet stays on an operator-controlled host. They never share a device.
 
 ---

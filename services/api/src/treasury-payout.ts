@@ -13,6 +13,22 @@ export function readTreasuryPayoutConfig(): TreasuryPayoutConfig {
   return { payoutMode, treasuryPayoutUrl, withdrawFeeMojos };
 }
 
+/**
+ * WalletConnect takeOffer is disabled on the game host. Creating a treasury
+ * offer anyway locks DAT (worse when the player paired the treasury Sage key)
+ * and never lands in the player wallet.
+ */
+export function onChainSageWithdrawEnabled(): boolean {
+  const raw = process.env.DAT_ENABLE_ONCHAIN_WITHDRAW?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+export function sageLedgerWithdrawNote(kind: "sng" | "table"): string {
+  return kind === "sng"
+    ? "Unlocked DAT stays in your table account. On-chain Sage payout is off on this host, so it will not appear in Sage. A payout to the treasury Sage key also cannot show as a new deposit."
+    : "Unlocked DAT stays in your table account. On-chain Sage payout is off on this host, so it will not appear in Sage.";
+}
+
 export function computeWithdrawPayout(
   stackMojos: bigint,
   originalBuyInMojos: bigint,

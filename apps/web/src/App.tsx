@@ -1148,6 +1148,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         devAck: datToken?.devBuyInEnabled,
         fromAccount: true,
       });
+      if (result.mode === "offer") {
+        setStatus(
+          "On-chain Sage takeOffer is disabled. If this used the treasury Sage key, cancel the pending offer there. Unlocked DAT stays in your table account.",
+        );
+      } else {
+        setStatus(
+          "Unlocked DAT stays in your table account. Sage will not show a new deposit on this host.",
+        );
+      }
       setWithdrawResult(result);
       if (result.playthrough) setAccountPlaythrough(result.playthrough);
       await refreshAccount(playerId);
@@ -1481,10 +1490,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 hands · {formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked
                 (1 redeemed DAT = 1 hand)
                 {accountUnlockedMojos > 0n
-                  ? ` · ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} available to withdraw to Sage`
+                  ? ` · ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked in your table account`
                   : unlockedDat > 0n
-                    ? " · Sage withdraw needs leftover account chips or a 1st–3rd SNG prize"
-                    : " · stays until you withdraw to Sage"}
+                    ? " · leftover account chips or a 1st–3rd SNG prize are required"
+                    : " · stays until you release it from play-through"}
               </p>
             )}
             <div className="row">
@@ -1516,15 +1525,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         )}
         <p className="muted small">
           Pairing only signs a message. This site cannot send DAT or XCH from Sage.
-          Skip this unless you want funded DAT sent to your wallet.
+          Unlocked DAT stays in your table account — it will not appear as a new
+          Sage deposit. Do not pair the treasury Sage key as your player wallet;
+          a payout to that same address cannot show as a new deposit.
         </p>
         {playerId && handsRequired > 0 && (
           <p>
-            Available to withdraw to Sage:{" "}
+            Unlocked in table account:{" "}
             <strong>{formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)}</strong>
             {unlockedDat > 0n && accountUnlockedMojos === 0n
               ? " — leftover account chips or a 1st–3rd prize are required"
-              : ""}
+              : " — on-chain Sage payout is off on this host"}
           </p>
         )}
         {!wcConfig ? (
@@ -1562,8 +1573,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   disabled={busy}
                   onClick={withdrawUnlockedFromAccount}
                 >
-                  Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
-                  to Sage
+                  Release {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
+                  in table account
                 </button>
               </div>
             )}
@@ -1605,8 +1616,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
               Prize pool is each human buy-in. Finish 1st, 2nd, or 3rd overall to get paid
               50% / 30% / 20%. House seats in the money are not paid. Each completed SNG
-              hand unlocks 1 DAT into Available to withdraw to Sage from leftover account
-              chips or prizes.
+              hand unlocks 1 DAT in your table account from leftover chips or prizes.
+              On-chain Sage payout is off, so unlocked DAT will not appear in Sage.
             </p>
             <div className="lobby">
               <h3>Active sit-n-gos</h3>
@@ -1713,9 +1724,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   ? ` · ${formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked by SNG hands`
                   : ""}
                 {accountUnlockedMojos > 0n
-                  ? ` · ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} available to withdraw to Sage`
+                  ? ` · ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked in your table account`
                   : unlockedDat > 0n && accountUnlockedMojos === 0n
-                    ? " · leftover account chips or a prize are needed to send that to Sage"
+                    ? " · leftover account chips or a prize are needed"
                     : ""}
               </div>
             )}
@@ -1778,8 +1789,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 Play-through: {handsPlayed}/{handsRequired} hands ·{" "}
                 {formatDatMojos(unlockedMojos, datToken?.ticker)} unlocked (1 hand = 1 DAT)
                 {accountUnlockedMojos > 0n
-                  ? ` · ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} available to withdraw to Sage`
-                  : " · stays until you withdraw to Sage"}
+                  ? ` · ${formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked in your table account`
+                  : " · stays until you release it from play-through"}
                 {playthroughRemaining > 0
                   ? ` — ${playthroughRemaining} remaining`
                   : " — fully unlocked"}
@@ -1805,7 +1816,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             {(tableFormat === "sng" || tableFormat === "mtt") && accountUnlockedMojos > 0n && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawUnlockedFromAccount}>
-                  Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
+                  Release {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
                   from SNG play
                 </button>
               </div>
@@ -1819,7 +1830,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               <>
                 {" "}
                 · payout {formatDatMojos(withdrawResult.payoutMojos, datToken?.ticker)}
-                {withdrawResult.mode === "offer" ? " (on-chain via offer)" : " (ledger)"}
+                {withdrawResult.mode === "offer" ? " (offer created — Sage takeOffer is off)" : " (table account)"}
               </>
             )}
             . {withdrawResult.note}

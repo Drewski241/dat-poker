@@ -243,6 +243,7 @@ export const api = {
       withdraw?: {
         payoutMode: "net" | "full";
         treasuryConfigured: boolean;
+        onChainPayoutEnabled?: boolean;
         feeMojos: string;
       };
     }>("/v1/wallet/config"),

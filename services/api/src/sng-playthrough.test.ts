@@ -213,9 +213,13 @@ describe("SNG play-through unlocks", () => {
     expect(withdrawn.statusCode).toBe(200);
     const out = JSON.parse(withdrawn.body) as {
       stackMojos: string;
+      mode: string;
+      note: string;
       playthrough: { unlockedMojos: string; handsPlayed: number };
     };
     expect(out.stackMojos).toBe("2000");
+    expect(out.mode).toBe("ledger");
+    expect(out.note).toMatch(/table account/i);
     expect(out.playthrough.unlockedMojos).toBe("0");
     await app.close();
   });
@@ -345,6 +349,36 @@ describe("SNG play-through unlocks", () => {
     });
     expect(withdrawn.statusCode).toBe(200);
     expect(JSON.parse(withdrawn.body).stackMojos).toBe("2000");
+    await app.close();
+  });
+
+  it("does not call treasury or debit leftover when on-chain Sage payout is off", async () => {
+    process.env.DAT_TREASURY_PAYOUT_URL = "http://127.0.0.1:9/payout";
+    delete process.env.DAT_ENABLE_ONCHAIN_WITHDRAW;
+    const app = await buildApp();
+    const alice = issueTestSession("xch1sngledger");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    const joined = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-sng",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    const tableId = JSON.parse(joined.body).tableId as string;
+    await playSngFolds(app, tableId, alice.session.playerId, alice.token, 2);
+    const before = getAccountBalance(alice.session.playerId);
+    const withdrawn = await app.inject({
+      method: "POST",
+      url: "/v1/wallet/withdraw",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, fromAccount: true, devAck: true },
+    });
+    expect(withdrawn.statusCode).toBe(200);
+    const out = JSON.parse(withdrawn.body) as { mode: string; offer?: string; accountMojos: string };
+    expect(out.mode).toBe("ledger");
+    expect(out.offer).toBeFalsy();
+    expect(getAccountBalance(alice.session.playerId)).toBe(before);
+    expect(out.accountMojos).toBe(before.toString());
     await app.close();
   });
 

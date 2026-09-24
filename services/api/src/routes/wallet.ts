@@ -22,8 +22,10 @@ import {
 } from "../account-store.js";
 import {
   computeWithdrawPayout,
+  onChainSageWithdrawEnabled,
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
+  sageLedgerWithdrawNote,
 } from "../treasury-payout.js";
 import { getTableEngine, persistTablePlaythrough, playthroughFields } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
@@ -103,6 +105,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       withdraw: {
         payoutMode: payout.payoutMode,
         treasuryConfigured: Boolean(payout.treasuryPayoutUrl),
+        onChainPayoutEnabled: onChainSageWithdrawEnabled(),
         feeMojos: payout.withdrawFeeMojos.toString(),
       },
       playerSession: {
@@ -375,7 +378,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       let mode: "ledger" | "offer" = "ledger";
       let offer: string | undefined;
       let accountMojos = getAccountBalance(playerId);
-      if (payoutConfig.treasuryPayoutUrl && dat.assetId) {
+      if (onChainSageWithdrawEnabled() && payoutConfig.treasuryPayoutUrl && dat.assetId) {
         try {
           const treasuryOffer = await requestTreasuryOffer({
             assetId: dat.assetId,
@@ -423,8 +426,8 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         playthrough: playthroughView(playerId),
         note:
           mode === "offer"
-            ? "Approve the treasury offer in Sage to receive unlocked DAT from sit-n-go play."
-            : "Sit-n-go hands unlocked this DAT in your account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT.",
+            ? "Approve the treasury offer in Sage to receive unlocked DAT from sit-n-go play. Use a player Sage wallet that is not the treasury key."
+            : sageLedgerWithdrawNote("sng"),
       };
     }
 
@@ -495,6 +498,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
 
     if (
       !cashOutToAccount &&
+      onChainSageWithdrawEnabled() &&
       payoutMojos > 0n &&
       payoutConfig.treasuryPayoutUrl &&
       dat.assetId
@@ -584,10 +588,10 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       note: cashOutToAccount
         ? "Table stack returned to your DAT account. Play-through progress is kept for the next sit."
         : mode === "offer"
-          ? "Approve the treasury offer in Sage to receive unlocked DAT."
+          ? "Approve the treasury offer in Sage to receive unlocked DAT. Use a player Sage wallet that is not the treasury key."
           : stillSeated
-            ? "Unlocked DAT returned to your account. Remaining stack stays at the table until you play through more hands."
-            : "Unlocked DAT returned to your DAT account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT.",
+            ? sageLedgerWithdrawNote("table")
+            : sageLedgerWithdrawNote("table"),
     };
   });
 }

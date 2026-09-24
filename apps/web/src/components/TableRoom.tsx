@@ -203,7 +203,7 @@ export function TableRoom({
               Play-through {playthroughHandsPlayed}/{playthroughHandsRequired} hands ·{" "}
               {formatDatMojos(playthroughUnlockedMojos, datToken?.ticker)} unlocked
               {BigInt(playthroughWithdrawableMojos || "0") > 0n
-                ? ` · ${formatDatMojos(playthroughWithdrawableMojos, datToken?.ticker)} available to withdraw to Sage`
+                ? ` · ${formatDatMojos(playthroughWithdrawableMojos, datToken?.ticker)} unlocked in your table account`
                 : sng
                   ? " from leftover account DAT or prizes"
                   : ""}
