@@ -10,7 +10,10 @@ function hand(street: TableHandState["street"]): TableHandState {
     board: [],
     potMojos: 10n,
     currentBetMojos: 2n,
+    lastRaiseIncrementMojos: 2n,
     dealerSeat: 0,
+    smallBlindSeat: 0,
+    bigBlindSeat: 1,
     actionSeat: 0,
     players: [
       {

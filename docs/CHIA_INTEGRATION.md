@@ -63,6 +63,11 @@ Best for: MTTs.
 
 WalletConnect project ID is required for production wallet flows. See [WALLETCONNECT.md](./WALLETCONNECT.md) for setup and API endpoints.
 
+chia-gaming’s player app pairs the **official Chia wallet** (methods in
+`front-end/src/constants/wallet-connect.ts`). DAT Poker `/play` pairs
+**Sage** via CHIP-0002; a missing QR is a Reown relay/allowlist issue, not
+a missing chia-gaming lobby.
+
 ## Next implementation steps
 
 1. Wire real lobby API paths from chia-gaming OpenAPI (alpha APIs may change).

@@ -30,7 +30,14 @@ Configure `.env` from `.env.example`:
 - `DAT_GOVERNANCE_TOKEN_ASSET_ID` — your DAT CAT asset id
 - `DAT_MIN_BUY_IN_MOJOS=1000000` — 1000 DAT (1000 mojos per whole token)
 
-See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (connect → buy in → play vs house → withdraw).
+See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow and [docs/SECURITY.md](./docs/SECURITY.md) for pairing permissions (no `chia_send` on the public site).
+
+## AWS EC2 (Free Tier $20 credit)
+
+The email tutorial is [Deploy a web server to the cloud](https://builder.aws.com/content/3BfvbBpwbonTDicuPTMLZBTt4Br/deploy-a-web-server-to-the-cloud)
+(Apache + Session Manager, not nginx). Follow [docs/AWS_EC2.md](./docs/AWS_EC2.md)
+in **your** AWS Console. After the $20 credit posts and that tutorial box is
+gone, launch the public beta with [docs/BETA.md](./docs/BETA.md).
 
 For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a **separate treasury host**; copy `.env.treasury.example` → `.env`, run `pnpm treasury:check`, then point the game API at it with `DAT_TREASURY_PAYOUT_URL`. See [docs/TREASURY.md](./docs/TREASURY.md).
 
@@ -41,11 +48,11 @@ For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a 
 | `packages/game-engine` | NLHE engine, commit-reveal shuffle, hand evaluation |
 | `packages/chia-bridge` | chia-gaming adapter, CAT payout offers, settlement proofs |
 | `packages/shared` | Types, variant catalog, DAT units, bet sizing |
-| `services/api` | REST API (tables, hands, wallet, withdraw) |
+| `services/api` | REST API (tables, hands, wallet, withdraw, feedback) |
 | `services/treasury-payout` | Treasury offer builder for on-chain DAT payouts |
 | `services/gateway` | WebSocket realtime |
-| `apps/web` | Web client — Sage WalletConnect, NLHE vs house |
-| `docs/` | Architecture, DAT token, Chia integration, roadmap |
+| `apps/web` | Public website (`/` landing, `/play` table, `/feedback`) — Sage, NLHE 6-max |
+| `docs/` | Architecture, DAT token, Chia integration, security, roadmap |
 
 ## Create this repo on GitHub
 

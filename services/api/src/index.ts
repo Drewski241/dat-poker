@@ -5,11 +5,16 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import { POKER_VARIANTS } from "@dat-poker/shared";
-import { registerTableRoutes } from "./routes/tables.js";
+import { loadUsers } from "./user-store.js";
+import { loadLedger } from "./account-store.js";
+import { registerTableRoutes, returnAllStacksToAccounts } from "./routes/tables.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerFeedbackRoutes } from "./routes/feedback.js";
+import { registerSessionRoutes } from "./routes/session.js";
+import { registerAuthRoutes } from "./routes/auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -31,7 +36,7 @@ const chiaClient = new ChiaGamingClient({
 });
 
 async function main(): Promise<void> {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: true, trustProxy: true });
   await app.register(cors, { origin: true });
 
   app.addHook("preSerialization", async (_request, _reply, payload) => {
@@ -39,8 +44,14 @@ async function main(): Promise<void> {
     return serializeForJson(payload);
   });
 
+  await loadUsers();
+  loadLedger();
+
   registerHealthRoutes(app, chiaClient);
+  registerAuthRoutes(app);
+  registerSessionRoutes(app);
   registerWalletRoutes(app, chiaClient);
+  registerFeedbackRoutes(app);
   registerTableRoutes(app);
   registerHandRoutes(app);
 
@@ -48,8 +59,24 @@ async function main(): Promise<void> {
     variants: POKER_VARIANTS,
   }));
 
+  app.addHook("onClose", async () => {
+    try {
+      const { returned } = returnAllStacksToAccounts();
+      app.log.info({ returned }, "returned table stacks to persisted DAT accounts");
+    } catch (err) {
+      app.log.error({ err }, "failed to return table stacks on shutdown");
+    }
+  });
+
   await app.listen({ port, host });
   app.log.info(`API listening on http://${host}:${port}`);
+
+  const stop = (signal: string) => {
+    app.log.info({ signal }, "shutting down");
+    void app.close().finally(() => process.exit(0));
+  };
+  process.once("SIGTERM", () => stop("SIGTERM"));
+  process.once("SIGINT", () => stop("SIGINT"));
 }
 
 main().catch((err) => {

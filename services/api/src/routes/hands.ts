@@ -1,28 +1,62 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
-import { generateServerSeed, publicHandView, type PlayerAction } from "@dat-poker/game-engine";
-import { getTableSession } from "./tables.js";
-import { finalizeIfHandOver, playHouseActors, seedHousePlayers } from "../table-session.js";
+import { generateServerSeed, type NlheTableEngine, type PlayerAction } from "@dat-poker/game-engine";
+import { maybeRecordCompletedHand } from "../hand-history-store.js";
+import {
+  ensureHouseFunded,
+  getSng,
+  getTableEngine,
+  persistTablePlaythrough,
+  unseatInactivePlayers,
+} from "./tables.js";
+import { touchPlayerActivity } from "../player-activity.js";
+import { playHouseIfDue } from "../house-play.js";
+import { redactHandForViewer } from "../redact-hand.js";
+import { requirePlayer, sessionMatchesClaim, type PlayerSession } from "../player-session.js";
+
+function seatedPlayer(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  table: NlheTableEngine,
+  claimed?: string,
+): PlayerSession | null {
+  const session = requirePlayer(req, reply);
+  if (!session) return null;
+  if (!sessionMatchesClaim(session, claimed)) {
+    void reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    return null;
+  }
+  if (!table.hasPlayer(session.playerId)) {
+    void reply.status(403).send({ error: "You are not seated at this table" });
+    return null;
+  }
+  touchPlayerActivity(session.playerId);
+  return session;
+}
 
 export function registerHandRoutes(app: FastifyInstance): void {
-  app.post<{ Params: { tableId: string }; Body: { handId?: string } }>(
+  app.post<{ Params: { tableId: string }; Body: { handId?: string; playerId?: string } }>(
     "/v1/tables/:tableId/hands/start",
     async (req, reply) => {
-      const session = getTableSession(req.params.tableId);
-      if (!session) return reply.status(404).send({ error: "Table not found" });
+      const table = getTableEngine(req.params.tableId);
+      if (!table) return reply.status(404).send({ error: "Table not found" });
+      const session = seatedPlayer(req, reply, table, req.body.playerId);
+      if (!session) return;
       try {
-        if (session.sng) {
-          if (session.sng.getStatus() === "registering") {
+        const sng = getSng(req.params.tableId);
+        if (sng) {
+          if (sng.getStatus() === "registering") {
             return reply.status(400).send({ error: "SNG has not started" });
           }
-          if (session.sng.getStatus() === "finished") {
+          if (sng.getStatus() === "finished") {
             return reply.status(400).send({ error: "SNG is finished" });
           }
-          session.sng.onHandStarted();
+          sng.onHandStarted();
+        } else {
+          ensureHouseFunded(table);
         }
         const handId = req.body.handId ?? randomUUID();
-        const { commitHash } = session.engine.startHand(handId);
-        seedHousePlayers(session.engine);
+        const { commitHash } = table.startHand(handId);
         return { handId, commitHash, phase: "awaiting_seeds" };
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message });
@@ -32,13 +66,60 @@ export function registerHandRoutes(app: FastifyInstance): void {
 
   app.post<{
     Params: { tableId: string };
-    Body: { playerId: string; seed?: string };
+    Body: { playerId?: string };
+  }>("/v1/tables/:tableId/hands/go", async (req, reply) => {
+    const table = getTableEngine(req.params.tableId);
+    if (!table) return reply.status(404).send({ error: "Table not found" });
+      const session = seatedPlayer(req, reply, table, req.body.playerId);
+      if (!session) return;
+      try {
+        const sng = getSng(req.params.tableId);
+        if (sng) {
+          if (sng.getStatus() === "registering") {
+            return reply.status(400).send({ error: "SNG has not started" });
+          }
+          if (sng.getStatus() === "finished") {
+            return reply.status(400).send({ error: "SNG is finished" });
+          }
+          sng.onHandStarted();
+        } else {
+          ensureHouseFunded(table);
+        }
+        const handId = randomUUID();
+        const { commitHash } = table.startHand(handId);
+        for (const seated of table.getSeatedPlayers()) {
+        table.submitPlayerSeed(seated.playerId, generateServerSeed());
+      }
+      table.revealAndDeal();
+      table.advanceHandIfIdle();
+      playHouseIfDue(table);
+      persistTablePlaythrough(table);
+      maybeRecordCompletedHand(req.params.tableId, table);
+      if (sng && !table.isHandInProgress() && sng.getStatus() === "running") {
+        sng.afterHand();
+      }
+      return {
+        ok: true,
+        handId,
+        commitHash,
+        hand: redactHandForViewer(table.getHandState(), session.playerId),
+        lastHandResult: table.getLastHandResult(),
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Params: { tableId: string };
+    Body: { playerId?: string; seed?: string };
   }>("/v1/tables/:tableId/hands/seed", async (req, reply) => {
-    const session = getTableSession(req.params.tableId);
-    if (!session) return reply.status(404).send({ error: "Table not found" });
+    const table = getTableEngine(req.params.tableId);
+    if (!table) return reply.status(404).send({ error: "Table not found" });
+    const session = seatedPlayer(req, reply, table, req.body.playerId);
+    if (!session) return;
     try {
-      session.engine.submitPlayerSeed(req.body.playerId, req.body.seed ?? generateServerSeed());
-      seedHousePlayers(session.engine);
+      table.submitPlayerSeed(session.playerId, req.body.seed ?? generateServerSeed());
       return { ok: true };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -48,18 +129,16 @@ export function registerHandRoutes(app: FastifyInstance): void {
   app.post<{ Params: { tableId: string }; Body: { playerId?: string } }>(
     "/v1/tables/:tableId/hands/deal",
     async (req, reply) => {
-      const session = getTableSession(req.params.tableId);
-      if (!session) return reply.status(404).send({ error: "Table not found" });
+      const table = getTableEngine(req.params.tableId);
+      if (!table) return reply.status(404).send({ error: "Table not found" });
+      const session = seatedPlayer(req, reply, table, req.body.playerId);
+      if (!session) return;
       try {
-        seedHousePlayers(session.engine);
-        session.engine.revealAndDeal();
-        playHouseActors(session);
-        finalizeIfHandOver(session);
+        table.revealAndDeal();
+        persistTablePlaythrough(table);
         return {
           ok: true,
-          hand: publicHandView(session.engine.getHandState(), req.body.playerId),
-          lastHandResult: session.engine.getLastHandResult(),
-          sng: session.sng?.snapshot() ?? null,
+          hand: redactHandForViewer(table.getHandState(), session.playerId),
         };
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message });
@@ -69,20 +148,30 @@ export function registerHandRoutes(app: FastifyInstance): void {
 
   app.post<{
     Params: { tableId: string };
-    Body: { playerId: string; action: PlayerAction; amountMojos?: string; viewerId?: string };
+    Body: { playerId?: string; action: PlayerAction; amountMojos?: string };
   }>("/v1/tables/:tableId/hands/action", async (req, reply) => {
-    const session = getTableSession(req.params.tableId);
-    if (!session) return reply.status(404).send({ error: "Table not found" });
+    const table = getTableEngine(req.params.tableId);
+    if (!table) return reply.status(404).send({ error: "Table not found" });
+    const session = seatedPlayer(req, reply, table, req.body.playerId);
+    if (!session) return;
     try {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
-      session.engine.applyAction(req.body.playerId, req.body.action, amount);
-      playHouseActors(session);
-      finalizeIfHandOver(session);
+      table.applyAction(session.playerId, req.body.action, amount);
+      table.advanceHandIfIdle();
+      playHouseIfDue(table);
+      persistTablePlaythrough(table);
+      if (!table.isHandInProgress()) {
+        unseatInactivePlayers(req.params.tableId, table, Date.now());
+        const sng = getSng(req.params.tableId);
+        if (sng && sng.getStatus() === "running") {
+          sng.afterHand();
+        }
+      }
+      maybeRecordCompletedHand(req.params.tableId, table);
       return {
         ok: true,
-        hand: publicHandView(session.engine.getHandState(), req.body.viewerId ?? req.body.playerId),
-        lastHandResult: session.engine.getLastHandResult(),
-        sng: session.sng?.snapshot() ?? null,
+        hand: redactHandForViewer(table.getHandState(), session.playerId),
+        lastHandResult: table.getLastHandResult(),
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
