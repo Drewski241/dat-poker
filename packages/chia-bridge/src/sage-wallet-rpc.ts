@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import https from "node:https";
 import { URL } from "node:url";
+import { DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS } from "@dat-poker/shared";
 
 export type TreasuryWalletBackend = "sage" | "chia";
 
@@ -208,7 +209,7 @@ export function describeSageNoSpendableCoins(
       held +
       count +
       addr +
-      " Retry withdraw (treasury now deletes leftover pending offers) or run: sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh"
+      " Do not tap Accept on the old offer again. Wait 1–2 minutes, then withdraw once — leftover offers are cancelled on-chain first, and a new offer is not built in the same request. Or run: sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh and wait before the next withdraw."
     );
   }
 
@@ -265,14 +266,46 @@ export function isSageCoinSelectionError(text: string): boolean {
   return /coin selection|no spendable coins/i.test(text);
 }
 
+/** Same DAT/XCH coin is already spent in mempool (old take, cancel, or remake). */
+export function isSageMempoolConflict(text: string): boolean {
+  return /mempool|double.?spend|double spend|conflicting (spend|transaction)|already in the mempool|known coin|pending transaction|coin is pending|has already been spent|ASSERT_ANNOUNCE/i.test(
+    text,
+  );
+}
+
+export function describeSageMempoolConflict(): string {
+  return (
+    "Treasury Sage hit a mempool conflict — the same DAT coin is already being spent " +
+    "(an earlier unused offer, a cancel, or a player Accept that is still pending). " +
+    "Do not tap Accept again and do not import the old offer. Wait 1–2 minutes for the " +
+    "mempool to clear, then withdraw once. If DAT already arrived in player Sage, you are done."
+  );
+}
+
+export function describeSageOfferCancelWait(): string {
+  return (
+    "A leftover treasury Sage offer is still reserving those DAT coins. " +
+    "Treasury submitted an on-chain cancel (or a previous Accept is already in the mempool). " +
+    "Wait 1–2 minutes, do not tap Accept on the old offer, then withdraw once."
+  );
+}
+
+export function leftoverSageOffersBlockNewPayout(funds: SageTreasuryFunds): boolean {
+  return (funds.pendingOfferCount ?? 0) > 0;
+}
+
 export function describeSageWalletRpcFailure(statusCode: number | undefined, body: string): string {
   const trimmed = body.trim();
+  if (isSageMempoolConflict(trimmed)) {
+    return describeSageMempoolConflict();
+  }
   if (isSageCoinSelectionError(trimmed)) {
     return describeSageNoSpendableCoins();
   }
   try {
     const parsed = JSON.parse(trimmed) as { error?: string };
     if (typeof parsed.error === "string" && parsed.error.trim()) {
+      if (isSageMempoolConflict(parsed.error)) return describeSageMempoolConflict();
       return isSageCoinSelectionError(parsed.error)
         ? describeSageNoSpendableCoins()
         : parsed.error.trim();
@@ -291,6 +324,9 @@ export function remapSageOfferError(
   funds: SageTreasuryFunds,
   neededMojos?: bigint,
 ): string {
+  if (isSageMempoolConflict(message)) {
+    return describeSageMempoolConflict();
+  }
   if (isSageCoinSelectionError(message)) {
     return describeSageNoSpendableCoins(funds, neededMojos);
   }
@@ -390,14 +426,22 @@ function buildAgent(config: TreasuryWalletRpcConfig): https.Agent {
   });
 }
 
+function remapTreasuryWalletRpcError(text: string, statusCode?: number): string {
+  if (isSageMempoolConflict(text)) return describeSageMempoolConflict();
+  if (isSageCoinSelectionError(text)) return describeSageNoSpendableCoins();
+  return text.trim() || describeSageWalletRpcFailure(statusCode, text);
+}
+
 export async function treasuryWalletRpcRequest<T>(
   config: TreasuryWalletRpcConfig,
   method: string,
   params: Record<string, unknown> = {},
+  options?: { timeoutMs?: number },
 ): Promise<T> {
   const url = new URL(`/${method}`, config.url.endsWith("/") ? config.url : `${config.url}/`);
   const body = JSON.stringify(params);
   const agent = buildAgent(config);
+  const timeoutMs = options?.timeoutMs ?? 12_000;
 
   return new Promise<T>((resolve, reject) => {
     const req = https.request(
@@ -423,24 +467,18 @@ export async function treasuryWalletRpcRequest<T>(
             return;
           }
           if (res.statusCode && res.statusCode >= 400) {
-            reject(
-              new Error(
-                isSageCoinSelectionError(parsed.error ?? "")
-                  ? describeSageNoSpendableCoins()
-                  : (parsed.error ?? describeSageWalletRpcFailure(res.statusCode, text)),
-              ),
-            );
+            reject(new Error(remapTreasuryWalletRpcError(parsed.error ?? text, res.statusCode)));
             return;
           }
           if (parsed.success === false) {
-            reject(new Error(parsed.error ?? "Treasury wallet RPC failed"));
+            reject(new Error(remapTreasuryWalletRpcError(parsed.error ?? "Treasury wallet RPC failed")));
             return;
           }
           resolve(parsed);
         });
       },
     );
-    req.setTimeout(12_000, () => {
+    req.setTimeout(timeoutMs, () => {
       req.destroy();
       reject(new Error("Treasury Sage RPC timed out waiting for an offer"));
     });
@@ -536,19 +574,73 @@ export async function deleteSageOffer(config: TreasuryWalletRpcConfig, offerId: 
   await treasuryWalletRpcRequest(config, "delete_offer", { offer_id: offerId });
 }
 
-/** Locally drop pending/active offers so reserved DAT becomes selectable again. */
-export async function releaseOpenSageOffers(config: TreasuryWalletRpcConfig): Promise<string[]> {
+export function buildSageCancelOfferRequest(
+  offerId: string,
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): { offer_id: string; fee: number; auto_submit: true } {
+  const id = offerId.trim();
+  if (!id) {
+    throw new Error("offer_id required to cancel a Sage offer");
+  }
+  const fee = Number(feeMojos);
+  return {
+    offer_id: id,
+    fee: Number.isSafeInteger(fee) && fee > 0 ? fee : Number(DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS),
+    auto_submit: true,
+  };
+}
+
+/** On-chain cancel — invalidates leftover offer1. Local delete_offer does not. */
+export async function cancelSageOffer(
+  config: TreasuryWalletRpcConfig,
+  offerId: string,
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): Promise<void> {
+  await treasuryWalletRpcRequest(config, "cancel_offer", buildSageCancelOfferRequest(offerId, feeMojos), {
+    timeoutMs: 45_000,
+  });
+}
+
+export interface SageOfferCancelResult {
+  cancelled: string[];
+  mempoolConflict: string[];
+  failed: string[];
+}
+
+export async function cancelOpenSageOffers(
+  config: TreasuryWalletRpcConfig,
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): Promise<SageOfferCancelResult> {
   const ids = openSageOfferIds(await listSageOffers(config));
-  const released: string[] = [];
+  const cancelled: string[] = [];
+  const mempoolConflict: string[] = [];
+  const failed: string[] = [];
   for (const offerId of ids) {
     try {
-      await deleteSageOffer(config, offerId);
-      released.push(offerId);
-    } catch {
-      /* keep going — a completed offer can fail delete */
+      await cancelSageOffer(config, offerId, feeMojos);
+      cancelled.push(offerId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isSageMempoolConflict(message)) {
+        mempoolConflict.push(offerId);
+      } else {
+        failed.push(offerId);
+      }
     }
   }
-  return released;
+  return { cancelled, mempoolConflict, failed };
+}
+
+/**
+ * Cancel leftover pending/active offers on-chain.
+ * Local delete_offer leaves the shared offer1 takeable and causes mempool conflicts.
+ */
+export async function releaseOpenSageOffers(
+  config: TreasuryWalletRpcConfig,
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): Promise<string[]> {
+  const result = await cancelOpenSageOffers(config, feeMojos);
+  return [...result.cancelled, ...result.mempoolConflict];
 }
 
 export function describeSageFundsBlock(

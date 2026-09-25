@@ -272,7 +272,8 @@ if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'TREASURY_PAYOUT_FEE_MOJOS' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'SAGE_RELEASE_OFFERS' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'get_offers' "$DIR/enable-treasury-sage.sh" \
-  && grep -q 'delete_offer' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'cancel_offer' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'auto_submit' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'build_import_key_body' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'tr -d' "$DIR/enable-treasury-sage.sh"; then
   ok "enable-treasury-sage.sh writes Sage RPC cert paths and uses prebuilt sage-cli"

@@ -1,7 +1,10 @@
+import { resolveSageMakeOfferFeeMojos } from "@dat-poker/shared";
 import type { CatPayoutOfferParams } from "./cat-payout-offer.js";
 import {
   describeSageFundsBlock,
+  describeSageOfferCancelWait,
   ensureSageTreasuryLoggedIn,
+  leftoverSageOffersBlockNewPayout,
   readSageTreasuryFunds,
   releaseOpenSageOffers,
   remapSageOfferError,
@@ -36,18 +39,17 @@ export async function createSageCatPayoutOffer(
   params: CatPayoutOfferParams,
 ): Promise<string> {
   await ensureSageTreasuryLoggedIn(rpc);
-  let funds = await readSageTreasuryFunds(rpc, params.assetId);
-  if (describeSageFundsBlock(funds, params.amountMojos)) {
-    const released = await releaseOpenSageOffers(rpc);
-    if (released.length > 0) {
-      funds = await readSageTreasuryFunds(rpc, params.assetId);
-    }
+  const feeMojos = resolveSageMakeOfferFeeMojos(params.feeMojos);
+  const funds = await readSageTreasuryFunds(rpc, params.assetId);
+  if (leftoverSageOffersBlockNewPayout(funds)) {
+    await releaseOpenSageOffers(rpc, feeMojos);
+    throw new Error(describeSageOfferCancelWait());
   }
   const blocked = describeSageFundsBlock(funds, params.amountMojos);
   if (blocked) {
     throw new Error(blocked);
   }
-  const request = buildSageCatGiftOfferRequest(params);
+  const request = buildSageCatGiftOfferRequest({ ...params, feeMojos });
   try {
     const response = await treasuryWalletRpcRequest<SageMakeOfferResponse>(rpc, "make_offer", request);
     const offer = response.offer?.trim();

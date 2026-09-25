@@ -380,7 +380,7 @@ sage rpc get_keys '{}'
 2. API already points at `http://127.0.0.1:4200/payout` on the website host. Set `TREASURY_XCH_ADDRESS` so payouts cannot target the treasury key.
    If the play page says treasury is not reachable at `127.0.0.1:4200`, the systemd unit is down — redeploy or run `start-treasury.sh`.
 3. Player links a **separate** Sage address, unlocks DAT, clicks withdraw.
-4. Sage should pop up Accept. There is no fee box — treasury already attached the XCH network fee (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000001 XCH) on `make_offer`. Tap Accept. If no popup appears, copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
+4. Sage should pop up Accept. There is no fee box — treasury already attached the XCH network fee (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000001 XCH) on `make_offer`. Tap Accept once. If you already tapped Accept, wait 1–2 minutes and do not Accept the old offer again. If no popup appears, copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
 5. Player Sage DAT balance increases. Treasury Sage DAT decreases.
 
 Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (`50000` mojos).
@@ -396,7 +396,8 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 | Login / fingerprint errors | Set `TREASURY_SAGE_FINGERPRINT`; run `sage rpc login` manually |
 | Need to replace the treasury key | `sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh` |
 | `no spendable coins` / `datSelectableMojos: 0` | Sage is logged in but has not indexed DAT yet. After sync, 50000 DAT = `50000000` mojos. Confirm `DAT_GOVERNANCE_TOKEN_ASSET_ID` and send a little XCH for fees to the treasury address from `/health`. |
-| `DAT is locked in an unused Sage offer` / `pendingOfferCount` > 0 | The last withdraw built an offer and reserved those DAT coins. Accept failed or was never taken, so the DAT did not leave the treasury key. Retry withdraw (payout now deletes leftover pending/active offers) or `sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh`. Check `/health` `datBalanceMojos` vs `datSelectableMojos`. |
+| `DAT is locked in an unused Sage offer` / `pendingOfferCount` > 0 | The last withdraw built an offer and reserved those DAT coins. Accept failed or was never taken, so the DAT did not leave the treasury key. Wait 1–2 minutes, then withdraw once (payout cancels leftover offers on-chain and does not remake in the same request). Or `sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh` and wait before the next withdraw. Check `/health` `datBalanceMojos` vs `datSelectableMojos`. |
+| Mempool conflict | An old unused offer (or a cancel) and a new spend used the same DAT coin. Stop tapping Accept. Do not import the old offer. Wait 1–2 minutes, then withdraw once. If DAT already arrived in player Sage, you are done. |
 | No offer returned | Treasury Sage needs spendable DAT + XCH for fees |
 | Sage Accept fails / needs a fee | Sage Accept has no fee field. Treasury must attach XCH on `make_offer` (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000001 XCH). This host has spendable XCH. Redeploy so the next offer is not the leftover 0-fee offer. |
 | GUI + CLI RPC conflict | Run only one Sage RPC at a time |

@@ -29,8 +29,10 @@ Treasury HTTP (`dat-poker-treasury`) runs on this website host
 ([TREASURY.md](./TREASURY.md)). Player Sage stays on the tester's device.
 
 Testers should still **read Sage prompts**. Accept an offer only when you just
-clicked withdraw and the site asked Sage to take the treasury DAT offer. If Sage
-asks to send coins, tap reject and report it on `/feedback`.
+clicked withdraw and the site asked Sage to take the treasury DAT offer. If a
+previous Accept is still pending, wait — tapping Accept again on the old offer
+causes a mempool conflict. If Sage asks to send coins, tap reject and report it
+on `/feedback`.
 
 ## Accounts
 

@@ -68,7 +68,7 @@ The Vite web client (`apps/web`) implements Sage WalletConnect:
 6. **Cash out** table stack to the account, then **withdraw to player Sage**.
    Treasury builds an `offer1…` string with the XCH network fee already on
    `make_offer` (`TREASURY_PAYOUT_FEE_MOJOS`). The site calls `chia_takeOffer`
-   so Sage shows Accept. Sage Accept has no fee box — tap Accept. If the
+   so Sage shows Accept. Sage Accept has no fee box — tap Accept once. If the
    pairing is older, disconnect and Connect Sage again, or import the offer
    (Offers → Import). See [SECURITY.md](./SECURITY.md) and [TREASURY.md](./TREASURY.md).
 

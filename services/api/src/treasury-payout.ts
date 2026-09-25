@@ -164,7 +164,7 @@ export function sageLedgerWithdrawNote(kind: "sng" | "table"): string {
 }
 
 export function sageOfferWithdrawNote(): string {
-  return "Treasury created a DAT offer and already attached the XCH network fee. Approve Accept in player Sage (not the treasury key). Sage has no fee box — just tap Accept. If no popup appears, Offers → Import and paste the offer.";
+  return "Treasury created a DAT offer and already attached the XCH network fee. Approve Accept in player Sage (not the treasury key). Sage has no fee box — tap Accept once. If you already tapped Accept, wait and do not Accept the old offer again. If no popup appears, Offers → Import and paste the offer.";
 }
 
 export function computeWithdrawPayout(

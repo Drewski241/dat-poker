@@ -432,12 +432,17 @@ a little XCH to the printed treasury address.
 
 If `/health` shows `datBalanceMojos` still at `50000000` but
 `datSelectableMojos` is `0` and `pendingOfferCount` is greater than 0, the
-last unused withdraw offer is still reserving those coins. Redeploy, then
-retry withdraw — payout deletes leftover pending offers. Or:
+last unused withdraw offer is still reserving those coins. If you already
+tapped Accept, wait 1–2 minutes and do not Accept the old offer again. Then
+withdraw once — payout cancels leftover offers on-chain and does not remake
+in the same request. Or:
 
 ```bash
 sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh
 ```
+
+Wait after that cancel before the next withdraw. A mempool conflict means
+the same DAT coin is already being spent.
 
 ## Website address
 

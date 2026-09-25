@@ -413,8 +413,12 @@ sys.stdout.write(body)
 }
 
 release_open_sage_offers() {
-  echo "Releasing pending/active Sage offers so reserved DAT is selectable again:"
-  local listed ids offer_id
+  echo "Cancelling pending/active Sage offers on-chain (invalidates leftover offer1):"
+  local listed ids offer_id fee
+  fee="$(read_env_kv TREASURY_PAYOUT_FEE_MOJOS || true)"
+  if [[ -z "$fee" || "$fee" == "0" || ! "$fee" =~ ^[0-9]+$ ]]; then
+    fee=1000000
+  fi
   listed="$(sage_rpc get_offers '{}' || true)"
   ids="$(printf '%s' "$listed" | python3 -c '
 import json, sys
@@ -430,14 +434,15 @@ for offer in data.get("offers") or []:
         print(offer_id)
 ')"
   if [[ -z "$ids" ]]; then
-    echo "No pending/active Sage offers to delete."
+    echo "No pending/active Sage offers to cancel."
     return 0
   fi
   while IFS= read -r offer_id; do
     [[ -z "$offer_id" ]] && continue
-    echo "delete_offer ${offer_id:0:12}…"
-    sage_rpc delete_offer "$(python3 -c 'import json,sys; sys.stdout.write(json.dumps({"offer_id": sys.argv[1]}))' "$offer_id")" || true
+    echo "cancel_offer ${offer_id:0:12}… fee=${fee} auto_submit=true"
+    sage_rpc cancel_offer "$(python3 -c 'import json,sys; sys.stdout.write(json.dumps({"offer_id": sys.argv[1], "fee": int(sys.argv[2]), "auto_submit": True}))' "$offer_id" "$fee")" || true
   done <<< "$ids"
+  echo "Wait 1–2 minutes before withdrawing again. Do not Accept the old offer."
 }
 
 json_field() {
@@ -709,7 +714,7 @@ sys.stdout.write(json.dumps({"asset_id": sys.argv[1]}))' "$DAT_ASSET_ID")" || tr
     else
       echo "DAT_GOVERNANCE_TOKEN_ASSET_ID is not set — Sage cannot select DAT coins."
     fi
-    echo "Pending Sage offers (an unused withdraw offer locks DAT until deleted):"
+    echo "Pending Sage offers (an unused withdraw offer locks DAT until cancelled on-chain):"
     sage_rpc get_offers '{}' || true
     if [[ "${SAGE_RELEASE_OFFERS:-}" == "1" ]]; then
       release_open_sage_offers

@@ -84,7 +84,8 @@ function SageOfferBox({
       <p>
         Sage should show an <strong>Accept</strong> popup. There is no fee box —
         treasury already attached the XCH network fee on the offer. Tap{" "}
-        <strong>Accept</strong>. If no popup appears, disconnect and Connect Sage again, or
+        <strong>Accept</strong> once. If you already tapped Accept, wait — do not
+        Accept the old offer again. If no popup appears, disconnect and Connect Sage again, or
         Offers → Import.
       </p>
       <textarea readOnly rows={4} value={offer} />
@@ -1142,7 +1143,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       return;
     }
     const feeMojos = resolveSageTakeOfferFeeMojos(withdrawConfig?.feeMojos);
-    setStatus("Approve the DAT offer in Sage — tap Accept. Treasury already paid the XCH fee.");
+    setStatus("Approve the DAT offer in Sage — tap Accept once. Treasury already paid the XCH fee.");
     try {
       await takeOffer(session, wcConfig.projectId, wcConfig.chainId, offer, feeMojos);
       setStatus("Sage accepted the DAT offer. DAT should show in your player wallet.");

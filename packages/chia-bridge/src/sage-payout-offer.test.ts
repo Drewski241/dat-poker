@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSageCancelOfferRequest,
   buildSageImportKeyRequest,
   describeMissingSageCerts,
   describeSageFundsBlock,
   describeSageLoginNeeded,
+  describeSageMempoolConflict,
   describeSageNoSpendableCoins,
+  describeSageOfferCancelWait,
   describeSageWalletRpcFailure,
   emptySageTreasuryFunds,
   expandWalletPath,
   formatDatMojos,
+  isSageMempoolConflict,
+  leftoverSageOffersBlockNewPayout,
   looksLikeSageSecretKey,
   openSageOfferIds,
   parseSageAmount,
@@ -141,6 +146,35 @@ describe("sage treasury coin selection", () => {
         address: "xch1treasury",
       }, 2_000n),
     ).toMatch(/xch1treasury/);
+    expect(isSageMempoolConflict("Wallet error: mempool conflict")).toBe(true);
+    expect(isSageMempoolConflict("DOUBLE_SPEND")).toBe(true);
+    expect(isSageMempoolConflict("Conflicting transaction already in the mempool")).toBe(true);
+    expect(isSageMempoolConflict("Coin selection error: no spendable coins")).toBe(false);
+    expect(
+      leftoverSageOffersBlockNewPayout({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        pendingOfferCount: 1,
+      }),
+    ).toBe(true);
+    expect(
+      leftoverSageOffersBlockNewPayout({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        pendingOfferCount: 0,
+      }),
+    ).toBe(false);
+    expect(describeSageOfferCancelWait()).toMatch(/wait 1–2 minutes/i);
+    expect(describeSageOfferCancelWait()).toMatch(/do not tap Accept/i);
+    expect(
+      remapSageOfferError("Wallet error: mempool conflict", emptySageTreasuryFunds()),
+    ).toMatch(/do not tap Accept again/i);
+    expect(describeSageWalletRpcFailure(500, "DOUBLE_SPEND")).toMatch(/mempool conflict/i);
+    expect(describeSageMempoolConflict()).toMatch(/old offer/i);
+    expect(buildSageCancelOfferRequest("offer-abc", 1_000_000n)).toEqual({
+      offer_id: "offer-abc",
+      fee: 1_000_000,
+      auto_submit: true,
+    });
+    expect(buildSageCancelOfferRequest("offer-abc", 0n).fee).toBe(1_000_000);
     expect(openSageOfferIds([
       { offer_id: "keep-pending", status: "pending" },
       { offer_id: "keep-active", status: "active" },
