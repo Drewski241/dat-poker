@@ -106,7 +106,7 @@ if grep -q 'systemctl enable dat-poker-treasury' "$DIR/redeploy.sh" \
   && grep -q 'systemctl restart dat-poker-treasury' "$DIR/redeploy.sh" \
   && grep -q 'http://127.0.0.1:4200/health' "$DIR/redeploy.sh" \
   && grep -q 'DAT_TREASURY_PAYOUT_URL' "$DIR/redeploy.sh" \
-  && grep -q 'DAT_WITHDRAW_FEE_MOJOS' "$DIR/redeploy.sh" \
+  && grep -q 'TREASURY_PAYOUT_FEE_MOJOS' "$DIR/redeploy.sh" \
   && ! grep -q 'is-enabled --quiet dat-poker-treasury' "$DIR/redeploy.sh"; then
   ok "redeploy.sh always enables and waits for treasury :4200/health"
 else
@@ -123,7 +123,7 @@ fi
 
 if grep -q 'DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout' "$ROOT/.env.beta.example" \
   && grep -q 'DAT_ENABLE_ONCHAIN_WITHDRAW=true' "$ROOT/.env.beta.example" \
-  && grep -q 'DAT_WITHDRAW_FEE_MOJOS=1000000' "$ROOT/.env.beta.example"; then
+  && grep -q 'TREASURY_PAYOUT_FEE_MOJOS=1000000' "$ROOT/.env.beta.example"; then
   ok ".env.beta.example points the API at local treasury"
 else
   bad ".env.beta.example treasury URL"
@@ -269,7 +269,7 @@ if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'get_token' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'looks_like_secret_key' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'is_u32_fingerprint' "$DIR/enable-treasury-sage.sh" \
-  && grep -q 'DAT_WITHDRAW_FEE_MOJOS' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'TREASURY_PAYOUT_FEE_MOJOS' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'SAGE_RELEASE_OFFERS' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'get_offers' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'delete_offer' "$DIR/enable-treasury-sage.sh" \

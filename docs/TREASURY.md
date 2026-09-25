@@ -275,9 +275,9 @@ TREASURY_SAGE_FINGERPRINT=1234567890
 # Certs auto-detected; override if needed:
 # TREASURY_WALLET_CERT_PATH=~/.local/share/sage/ssl/wallet.crt
 # TREASURY_WALLET_KEY_PATH=~/.local/share/sage/ssl/wallet.key
-TREASURY_PAYOUT_FEE_MOJOS=0
-# Player Accept fee (XCH mojos). 0 uses 0.000001 XCH.
-# DAT_WITHDRAW_FEE_MOJOS=1000000
+TREASURY_PAYOUT_FEE_MOJOS=1000000
+# Player chia_takeOffer fee. Sage Accept has no fee box — leave 0.
+# DAT_WITHDRAW_FEE_MOJOS=0
 ```
 
 ### Game host (API + web — can be a different computer)
@@ -286,8 +286,9 @@ TREASURY_PAYOUT_FEE_MOJOS=0
 DAT_GOVERNANCE_TOKEN_ASSET_ID=your_64_char_asset_id
 DAT_TREASURY_PAYOUT_URL=http://TREASURY_HOST_IP:4200/payout
 DAT_WITHDRAW_PAYOUT_MODE=net
-# Player Sage XCH fee on Accept. 1000000 mojos = 0.000001 XCH.
-DAT_WITHDRAW_FEE_MOJOS=1000000
+# Sage Accept has no fee box. Treasury pays TREASURY_PAYOUT_FEE_MOJOS.
+DAT_WITHDRAW_FEE_MOJOS=0
+TREASURY_PAYOUT_FEE_MOJOS=1000000
 WALLETCONNECT_PROJECT_ID=...
 # No TREASURY_SAGE_* vars needed here — treasury service runs elsewhere
 ```
@@ -300,8 +301,8 @@ WALLETCONNECT_PROJECT_ID=...
 | `TREASURY_SAGE_FINGERPRINT` | Set after import — service calls `login` before `make_offer` |
 | `TREASURY_OFFER_MODE=mock` | Dev only — fake offers, no on-chain DAT |
 | `DAT_WITHDRAW_PAYOUT_MODE=net` | Pay winnings only (virtual buy-in): stack − buy-in |
-| `DAT_WITHDRAW_FEE_MOJOS` | Player Sage **XCH** fee on Accept (`chia_takeOffer`). Default `1000000` = 0.000001 XCH. `0` or unset uses that default. Player Sage must have spendable XCH. |
-| `TREASURY_PAYOUT_FEE_MOJOS` | Treasury Sage **XCH** fee on `make_offer`. Default `0` so an empty-XCH treasury can still create the offer. |
+| `DAT_WITHDRAW_FEE_MOJOS` | Player `chia_takeOffer` fee. Default `0`. Sage Accept has no fee box. |
+| `TREASURY_PAYOUT_FEE_MOJOS` | Treasury Sage **XCH** fee on `make_offer`. Default `1000000` = 0.000001 XCH. `0` or unset uses that default. Treasury must have spendable XCH (this host already does). |
 | `TREASURY_WALLET_BACKEND=chia` | Legacy reference wallet only (not recommended) |
 
 ---
@@ -379,7 +380,7 @@ sage rpc get_keys '{}'
 2. API already points at `http://127.0.0.1:4200/payout` on the website host. Set `TREASURY_XCH_ADDRESS` so payouts cannot target the treasury key.
    If the play page says treasury is not reachable at `127.0.0.1:4200`, the systemd unit is down — redeploy or run `start-treasury.sh`.
 3. Player links a **separate** Sage address, unlocks DAT, clicks withdraw.
-4. Sage should pop up Accept. Accept spends a small **XCH** fee from **player** Sage (default 0.000001 XCH, `DAT_WITHDRAW_FEE_MOJOS`). That wallet needs spendable XCH — this is not DAT. If no popup appears, copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
+4. Sage should pop up Accept. There is no fee box — treasury already attached the XCH network fee (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000001 XCH) on `make_offer`. Tap Accept. If no popup appears, copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
 5. Player Sage DAT balance increases. Treasury Sage DAT decreases.
 
 Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (`50000` mojos).
@@ -397,7 +398,7 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 | `no spendable coins` / `datSelectableMojos: 0` | Sage is logged in but has not indexed DAT yet. After sync, 50000 DAT = `50000000` mojos. Confirm `DAT_GOVERNANCE_TOKEN_ASSET_ID` and send a little XCH for fees to the treasury address from `/health`. |
 | `DAT is locked in an unused Sage offer` / `pendingOfferCount` > 0 | The last withdraw built an offer and reserved those DAT coins. Accept failed or was never taken, so the DAT did not leave the treasury key. Retry withdraw (payout now deletes leftover pending/active offers) or `sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh`. Check `/health` `datBalanceMojos` vs `datSelectableMojos`. |
 | No offer returned | Treasury Sage needs spendable DAT + XCH for fees |
-| Sage Accept fails / needs a fee | Player Sage pays `DAT_WITHDRAW_FEE_MOJOS` (default 0.000001 XCH) on Accept. Fund **player** Sage with a little XCH. Treasury maker fee is separate (`TREASURY_PAYOUT_FEE_MOJOS`, default 0). |
+| Sage Accept fails / needs a fee | Sage Accept has no fee field. Treasury must attach XCH on `make_offer` (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000001 XCH). This host has spendable XCH. Redeploy so the next offer is not the leftover 0-fee offer. |
 | GUI + CLI RPC conflict | Run only one Sage RPC at a time |
 | Player sees no offer | Confirm `dat-poker-treasury` is active; API `DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout` |
 

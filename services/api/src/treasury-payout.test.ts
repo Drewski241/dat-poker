@@ -30,11 +30,11 @@ describe("readTreasuryPayoutConfig", () => {
     delete process.env.DAT_WITHDRAW_FEE_MOJOS;
   });
 
-  it("defaults Accept fee to 0.000001 XCH when unset or zero", () => {
+  it("keeps player Accept fee at 0 — treasury pays the maker fee", () => {
     delete process.env.DAT_WITHDRAW_FEE_MOJOS;
-    expect(readTreasuryPayoutConfig().withdrawFeeMojos).toBe(1_000_000n);
+    expect(readTreasuryPayoutConfig().withdrawFeeMojos).toBe(0n);
     process.env.DAT_WITHDRAW_FEE_MOJOS = "0";
-    expect(readTreasuryPayoutConfig().withdrawFeeMojos).toBe(1_000_000n);
+    expect(readTreasuryPayoutConfig().withdrawFeeMojos).toBe(0n);
   });
 
   it("keeps an operator override", () => {

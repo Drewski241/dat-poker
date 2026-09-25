@@ -2,11 +2,15 @@
 export const XCH_MOJOS_PER_COIN = 1_000_000_000_000n;
 
 /**
- * Default player-side fee for `chia_takeOffer`.
- * 1_000_000 mojos = 0.000001 XCH — enough for a quiet mainnet mempool.
- * Override with DAT_WITHDRAW_FEE_MOJOS.
+ * Default treasury maker fee on `make_offer`.
+ * 1_000_000 mojos = 0.000001 XCH. Sage Accept has no fee field, so the
+ * treasury attaches this XCH when it builds the DAT gift offer.
+ * Override with TREASURY_PAYOUT_FEE_MOJOS.
  */
-export const DEFAULT_SAGE_TAKE_OFFER_FEE_MOJOS = 1_000_000n;
+export const DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS = 1_000_000n;
+
+/** Player `chia_takeOffer` fee. Sage Accept has no fee box — default 0. */
+export const DEFAULT_SAGE_TAKE_OFFER_FEE_MOJOS = 0n;
 
 export function parseMojos(value: string | bigint | number | undefined | null): bigint {
   if (typeof value === "bigint") return value >= 0n ? value : 0n;
@@ -18,12 +22,19 @@ export function parseMojos(value: string | bigint | number | undefined | null): 
   return BigInt(trimmed);
 }
 
-/** 0 or unset uses the default so Sage Accept is not submitted with a 0-XCH fee. */
+/** Player Accept fee. Unset or 0 stays 0 — treasury pays the maker fee. */
 export function resolveSageTakeOfferFeeMojos(
   configured: string | bigint | number | undefined | null,
 ): bigint {
+  return parseMojos(configured);
+}
+
+/** 0 or unset uses 0.000001 XCH so the DAT offer can be Accepted without a player fee box. */
+export function resolveSageMakeOfferFeeMojos(
+  configured: string | bigint | number | undefined | null,
+): bigint {
   const parsed = parseMojos(configured);
-  return parsed > 0n ? parsed : DEFAULT_SAGE_TAKE_OFFER_FEE_MOJOS;
+  return parsed > 0n ? parsed : DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS;
 }
 
 export function formatXchMojos(mojos: bigint | string): string {

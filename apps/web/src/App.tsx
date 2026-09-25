@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CAT_MOJOS_PER_TOKEN, computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatAmount, formatDatMojos, formatXchMojos, isHousePlayerId, resolveSageTakeOfferFeeMojos } from "@dat-poker/shared";
+import { CAT_MOJOS_PER_TOKEN, computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatAmount, formatDatMojos, isHousePlayerId, resolveSageTakeOfferFeeMojos } from "@dat-poker/shared";
 import {
   api,
   restoreApiAuthToken,
@@ -73,7 +73,6 @@ const CARD_PREVIEW_HAND = describeLiveHand(CARD_PREVIEW_HOLE, CARD_PREVIEW_BOARD
 
 function SageOfferBox({
   offer,
-  feeMojos,
   onCopy,
 }: {
   offer: string;
@@ -83,9 +82,10 @@ function SageOfferBox({
   return (
     <div className="sage-offer-box">
       <p>
-        Sage should show an <strong>Accept</strong> popup. Accept spends a{" "}
-        <strong>{formatXchMojos(feeMojos)}</strong> fee from your <strong>player</strong> Sage (XCH,
-        not DAT). If no popup appears, disconnect and Connect Sage again, or Offers → Import.
+        Sage should show an <strong>Accept</strong> popup. There is no fee box —
+        treasury already attached the XCH network fee on the offer. Tap{" "}
+        <strong>Accept</strong>. If no popup appears, disconnect and Connect Sage again, or
+        Offers → Import.
       </p>
       <textarea readOnly rows={4} value={offer} />
       <button type="button" className="secondary" onClick={onCopy}>
@@ -1142,7 +1142,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       return;
     }
     const feeMojos = resolveSageTakeOfferFeeMojos(withdrawConfig?.feeMojos);
-    setStatus(`Approve the DAT offer in Sage — tap Accept (${formatXchMojos(feeMojos)} fee from player Sage).`);
+    setStatus("Approve the DAT offer in Sage — tap Accept. Treasury already paid the XCH fee.");
     try {
       await takeOffer(session, wcConfig.projectId, wcConfig.chainId, offer, feeMojos);
       setStatus("Sage accepted the DAT offer. DAT should show in your player wallet.");

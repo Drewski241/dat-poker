@@ -1,5 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { buildPayoutOffer, readTreasuryServiceConfig } from "./payout.js";
+
+describe("readTreasuryServiceConfig", () => {
+  afterEach(() => {
+    delete process.env.TREASURY_PAYOUT_FEE_MOJOS;
+  });
+
+  it("defaults make_offer fee to 0.000001 XCH so Sage Accept needs no player fee box", () => {
+    delete process.env.TREASURY_PAYOUT_FEE_MOJOS;
+    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(1_000_000n);
+    process.env.TREASURY_PAYOUT_FEE_MOJOS = "0";
+    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(1_000_000n);
+  });
+});
 
 describe("buildPayoutOffer", () => {
   const baseConfig = {

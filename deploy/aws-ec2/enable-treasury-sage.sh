@@ -737,9 +737,12 @@ set_kv TREASURY_HOST "127.0.0.1"
 set_kv TREASURY_PORT "4200"
 set_kv DAT_TREASURY_PAYOUT_URL "http://127.0.0.1:4200/payout"
 set_kv DAT_ENABLE_ONCHAIN_WITHDRAW true
-# Player Accept fee (chia_takeOffer). Keep an operator override; default 0.000001 XCH.
-if ! grep -q '^DAT_WITHDRAW_FEE_MOJOS=' "$ENV_FILE"; then
-  set_kv DAT_WITHDRAW_FEE_MOJOS 1000000
+# Sage Accept has no fee box. Treasury pays the XCH fee on make_offer.
+if ! grep -q '^TREASURY_PAYOUT_FEE_MOJOS=' "$ENV_FILE" || grep -q '^TREASURY_PAYOUT_FEE_MOJOS=0$' "$ENV_FILE"; then
+  set_kv TREASURY_PAYOUT_FEE_MOJOS 1000000
+fi
+if ! grep -q '^DAT_WITHDRAW_FEE_MOJOS=' "$ENV_FILE" || grep -q '^DAT_WITHDRAW_FEE_MOJOS=1000000$' "$ENV_FILE"; then
+  set_kv DAT_WITHDRAW_FEE_MOJOS 0
 fi
 if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]] && is_u32_fingerprint "$TREASURY_SAGE_FINGERPRINT"; then
   set_kv TREASURY_SAGE_FINGERPRINT "$TREASURY_SAGE_FINGERPRINT"

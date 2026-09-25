@@ -17,7 +17,8 @@ export function readTreasuryPayoutConfig(): TreasuryPayoutConfig {
 
 /**
  * Host → player Sage payouts use a treasury offer. The site then calls
- * chia_takeOffer so Sage shows Accept (player pays DAT_WITHDRAW_FEE_MOJOS XCH).
+ * chia_takeOffer so Sage shows Accept. Treasury pays TREASURY_PAYOUT_FEE_MOJOS
+ * XCH on make_offer — Sage Accept has no fee box.
  * Set DAT_ENABLE_ONCHAIN_WITHDRAW=false to force ledger-only.
  */
 export function onChainSageWithdrawEnabled(): boolean {
@@ -163,7 +164,7 @@ export function sageLedgerWithdrawNote(kind: "sng" | "table"): string {
 }
 
 export function sageOfferWithdrawNote(): string {
-  return "Treasury created a DAT offer. Approve Accept in player Sage (not the treasury key). Accept uses a small XCH fee from that wallet. If no popup appears, Offers → Import and paste the offer.";
+  return "Treasury created a DAT offer and already attached the XCH network fee. Approve Accept in player Sage (not the treasury key). Sage has no fee box — just tap Accept. If no popup appears, Offers → Import and paste the offer.";
 }
 
 export function computeWithdrawPayout(

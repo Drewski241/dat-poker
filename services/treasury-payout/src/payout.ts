@@ -1,3 +1,4 @@
+import { resolveSageMakeOfferFeeMojos } from "@dat-poker/shared";
 import {
   createTreasuryCatPayoutOffer,
   describeMissingSageCerts,
@@ -24,7 +25,7 @@ export function readTreasuryServiceConfig(): TreasuryServiceConfig {
     host: process.env.TREASURY_HOST ?? "0.0.0.0",
     offerMode,
     defaultAssetId: process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID?.trim() || null,
-    payoutFeeMojos: BigInt(process.env.TREASURY_PAYOUT_FEE_MOJOS ?? "0"),
+    payoutFeeMojos: resolveSageMakeOfferFeeMojos(process.env.TREASURY_PAYOUT_FEE_MOJOS),
     treasuryAddress: process.env.TREASURY_XCH_ADDRESS?.trim() || null,
     walletRpc: readTreasuryWalletRpcConfigFromEnv(),
   };
