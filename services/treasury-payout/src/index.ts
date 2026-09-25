@@ -70,6 +70,8 @@ async function main(): Promise<void> {
       sageSyncedCoins: funds?.syncedCoins ?? null,
       sageTotalCoins: funds?.totalCoins ?? null,
       datSelectableMojos: funds?.datSelectableMojos?.toString() ?? null,
+      datBalanceMojos: funds?.datBalanceMojos?.toString() ?? null,
+      pendingOfferCount: funds?.pendingOfferCount ?? null,
       xchSelectableMojos: funds?.xchSelectableMojos?.toString() ?? null,
     };
   });

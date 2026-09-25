@@ -3,6 +3,7 @@ import {
   describeSageFundsBlock,
   ensureSageTreasuryLoggedIn,
   readSageTreasuryFunds,
+  releaseOpenSageOffers,
   remapSageOfferError,
   treasuryWalletRpcRequest,
   type SageMakeOfferResponse,
@@ -35,7 +36,13 @@ export async function createSageCatPayoutOffer(
   params: CatPayoutOfferParams,
 ): Promise<string> {
   await ensureSageTreasuryLoggedIn(rpc);
-  const funds = await readSageTreasuryFunds(rpc, params.assetId);
+  let funds = await readSageTreasuryFunds(rpc, params.assetId);
+  if (describeSageFundsBlock(funds, params.amountMojos)) {
+    const released = await releaseOpenSageOffers(rpc);
+    if (released.length > 0) {
+      funds = await readSageTreasuryFunds(rpc, params.assetId);
+    }
+  }
   const blocked = describeSageFundsBlock(funds, params.amountMojos);
   if (blocked) {
     throw new Error(blocked);

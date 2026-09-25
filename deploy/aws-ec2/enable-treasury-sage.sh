@@ -12,6 +12,7 @@
 #   sudo TREASURY_SAGE_PRIVATE_KEY=hex_or_secret bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_MNEMONIC='word word …' bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+#   sudo SAGE_RELEASE_OFFERS=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #
 # SAGE_INSTALL copies the prebuilt sage-cli shipped in this repo. Do not compile
 # on the t3.small — cargo fills the 20 GB root volume.
@@ -385,6 +386,34 @@ sage_rpc() {
   sudo -u "$SAGE_USER" -H "$bin" rpc "$method" "$body"
 }
 
+release_open_sage_offers() {
+  echo "Releasing pending/active Sage offers so reserved DAT is selectable again:"
+  local listed ids offer_id
+  listed="$(sage_rpc get_offers '{}' || true)"
+  ids="$(printf '%s' "$listed" | python3 -c '
+import json, sys
+raw = sys.stdin.read()
+try:
+    data = json.loads(raw)
+except Exception:
+    raise SystemExit(0)
+for offer in data.get("offers") or []:
+    status = str(offer.get("status") or "").strip().lower()
+    offer_id = offer.get("offer_id") or offer.get("offerId")
+    if offer_id and status in ("pending", "active", "0", "1"):
+        print(offer_id)
+')"
+  if [[ -z "$ids" ]]; then
+    echo "No pending/active Sage offers to delete."
+    return 0
+  fi
+  while IFS= read -r offer_id; do
+    [[ -z "$offer_id" ]] && continue
+    echo "delete_offer ${offer_id:0:12}…"
+    sage_rpc delete_offer "$(python3 -c 'import json,sys; sys.stdout.write(json.dumps({"offer_id": sys.argv[1]}))' "$offer_id")" || true
+  done <<< "$ids"
+}
+
 json_field() {
   python3 -c 'import json,sys
 raw=sys.stdin.read()
@@ -634,6 +663,16 @@ sys.stdout.write(json.dumps({"asset_id": sys.argv[1]}))' "$DAT_ASSET_ID")" || tr
 sys.stdout.write(json.dumps({"asset_id": sys.argv[1]}))' "$DAT_ASSET_ID")" || true
     else
       echo "DAT_GOVERNANCE_TOKEN_ASSET_ID is not set — Sage cannot select DAT coins."
+    fi
+    echo "Pending Sage offers (an unused withdraw offer locks DAT until deleted):"
+    sage_rpc get_offers '{}' || true
+    if [[ "${SAGE_RELEASE_OFFERS:-}" == "1" ]]; then
+      release_open_sage_offers
+      sage_rpc get_offers '{}' || true
+      if [[ "$DAT_ASSET_ID" =~ ^[0-9a-fA-F]{64}$ ]]; then
+        sage_rpc get_token "$(python3 -c 'import json,sys
+sys.stdout.write(json.dumps({"asset_id": sys.argv[1]}))' "$DAT_ASSET_ID")" || true
+      fi
     fi
   else
     echo "No treasury spend key on this Sage yet. walletRpcReachable stays false until you import one."

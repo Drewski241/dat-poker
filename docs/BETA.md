@@ -430,6 +430,15 @@ RPC is up but has not indexed the CAT yet (or XCH for fees is missing).
 as `50000000` after sync. Confirm `DAT_GOVERNANCE_TOKEN_ASSET_ID` and send
 a little XCH to the printed treasury address.
 
+If `/health` shows `datBalanceMojos` still at `50000000` but
+`datSelectableMojos` is `0` and `pendingOfferCount` is greater than 0, the
+last unused withdraw offer is still reserving those coins. Redeploy, then
+retry withdraw — payout deletes leftover pending offers. Or:
+
+```bash
+sudo SAGE_RELEASE_OFFERS=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+```
+
 ## Website address
 
 Testers should open **https://datspiritpoker.com/** — not the Elastic IP and

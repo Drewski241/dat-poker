@@ -118,9 +118,16 @@ export interface SageTreasuryFunds {
   datBalanceMojos: bigint | null;
   datSelectableMojos: bigint | null;
   datSpendableCoins: number | null;
+  pendingOfferCount: number | null;
   datTicker: string;
   datPrecision: number;
   assetId: string | null;
+}
+
+export interface SageOfferRecord {
+  offer_id?: string;
+  offerId?: string;
+  status?: unknown;
 }
 
 export function emptySageTreasuryFunds(assetId?: string | null): SageTreasuryFunds {
@@ -133,10 +140,40 @@ export function emptySageTreasuryFunds(assetId?: string | null): SageTreasuryFun
     datBalanceMojos: null,
     datSelectableMojos: null,
     datSpendableCoins: null,
+    pendingOfferCount: null,
     datTicker: "DAT",
     datPrecision: 3,
     assetId: normalized && /^[a-f0-9]{64}$/.test(normalized) ? normalized : null,
   };
+}
+
+export function sageOfferId(offer: SageOfferRecord): string | null {
+  const id = offer.offer_id ?? offer.offerId;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
+}
+
+/** Pending/active Sage offers reserve maker coins until taken, deleted, or cancelled. */
+export function isOpenSageOfferStatus(status: unknown): boolean {
+  if (typeof status === "number") return status === 0 || status === 1;
+  const normalized = String(status ?? "")
+    .trim()
+    .toLowerCase();
+  return normalized === "pending" || normalized === "active" || normalized === "0" || normalized === "1";
+}
+
+export function openSageOfferIds(offers: SageOfferRecord[]): string[] {
+  return offers
+    .filter((offer) => isOpenSageOfferStatus(offer.status))
+    .map(sageOfferId)
+    .filter((id): id is string => Boolean(id));
+}
+
+export function sageDatLooksLockedInOffer(funds: SageTreasuryFunds): boolean {
+  const pending = funds.pendingOfferCount ?? 0;
+  if (pending > 0) return true;
+  const selectable = funds.datSelectableMojos;
+  const balance = funds.datBalanceMojos;
+  return selectable === 0n && balance != null && balance > 0n;
 }
 
 export function sageLooksStillSyncing(funds: SageTreasuryFunds): boolean {
@@ -156,6 +193,24 @@ export function describeSageNoSpendableCoins(
     : " Set DAT_GOVERNANCE_TOKEN_ASSET_ID to the 64-hex DAT CAT id.";
   const dat = funds.datSelectableMojos;
   const xch = funds.xchSelectableMojos;
+  const balance = funds.datBalanceMojos;
+  const pending = funds.pendingOfferCount ?? 0;
+
+  if (sageDatLooksLockedInOffer(funds)) {
+    const held =
+      balance != null && balance > 0n
+        ? ` Sage still shows ${formatDatMojos(balance, funds.datPrecision)} on this key, but it is not selectable.`
+        : "";
+    const count =
+      pending > 0 ? ` ${pending} pending Sage offer(s) are reserving those coins.` : " The last unused withdraw offer is still reserving those coins.";
+    return (
+      "Treasury DAT is locked in an unused Sage offer from an earlier withdraw — the coins did not leave this key." +
+      held +
+      count +
+      addr +
+      " Retry withdraw (treasury now deletes leftover pending offers) or run: sudo SAGE_RELEASE_OFFERS=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh"
+    );
+  }
 
   if (sageLooksStillSyncing(funds) && (dat == null || dat === 0n)) {
     return (
@@ -463,7 +518,37 @@ export async function readSageTreasuryFunds(
       /* get_spendable_coin_count is best-effort */
     }
   }
+  try {
+    const listed = await listSageOffers(config);
+    funds.pendingOfferCount = openSageOfferIds(listed).length;
+  } catch {
+    /* get_offers is best-effort */
+  }
   return funds;
+}
+
+export async function listSageOffers(config: TreasuryWalletRpcConfig): Promise<SageOfferRecord[]> {
+  const listed = await treasuryWalletRpcRequest<{ offers?: SageOfferRecord[] }>(config, "get_offers", {});
+  return Array.isArray(listed.offers) ? listed.offers : [];
+}
+
+export async function deleteSageOffer(config: TreasuryWalletRpcConfig, offerId: string): Promise<void> {
+  await treasuryWalletRpcRequest(config, "delete_offer", { offer_id: offerId });
+}
+
+/** Locally drop pending/active offers so reserved DAT becomes selectable again. */
+export async function releaseOpenSageOffers(config: TreasuryWalletRpcConfig): Promise<string[]> {
+  const ids = openSageOfferIds(await listSageOffers(config));
+  const released: string[] = [];
+  for (const offerId of ids) {
+    try {
+      await deleteSageOffer(config, offerId);
+      released.push(offerId);
+    } catch {
+      /* keep going — a completed offer can fail delete */
+    }
+  }
+  return released;
 }
 
 export function describeSageFundsBlock(

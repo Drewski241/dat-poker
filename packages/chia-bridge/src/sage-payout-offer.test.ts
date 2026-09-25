@@ -10,11 +10,13 @@ import {
   expandWalletPath,
   formatDatMojos,
   looksLikeSageSecretKey,
+  openSageOfferIds,
   parseSageAmount,
   parseSageFingerprint,
   readSageTreasurySecretFromEnv,
   remapSageOfferError,
   sageCertSearchDirs,
+  sageDatLooksLockedInOffer,
 } from "./sage-wallet-rpc.js";
 import { buildSageCatGiftOfferRequest } from "./sage-payout-offer.js";
 
@@ -111,6 +113,19 @@ describe("sage treasury coin selection", () => {
       ),
     ).toBeNull();
     expect(
+      describeSageFundsBlock(
+        {
+          ...emptySageTreasuryFunds("ab".repeat(32)),
+          address: "xch1treasury",
+          datBalanceMojos: 50_000_000n,
+          datSelectableMojos: 0n,
+          pendingOfferCount: 1,
+          xchSelectableMojos: 519_800_644_036n,
+        },
+        2_000n,
+      ),
+    ).toMatch(/locked in an unused Sage offer/i);
+    expect(
       remapSageOfferError("Wallet error: Coin selection error: no spendable coins", {
         ...emptySageTreasuryFunds("ab".repeat(32)),
         datSelectableMojos: 50_000_000n,
@@ -118,6 +133,32 @@ describe("sage treasury coin selection", () => {
         address: "xch1treasury",
       }, 2_000n),
     ).toMatch(/xch1treasury/);
+    expect(openSageOfferIds([
+      { offer_id: "keep-pending", status: "pending" },
+      { offer_id: "keep-active", status: "active" },
+      { offer_id: "skip-done", status: "completed" },
+      { offerId: "keep-numeric", status: 0 },
+    ])).toEqual(["keep-pending", "keep-active", "keep-numeric"]);
+    expect(
+      sageDatLooksLockedInOffer({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        datBalanceMojos: 50_000_000n,
+        datSelectableMojos: 0n,
+        pendingOfferCount: 1,
+      }),
+    ).toBe(true);
+    expect(
+      describeSageNoSpendableCoins({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        address: "xch1treasury",
+        syncedCoins: 4,
+        totalCoins: 4,
+        datBalanceMojos: 50_000_000n,
+        datSelectableMojos: 0n,
+        xchSelectableMojos: 519_800_644_036n,
+        pendingOfferCount: 1,
+      }),
+    ).toMatch(/locked in an unused Sage offer/i);
   });
 });
 
