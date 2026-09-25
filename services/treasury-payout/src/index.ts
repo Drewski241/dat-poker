@@ -7,8 +7,11 @@ import { buildPayoutOffer, readTreasuryServiceConfig, type PayoutRequestBody } f
 import {
   describeMissingSageCerts,
   describeSageLoginNeeded,
+  describeSageNoSpendableCoins,
   ensureSageTreasuryReady,
   pingTreasuryWalletRpc,
+  readSageTreasuryFunds,
+  sageLooksStillSyncing,
 } from "@dat-poker/chia-bridge";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -38,6 +41,14 @@ async function main(): Promise<void> {
       walletRpcReachable = await pingTreasuryWalletRpc(config.walletRpc);
     }
     const fingerprintSet = Boolean(config.walletRpc.sageFingerprint);
+    const funds =
+      config.offerMode === "rpc" && walletConfigured && walletRpcReachable
+        ? await readSageTreasuryFunds(config.walletRpc, config.defaultAssetId ?? undefined)
+        : null;
+    const noSpendableDat =
+      funds != null &&
+      (funds.datSelectableMojos === 0n ||
+        (sageLooksStillSyncing(funds) && (funds.datSelectableMojos == null || funds.datSelectableMojos === 0n)));
     return {
       status: "ok",
       offerMode: config.offerMode,
@@ -51,8 +62,15 @@ async function main(): Promise<void> {
           ? describeMissingSageCerts()
           : config.offerMode === "rpc" && walletConfigured && walletRpcReachable === false
             ? describeSageLoginNeeded(fingerprintSet)
-            : null,
+            : noSpendableDat
+              ? describeSageNoSpendableCoins(funds ?? undefined)
+              : null,
       sageFingerprint: config.walletRpc.sageFingerprint ?? null,
+      treasuryAddress: funds?.address ?? config.treasuryAddress,
+      sageSyncedCoins: funds?.syncedCoins ?? null,
+      sageTotalCoins: funds?.totalCoins ?? null,
+      datSelectableMojos: funds?.datSelectableMojos?.toString() ?? null,
+      xchSelectableMojos: funds?.xchSelectableMojos?.toString() ?? null,
     };
   });
 

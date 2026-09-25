@@ -90,6 +90,158 @@ export function describeSageLoginNeeded(fingerprintSet: boolean): string {
   );
 }
 
+export function parseSageAmount(value: unknown): bigint | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return BigInt(Math.trunc(value));
+  }
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+    return BigInt(value.trim());
+  }
+  return undefined;
+}
+
+export function formatDatMojos(mojos: bigint, precision = 3): string {
+  const safePrecision = precision >= 0 && precision <= 12 ? precision : 3;
+  const denom = 10n ** BigInt(safePrecision);
+  const whole = mojos / denom;
+  const frac = mojos % denom;
+  if (frac === 0n) return `${whole.toString()} DAT`;
+  const fracStr = frac.toString().padStart(safePrecision, "0").replace(/0+$/, "");
+  return `${whole.toString()}.${fracStr} DAT`;
+}
+
+export interface SageTreasuryFunds {
+  address: string | null;
+  syncedCoins: number | null;
+  totalCoins: number | null;
+  xchSelectableMojos: bigint | null;
+  datBalanceMojos: bigint | null;
+  datSelectableMojos: bigint | null;
+  datSpendableCoins: number | null;
+  datTicker: string;
+  datPrecision: number;
+  assetId: string | null;
+}
+
+export function emptySageTreasuryFunds(assetId?: string | null): SageTreasuryFunds {
+  const normalized = assetId?.replace(/^0x/i, "").toLowerCase() ?? null;
+  return {
+    address: null,
+    syncedCoins: null,
+    totalCoins: null,
+    xchSelectableMojos: null,
+    datBalanceMojos: null,
+    datSelectableMojos: null,
+    datSpendableCoins: null,
+    datTicker: "DAT",
+    datPrecision: 3,
+    assetId: normalized && /^[a-f0-9]{64}$/.test(normalized) ? normalized : null,
+  };
+}
+
+export function sageLooksStillSyncing(funds: SageTreasuryFunds): boolean {
+  if (funds.totalCoins == null || funds.syncedCoins == null) {
+    return funds.datSelectableMojos == null || funds.datSelectableMojos === 0n;
+  }
+  return funds.totalCoins === 0 || funds.syncedCoins < funds.totalCoins;
+}
+
+export function describeSageNoSpendableCoins(
+  funds: SageTreasuryFunds = emptySageTreasuryFunds(),
+  neededMojos?: bigint,
+): string {
+  const addr = funds.address ? ` Treasury address: ${funds.address}.` : "";
+  const asset = funds.assetId
+    ? ` DAT asset id ${funds.assetId.slice(0, 8)}…${funds.assetId.slice(-4)}.`
+    : " Set DAT_GOVERNANCE_TOKEN_ASSET_ID to the 64-hex DAT CAT id.";
+  const dat = funds.datSelectableMojos;
+  const xch = funds.xchSelectableMojos;
+
+  if (sageLooksStillSyncing(funds) && (dat == null || dat === 0n)) {
+    return (
+      "Treasury Sage has not finished syncing this key, so DAT on the private key is not spendable yet. " +
+      `Synced ${funds.syncedCoins ?? 0}/${funds.totalCoins ?? 0} coins.` +
+      addr +
+      " Wait until /health datSelectableMojos is greater than 0 (50000 DAT = 50000000 mojos), then withdraw again."
+    );
+  }
+  if (dat === 0n) {
+    return (
+      "Treasury Sage does not see spendable DAT on the logged-in key." +
+      asset +
+      (xch === 0n
+        ? " XCH selectable is also 0 — send a little XCH for fees."
+        : xch != null
+          ? ` XCH selectable is ${xch.toString()} mojos.`
+          : "") +
+      addr +
+      " Confirm the key, asset id, and that Sage has synced. 50000 DAT should read as 50000000 mojos."
+    );
+  }
+  if (neededMojos != null && dat != null && dat < neededMojos) {
+    return (
+      `Treasury Sage has ${formatDatMojos(dat, funds.datPrecision)} selectable, but this withdraw needs ${formatDatMojos(neededMojos, funds.datPrecision)}.` +
+      addr
+    );
+  }
+  if (dat != null && dat > 0n && xch === 0n) {
+    return (
+      `Treasury Sage sees ${formatDatMojos(dat, funds.datPrecision)} but no XCH.` +
+      addr +
+      " Send a small amount of XCH to that address for offer fees, then withdraw again."
+    );
+  }
+  if (dat != null && dat > 0n && funds.datSpendableCoins === 0) {
+    return (
+      `Treasury Sage sees ${formatDatMojos(dat, funds.datPrecision)} but 0 spendable DAT coins (likely locked in an offer).` +
+      addr +
+      " Cancel pending treasury offers, then withdraw again."
+    );
+  }
+  return (
+    "Treasury Sage has no spendable coins for this DAT offer." +
+    addr +
+    asset +
+    " After Sage syncs, 50000 DAT should appear as 50000000 mojos. A little XCH is also required for fees."
+  );
+}
+
+export function isSageCoinSelectionError(text: string): boolean {
+  return /coin selection|no spendable coins/i.test(text);
+}
+
+export function describeSageWalletRpcFailure(statusCode: number | undefined, body: string): string {
+  const trimmed = body.trim();
+  if (isSageCoinSelectionError(trimmed)) {
+    return describeSageNoSpendableCoins();
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: string };
+    if (typeof parsed.error === "string" && parsed.error.trim()) {
+      return isSageCoinSelectionError(parsed.error)
+        ? describeSageNoSpendableCoins()
+        : parsed.error.trim();
+    }
+  } catch {
+    /* Sage often returns a plain Wallet error: … string */
+  }
+  if (trimmed) {
+    return trimmed.slice(0, 300);
+  }
+  return `Treasury wallet RPC HTTP ${statusCode ?? "error"}`;
+}
+
+export function remapSageOfferError(
+  message: string,
+  funds: SageTreasuryFunds,
+  neededMojos?: bigint,
+): string {
+  if (isSageCoinSelectionError(message)) {
+    return describeSageNoSpendableCoins(funds, neededMojos);
+  }
+  return message.replace(/^Treasury wallet RPC invalid JSON \(\d+\):\s*/i, "");
+}
+
 function stripEnvSecret(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
@@ -212,13 +364,17 @@ export async function treasuryWalletRpcRequest<T>(
           try {
             parsed = JSON.parse(text) as T & { success?: boolean; error?: string };
           } catch {
-            reject(
-              new Error(`Treasury wallet RPC invalid JSON (${res.statusCode}): ${text.slice(0, 200)}`),
-            );
+            reject(new Error(describeSageWalletRpcFailure(res.statusCode, text)));
             return;
           }
           if (res.statusCode && res.statusCode >= 400) {
-            reject(new Error(parsed.error ?? `Treasury wallet RPC HTTP ${res.statusCode}`));
+            reject(
+              new Error(
+                isSageCoinSelectionError(parsed.error ?? "")
+                  ? describeSageNoSpendableCoins()
+                  : (parsed.error ?? describeSageWalletRpcFailure(res.statusCode, text)),
+              ),
+            );
             return;
           }
           if (parsed.success === false) {
@@ -250,6 +406,77 @@ export async function pingTreasuryWalletRpc(config: TreasuryWalletRpcConfig): Pr
   } catch {
     return false;
   }
+}
+
+export async function readSageTreasuryFunds(
+  config: TreasuryWalletRpcConfig,
+  assetId?: string,
+): Promise<SageTreasuryFunds> {
+  const funds = emptySageTreasuryFunds(assetId);
+  try {
+    const sync = await treasuryWalletRpcRequest<{
+      selectable_balance?: unknown;
+      receive_address?: string;
+      synced_coins?: number;
+      total_coins?: number;
+    }>(config, "get_sync_status", {});
+    if (typeof sync.receive_address === "string" && sync.receive_address.trim()) {
+      funds.address = sync.receive_address.trim();
+    }
+    if (typeof sync.synced_coins === "number") funds.syncedCoins = sync.synced_coins;
+    if (typeof sync.total_coins === "number") funds.totalCoins = sync.total_coins;
+    const xch = parseSageAmount(sync.selectable_balance);
+    if (xch != null) funds.xchSelectableMojos = xch;
+  } catch {
+    /* health / payout still report whatever we got */
+  }
+  if (funds.assetId) {
+    try {
+      const listed = await treasuryWalletRpcRequest<{
+        token?: {
+          balance?: unknown;
+          selectable_balance?: unknown;
+          ticker?: string;
+          precision?: number;
+        } | null;
+      }>(config, "get_token", { asset_id: funds.assetId });
+      if (listed.token) {
+        funds.datBalanceMojos = parseSageAmount(listed.token.balance) ?? 0n;
+        funds.datSelectableMojos = parseSageAmount(listed.token.selectable_balance) ?? 0n;
+        if (listed.token.ticker?.trim()) funds.datTicker = listed.token.ticker.trim();
+        if (typeof listed.token.precision === "number") funds.datPrecision = listed.token.precision;
+      } else {
+        funds.datBalanceMojos = 0n;
+        funds.datSelectableMojos = 0n;
+      }
+    } catch {
+      /* get_token is best-effort */
+    }
+    try {
+      const count = await treasuryWalletRpcRequest<{ count?: number }>(
+        config,
+        "get_spendable_coin_count",
+        { asset_id: funds.assetId },
+      );
+      if (typeof count.count === "number") funds.datSpendableCoins = count.count;
+    } catch {
+      /* get_spendable_coin_count is best-effort */
+    }
+  }
+  return funds;
+}
+
+export function describeSageFundsBlock(
+  funds: SageTreasuryFunds,
+  neededMojos: bigint,
+): string | null {
+  if (funds.datSelectableMojos === 0n || (funds.datSpendableCoins === 0 && funds.datSelectableMojos == null)) {
+    return describeSageNoSpendableCoins(funds, neededMojos);
+  }
+  if (funds.datSelectableMojos != null && funds.datSelectableMojos < neededMojos) {
+    return describeSageNoSpendableCoins(funds, neededMojos);
+  }
+  return null;
 }
 
 export async function ensureSageTreasuryLoggedIn(config: TreasuryWalletRpcConfig): Promise<void> {

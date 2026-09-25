@@ -422,6 +422,12 @@ the new secret, updates the fingerprint, and removes the previous Sage key
 unless you set `SAGE_KEEP_OLD_KEY=1`. Fund the new address before the next
 withdraw.
 
+If withdraw says `no spendable coins` while 50000 DAT is on that key, Sage
+RPC is up but has not indexed the CAT yet (or XCH for fees is missing).
+`curl -sS http://127.0.0.1:4200/health` should show `datSelectableMojos`
+as `50000000` after sync. Confirm `DAT_GOVERNANCE_TOKEN_ASSET_ID` and send
+a little XCH to the printed treasury address.
+
 ## Website address
 
 Testers should open **https://datspiritpoker.com/** — not the Elastic IP and

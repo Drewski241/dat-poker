@@ -130,6 +130,26 @@ async function main(): Promise<void> {
       } catch (e) {
         sageChecks.push(fail("Sage login failed", (e as Error).message));
       }
+      if (config.defaultAssetId) {
+        try {
+          const token = await treasuryWalletRpcRequest<{
+            token?: { selectable_balance?: string | number } | null;
+          }>({ ...rpc, certPath, keyPath }, "get_token", { asset_id: config.defaultAssetId });
+          const selectable = token.token?.selectable_balance;
+          if (selectable != null && String(selectable) !== "0") {
+            sageChecks.push(pass("Sage sees selectable DAT", String(selectable)));
+          } else {
+            sageChecks.push(
+              fail(
+                "Sage selectable DAT is 0",
+                "Wait for sync, confirm DAT_GOVERNANCE_TOKEN_ASSET_ID, and send a little XCH for fees. 50000 DAT = 50000000 mojos.",
+              ),
+            );
+          }
+        } catch (e) {
+          sageChecks.push(fail("Could not read DAT token from Sage", (e as Error).message));
+        }
+      }
     }
 
     if (reachable && !rpc.sageFingerprint) {

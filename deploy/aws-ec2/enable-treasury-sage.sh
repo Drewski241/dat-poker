@@ -89,13 +89,17 @@ print(parse_env(Path(sys.argv[1])).get(sys.argv[2], ""), end="")
 }
 
 apply_treasury_secret() {
-  local secret="$1"
-  secret="$(printf '%s' "$secret" | tr -d ' \r\n')"
+  local secret="$1" hex_compact words
+  secret="$(printf '%s' "$secret" | tr -d '\r' | tr '\n' ' ')"
+  secret="${secret#"${secret%%[![:space:]]*}"}"
+  secret="${secret%"${secret##*[![:space:]]}"}"
   if [[ -z "$secret" ]]; then
     echo "empty treasury spend key" >&2
     return 1
   fi
-  if [[ "$secret" =~ ^[0-9a-fA-F]{64}$ || "$secret" =~ ^0[xX][0-9a-fA-F]{64}$ ]]; then
+  hex_compact="$(printf '%s' "$secret" | tr -d '[:space:]')"
+  if [[ "$hex_compact" =~ ^[0-9a-fA-F]{64}$ || "$hex_compact" =~ ^0[xX][0-9a-fA-F]{64}$ ]]; then
+    secret="$hex_compact"
     if [[ "$secret" =~ ^0[xX] ]]; then
       secret="${secret:2}"
     fi
@@ -106,7 +110,6 @@ apply_treasury_secret() {
     echo "Wrote TREASURY_SAGE_PRIVATE_KEY to $ENV_FILE (${#secret} hex chars)."
     return 0
   fi
-  local words
   words="$(printf '%s' "$secret" | wc -w)"
   if [[ "$words" -eq 12 || "$words" -eq 24 ]]; then
     TREASURY_SAGE_MNEMONIC="$secret"
@@ -128,7 +131,7 @@ load_treasury_secret_from_file() {
     return 1
   fi
   echo "Loading treasury spend key from $file (value is not printed)."
-  apply_treasury_secret "$(tr -d ' \r\n' < "$file")"
+  apply_treasury_secret "$(tr -d '\r' < "$file")"
 }
 
 paste_treasury_secret() {
@@ -616,6 +619,21 @@ sys.stdout.write(json.dumps({"fingerprint": int(sys.argv[1]), "network_id": sys.
       if [[ -z "${TREASURY_XCH_ADDRESS:-}" || "${SAGE_LOAD_KEY:-}" == "1" || -n "${TREASURY_SAGE_PRIVATE_KEY_FILE:-}" ]]; then
         TREASURY_XCH_ADDRESS="$ADDR"
       fi
+    fi
+    echo "Sage sync / coins (DAT is not spendable until these are non-zero):"
+    sage_rpc get_sync_status '{}' || true
+    DAT_ASSET_ID="${DAT_GOVERNANCE_TOKEN_ASSET_ID:-}"
+    if [[ -z "$DAT_ASSET_ID" ]]; then
+      DAT_ASSET_ID="$(read_env_kv DAT_GOVERNANCE_TOKEN_ASSET_ID)"
+    fi
+    if [[ "$DAT_ASSET_ID" =~ ^[0-9a-fA-F]{64}$ ]]; then
+      echo "DAT CAT get_token (50000 DAT should be 50000000 mojos after sync):"
+      sage_rpc get_token "$(python3 -c 'import json,sys
+sys.stdout.write(json.dumps({"asset_id": sys.argv[1]}))' "$DAT_ASSET_ID")" || true
+      sage_rpc get_spendable_coin_count "$(python3 -c 'import json,sys
+sys.stdout.write(json.dumps({"asset_id": sys.argv[1]}))' "$DAT_ASSET_ID")" || true
+    else
+      echo "DAT_GOVERNANCE_TOKEN_ASSET_ID is not set — Sage cannot select DAT coins."
     fi
   else
     echo "No treasury spend key on this Sage yet. walletRpcReachable stays false until you import one."

@@ -263,6 +263,7 @@ if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'SAGE_LOAD_KEY' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'TREASURY_SAGE_PRIVATE_KEY_FILE' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'delete_old_treasury_key' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'get_token' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'looks_like_secret_key' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'is_u32_fingerprint' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'tr -d' "$DIR/enable-treasury-sage.sh"; then

@@ -119,7 +119,7 @@ export async function inspectTreasuryPayout(payoutUrl: string): Promise<Treasury
             ? (walletError ?? "Sage RPC certs missing on the treasury host")
             : notLoggedIn
               ? (walletError ?? "Sage RPC is not logged in on the treasury host")
-              : null,
+              : walletError,
           walletRpcReachable,
           walletConfigured,
           offerMode,

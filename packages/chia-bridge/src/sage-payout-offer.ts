@@ -1,6 +1,9 @@
 import type { CatPayoutOfferParams } from "./cat-payout-offer.js";
 import {
+  describeSageFundsBlock,
   ensureSageTreasuryLoggedIn,
+  readSageTreasuryFunds,
+  remapSageOfferError,
   treasuryWalletRpcRequest,
   type SageMakeOfferResponse,
   type TreasuryWalletRpcConfig,
@@ -32,11 +35,20 @@ export async function createSageCatPayoutOffer(
   params: CatPayoutOfferParams,
 ): Promise<string> {
   await ensureSageTreasuryLoggedIn(rpc);
-  const request = buildSageCatGiftOfferRequest(params);
-  const response = await treasuryWalletRpcRequest<SageMakeOfferResponse>(rpc, "make_offer", request);
-  const offer = response.offer?.trim();
-  if (!offer) {
-    throw new Error("Sage treasury wallet did not return an offer");
+  const funds = await readSageTreasuryFunds(rpc, params.assetId);
+  const blocked = describeSageFundsBlock(funds, params.amountMojos);
+  if (blocked) {
+    throw new Error(blocked);
   }
-  return offer;
+  const request = buildSageCatGiftOfferRequest(params);
+  try {
+    const response = await treasuryWalletRpcRequest<SageMakeOfferResponse>(rpc, "make_offer", request);
+    const offer = response.offer?.trim();
+    if (!offer) {
+      throw new Error("Sage treasury wallet did not return an offer");
+    }
+    return offer;
+  } catch (error) {
+    throw new Error(remapSageOfferError((error as Error).message, funds, params.amountMojos));
+  }
 }
