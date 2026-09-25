@@ -439,8 +439,8 @@ for offer in data.get("offers") or []:
   fi
   while IFS= read -r offer_id; do
     [[ -z "$offer_id" ]] && continue
-    echo "cancel_offer ${offer_id:0:12}… fee=${fee} auto_submit=true"
-    sage_rpc cancel_offer "$(python3 -c 'import json,sys; sys.stdout.write(json.dumps({"offer_id": sys.argv[1], "fee": int(sys.argv[2]), "auto_submit": True}))' "$offer_id" "$fee")" || true
+    echo "cancel_offer ${offer_id:0:12}… fee=${fee} (XCH mojos) auto_submit=true"
+    sage_rpc cancel_offer "$(python3 -c 'import json,sys; sys.stdout.write(json.dumps({"offer_id": sys.argv[1], "fee": sys.argv[2], "auto_submit": True}))' "$offer_id" "$fee")" || true
   done <<< "$ids"
   echo "Wait 1–2 minutes before withdrawing again. Do not Accept the old offer."
 }

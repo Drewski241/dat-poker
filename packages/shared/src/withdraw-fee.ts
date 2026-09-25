@@ -5,6 +5,7 @@ export const XCH_MOJOS_PER_COIN = 1_000_000_000_000n;
  * Default treasury maker fee on `make_offer`.
  * 1_000_000 mojos = 0.000001 XCH. Sage Accept has no fee field, so the
  * treasury attaches this XCH when it builds the DAT gift offer.
+ * Also used on on-chain `cancel_offer` of leftover unused offers.
  * Override with TREASURY_PAYOUT_FEE_MOJOS.
  */
 export const DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS = 1_000_000n;

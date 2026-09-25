@@ -302,7 +302,7 @@ WALLETCONNECT_PROJECT_ID=...
 | `TREASURY_OFFER_MODE=mock` | Dev only — fake offers, no on-chain DAT |
 | `DAT_WITHDRAW_PAYOUT_MODE=net` | Pay winnings only (virtual buy-in): stack − buy-in |
 | `DAT_WITHDRAW_FEE_MOJOS` | Player `chia_takeOffer` fee. Default `0`. Sage Accept has no fee box. |
-| `TREASURY_PAYOUT_FEE_MOJOS` | Treasury Sage **XCH** fee on `make_offer`. Default `1000000` = 0.000001 XCH. `0` or unset uses that default. Treasury must have spendable XCH (this host already does). |
+| `TREASURY_PAYOUT_FEE_MOJOS` | Treasury Sage **XCH** fee on `make_offer` **and** on-chain `cancel_offer`. Default `1000000` = 0.000001 XCH. `0` or unset uses that default. Treasury must have spendable XCH (this host already does). |
 | `TREASURY_WALLET_BACKEND=chia` | Legacy reference wallet only (not recommended) |
 
 ---
@@ -398,6 +398,7 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 | `no spendable coins` / `datSelectableMojos: 0` | Sage is logged in but has not indexed DAT yet. After sync, 50000 DAT = `50000000` mojos. Confirm `DAT_GOVERNANCE_TOKEN_ASSET_ID` and send a little XCH for fees to the treasury address from `/health`. |
 | `DAT is locked in an unused Sage offer` / `pendingOfferCount` > 0 | The last withdraw built an offer and reserved those DAT coins. Accept failed or was never taken, so the DAT did not leave the treasury key. Wait 1–2 minutes, then withdraw once (payout cancels leftover offers on-chain and does not remake in the same request). Or `sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh` and wait before the next withdraw. Check `/health` `datBalanceMojos` vs `datSelectableMojos`. |
 | Mempool conflict | An old unused offer (or a cancel) and a new spend used the same DAT coin. Stop tapping Accept. Do not import the old offer. Wait 1–2 minutes, then withdraw once. If DAT already arrived in player Sage, you are done. |
+| Leftover offer / cancel needs a fee | On-chain `cancel_offer` spends the reserved DAT and pays the same XCH fee as `make_offer` (`TREASURY_PAYOUT_FEE_MOJOS`). Sage Amount is a string. If cancel says no XCH, send a little XCH to the treasury address from `/health`. |
 | No offer returned | Treasury Sage needs spendable DAT + XCH for fees |
 | Sage Accept fails / needs a fee | Sage Accept has no fee field. Treasury must attach XCH on `make_offer` (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000001 XCH). This host has spendable XCH. Redeploy so the next offer is not the leftover 0-fee offer. |
 | GUI + CLI RPC conflict | Run only one Sage RPC at a time |

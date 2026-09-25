@@ -5,6 +5,8 @@ import {
   describeMissingSageCerts,
   describeSageFundsBlock,
   describeSageLoginNeeded,
+  describeSageCancelFailed,
+  describeSageCancelNeedsXch,
   describeSageMempoolConflict,
   describeSageNoSpendableCoins,
   describeSageOfferCancelWait,
@@ -162,8 +164,22 @@ describe("sage treasury coin selection", () => {
         pendingOfferCount: 0,
       }),
     ).toBe(false);
-    expect(describeSageOfferCancelWait()).toMatch(/wait 1–2 minutes/i);
-    expect(describeSageOfferCancelWait()).toMatch(/do not tap Accept/i);
+    expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/wait 1–2 minutes/i);
+    expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/do not tap Accept/i);
+    expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/0\.000001 XCH fee/i);
+    expect(
+      describeSageCancelNeedsXch(
+        { ...emptySageTreasuryFunds("ab".repeat(32)), address: "xch1treasury", xchSelectableMojos: 0n },
+        1_000_000n,
+      ),
+    ).toMatch(/needs a 0\.000001 XCH fee/i);
+    expect(
+      describeSageCancelFailed(
+        { cancelled: [], mempoolConflict: [], failed: ["offer-1"], errors: ["Wallet error: no XCH"] },
+        { ...emptySageTreasuryFunds("ab".repeat(32)), xchSelectableMojos: 1n },
+        1_000_000n,
+      ),
+    ).toMatch(/Cancel requires an XCH fee/i);
     expect(
       remapSageOfferError("Wallet error: mempool conflict", emptySageTreasuryFunds()),
     ).toMatch(/do not tap Accept again/i);
@@ -171,10 +187,10 @@ describe("sage treasury coin selection", () => {
     expect(describeSageMempoolConflict()).toMatch(/old offer/i);
     expect(buildSageCancelOfferRequest("offer-abc", 1_000_000n)).toEqual({
       offer_id: "offer-abc",
-      fee: 1_000_000,
+      fee: "1000000",
       auto_submit: true,
     });
-    expect(buildSageCancelOfferRequest("offer-abc", 0n).fee).toBe(1_000_000);
+    expect(buildSageCancelOfferRequest("offer-abc", 0n).fee).toBe("1000000");
     expect(openSageOfferIds([
       { offer_id: "keep-pending", status: "pending" },
       { offer_id: "keep-active", status: "active" },
@@ -219,8 +235,8 @@ describe("buildSageCatGiftOfferRequest", () => {
         },
       ],
       requested_assets: [],
-      fee: 0,
-      expiration_seconds: null,
+      fee: "0",
+      expires_at_second: null,
     });
   });
 });

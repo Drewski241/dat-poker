@@ -386,7 +386,8 @@ wallet + Calpoker state channels (`chia_selectCoins`,
 (CHIP-0002 methods + `wss://relay.walletconnect.com`) and **does not**
 request `chia_send`. After a treasury withdraw it may request
 `chia_takeOffer` so Sage shows Accept. Sage Accept has no fee box — treasury
-pays the XCH fee on `make_offer` (`TREASURY_PAYOUT_FEE_MOJOS`). See
+pays the XCH fee on `make_offer` and on-chain `cancel_offer`
+(`TREASURY_PAYOUT_FEE_MOJOS`). See
 [docs/WALLETCONNECT.md](./WALLETCONNECT.md) and [docs/SECURITY.md](./SECURITY.md).
 
 Withdraw to Sage uses the always-on treasury on this website host

@@ -73,6 +73,7 @@ async function main(): Promise<void> {
       datBalanceMojos: funds?.datBalanceMojos?.toString() ?? null,
       pendingOfferCount: funds?.pendingOfferCount ?? null,
       xchSelectableMojos: funds?.xchSelectableMojos?.toString() ?? null,
+      payoutFeeMojos: config.payoutFeeMojos.toString(),
     };
   });
 

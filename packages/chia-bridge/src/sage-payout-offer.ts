@@ -1,13 +1,16 @@
 import { resolveSageMakeOfferFeeMojos } from "@dat-poker/shared";
 import type { CatPayoutOfferParams } from "./cat-payout-offer.js";
 import {
+  cancelOpenSageOffers,
+  describeSageCancelFailed,
+  describeSageCancelNeedsXch,
   describeSageFundsBlock,
   describeSageOfferCancelWait,
   ensureSageTreasuryLoggedIn,
   leftoverSageOffersBlockNewPayout,
   readSageTreasuryFunds,
-  releaseOpenSageOffers,
   remapSageOfferError,
+  sageRpcAmount,
   treasuryWalletRpcRequest,
   type SageMakeOfferResponse,
   type TreasuryWalletRpcConfig,
@@ -29,8 +32,8 @@ export function buildSageCatGiftOfferRequest(params: CatPayoutOfferParams): Reco
   return {
     offered_assets: [{ asset_id: assetId, amount }],
     requested_assets: [],
-    fee: Number(params.feeMojos ?? 0n),
-    expiration_seconds: null,
+    fee: sageRpcAmount(params.feeMojos ?? 0n),
+    expires_at_second: null,
   };
 }
 
@@ -42,8 +45,14 @@ export async function createSageCatPayoutOffer(
   const feeMojos = resolveSageMakeOfferFeeMojos(params.feeMojos);
   const funds = await readSageTreasuryFunds(rpc, params.assetId);
   if (leftoverSageOffersBlockNewPayout(funds)) {
-    await releaseOpenSageOffers(rpc, feeMojos);
-    throw new Error(describeSageOfferCancelWait());
+    if (funds.xchSelectableMojos === 0n) {
+      throw new Error(describeSageCancelNeedsXch(funds, feeMojos));
+    }
+    const cancelled = await cancelOpenSageOffers(rpc, feeMojos);
+    if (cancelled.cancelled.length === 0 && cancelled.mempoolConflict.length === 0) {
+      throw new Error(describeSageCancelFailed(cancelled, funds, feeMojos));
+    }
+    throw new Error(describeSageOfferCancelWait(feeMojos));
   }
   const blocked = describeSageFundsBlock(funds, params.amountMojos);
   if (blocked) {

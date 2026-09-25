@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import https from "node:https";
 import { URL } from "node:url";
-import { DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS } from "@dat-poker/shared";
+import { DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS, formatXchMojos } from "@dat-poker/shared";
 
 export type TreasuryWalletBackend = "sage" | "chia";
 
@@ -129,6 +129,13 @@ export interface SageOfferRecord {
   offer_id?: string;
   offerId?: string;
   status?: unknown;
+}
+
+export interface SageOfferCancelResult {
+  cancelled: string[];
+  mempoolConflict: string[];
+  failed: string[];
+  errors: string[];
 }
 
 export function emptySageTreasuryFunds(assetId?: string | null): SageTreasuryFunds {
@@ -282,11 +289,51 @@ export function describeSageMempoolConflict(): string {
   );
 }
 
-export function describeSageOfferCancelWait(): string {
+export function sageRpcAmount(mojos: bigint): string {
+  if (mojos < 0n) {
+    throw new Error("Sage amount cannot be negative");
+  }
+  return mojos.toString();
+}
+
+export function describeSageOfferCancelWait(
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): string {
   return (
     "A leftover treasury Sage offer is still reserving those DAT coins. " +
-    "Treasury submitted an on-chain cancel (or a previous Accept is already in the mempool). " +
+    `Treasury submitted an on-chain cancel with a ${formatXchMojos(feeMojos)} fee ` +
+    "(same TREASURY_PAYOUT_FEE_MOJOS XCH fee as make_offer). " +
     "Wait 1–2 minutes, do not tap Accept on the old offer, then withdraw once."
+  );
+}
+
+export function describeSageCancelNeedsXch(
+  funds: SageTreasuryFunds,
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): string {
+  const addr = funds.address ? ` Treasury address: ${funds.address}.` : "";
+  return (
+    `On-chain cancel of the leftover Sage offer needs a ${formatXchMojos(feeMojos)} fee, ` +
+    "but treasury Sage has no selectable XCH." +
+    addr +
+    " Send a little XCH to that address, wait for sync, then withdraw once. Do not Accept the old offer."
+  );
+}
+
+export function describeSageCancelFailed(
+  result: SageOfferCancelResult,
+  funds: SageTreasuryFunds,
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): string {
+  if (funds.xchSelectableMojos === 0n) {
+    return describeSageCancelNeedsXch(funds, feeMojos);
+  }
+  const detail = result.errors[0]?.trim();
+  return (
+    `Treasury could not cancel leftover Sage offer(s) on-chain. Cancel requires an XCH fee ` +
+    `(${formatXchMojos(feeMojos)}, TREASURY_PAYOUT_FEE_MOJOS).` +
+    (detail ? ` Sage: ${detail}` : "") +
+    " Do not tap Accept on the old offer. Fix the fee/XCH, wait 1–2 minutes, then withdraw once."
   );
 }
 
@@ -577,15 +624,15 @@ export async function deleteSageOffer(config: TreasuryWalletRpcConfig, offerId: 
 export function buildSageCancelOfferRequest(
   offerId: string,
   feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
-): { offer_id: string; fee: number; auto_submit: true } {
+): { offer_id: string; fee: string; auto_submit: true } {
   const id = offerId.trim();
   if (!id) {
     throw new Error("offer_id required to cancel a Sage offer");
   }
-  const fee = Number(feeMojos);
+  const fee = feeMojos > 0n ? feeMojos : DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS;
   return {
     offer_id: id,
-    fee: Number.isSafeInteger(fee) && fee > 0 ? fee : Number(DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS),
+    fee: sageRpcAmount(fee),
     auto_submit: true,
   };
 }
@@ -601,12 +648,6 @@ export async function cancelSageOffer(
   });
 }
 
-export interface SageOfferCancelResult {
-  cancelled: string[];
-  mempoolConflict: string[];
-  failed: string[];
-}
-
 export async function cancelOpenSageOffers(
   config: TreasuryWalletRpcConfig,
   feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
@@ -615,6 +656,7 @@ export async function cancelOpenSageOffers(
   const cancelled: string[] = [];
   const mempoolConflict: string[] = [];
   const failed: string[] = [];
+  const errors: string[] = [];
   for (const offerId of ids) {
     try {
       await cancelSageOffer(config, offerId, feeMojos);
@@ -625,10 +667,11 @@ export async function cancelOpenSageOffers(
         mempoolConflict.push(offerId);
       } else {
         failed.push(offerId);
+        if (message.trim()) errors.push(message.trim());
       }
     }
   }
-  return { cancelled, mempoolConflict, failed };
+  return { cancelled, mempoolConflict, failed, errors };
 }
 
 /**
