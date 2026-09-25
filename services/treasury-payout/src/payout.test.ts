@@ -1,5 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { buildPayoutOffer, readTreasuryServiceConfig } from "./payout.js";
+
+describe("readTreasuryServiceConfig", () => {
+  afterEach(() => {
+    delete process.env.TREASURY_PAYOUT_FEE_MOJOS;
+  });
+
+  it("defaults make_offer fee to the 0.09 mojo/cost dust-storm floor", () => {
+    delete process.env.TREASURY_PAYOUT_FEE_MOJOS;
+    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(9_000_000n);
+    process.env.TREASURY_PAYOUT_FEE_MOJOS = "0";
+    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(9_000_000n);
+    process.env.TREASURY_PAYOUT_FEE_MOJOS = "1000000";
+    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(9_000_000n);
+  });
+});
 
 describe("buildPayoutOffer", () => {
   const baseConfig = {
@@ -22,5 +37,27 @@ describe("buildPayoutOffer", () => {
     await expect(
       buildPayoutOffer(baseConfig, { address: "xch1abc", amountMojos: "0" }),
     ).rejects.toThrow(/positive/i);
+  });
+
+  it("tells the AWS host to enable Sage RPC when certs are missing", async () => {
+    await expect(
+      buildPayoutOffer(
+        {
+          ...baseConfig,
+          offerMode: "rpc",
+          walletRpc: { ...baseConfig.walletRpc, certPath: undefined, keyPath: undefined },
+        },
+        { address: "xch1abc", amountMojos: "2000" },
+      ),
+    ).rejects.toThrow(/enable-treasury-sage\.sh/);
+  });
+
+  it("rejects a payout to the treasury Sage address", async () => {
+    await expect(
+      buildPayoutOffer(
+        { ...baseConfig, treasuryAddress: "xch1treasurykey" },
+        { address: "XCH1TREASURYKEY", amountMojos: "2000" },
+      ),
+    ).rejects.toThrow(/treasury Sage wallet/i);
   });
 });

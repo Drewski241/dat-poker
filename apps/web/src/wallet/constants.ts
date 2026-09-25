@@ -4,18 +4,25 @@ import type { CoreTypes, ProposalTypes, SessionTypes } from "@walletconnect/type
 export const WALLETCONNECT_RELAY_URL = "wss://relay.walletconnect.com";
 
 /**
- * Spend / offer RPCs that can move coins out of Sage.
- * The public beta site must never request these. Buy-in and redeem only
- * sign CHIP-0002 messages; in-game DAT is a ledger, not a CAT send.
+ * RPCs that can send coins out of Sage without a treasury offer.
+ * The site must never request these. Do not request `chia_takeOffer` either —
+ * WalletConnect Accept submits a take that mempool-conflicts with paste/import.
  */
-export const SAGE_SPEND_METHODS = [
+export const SAGE_DRAIN_METHODS = [
   "chia_send",
   "chia_createOffer",
-  "chia_takeOffer",
   "chia_cancelOffer",
   "chip0002_signCoinSpends",
   "chip0002_sendTransaction",
+  "chia_takeOffer",
 ] as const;
+
+export const SAGE_TAKE_OFFER_METHOD = "chia_takeOffer";
+
+/**
+ * Spend / offer RPCs that can move coins out of Sage.
+ */
+export const SAGE_SPEND_METHODS = [...SAGE_DRAIN_METHODS, SAGE_TAKE_OFFER_METHOD] as const;
 
 /**
  * Methods we actually call after Sage approves.
@@ -30,7 +37,7 @@ export const SAGE_REQUIRED_METHODS = [
   "chia_signMessageByAddress",
 ] as const;
 
-/** Optional extras Sage may grant without spend permission. */
+/** Optional extras Sage may grant. Sign/read only — no takeOffer popup. */
 export const SAGE_WC_METHODS = [
   "chip0002_connect",
   "chip0002_chainId",
@@ -69,6 +76,15 @@ export function sessionMethodList(session: SessionTypes.Struct): string[] {
 export function sessionSpendMethods(session: SessionTypes.Struct): string[] {
   const spend = new Set<string>(SAGE_SPEND_METHODS);
   return sessionMethodList(session).filter((method) => spend.has(method));
+}
+
+export function sessionDrainMethods(session: SessionTypes.Struct): string[] {
+  const drain = new Set<string>(SAGE_DRAIN_METHODS);
+  return sessionMethodList(session).filter((method) => drain.has(method));
+}
+
+export function sessionCanTakeOffer(session: SessionTypes.Struct): boolean {
+  return sessionMethodList(session).includes(SAGE_TAKE_OFFER_METHOD);
 }
 
 export function dappMetadata(): CoreTypes.Metadata {

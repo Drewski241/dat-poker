@@ -1,6 +1,6 @@
 # Treasury wallet setup (Sage + DAT withdraw)
 
-Players withdraw table winnings through the web app. The **treasury payout service** uses **Sage wallet RPC** to build a Chia offer; the player accepts it in their **player Sage wallet** via WalletConnect (`chia_takeOffer`).
+Players withdraw table winnings through the web app. The **treasury payout service** uses **Sage wallet RPC** to build a Chia offer; the player imports it in their **player Sage wallet** (Offers → Import). The site does not call WalletConnect `chia_takeOffer`.
 
 ```mermaid
 sequenceDiagram
@@ -16,8 +16,8 @@ sequenceDiagram
   Treasury->>Sage: make_offer (RPC :9257)
   Sage-->>Treasury: offer1...
   Treasury-->>API: { offer }
-  Web->>Player: chia_takeOffer
-  Player->>Player: Receive DAT CAT
+  Web->>Player: offer1 string (copy / import)
+  Player->>Player: Offers → Import → Receive DAT CAT
 ```
 
 ## Two Sage wallets
@@ -29,13 +29,79 @@ sequenceDiagram
 
 Use a **separate Sage key/fingerprint** for treasury — not the same profile players use to play.
 
-**Treasury Sage and player Sage are always on different machines in production.** The player wallet is on the user's phone or PC; the treasury wallet stays on an operator-controlled host. They never share a device.
+A payout to the treasury Sage address cannot show as a new deposit (it is a self-transfer, and an untaken offer can lock those coins). Set `TREASURY_XCH_ADDRESS` so `/payout` rejects that address.
+
+When treasury is reachable, withdraw returns an `offer1…` string. Copy it and import it in **player** Sage (Offers → Import). Do not tap a WalletConnect Accept popup.
+
+**Player Sage stays on the user's phone or PC.** Treasury Sage is operator-controlled and never shares that device.
+
+---
+
+## AWS website host (beta)
+
+On the public beta EC2 box, treasury HTTP is part of the website:
+
+| Unit | Bind | Lifetime |
+|------|------|----------|
+| `dat-poker-api` | `:4000` (proxied by nginx/Caddy) | Enabled at boot, restarted on every redeploy |
+| `dat-poker-treasury` | `127.0.0.1:4200` | Same — enabled at boot, `Restart=always`, restarted on every redeploy |
+
+`user-data.sh` and `redeploy.sh` persist:
+
+```env
+DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout
+DAT_ENABLE_ONCHAIN_WITHDRAW=true
+TREASURY_HOST=127.0.0.1
+TREASURY_PORT=4200
+```
+
+Do not expose `:4200` or Sage RPC `:9257` in the security group. After redeploy:
+
+```bash
+sudo DAT_POKER_REPO_REF=cursor/sng-sage-unlock-3440 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+curl -sS http://127.0.0.1:4200/health
+curl -sS http://127.0.0.1:4000/v1/wallet/status
+```
+
+Treasury HTTP can be healthy while Sage RPC certs are missing. That is the
+`Sage treasury RPC not configured` / `wallet.crt` withdraw error. Real offers
+need Sage RPC on **this** AWS host:
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# first time, copies the prebuilt sage-cli built for Amazon Linux 2023 (glibc 2.34):
+sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# Load the dedicated treasury spend key (not wallet.key). Prefer a file or silent TTY:
+sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+sudo TREASURY_SAGE_PRIVATE_KEY_FILE=/root/treasury.hex bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+```
+
+`dat-poker-sage-rpc` stays enabled with the website (`:9257`, localhost only).
+Player Sage stays on the tester phone/PC. `start-treasury.sh` is only a repair
+path if the HTTP unit is down.
+
+### Rotate the treasury spend key
+
+After a withdraw works — or if the current key was pasted in SSH or chat —
+load a **new** dedicated key. The wrapper always replaces Sage's logged-in
+fingerprint and writes the new `TREASURY_SAGE_FINGERPRINT` / receive address:
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+# or, from a root-only file (delete the file after it succeeds):
+sudo TREASURY_SAGE_PRIVATE_KEY_FILE=/root/treasury.hex bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+# keep the previous fingerprint in Sage (default is to delete it):
+sudo SAGE_KEEP_OLD_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+```
+
+The script does not print the secret. Fund the new treasury address with DAT
+and fee XCH before the next withdraw. Player Sage stays off this host.
 
 ---
 
 ## Treasury host quick start
 
-Use a **dedicated machine** (or VM) that players never access directly.
+Use the AWS website host above for beta. A dedicated machine is optional if you later split treasury off the game box.
 
 1. **Clone the repo** on the treasury host and install deps:
    ```bash
@@ -106,7 +172,7 @@ Use a **dedicated machine** (or VM) that players never access directly.
 | Machine | Runs | Must NOT |
 |---------|------|----------|
 | **Player phone/PC** | Sage (player key), browser → your web app | Hold treasury DAT |
-| **Game host** | `dev:api`, `dev:web` (or deployed equivalents) | Expose Sage RPC; hold treasury keys |
+| **Game host** | `dev:api`, `dev:web` (or deployed equivalents) | Expose Sage RPC or `:4200` publicly |
 | **Treasury host** | Sage (treasury key), `pnpm dev:treasury` | Be reachable by players directly |
 
 ### Game host `.env` (API + web)
@@ -160,7 +226,8 @@ Sage RPC (`9257`) stays **localhost-only**. Firewall `:4200` so **only the game 
 Install Sage CLI and run RPC in the foreground (do **not** run GUI RPC at the same time):
 
 ```bash
-cargo install --git https://github.com/xch-dev/sage --tag v0.11.1 sage-cli
+# On the AWS website host, use the prebuilt binary (cargo install fills a 20 GB volume):
+sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 sage rpc start
 # In another terminal, login to treasury fingerprint:
 sage rpc login '{"fingerprint": YOUR_TREASURY_FINGERPRINT}'
@@ -208,7 +275,9 @@ TREASURY_SAGE_FINGERPRINT=1234567890
 # Certs auto-detected; override if needed:
 # TREASURY_WALLET_CERT_PATH=~/.local/share/sage/ssl/wallet.crt
 # TREASURY_WALLET_KEY_PATH=~/.local/share/sage/ssl/wallet.key
-TREASURY_PAYOUT_FEE_MOJOS=0
+TREASURY_PAYOUT_FEE_MOJOS=9000000
+# Player chia_takeOffer fee. Sage Accept has no fee box — leave 0.
+# DAT_WITHDRAW_FEE_MOJOS=0
 ```
 
 ### Game host (API + web — can be a different computer)
@@ -217,15 +286,24 @@ TREASURY_PAYOUT_FEE_MOJOS=0
 DAT_GOVERNANCE_TOKEN_ASSET_ID=your_64_char_asset_id
 DAT_TREASURY_PAYOUT_URL=http://TREASURY_HOST_IP:4200/payout
 DAT_WITHDRAW_PAYOUT_MODE=net
+# Sage Accept has no fee box. Treasury pays TREASURY_PAYOUT_FEE_MOJOS.
+DAT_WITHDRAW_FEE_MOJOS=0
+TREASURY_PAYOUT_FEE_MOJOS=9000000
 WALLETCONNECT_PROJECT_ID=...
 # No TREASURY_SAGE_* vars needed here — treasury service runs elsewhere
 ```
 
 | Variable | Notes |
 |----------|--------|
-| `TREASURY_SAGE_FINGERPRINT` | Treasury key fingerprint — service calls `login` before `make_offer` |
+| `TREASURY_SAGE_PRIVATE_KEY` | Dedicated treasury spend key (hex/bech32). Imported into Sage RPC. Not `wallet.key`. |
+| `TREASURY_SAGE_MNEMONIC` | Same as the private key, if you have 12/24 words instead |
+| `TREASURY_SAGE_PRIVATE_KEY_FILE` | One-shot path for `load-treasury-key.sh` (64 hex or 12/24 words). Do not leave the file on disk. |
+| `TREASURY_SAGE_FINGERPRINT` | Set after import — service calls `login` before `make_offer` |
 | `TREASURY_OFFER_MODE=mock` | Dev only — fake offers, no on-chain DAT |
 | `DAT_WITHDRAW_PAYOUT_MODE=net` | Pay winnings only (virtual buy-in): stack − buy-in |
+| `DAT_WITHDRAW_FEE_MOJOS` | Player `chia_takeOffer` fee. Default `0`. Sage Accept has no fee box. |
+| `TREASURY_PAYOUT_FEE_MOJOS` | Treasury Sage **XCH** fee on `make_offer`, on-chain `cancel_offers`, and the DAT self-send that evicts a leftover player take. Default `9000000` = 0.000009 XCH = ceil(100M cost × **0.09 mojo/cost**) so those spends enter the dust-storm mempool. `0`, unset, or the old `1000000` default is raised to that floor. Batch cancel scales by leftover offer count. Treasury must have spendable XCH (this host already does). |
+| `TREASURY_LAST_OFFER_PATH` | JSON file for the last `offer1` / evict marker. Default `data/treasury-last-offer.json` (cwd `/opt/dat-poker` on AWS). |
 | `TREASURY_WALLET_BACKEND=chia` | Legacy reference wallet only (not recommended) |
 
 ---
@@ -294,9 +372,17 @@ sage rpc get_keys '{}'
 
 ## Step 5 — Player withdraw
 
-1. Player connects **their own Sage** via WalletConnect → buy in → play → win.
-2. Click **Withdraw … to Sage** → sign withdraw message.
-3. Accept **treasury offer** in Sage → DAT arrives on-chain.
+1. On AWS, redeploy so `dat-poker-treasury` is enabled with the website. Confirm `:4200/health`.
+   Repair only if the unit is down:
+   ```bash
+   sudo bash /opt/dat-poker/deploy/aws-ec2/start-treasury.sh
+   ```
+   Locally: `pnpm treasury:check` then `pnpm treasury:start` with DAT + XCH in treasury Sage.
+2. API already points at `http://127.0.0.1:4200/payout` on the website host. Set `TREASURY_XCH_ADDRESS` so payouts cannot target the treasury key.
+   If the play page says treasury is not reachable at `127.0.0.1:4200`, the systemd unit is down — redeploy or run `start-treasury.sh`.
+3. Player links a **separate** Sage address, unlocks DAT, clicks withdraw.
+4. Copy the offer from the site. In **player Sage** (not treasury): Offers → Import → Accept **once**. Do not paste it a second time. If player Sage already shows pending incoming DAT, wait for Confirmed — pasting again mempool-conflicts. If DAT already arrived, you are done. After this redeploy, the **first** withdraw may only evict the leftover player take (treasury `send_cat` to itself at 0.09 mojo/cost). Wait until `/health` `evictPending` is false, then withdraw once more and import that new offer once.
+5. Player Sage DAT balance increases. Treasury Sage DAT decreases.
 
 Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (`50000` mojos).
 
@@ -309,18 +395,29 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 | `walletRpcReachable: false` | Enable RPC in Sage Settings → Advanced; keep Sage open |
 | Certs not found | Check `~/.local/share/sage/ssl/` or set cert paths in `.env` |
 | Login / fingerprint errors | Set `TREASURY_SAGE_FINGERPRINT`; run `sage rpc login` manually |
+| Need to replace the treasury key | `sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh` |
+| `no spendable coins` / `datSelectableMojos: 0` | Sage is logged in but has not indexed DAT yet. After sync, 50000 DAT = `50000000` mojos. Confirm `DAT_GOVERNANCE_TOKEN_ASSET_ID` and send a little XCH for fees to the treasury address from `/health`. |
+| `DAT is locked in an unused Sage offer` / `pendingOfferCount` > 0 | Check `/health` `leftoverOffers`, `pendingTransactions`, and `lockedCoins`. If `leftoverOffersAreGhost` is true (GUI empty, no coin `offer_id`), payout deletes the rows and builds a new offer — withdraw once. If `lockedCoins` has an `offerId` or `pendingTransactions` is non-empty, payout cancels that hold on-chain at 0.09 mojo/cost and waits. |
+| Mempool conflict right away | `/health` `pendingTransactions` lists the spend that still holds the coin. Do not withdraw again until that list is empty. |
+| `/health` `datLockedByPendingTake: true` | DAT is still on the treasury key but not selectable, and no leftover offer/tx holds a coin. Do not cancel from treasury — wait for the player take. |
+| Leftover-offer 400 / no pending txs in treasury GUI | Those leftover rows are stale. Redeploy and withdraw once — payout deletes them locally and builds a new offer. `/health` `leftoverOffers` shows the row ids; `lockedCoins` stays empty when nothing is on-chain. |
+| Player paste mempool-conflicts / treasury leftover empty | A leftover player take is still in the mempool. Treasury will not remake on those coins. First withdraw after redeploy evicts selectable DAT back to the treasury address at 0.09 mojo/cost. Wait until `/health` `evictPending` is false and `pendingTransactions` is empty. Then withdraw once and import that offer once. `/health` `lastOfferStatus` pending/active means the same offer is reused — do not paste it again. |
+| `/health` `evictPending: true` | Treasury self-send is still in the mempool. Do not withdraw again until it confirms. |
 | No offer returned | Treasury Sage needs spendable DAT + XCH for fees |
+| Sage Accept fails / needs a fee | Sage Accept has no fee field. Treasury must attach XCH on `make_offer` (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000009 XCH). This host has spendable XCH. Redeploy so leftover 0-fee / 1e6-fee offers are cancelled first. |
 | GUI + CLI RPC conflict | Run only one Sage RPC at a time |
-| Player sees no offer | Set `DAT_TREASURY_PAYOUT_URL`; ensure treasury service is up |
+| Player sees no offer | Confirm `dat-poker-treasury` is active; API `DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout` |
 
 ---
 
 ## Security
 
 - **Never expose Sage RPC port 9257** to the network — treasury service talks to `127.0.0.1` on the treasury host only.
-- Restrict treasury service port **4200** to the game API server IP (VPN or private subnet).
+- On the AWS website host, bind treasury to **127.0.0.1:4200** only. If treasury later moves off-box, restrict **4200** to the game API server IP.
 - Players never touch the treasury host; offers are delivered through the API → web → WalletConnect.
 - Use a dedicated treasury fingerprint with limited DAT balance.
+- Rotate with `load-treasury-key.sh` if the spend key was exposed. Do not
+  paste the secret into chat or SSH session logs.
 
 ## Related
 

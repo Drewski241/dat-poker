@@ -8,6 +8,7 @@ import {
   isTournamentFormat,
   playthroughHandsRequired,
   playthroughUnlockedMojos,
+  playthroughWithdrawableMojos,
   resolveDatMinBuyInMojos,
 } from "@dat-poker/shared";
 import { MttEvent, NlheTableEngine, SngTournament } from "@dat-poker/game-engine";
@@ -232,6 +233,8 @@ function tableSnapshot(
       viewerId && !isHousePlayerId(viewerId)
         ? playthroughFields(viewerId, table.getHandsPlayed(viewerId))
         : null,
+    accountMojos:
+      viewerId && !isHousePlayerId(viewerId) ? getAccountBalance(viewerId).toString() : undefined,
     seats: table.getSeatedPlayers().map((s) => {
       const house = isHousePlayerId(s.playerId);
       const fields = house
@@ -1045,25 +1048,50 @@ export function playthroughFields(playerId: string, tableHandsPlayed = 0) {
   const handsRequired = playthroughHandsRequired(pt.poolMojos);
   const handsPlayed = Math.max(pt.handsPlayed, Math.max(0, Math.floor(tableHandsPlayed)));
   const unlockedMojos = playthroughUnlockedMojos(handsPlayed, pt.poolMojos);
+  const withdrawableMojos = playthroughWithdrawableMojos(
+    handsPlayed,
+    pt.poolMojos,
+    getAccountBalance(playerId),
+  );
   return {
     poolMojos: pt.poolMojos.toString(),
     handsPlayed,
     handsRequired,
     unlockedMojos: unlockedMojos.toString(),
+    withdrawableMojos: withdrawableMojos.toString(),
     playthroughRemaining: Math.max(0, handsRequired - handsPlayed),
   };
 }
 
-export function persistTablePlaythrough(table: NlheTableEngine): void {
+function persistEnginePlaythrough(table: NlheTableEngine): void {
   const sng = isSngTable(table);
+  const seen = new Set<string>();
   for (const seated of table.getSeatedPlayers()) {
     if (isHousePlayerId(seated.playerId)) continue;
+    seen.add(seated.playerId);
     setPlaythroughHands(seated.playerId, table.getHandsPlayed(seated.playerId));
     // Tournament chips are not withdrawable DAT — do not shrink the buy-in
     // pool when an SNG stack drops (or hits zero on a bust).
     if (!sng) {
       syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId) + seated.stackMojos);
     }
+  }
+  for (const row of table.getRecordedPlaythroughHands()) {
+    if (isHousePlayerId(row.playerId) || seen.has(row.playerId)) continue;
+    setPlaythroughHands(row.playerId, row.handsPlayed);
+  }
+}
+
+export function persistTablePlaythrough(table: NlheTableEngine): void {
+  const related = new Set<NlheTableEngine>([table]);
+  const mtt = mttByTable.get(table.getConfig().id);
+  if (mtt) {
+    for (const engine of mtt.engines()) {
+      related.add(engine);
+    }
+  }
+  for (const engine of related) {
+    persistEnginePlaythrough(engine);
   }
 }
 
@@ -1218,6 +1246,7 @@ export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): vo
     if (sng.getStatus() === "running") {
       sng.afterHand();
     }
+    persistTablePlaythrough(table);
     if (sng.getStatus() === "finished") {
       settleSngPrizes(sng);
       persistSngPlaythroughAfterSettle(sng);
@@ -1231,6 +1260,7 @@ export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): vo
     mtt.afterHand(tableId);
     registerMttTables(mtt);
   }
+  persistTablePlaythrough(table);
   if (mtt.getStatus() === "finished") {
     settleMttPrizes(mtt);
   }

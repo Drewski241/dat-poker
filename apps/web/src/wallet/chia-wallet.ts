@@ -7,8 +7,12 @@ import {
   dappMetadata,
   optionalNamespaces,
   requiredNamespaces,
-  sessionSpendMethods,
+  SAGE_DRAIN_METHODS,
+  SAGE_TAKE_OFFER_METHOD,
+  sessionCanTakeOffer,
+  sessionDrainMethods,
 } from "./constants.js";
+import { DEFAULT_SAGE_TAKE_OFFER_FEE_MOJOS } from "@dat-poker/shared";
 import { isMobileUserAgent } from "./wc-link.js";
 
 let clientPromise: Promise<SignClient> | null = null;
@@ -180,9 +184,9 @@ async function wcRequest<T>(
   timeoutMs = 90_000,
 ): Promise<T> {
   const client = await getSignClient(projectId);
-  if (sessionSpendMethods(session).includes(method) || method === "chia_takeOffer" || method === "chia_send") {
+  if ((SAGE_DRAIN_METHODS as readonly string[]).includes(method)) {
     throw new Error(
-      "This site does not send or take offers from Sage. DAT stays in your wallet until on-chain escrow exists.",
+      "This site does not send DAT or XCH from Sage. Treasury withdraw only asks you to accept a DAT offer.",
     );
   }
   const request = client.request<T>({
@@ -305,16 +309,39 @@ export async function signBuyInMessage(
   }
 }
 
+export function isChiaOfferString(offer: string): boolean {
+  return /^offer1[a-z0-9]+$/i.test(offer.trim());
+}
+
 export async function takeOffer(
-  _session: WcSession,
-  _projectId: string,
-  _chainId: string,
-  _offer: string,
-  _feeMojos = 0n,
+  session: WcSession,
+  projectId: string,
+  chainId: string,
+  offer: string,
+  feeMojos = DEFAULT_SAGE_TAKE_OFFER_FEE_MOJOS,
 ): Promise<{ success: boolean }> {
-  throw new Error(
-    "On-chain Sage takeOffer is disabled on the game host so a compromised page cannot drain your wallet. Withdraw credits stay in your table account.",
+  const trimmed = offer.trim();
+  if (!isChiaOfferString(trimmed)) {
+    throw new Error("That is not a Chia offer1 string.");
+  }
+  if (!sessionCanTakeOffer(session)) {
+    throw new Error(
+      "This Sage pairing cannot show the Accept popup. Disconnect, Connect Sage again, then withdraw — or import the offer (Offers → Import).",
+    );
+  }
+  const fee = Number(feeMojos);
+  if (!Number.isSafeInteger(fee) || fee < 0) {
+    throw new Error("Invalid take-offer fee");
+  }
+  const result = await wcRequest<{ success?: boolean }>(
+    session,
+    projectId,
+    chainId,
+    SAGE_TAKE_OFFER_METHOD,
+    { offer: trimmed, fee },
+    120_000,
   );
+  return { success: result.success !== false };
 }
 
 export async function loadPlayerWallet(
@@ -345,6 +372,7 @@ export async function findDatCatWallet(
 }
 
 export type { WcSession } from "./constants.js";
+export { sessionCanTakeOffer } from "./constants.js";
 
 export const signWithdrawMessage = signBuyInMessage;
 export const signRedeemMessage = signBuyInMessage;
@@ -354,15 +382,15 @@ export function restoreSession(projectId: string): Promise<WcSession | undefined
     const keys = client.session.keys;
     if (!keys.length) return undefined;
     const session = client.session.get(keys[keys.length - 1]);
-    const spends = sessionSpendMethods(session);
-    if (spends.length) {
+    const drains = sessionDrainMethods(session);
+    if (drains.length) {
       try {
         await client.disconnect({
           topic: session.topic,
-          reason: { code: 6000, message: "Spend methods are not allowed on DAT Poker beta" },
+          reason: { code: 6000, message: "Send/create-offer/takeOffer methods are not allowed on DAT Poker beta" },
         });
       } catch {
-        /* still refuse to reuse a spend-capable session */
+        /* still refuse to reuse a drain-capable session */
       }
       return undefined;
     }

@@ -274,6 +274,8 @@ describe("NlheTableEngine", () => {
     expect(cashOut.stackMojos).toBeGreaterThan(5_000_000_000_000n);
     expect(table.getPlayerStack("bob")).toBeNull();
     expect(table.getActivePlayerCount()).toBe(1);
+    expect(table.getHandsPlayed("bob")).toBe(1);
+    expect(table.getRecordedPlaythroughHands().find((row) => row.playerId === "bob")?.handsPlayed).toBe(1);
   });
 
   it("restores hands played and debits a partial stack", () => {

@@ -16,16 +16,22 @@ signed link / withdraw **text** cannot be reused as a spend.
 
 The site **does not request** `chia_send`, `chia_createOffer`,
 `chia_takeOffer`, or `chip0002_signCoinSpends`. Old sessions that still have
-those methods are dropped on page load. On-chain `takeOffer` after withdraw
-is disabled on the game host.
+those methods are dropped on page load. After treasury builds a withdraw
+`offer1…` string, copy it and import it in player Sage (Offers → Import).
+WalletConnect Accept (`chia_takeOffer`) submits a take that mempool-conflicts
+with import. Treasury already attached the XCH fee on `make_offer`
+(`TREASURY_PAYOUT_FEE_MOJOS`).
 
 Daily redeem and table stacks are **ledger credits**, not CAT sends. Account
 DAT is stored on the game host (`data/ledger.json`) so a redeploy does not
-wipe testers’ balances or play-through unlocks. Open tables still reset. Treasury Sage stays on a
-separate machine ([TREASURY.md](./TREASURY.md)).
+wipe testers’ balances or play-through unlocks. Open tables still reset.
+Treasury HTTP (`dat-poker-treasury`) runs on this website host
+([TREASURY.md](./TREASURY.md)). Player Sage stays on the tester's device.
 
-Testers should still **read Sage prompts**. If Sage ever asks to send coins or
-take an offer during this beta, tap reject and report it on `/feedback`.
+Testers should still **read Sage prompts**. Import an offer only once. If a
+previous import or Accept is still pending, wait — pasting again causes a
+mempool conflict. If Sage asks to send coins, tap reject and report it
+on `/feedback`.
 
 ## Accounts
 
@@ -64,8 +70,15 @@ does not move on-chain DAT.
 
 ## Operator checklist
 
-1. No `TREASURY_*` or Sage RPC certs on this EC2 box.
-2. Leave `DAT_TREASURY_PAYOUT_URL` empty on the game host.
+1. Keep `dat-poker-treasury` enabled while the website is up. Bind it to
+   `127.0.0.1:4200` (`DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout`).
+   Do not expose `:4200` or Sage RPC `:9257` on the public security group.
+2. Player Sage stays off this box. Treasury Sage on this host is a dedicated
+   spend key in `.env` (`TREASURY_SAGE_PRIVATE_KEY` or `TREASURY_SAGE_MNEMONIC`,
+   mode `640`). Load or rotate it with `deploy/aws-ec2/load-treasury-key.sh`
+   (file or silent TTY — do not paste the secret into chat).
+   `TREASURY_WALLET_KEY_PATH` / `wallet.key` is only the RPC TLS cert.
+   Optional `TREASURY_SAGE_FINGERPRINT` / `TREASURY_XCH_ADDRESS`.
 3. Accounts file: `data/accounts.json` (or `DAT_ACCOUNTS_PATH`). Ledger:
    `data/ledger.json` (or `DAT_LEDGER_PATH`). Keep mode `600`. Do not delete
    these on redeploy.

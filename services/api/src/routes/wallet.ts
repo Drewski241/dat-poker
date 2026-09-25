@@ -22,9 +22,16 @@ import {
 } from "../account-store.js";
 import {
   computeWithdrawPayout,
+  looksLikeXchAddress,
+  onChainSageWithdrawEnabled,
+  inspectTreasuryPayout,
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
+  sageLedgerWithdrawNote,
+  sageOfferWithdrawNote,
+  treasurySelfPayoutError,
 } from "../treasury-payout.js";
+import { getUserById } from "../user-store.js";
 import { getTableEngine, persistTablePlaythrough, playthroughFields } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import type { NlheTableEngine } from "@dat-poker/game-engine";
@@ -41,6 +48,90 @@ import {
 
 function playthroughView(playerId: string) {
   return playthroughFields(playerId);
+}
+
+async function playerSagePayoutAddress(
+  session: {
+    playerId: string;
+    displayAddress: string;
+  },
+  requested?: string,
+): Promise<string | null> {
+  if (requested && looksLikeXchAddress(requested)) {
+    return requested.trim();
+  }
+  if (looksLikeXchAddress(session.displayAddress)) {
+    return session.displayAddress.trim();
+  }
+  const user = await getUserById(session.playerId);
+  if (user?.sageAddress && looksLikeXchAddress(user.sageAddress)) {
+    return user.sageAddress.trim();
+  }
+  return null;
+}
+
+async function requestPlayerTreasuryOffer(params: {
+  playerId: string;
+  displayAddress: string;
+  amountMojos: bigint;
+  assetId: string;
+  treasuryPayoutUrl: string;
+  requestedAddress?: string;
+}): Promise<{ offer: string } | { error: string; status: number } | { skipped: string }> {
+  if (!onChainSageWithdrawEnabled()) {
+    return { skipped: sageLedgerWithdrawNote("table") };
+  }
+  const ping = await inspectTreasuryPayout(params.treasuryPayoutUrl);
+  if (!ping.reachable) {
+    return {
+      status: 502,
+      error: `Treasury is not reachable at ${ping.host}${ping.error ? ` (${ping.error})` : ""}.`,
+    };
+  }
+  if (ping.offerMode === "rpc" && ping.walletConfigured === false) {
+    return {
+      status: 502,
+      error:
+        ping.error ??
+        "Sage RPC certs are missing on the AWS host. Run: sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh",
+    };
+  }
+  if (ping.offerMode === "rpc" && ping.walletRpcReachable === false) {
+    return {
+      status: 502,
+      error:
+        ping.error ??
+        "Treasury HTTP is up, but Sage RPC is not logged in. Import a dedicated treasury key on the AWS host, then: sudo TREASURY_SAGE_FINGERPRINT=<id> bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh",
+    };
+  }
+  const address = await playerSagePayoutAddress(params, params.requestedAddress);
+  if (!address) {
+    return {
+      status: 400,
+      error: "Link a player Sage wallet first (not the treasury key). Then click Withdraw again.",
+    };
+  }
+  const self = treasurySelfPayoutError(address);
+  if (self) {
+    return { status: 400, error: self };
+  }
+  try {
+    const offer = await requestTreasuryOffer({
+      assetId: params.assetId,
+      recipientAddress: address,
+      amountMojos: params.amountMojos,
+      treasuryPayoutUrl: params.treasuryPayoutUrl,
+    });
+    if (!offer) {
+      return {
+        status: 502,
+        error: "Treasury did not return an offer. Check Sage RPC and DAT balance on the AWS host.",
+      };
+    }
+    return { offer };
+  } catch (e) {
+    return { status: 502, error: (e as Error).message };
+  }
 }
 
 function isSngEngine(table: NlheTableEngine | undefined): boolean {
@@ -63,7 +154,7 @@ function unlockedTableWithdrawMojos(table: NlheTableEngine, playerId: string): b
 }
 
 function unlockedAccountWithdrawMojos(playerId: string): bigint {
-  return unlockedFromHeld(playerId, getAccountBalance(playerId));
+  return BigInt(playthroughView(playerId).withdrawableMojos);
 }
 
 function sagePlaythroughBlock(playerId: string, available: bigint): string | null {
@@ -71,6 +162,10 @@ function sagePlaythroughBlock(playerId: string, available: bigint): string | nul
   const view = playthroughView(playerId);
   if (view.handsRequired <= 0) {
     return "No DAT is unlocked for withdraw yet. Buy in and complete hands — each hand unlocks 1 DAT.";
+  }
+  const unlocked = BigInt(view.unlockedMojos);
+  if (unlocked > 0n && getAccountBalance(playerId) <= 0n) {
+    return "SNG hands unlocked DAT, but Sage withdraw uses leftover account chips or a 1st–3rd prize. Redeem or finish in the money, then withdraw the unlocked amount.";
   }
   if (view.playthroughRemaining <= 0) {
     return getAccountBalance(playerId) <= 0n
@@ -99,6 +194,26 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       withdraw: {
         payoutMode: payout.payoutMode,
         treasuryConfigured: Boolean(payout.treasuryPayoutUrl),
+        ...(payout.treasuryPayoutUrl
+          ? await inspectTreasuryPayout(payout.treasuryPayoutUrl).then((ping) => ({
+              treasuryReachable: ping.reachable,
+              treasuryHost: ping.host,
+              treasuryError:
+                ping.reachable && ping.offerMode === "rpc" && ping.walletConfigured === false
+                  ? (ping.error ??
+                    "Sage RPC certs missing. Run sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh")
+                  : ping.reachable && ping.offerMode === "rpc" && ping.walletRpcReachable === false
+                    ? "Sage RPC is not logged in on the treasury host"
+                    : ping.error,
+              treasuryWalletRpcReachable: ping.walletRpcReachable,
+            }))
+          : {
+              treasuryReachable: false,
+              treasuryHost: null,
+              treasuryError: null,
+              treasuryWalletRpcReachable: null,
+            }),
+        onChainPayoutEnabled: onChainSageWithdrawEnabled(),
         feeMojos: payout.withdrawFeeMojos.toString(),
       },
       playerSession: {
@@ -202,6 +317,14 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       dat,
       walletConnectConfigured: Boolean(process.env.WALLETCONNECT_PROJECT_ID?.trim()),
       withdrawTreasuryConfigured: Boolean(payout.treasuryPayoutUrl),
+      ...(payout.treasuryPayoutUrl
+        ? await inspectTreasuryPayout(payout.treasuryPayoutUrl).then((ping) => ({
+            treasuryReachable: ping.reachable,
+            treasuryHost: ping.host,
+            treasuryError: ping.error,
+          }))
+        : { treasuryReachable: false, treasuryHost: null, treasuryError: null }),
+      onChainPayoutEnabled: onChainSageWithdrawEnabled(),
       chiaGamingLobby: lobbyOk ? "up" : "down",
     };
   });
@@ -278,11 +401,12 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       devAck?: boolean;
       toAccount?: boolean;
       fromAccount?: boolean;
+      address?: string;
     };
   }>("/v1/wallet/withdraw", async (req, reply) => {
     const session = requirePlayer(req, reply);
     if (!session) return;
-    const { tableId, withdrawProof, devAck, toAccount, fromAccount } = req.body;
+    const { tableId, withdrawProof, devAck, toAccount, fromAccount, address } = req.body;
     if (!sessionMatchesClaim(session, req.body.playerId)) {
       return reply.status(403).send({ error: "playerId does not match the signed-in account" });
     }
@@ -364,29 +488,33 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         }
       }
 
-      consumePlaythroughWithdraw(playerId, withdrawMojos);
-      if (table && seatedStack !== null) {
-        table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
-      }
       let mode: "ledger" | "offer" = "ledger";
       let offer: string | undefined;
       let accountMojos = getAccountBalance(playerId);
+      let offerNote: string | undefined;
       if (payoutConfig.treasuryPayoutUrl && dat.assetId) {
-        try {
-          const treasuryOffer = await requestTreasuryOffer({
-            assetId: dat.assetId,
-            recipientAddress: session.displayAddress,
-            amountMojos: withdrawMojos,
-            treasuryPayoutUrl: payoutConfig.treasuryPayoutUrl,
-          });
-          if (treasuryOffer) {
-            accountMojos = debitAccount(playerId, withdrawMojos);
-            mode = "offer";
-            offer = treasuryOffer;
-          }
-        } catch (e) {
-          return reply.status(502).send({ error: (e as Error).message });
+        const payout = await requestPlayerTreasuryOffer({
+          playerId,
+          displayAddress: session.displayAddress,
+          amountMojos: withdrawMojos,
+          assetId: dat.assetId,
+          treasuryPayoutUrl: payoutConfig.treasuryPayoutUrl,
+          requestedAddress: address,
+        });
+        if ("error" in payout) {
+          return reply.status(payout.status).send({ error: payout.error });
         }
+        if ("offer" in payout) {
+          accountMojos = debitAccount(playerId, withdrawMojos);
+          mode = "offer";
+          offer = payout.offer;
+        } else {
+          offerNote = payout.skipped;
+        }
+      }
+      consumePlaythroughWithdraw(playerId, withdrawMojos);
+      if (table && seatedStack !== null) {
+        table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
       }
       syncPlaythroughHeld(playerId, getAccountBalance(playerId));
 
@@ -418,9 +546,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         accountMojos: accountMojos.toString(),
         playthrough: playthroughView(playerId),
         note:
-          mode === "offer"
-            ? "Approve the treasury offer in Sage to receive unlocked DAT from sit-n-go play."
-            : "Sit-n-go hands unlocked this DAT in your account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT.",
+          mode === "offer" ? sageOfferWithdrawNote() : (offerNote ?? sageLedgerWithdrawNote("sng")),
       };
     }
 
@@ -487,27 +613,26 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
 
     let mode: "ledger" | "offer" = "ledger";
     let offer: string | undefined;
+    let offerNote: string | undefined;
     const feeMojos = payoutConfig.withdrawFeeMojos;
 
-    if (
-      !cashOutToAccount &&
-      payoutMojos > 0n &&
-      payoutConfig.treasuryPayoutUrl &&
-      dat.assetId
-    ) {
-      try {
-        const treasuryOffer = await requestTreasuryOffer({
-          assetId: dat.assetId,
-          recipientAddress: session.displayAddress,
-          amountMojos: payoutMojos,
-          treasuryPayoutUrl: payoutConfig.treasuryPayoutUrl,
-        });
-        if (treasuryOffer) {
-          mode = "offer";
-          offer = treasuryOffer;
-        }
-      } catch (e) {
-        return reply.status(502).send({ error: (e as Error).message });
+    if (!cashOutToAccount && payoutMojos > 0n && payoutConfig.treasuryPayoutUrl && dat.assetId) {
+      const payout = await requestPlayerTreasuryOffer({
+        playerId,
+        displayAddress: session.displayAddress,
+        amountMojos: payoutMojos,
+        assetId: dat.assetId,
+        treasuryPayoutUrl: payoutConfig.treasuryPayoutUrl,
+        requestedAddress: address,
+      });
+      if ("error" in payout) {
+        return reply.status(payout.status).send({ error: payout.error });
+      }
+      if ("offer" in payout) {
+        mode = "offer";
+        offer = payout.offer;
+      } else {
+        offerNote = payout.skipped;
       }
     }
 
@@ -580,10 +705,8 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       note: cashOutToAccount
         ? "Table stack returned to your DAT account. Play-through progress is kept for the next sit."
         : mode === "offer"
-          ? "Approve the treasury offer in Sage to receive unlocked DAT."
-          : stillSeated
-            ? "Unlocked DAT returned to your account. Remaining stack stays at the table until you play through more hands."
-            : "Unlocked DAT returned to your DAT account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT.",
+          ? sageOfferWithdrawNote()
+          : (offerNote ?? sageLedgerWithdrawNote("table")),
     };
   });
 }

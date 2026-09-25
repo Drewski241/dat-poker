@@ -4,13 +4,35 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { buildPayoutOffer, readTreasuryServiceConfig, type PayoutRequestBody } from "./payout.js";
-import { pingTreasuryWalletRpc } from "@dat-poker/chia-bridge";
+import {
+  describeMissingSageCerts,
+  describeSageEvictWait,
+  describeSageLoginNeeded,
+  describeSageNoSpendableCoins,
+  formatSageHoldDetails,
+  leftoverSageOffersAreGhostRecords,
+  leftoverSageOffersBlockNewPayout,
+  ensureSageTreasuryReady,
+  pingTreasuryWalletRpc,
+  readSageTreasuryFunds,
+  readTreasuryLastOffer,
+  sageDatLooksLockedByPendingTake,
+  sageLooksStillSyncing,
+  sageTreasuryHasPendingSpend,
+} from "@dat-poker/chia-bridge";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
 
 async function main(): Promise<void> {
   const config = readTreasuryServiceConfig();
+  if (config.offerMode === "rpc") {
+    try {
+      config.walletRpc = await ensureSageTreasuryReady(config.walletRpc);
+    } catch {
+      /* Sage may not have a key yet — /health reports reachable false */
+    }
+  }
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
 
@@ -18,8 +40,34 @@ async function main(): Promise<void> {
     const walletConfigured = Boolean(config.walletRpc.certPath && config.walletRpc.keyPath);
     let walletRpcReachable: boolean | null = null;
     if (config.offerMode === "rpc" && walletConfigured) {
+      try {
+        config.walletRpc = await ensureSageTreasuryReady(config.walletRpc);
+      } catch {
+        /* login / import is best-effort on /health */
+      }
       walletRpcReachable = await pingTreasuryWalletRpc(config.walletRpc);
     }
+    const fingerprintSet = Boolean(config.walletRpc.sageFingerprint);
+    const funds =
+      config.offerMode === "rpc" && walletConfigured && walletRpcReachable
+        ? await readSageTreasuryFunds(config.walletRpc, config.defaultAssetId ?? undefined)
+        : null;
+    const lastOffer = readTreasuryLastOffer();
+    const evictPending = Boolean(lastOffer?.evictedAt) && funds != null && sageTreasuryHasPendingSpend(funds);
+    const noSpendableDat =
+      funds != null &&
+      (funds.datSelectableMojos === 0n ||
+        (sageLooksStillSyncing(funds) && (funds.datSelectableMojos == null || funds.datSelectableMojos === 0n)));
+    const walletError =
+      config.offerMode === "rpc" && !walletConfigured
+        ? describeMissingSageCerts()
+        : config.offerMode === "rpc" && walletConfigured && walletRpcReachable === false
+          ? describeSageLoginNeeded(fingerprintSet)
+          : evictPending
+            ? describeSageEvictWait(config.payoutFeeMojos)
+            : noSpendableDat
+              ? describeSageNoSpendableCoins(funds ?? undefined)
+              : null;
     return {
       status: "ok",
       offerMode: config.offerMode,
@@ -28,7 +76,29 @@ async function main(): Promise<void> {
       walletRpcUrl: config.walletRpc.url,
       walletConfigured,
       walletRpcReachable,
+      walletError,
       sageFingerprint: config.walletRpc.sageFingerprint ?? null,
+      treasuryAddress: funds?.address ?? config.treasuryAddress,
+      sageSyncedCoins: funds?.syncedCoins ?? null,
+      sageTotalCoins: funds?.totalCoins ?? null,
+      datSelectableMojos: funds?.datSelectableMojos?.toString() ?? null,
+      datBalanceMojos: funds?.datBalanceMojos?.toString() ?? null,
+      pendingOfferCount: funds?.pendingOfferCount ?? null,
+      pendingTransactionCount: funds?.pendingTransactionCount ?? null,
+      leftoverOffers: funds?.leftoverOffers ?? [],
+      pendingTransactions: funds?.pendingTransactions ?? [],
+      lockedCoins: funds?.lockedCoins ?? [],
+      leftoverOffersAreGhost: funds != null ? leftoverSageOffersAreGhostRecords(funds) : null,
+      leftoverOffersBlockPayout: funds != null ? leftoverSageOffersBlockNewPayout(funds) : null,
+      lockHold: funds != null ? formatSageHoldDetails(funds).trim() || null : null,
+      datLockedByPendingTake: funds != null ? sageDatLooksLockedByPendingTake(funds) : null,
+      lastOfferId: lastOffer?.offerId ?? null,
+      lastOfferStatus: lastOffer?.status ?? null,
+      lastOfferCreatedAt: lastOffer?.createdAt ?? null,
+      evictPending,
+      evictedAt: lastOffer?.evictedAt ?? null,
+      xchSelectableMojos: funds?.xchSelectableMojos?.toString() ?? null,
+      payoutFeeMojos: config.payoutFeeMojos.toString(),
     };
   });
 

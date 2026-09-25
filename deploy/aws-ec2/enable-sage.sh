@@ -1,6 +1,6 @@
 #!/bin/bash
 # Write WalletConnect + DAT CAT settings on the game host and restart the API.
-# Player Sage stays on your phone/PC. Do not put treasury keys on this machine.
+# Player Sage stays on your phone/PC. Treasury HTTP + Sage RPC run on this AWS host.
 #
 #   sudo WALLETCONNECT_PROJECT_ID=... DAT_GOVERNANCE_TOKEN_ASSET_ID=... \
 #     bash /opt/dat-poker/deploy/aws-ec2/enable-sage.sh

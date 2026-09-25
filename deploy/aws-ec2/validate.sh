@@ -28,6 +28,16 @@ else
   bad "user-data.sh API health retry"
 fi
 
+if grep -q 'wait_for_treasury()' "$DIR/user-data.sh" \
+  && grep -q 'write_treasury_unit()' "$DIR/user-data.sh" \
+  && grep -q 'systemctl enable --now dat-poker-treasury' "$DIR/user-data.sh" \
+  && grep -q 'DAT_TREASURY_PAYOUT_URL' "$DIR/user-data.sh" \
+  && grep -q '@dat-poker/treasury-payout' "$DIR/user-data.sh"; then
+  ok "user-data.sh enables always-on treasury with the website"
+else
+  bad "user-data.sh always-on treasury"
+fi
+
 python3 - <<'PY' && ok "wait_for_api succeeds after a delayed /health listener" || bad "wait_for_api delayed listener"
 import http.server
 import os
@@ -92,6 +102,97 @@ else
   bad "redeploy.sh API health retry"
 fi
 
+if grep -q 'systemctl enable dat-poker-treasury' "$DIR/redeploy.sh" \
+  && grep -q 'systemctl restart dat-poker-treasury' "$DIR/redeploy.sh" \
+  && grep -q 'http://127.0.0.1:4200/health' "$DIR/redeploy.sh" \
+  && grep -q 'DAT_TREASURY_PAYOUT_URL' "$DIR/redeploy.sh" \
+  && grep -q 'TREASURY_PAYOUT_FEE_MOJOS' "$DIR/redeploy.sh" \
+  && grep -q 'TREASURY_PAYOUT_FEE_MOJOS 9000000' "$DIR/redeploy.sh" \
+  && ! grep -q 'is-enabled --quiet dat-poker-treasury' "$DIR/redeploy.sh"; then
+  ok "redeploy.sh always enables and waits for treasury :4200/health"
+else
+  bad "redeploy.sh always-on treasury"
+fi
+
+if grep -q 'Restart=always' "$DIR/dat-poker-treasury.service" \
+  && grep -q 'ExecStart=/usr/local/bin/node /opt/dat-poker/services/treasury-payout/dist/index.js' "$DIR/dat-poker-treasury.service" \
+  && grep -q 'WantedBy=multi-user.target' "$DIR/dat-poker-treasury.service"; then
+  ok "dat-poker-treasury.service restarts always and starts on boot"
+else
+  bad "dat-poker-treasury.service always-on"
+fi
+
+if grep -q 'DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout' "$ROOT/.env.beta.example" \
+  && grep -q 'DAT_ENABLE_ONCHAIN_WITHDRAW=true' "$ROOT/.env.beta.example" \
+  && grep -q 'TREASURY_PAYOUT_FEE_MOJOS=9000000' "$ROOT/.env.beta.example"; then
+  ok ".env.beta.example points the API at local treasury"
+else
+  bad ".env.beta.example treasury URL"
+fi
+
+if grep -q 'dat-poker-treasury' "$ROOT/docs/BETA.md" \
+  && grep -q '127.0.0.1:4200' "$ROOT/docs/BETA.md" \
+  && grep -q 'always-on treasury' "$ROOT/docs/BETA.md"; then
+  ok "docs/BETA.md covers always-on AWS treasury"
+else
+  bad "docs/BETA.md always-on treasury"
+fi
+
+python3 - <<'PY' && ok "wait_for_treasury succeeds after a delayed /health listener" || bad "wait_for_treasury delayed listener"
+import http.server
+import os
+import socket
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+sock = socket.socket()
+sock.bind(("127.0.0.1", 0))
+port = sock.getsockname()[1]
+sock.close()
+body = b'{"status":"ok","offerMode":"mock","walletRpcReachable":false}'
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_error(404)
+    def log_message(self, *args):
+        pass
+
+httpd_holder = {}
+
+def start():
+    time.sleep(2)
+    httpd_holder["s"] = http.server.HTTPServer(("127.0.0.1", port), Handler)
+    httpd_holder["s"].serve_forever()
+
+thread = threading.Thread(target=start, daemon=True)
+thread.start()
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "user-data.sh").read_text()
+fn_start = script.index("wait_for_treasury() {")
+fn_end = script.index("\n}", fn_start) + 2
+fn = script[fn_start:fn_end]
+proc = subprocess.run(
+    ["bash", "-c", fn + f'\nwait_for_treasury http://127.0.0.1:{port}/health 10\n'],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+if "s" in httpd_holder:
+    httpd_holder["s"].shutdown()
+assert proc.returncode == 0, proc.stderr + proc.stdout
+assert "Treasury healthy after" in proc.stdout
+assert "after 1s" not in proc.stdout
+print(proc.stdout.strip())
+PY
+
 if grep -q 'dat-poker-bootstrap.web-only' "$ROOT/docs/BETA.md" \
   && grep -q 'systemctl status dat-poker-api' "$ROOT/docs/BETA.md"; then
   ok "docs/BETA.md covers the systemd vs curl race"
@@ -133,7 +234,7 @@ assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
 assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
-for f in landing.html nginx.conf dat-poker-api.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh public-url.sh; do
+for f in landing.html nginx.conf dat-poker-api.service dat-poker-treasury.service dat-poker-sage-rpc.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh enable-onchain-withdraw.sh start-treasury.sh start-sage-rpc.sh enable-treasury-sage.sh load-treasury-key.sh release-treasury-offers.sh public-url.sh; do
   [[ -s "$DIR/$f" ]] && ok "$f exists" || bad "$f missing"
 done
 
@@ -141,7 +242,143 @@ bash -n "$DIR/console-user-data.sh" && ok "console-user-data.sh bash syntax" || 
 bash -n "$DIR/redeploy.sh" && ok "redeploy.sh bash syntax" || bad "redeploy.sh bash syntax"
 bash -n "$DIR/enable-https.sh" && ok "enable-https.sh bash syntax" || bad "enable-https.sh bash syntax"
 bash -n "$DIR/enable-sage.sh" && ok "enable-sage.sh bash syntax" || bad "enable-sage.sh bash syntax"
+bash -n "$DIR/enable-onchain-withdraw.sh" && ok "enable-onchain-withdraw.sh bash syntax" || bad "enable-onchain-withdraw.sh bash syntax"
+bash -n "$DIR/start-treasury.sh" && ok "start-treasury.sh bash syntax" || bad "start-treasury.sh bash syntax"
+bash -n "$DIR/start-sage-rpc.sh" && ok "start-sage-rpc.sh bash syntax" || bad "start-sage-rpc.sh bash syntax"
+bash -n "$DIR/enable-treasury-sage.sh" && ok "enable-treasury-sage.sh bash syntax" || bad "enable-treasury-sage.sh bash syntax"
+bash -n "$DIR/load-treasury-key.sh" && ok "load-treasury-key.sh bash syntax" || bad "load-treasury-key.sh bash syntax"
+bash -n "$DIR/release-treasury-offers.sh" && ok "release-treasury-offers.sh bash syntax" || bad "release-treasury-offers.sh bash syntax"
 bash -n "$DIR/public-url.sh" && ok "public-url.sh bash syntax" || bad "public-url.sh bash syntax"
+
+if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'TREASURY_WALLET_CERT_PATH' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'dat-poker-sage-rpc' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'install_prebuilt_sage_cli' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'free_sage_build_space' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'sage_runs' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'SAGE_CREATE_KEY' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'import_treasury_key' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'TREASURY_SAGE_PRIVATE_KEY' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'describe_env_secret' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'paste_treasury_secret' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'apply_treasury_secret' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'load_or_replace_treasury_secret' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'load_treasury_secret_from_file' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'SAGE_LOAD_KEY' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'TREASURY_SAGE_PRIVATE_KEY_FILE' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'delete_old_treasury_key' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'get_token' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'looks_like_secret_key' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'is_u32_fingerprint' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'TREASURY_PAYOUT_FEE_MOJOS' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'SAGE_RELEASE_OFFERS' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'get_offers' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'cancel_offers' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'cancel_offer' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'auto_submit' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'build_import_key_body' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'tr -d' "$DIR/enable-treasury-sage.sh"; then
+  ok "enable-treasury-sage.sh writes Sage RPC cert paths and uses prebuilt sage-cli"
+else
+  bad "enable-treasury-sage.sh cert paths"
+fi
+
+if grep -q 'SAGE_LOAD_KEY=1' "$DIR/load-treasury-key.sh" \
+  && grep -q 'enable-treasury-sage.sh' "$DIR/load-treasury-key.sh"; then
+  ok "load-treasury-key.sh replaces the treasury spend key via enable-treasury-sage.sh"
+else
+  bad "load-treasury-key.sh SAGE_LOAD_KEY wiring"
+fi
+
+if bash "$DIR/load-treasury-key.sh" >/tmp/load-treasury-key.out 2>/tmp/load-treasury-key.err; then
+  bad "load-treasury-key.sh should require root"
+elif grep -q 'run as root' /tmp/load-treasury-key.err; then
+  ok "load-treasury-key.sh requires root"
+else
+  bad "load-treasury-key.sh root error"
+fi
+
+python3 - <<'PY' && ok "apply_treasury_secret writes hex/mnemonic and clears the other" || bad "apply_treasury_secret isolated test"
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "enable-treasury-sage.sh").read_text()
+start = script.index("set_kv() {")
+end = script.index("\ndescribe_env_secret() {")
+fns = script[start:end]
+hex_key = "ab" * 32
+mnemonic = "abandon " * 11 + "about"
+with tempfile.TemporaryDirectory() as tmp:
+    env_file = Path(tmp, ".env")
+    env_file.write_text("TREASURY_SAGE_MNEMONIC=old words here\nTREASURY_SAGE_PRIVATE_KEY=\n")
+    key_file = Path(tmp, "treasury.hex")
+    key_file.write_text("0x" + hex_key + "\n")
+    harness = Path(tmp, "harness.sh")
+    harness.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        f"ENV_FILE={env_file!s}\n"
+        + fns
+        + f"\nload_treasury_secret_from_file {key_file!s}\n"
+        + "grep -q '^TREASURY_SAGE_PRIVATE_KEY=" + hex_key + "$' \"$ENV_FILE\"\n"
+        + "grep -q '^TREASURY_SAGE_MNEMONIC=$' \"$ENV_FILE\"\n"
+        + f"apply_treasury_secret '{mnemonic}'\n"
+        + "grep -q '^TREASURY_SAGE_PRIVATE_KEY=$' \"$ENV_FILE\"\n"
+        + f"grep -q '^TREASURY_SAGE_MNEMONIC={mnemonic}$' \"$ENV_FILE\"\n"
+        + "if apply_treasury_secret 'xch1notakey'; then exit 2; fi\n"
+    )
+    subprocess.check_call(["bash", str(harness)], stdout=subprocess.DEVNULL)
+PY
+
+python3 - <<'PY' && ok "build_import_key_body writes compact JSON with one closing brace" || bad "build_import_key_body JSON"
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "enable-treasury-sage.sh").read_text()
+start = script.index("build_import_key_body() {")
+end = script.index("\nrelease_open_sage_offers() {")
+fns = script[start:end]
+hex_key = "ab" * 32
+with tempfile.TemporaryDirectory() as tmp:
+    harness = Path(tmp, "harness.sh")
+    out = Path(tmp, "body.json")
+    harness.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        + fns
+        + f"\nbuild_import_key_body {hex_key} > {out}\n"
+    )
+    subprocess.check_call(["bash", str(harness)])
+    body = out.read_text()
+    assert body.endswith("}")
+    assert body.count("{") == 1
+    assert body.count("}") == 1
+    assert "\n" not in body
+    import json
+    parsed = json.loads(body)
+    assert parsed["key"] == hex_key
+    assert parsed["name"] == "treasury"
+    assert parsed["save_secrets"] is True
+    assert parsed["login"] is True
+PY
+
+if grep -q 'StartLimitBurst=5' "$DIR/dat-poker-sage-rpc.service"; then
+  ok "dat-poker-sage-rpc.service stops crash-looping after 5 failures"
+else
+  bad "dat-poker-sage-rpc.service StartLimitBurst"
+fi
+
+if [[ -x "$DIR/bin/sage-linux-x86_64" ]]; then
+  if objdump -T "$DIR/bin/sage-linux-x86_64" 2>/dev/null | grep -q 'GLIBC_2.38'; then
+    bad "prebuilt sage-cli requires GLIBC_2.38 (Amazon Linux 2023 is 2.34)"
+  else
+    ok "prebuilt sage-cli binary is present and does not need glibc 2.38"
+  fi
+else
+  bad "prebuilt sage-cli binary missing at deploy/aws-ec2/bin/sage-linux-x86_64"
+fi
 
 python3 - <<'PY' && ok "public-url.sh prints HTTPS home and /play" || bad "public-url.sh output"
 import os
@@ -503,7 +740,8 @@ else
   bad "tester feedback"
 fi
 
-if grep -q 'SAGE_SPEND_METHODS' "$ROOT/apps/web/src/wallet/constants.ts" \
+if grep -q 'SAGE_DRAIN_METHODS' "$ROOT/apps/web/src/wallet/constants.ts" \
+  && grep -q 'SAGE_TAKE_OFFER_METHOD' "$ROOT/apps/web/src/wallet/constants.ts" \
   && ROOT="$ROOT" python3 - <<'PY'
 from pathlib import Path
 import os
@@ -512,10 +750,17 @@ start = text.index("export const SAGE_WC_METHODS")
 end = text.index("] as const", start)
 block = text[start:end]
 assert "chia_send" not in block, block
+assert "chia_createOffer" not in block, block
+assert "chip0002_signCoinSpends" not in block, block
+assert "SAGE_TAKE_OFFER_METHOD" not in block, block
 assert "chia_takeOffer" not in block, block
+req = text[text.index("export const SAGE_REQUIRED_METHODS"):text.index("export const SAGE_WC_METHODS")]
+assert "chia_takeOffer" not in req and "SAGE_TAKE_OFFER_METHOD" not in req, req
+drain = text[text.index("export const SAGE_DRAIN_METHODS"):text.index("export const SAGE_TAKE_OFFER_METHOD")]
+assert "chia_takeOffer" in drain, drain
 PY
 then
-  ok "WalletConnect namespaces omit Sage spend RPCs"
+  ok "WalletConnect namespaces omit Sage drain RPCs and do not request takeOffer"
 else
   bad "WalletConnect spend methods"
 fi

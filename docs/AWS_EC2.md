@@ -168,8 +168,8 @@ sudo systemctl enable --now dat-poker-api
 `t2.micro` is 1 GB RAM; the Node build needs the 2 GiB swap file. If you only
 wanted the $20, skip Path B and terminate.
 
-Dev buy-in is on (`DAT_ALLOW_DEV_BUYIN=true`). Do not point real treasury keys
-at this instance.
+Dev buy-in is on (`DAT_ALLOW_DEV_BUYIN=true`). The public beta host runs
+treasury HTTP with the website; keep `:4200` and Sage RPC localhost-only.
 
 ## Path C — CloudFormation DAT POKER kit (not the email tutorial)
 

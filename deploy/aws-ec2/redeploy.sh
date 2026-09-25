@@ -1,12 +1,26 @@
 #!/bin/bash
 # Rebuild DAT POKER on an existing Amazon Linux beta host.
 # Run as root in Session Manager: sudo bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+# Always starts dat-poker-treasury with the website (127.0.0.1:4200).
 set -euxo pipefail
 echo "=== DAT POKER redeploy.sh (git pull + rebuild). Wait for: beta redeploy ok ==="
 
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/dat-poker}"
 WEB_ROOT="${WEB_ROOT:-/usr/share/nginx/html}"
+ENV_FILE="${ENV_FILE:-$INSTALL_ROOT/.env}"
 REPO_REF="${DAT_POKER_REPO_REF:-main}"
+
+set_env_kv() {
+  local key="$1" val="$2"
+  if [[ ! -f "$ENV_FILE" ]]; then
+    return 0
+  fi
+  if grep -q "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE"
+  fi
+}
 
 cd "$INSTALL_ROOT"
 export CI=true
@@ -27,6 +41,8 @@ corepack prepare pnpm@9.15.0 --activate
 pnpm install --frozen-lockfile
 pnpm --filter @dat-poker/api^... build
 pnpm --filter @dat-poker/api build
+pnpm --filter @dat-poker/treasury-payout^... build
+pnpm --filter @dat-poker/treasury-payout build
 pnpm --filter @dat-poker/web build
 
 rm -rf "${WEB_ROOT:?}/"*
@@ -42,6 +58,25 @@ if [[ ! -f "$INSTALL_ROOT/data/ledger.json" ]]; then
   chmod 600 "$INSTALL_ROOT/data/ledger.json"
 fi
 chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
+set_env_kv DAT_TREASURY_PAYOUT_URL "http://127.0.0.1:4200/payout"
+set_env_kv DAT_ENABLE_ONCHAIN_WITHDRAW true
+set_env_kv TREASURY_HOST "127.0.0.1"
+set_env_kv TREASURY_PORT "4200"
+if [[ -f "$ENV_FILE" ]] && { ! grep -q '^TREASURY_PAYOUT_FEE_MOJOS=' "$ENV_FILE" || grep -qE '^TREASURY_PAYOUT_FEE_MOJOS=(0|1000000)$' "$ENV_FILE"; }; then
+  set_env_kv TREASURY_PAYOUT_FEE_MOJOS 9000000
+fi
+if [[ -f "$ENV_FILE" ]] && { ! grep -q '^DAT_WITHDRAW_FEE_MOJOS=' "$ENV_FILE" || grep -q '^DAT_WITHDRAW_FEE_MOJOS=1000000$' "$ENV_FILE"; }; then
+  set_env_kv DAT_WITHDRAW_FEE_MOJOS 0
+fi
+if [[ -f "$ENV_FILE" ]]; then
+  chown ec2-user:ec2-user "$ENV_FILE"
+  chmod 0640 "$ENV_FILE"
+fi
+cp "$INSTALL_ROOT/deploy/aws-ec2/dat-poker-treasury.service" /etc/systemd/system/dat-poker-treasury.service
+systemctl daemon-reload
+systemctl enable dat-poker-treasury
+systemctl reset-failed dat-poker-treasury 2>/dev/null || true
+systemctl restart dat-poker-treasury
 systemctl reset-failed dat-poker-api 2>/dev/null || true
 systemctl restart dat-poker-api
 # Parse KEY=VALUE; do not `source` caddy.env. An unquoted
@@ -80,6 +115,21 @@ if [[ "$ok" -ne 1 ]]; then
   echo "API did not become healthy within 30s" >&2
   systemctl status dat-poker-api --no-pager >&2 || true
   journalctl -u dat-poker-api -n 80 --no-pager >&2 || true
+  exit 1
+fi
+ok=0
+for i in $(seq 1 30); do
+  if curl -fsS http://127.0.0.1:4200/health >/dev/null 2>&1; then
+    echo "Treasury healthy after ${i}s at :4200/health"
+    ok=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$ok" -ne 1 ]]; then
+  echo "Treasury did not become healthy within 30s" >&2
+  systemctl status dat-poker-treasury --no-pager >&2 || true
+  journalctl -u dat-poker-treasury -n 80 --no-pager >&2 || true
   exit 1
 fi
 echo "beta redeploy ok"

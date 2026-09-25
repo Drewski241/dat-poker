@@ -295,7 +295,6 @@ export class NlheTableEngine {
     }
     this.seats.delete(seatIndex);
     this.stacks.delete(playerId);
-    this.handsPlayed.delete(playerId);
     return { stackMojos, seatIndex };
   }
 
@@ -309,6 +308,14 @@ export class NlheTableEngine {
 
   getHandsPlayed(playerId: PlayerId): number {
     return this.handsPlayed.get(playerId) ?? 0;
+  }
+
+  /** Hands recorded for anyone who sat this table, including after a cash-out or bust. */
+  getRecordedPlaythroughHands(): { playerId: PlayerId; handsPlayed: number }[] {
+    return [...this.handsPlayed.entries()].map(([playerId, handsPlayed]) => ({
+      playerId,
+      handsPlayed,
+    }));
   }
 
   /** Take unlocked DAT off a stack between hands; cash out if the stack hits 0. */

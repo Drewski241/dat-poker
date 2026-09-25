@@ -74,6 +74,7 @@ type Props = {
   playthroughHandsPlayed?: number;
   playthroughHandsRequired?: number;
   playthroughUnlockedMojos?: string;
+  playthroughWithdrawableMojos?: string;
 };
 
 export function TableRoom({
@@ -116,6 +117,7 @@ export function TableRoom({
   playthroughHandsPlayed = 0,
   playthroughHandsRequired = 0,
   playthroughUnlockedMojos = "0",
+  playthroughWithdrawableMojos = "0",
 }: Props) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -200,7 +202,11 @@ export function TableRoom({
             <p className="table-room-playthrough">
               Play-through {playthroughHandsPlayed}/{playthroughHandsRequired} hands ·{" "}
               {formatDatMojos(playthroughUnlockedMojos, datToken?.ticker)} unlocked
-              {sng ? " from leftover account DAT or prizes" : ""}
+              {BigInt(playthroughWithdrawableMojos || "0") > 0n
+                ? ` · ${formatDatMojos(playthroughWithdrawableMojos, datToken?.ticker)} unlocked in your table account`
+                : sng
+                  ? " from leftover account DAT or prizes"
+                  : ""}
             </p>
           )}
         </div>
