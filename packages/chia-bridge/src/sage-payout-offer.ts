@@ -7,11 +7,13 @@ import {
   describeSageFundsBlock,
   describeSageOfferCancelWait,
   describeSagePendingPlayerTake,
+  describeSagePendingTreasurySpend,
   ensureSageTreasuryLoggedIn,
   leftoverSageOffersBlockNewPayout,
   readSageTreasuryFunds,
   sageDatLooksLockedByPendingTake,
   sageTreasuryCanBuildPayout,
+  sageTreasuryHasPendingSpend,
   deleteOpenSageOffers,
   remapSageOfferError,
   sageRpcAmount,
@@ -48,28 +50,29 @@ export async function createSageCatPayoutOffer(
   await ensureSageTreasuryLoggedIn(rpc);
   const feeMojos = resolveSageMakeOfferFeeMojos(params.feeMojos);
   let funds = await readSageTreasuryFunds(rpc, params.assetId);
+  if (sageTreasuryHasPendingSpend(funds)) {
+    throw new Error(describeSagePendingTreasurySpend());
+  }
   if ((funds.pendingOfferCount ?? 0) > 0 && sageTreasuryCanBuildPayout(funds, params.amountMojos)) {
     await deleteOpenSageOffers(rpc);
     funds = await readSageTreasuryFunds(rpc, params.assetId);
+    if (sageTreasuryHasPendingSpend(funds)) {
+      throw new Error(describeSagePendingTreasurySpend());
+    }
   }
   if (leftoverSageOffersBlockNewPayout(funds, params.amountMojos)) {
     if (funds.xchSelectableMojos === 0n) {
       throw new Error(describeSageCancelNeedsXch(funds, feeMojos));
     }
     const cancelled = await cancelOpenSageOffers(rpc, feeMojos);
-    funds = await readSageTreasuryFunds(rpc, params.assetId);
-    if (sageTreasuryCanBuildPayout(funds, params.amountMojos)) {
-      await deleteOpenSageOffers(rpc);
-      funds = await readSageTreasuryFunds(rpc, params.assetId);
-    } else if (
+    if (
       cancelled.cancelled.length === 0 &&
       cancelled.mempoolConflict.length === 0 &&
       cancelled.skippedRecent.length === 0
     ) {
       throw new Error(describeSageCancelFailed(cancelled, funds, feeMojos));
-    } else {
-      throw new Error(describeSageOfferCancelWait(feeMojos));
     }
+    throw new Error(describeSageOfferCancelWait(feeMojos));
   }
   if (sageDatLooksLockedByPendingTake(funds)) {
     throw new Error(describeSagePendingPlayerTake());

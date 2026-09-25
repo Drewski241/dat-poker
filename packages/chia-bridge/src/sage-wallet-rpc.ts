@@ -120,6 +120,7 @@ export interface SageTreasuryFunds {
   datSelectableMojos: bigint | null;
   datSpendableCoins: number | null;
   pendingOfferCount: number | null;
+  pendingTransactionCount: number | null;
   datTicker: string;
   datPrecision: number;
   assetId: string | null;
@@ -150,6 +151,7 @@ export function emptySageTreasuryFunds(assetId?: string | null): SageTreasuryFun
     datSelectableMojos: null,
     datSpendableCoins: null,
     pendingOfferCount: null,
+    pendingTransactionCount: null,
     datTicker: "DAT",
     datPrecision: 3,
     assetId: normalized && /^[a-f0-9]{64}$/.test(normalized) ? normalized : null,
@@ -312,14 +314,25 @@ export function describeSagePendingPlayerTake(): string {
   );
 }
 
+export function describeSagePendingTreasurySpend(): string {
+  return (
+    "Treasury Sage still has a pending on-chain spend (usually the leftover-offer cancel) " +
+    "for the same DAT coin. A new withdraw offer mempool-conflicts immediately. " +
+    "Do not withdraw again. Do not cancel from treasury. " +
+    "In treasury Sage, wait until Transactions shows no pending spends, then withdraw once. " +
+    "If player Sage already shows Confirmed DAT, you are done."
+  );
+}
+
+export function sageTreasuryHasPendingSpend(funds: SageTreasuryFunds): boolean {
+  return (funds.pendingTransactionCount ?? 0) > 0;
+}
+
 export function describeSageMempoolConflict(funds?: SageTreasuryFunds): string {
-  if (funds && leftoverSageOffersBlockNewPayout(funds)) {
-    return (
-      "Treasury Sage hit a mempool conflict while a leftover offer is still open. " +
-      "Do not tap Accept again. Wait 1–2 minutes, then withdraw once."
-    );
+  if (funds && sageDatLooksLockedByPendingTake(funds) && !sageTreasuryHasPendingSpend(funds)) {
+    return describeSagePendingPlayerTake();
   }
-  return describeSagePendingPlayerTake();
+  return describeSagePendingTreasurySpend();
 }
 
 export function sageRpcAmount(mojos: bigint): string {
@@ -638,7 +651,24 @@ export async function readSageTreasuryFunds(
   } catch {
     /* get_offers is best-effort */
   }
+  try {
+    const pending = await listSagePendingTransactions(config);
+    funds.pendingTransactionCount = pending.length;
+  } catch {
+    /* get_pending_transactions is best-effort */
+  }
   return funds;
+}
+
+export async function listSagePendingTransactions(
+  config: TreasuryWalletRpcConfig,
+): Promise<Array<{ transaction_id?: string }>> {
+  const listed = await treasuryWalletRpcRequest<{ transactions?: Array<{ transaction_id?: string }> }>(
+    config,
+    "get_pending_transactions",
+    {},
+  );
+  return Array.isArray(listed.transactions) ? listed.transactions : [];
 }
 
 export async function listSageOffers(config: TreasuryWalletRpcConfig): Promise<SageOfferRecord[]> {

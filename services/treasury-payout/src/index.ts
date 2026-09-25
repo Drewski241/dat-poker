@@ -73,6 +73,7 @@ async function main(): Promise<void> {
       datSelectableMojos: funds?.datSelectableMojos?.toString() ?? null,
       datBalanceMojos: funds?.datBalanceMojos?.toString() ?? null,
       pendingOfferCount: funds?.pendingOfferCount ?? null,
+      pendingTransactionCount: funds?.pendingTransactionCount ?? null,
       datLockedByPendingTake: funds != null ? sageDatLooksLockedByPendingTake(funds) : null,
       xchSelectableMojos: funds?.xchSelectableMojos?.toString() ?? null,
       payoutFeeMojos: config.payoutFeeMojos.toString(),

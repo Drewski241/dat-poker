@@ -16,6 +16,7 @@ import {
   formatDatMojos,
   isSageMempoolConflict,
   leftoverSageOffersBlockNewPayout,
+  sageTreasuryHasPendingSpend,
   rememberSageOfferCancel,
   resetSageOfferCancelMemory,
   wasSageOfferRecentlyCancelled,
@@ -188,6 +189,12 @@ describe("sage treasury coin selection", () => {
         2_000n,
       ),
     ).toBe(true);
+    expect(
+      sageTreasuryHasPendingSpend({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        pendingTransactionCount: 1,
+      }),
+    ).toBe(true);
     expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/wait 1–2 minutes/i);
     expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/do not tap Accept/i);
     expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/0\.000001 XCH fee/i);
@@ -206,9 +213,15 @@ describe("sage treasury coin selection", () => {
     ).toMatch(/Cancel requires an XCH fee/i);
     expect(
       remapSageOfferError("Wallet error: mempool conflict", emptySageTreasuryFunds()),
-    ).toMatch(/pending incoming DAT/i);
-    expect(describeSageWalletRpcFailure(500, "DOUBLE_SPEND")).toMatch(/pending incoming DAT/i);
+    ).toMatch(/pending on-chain spend/i);
+    expect(describeSageWalletRpcFailure(500, "DOUBLE_SPEND")).toMatch(/pending on-chain spend/i);
     expect(describeSageMempoolConflict()).toMatch(/Do not withdraw again/i);
+    expect(
+      describeSageMempoolConflict({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        pendingTransactionCount: 1,
+      }),
+    ).toMatch(/Transactions shows no pending spends/i);
     expect(
       sageDatLooksLockedByPendingTake({
         ...emptySageTreasuryFunds("ab".repeat(32)),
