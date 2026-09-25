@@ -16,6 +16,9 @@ import {
   formatDatMojos,
   isSageMempoolConflict,
   leftoverSageOffersBlockNewPayout,
+  rememberSageOfferCancel,
+  resetSageOfferCancelMemory,
+  wasSageOfferRecentlyCancelled,
   looksLikeSageSecretKey,
   openSageOfferIds,
   parseSageAmount,
@@ -240,6 +243,11 @@ describe("sage treasury coin selection", () => {
       auto_submit: true,
     });
     expect(buildSageCancelOfferRequest("offer-abc", 0n).fee).toBe("1000000");
+    resetSageOfferCancelMemory();
+    rememberSageOfferCancel("offer-abc", 1_000);
+    expect(wasSageOfferRecentlyCancelled("offer-abc", 1_000 + 60_000)).toBe(true);
+    expect(wasSageOfferRecentlyCancelled("offer-abc", 1_000 + 4 * 60_000)).toBe(false);
+    resetSageOfferCancelMemory();
     expect(openSageOfferIds([
       { offer_id: "keep-pending", status: "pending" },
       { offer_id: "keep-active", status: "active" },
