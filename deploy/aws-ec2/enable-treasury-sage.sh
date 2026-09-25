@@ -414,10 +414,10 @@ sys.stdout.write(body)
 
 release_open_sage_offers() {
   echo "Cancelling pending/active Sage offers on-chain (invalidates leftover offer1):"
-  local listed ids offer_id fee
+  local listed ids offer_id fee count batch_fee
   fee="$(read_env_kv TREASURY_PAYOUT_FEE_MOJOS || true)"
-  if [[ -z "$fee" || "$fee" == "0" || ! "$fee" =~ ^[0-9]+$ ]]; then
-    fee=1000000
+  if [[ -z "$fee" || ! "$fee" =~ ^[0-9]+$ || "$fee" -lt 9000000 ]]; then
+    fee=9000000
   fi
   listed="$(sage_rpc get_offers '{}' || true)"
   ids="$(printf '%s' "$listed" | python3 -c '
@@ -437,12 +437,23 @@ for offer in data.get("offers") or []:
     echo "No pending/active Sage offers to cancel."
     return 0
   fi
+  count="$(printf '%s\n' "$ids" | grep -c . || true)"
+  batch_fee=$((fee * count))
+  echo "cancel_offers count=${count} fee=${batch_fee} (XCH mojos, 0.09 mojo/cost) auto_submit=true"
+  if sage_rpc cancel_offers "$(python3 -c '
+import json, sys
+ids = [line.strip() for line in sys.argv[1].splitlines() if line.strip()]
+sys.stdout.write(json.dumps({"offer_ids": ids, "fee": sys.argv[2], "auto_submit": True}))
+' "$ids" "$batch_fee")"; then
+    echo "Wait until treasury Transactions shows the cancel Confirmed before withdrawing again. Do not Accept the old offer."
+    return 0
+  fi
   while IFS= read -r offer_id; do
     [[ -z "$offer_id" ]] && continue
     echo "cancel_offer ${offer_id:0:12}… fee=${fee} (XCH mojos) auto_submit=true"
     sage_rpc cancel_offer "$(python3 -c 'import json,sys; sys.stdout.write(json.dumps({"offer_id": sys.argv[1], "fee": sys.argv[2], "auto_submit": True}))' "$offer_id" "$fee")" || true
   done <<< "$ids"
-  echo "Wait 1–2 minutes before withdrawing again. Do not Accept the old offer."
+  echo "Wait until treasury Transactions shows the cancel Confirmed before withdrawing again. Do not Accept the old offer."
 }
 
 json_field() {
@@ -743,8 +754,8 @@ set_kv TREASURY_PORT "4200"
 set_kv DAT_TREASURY_PAYOUT_URL "http://127.0.0.1:4200/payout"
 set_kv DAT_ENABLE_ONCHAIN_WITHDRAW true
 # Sage Accept has no fee box. Treasury pays the XCH fee on make_offer.
-if ! grep -q '^TREASURY_PAYOUT_FEE_MOJOS=' "$ENV_FILE" || grep -q '^TREASURY_PAYOUT_FEE_MOJOS=0$' "$ENV_FILE"; then
-  set_kv TREASURY_PAYOUT_FEE_MOJOS 1000000
+if ! grep -q '^TREASURY_PAYOUT_FEE_MOJOS=' "$ENV_FILE" || grep -qE '^TREASURY_PAYOUT_FEE_MOJOS=(0|1000000)$' "$ENV_FILE"; then
+  set_kv TREASURY_PAYOUT_FEE_MOJOS 9000000
 fi
 if ! grep -q '^DAT_WITHDRAW_FEE_MOJOS=' "$ENV_FILE" || grep -q '^DAT_WITHDRAW_FEE_MOJOS=1000000$' "$ENV_FILE"; then
   set_kv DAT_WITHDRAW_FEE_MOJOS 0

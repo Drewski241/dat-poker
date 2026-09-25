@@ -6,11 +6,13 @@ describe("readTreasuryServiceConfig", () => {
     delete process.env.TREASURY_PAYOUT_FEE_MOJOS;
   });
 
-  it("defaults make_offer fee to 0.000001 XCH so Sage Accept needs no player fee box", () => {
+  it("defaults make_offer fee to the 0.09 mojo/cost dust-storm floor", () => {
     delete process.env.TREASURY_PAYOUT_FEE_MOJOS;
-    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(1_000_000n);
+    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(9_000_000n);
     process.env.TREASURY_PAYOUT_FEE_MOJOS = "0";
-    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(1_000_000n);
+    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(9_000_000n);
+    process.env.TREASURY_PAYOUT_FEE_MOJOS = "1000000";
+    expect(readTreasuryServiceConfig().payoutFeeMojos).toBe(9_000_000n);
   });
 });
 

@@ -386,8 +386,8 @@ wallet + Calpoker state channels (`chia_selectCoins`,
 (CHIP-0002 methods + `wss://relay.walletconnect.com`) and **does not**
 request `chia_send`. After a treasury withdraw it may request
 `chia_takeOffer` so Sage shows Accept. Sage Accept has no fee box — treasury
-pays the XCH fee on `make_offer` and on-chain `cancel_offer`
-(`TREASURY_PAYOUT_FEE_MOJOS`). See
+pays the XCH fee on `make_offer` and on-chain `cancel_offers`
+(`TREASURY_PAYOUT_FEE_MOJOS`, 0.09 mojo/cost dust-storm floor). See
 [docs/WALLETCONNECT.md](./WALLETCONNECT.md) and [docs/SECURITY.md](./SECURITY.md).
 
 Withdraw to Sage uses the always-on treasury on this website host
@@ -431,12 +431,12 @@ RPC is up but has not indexed the CAT yet (or XCH for fees is missing).
 as `50000000` after sync. Confirm `DAT_GOVERNANCE_TOKEN_ASSET_ID` and send
 a little XCH to the printed treasury address.
 
-If `/health` shows `datBalanceMojos` still at `50000000` but
-`datSelectableMojos` is `0` and `pendingOfferCount` is greater than 0, the
-last unused withdraw offer is still reserving those coins. If you already
-tapped Accept, wait 1–2 minutes and do not Accept the old offer again. Then
-withdraw once — payout cancels leftover offers on-chain and does not remake
-in the same request. Or:
+If `/health` shows leftover `pendingOfferCount` (DAT or XCH still tied up),
+those unused withdraw offers are still reserving coins — even when
+Transactions looks empty, if the last cancel fee was below 0.09 mojo/cost.
+Do not Accept the old offer. Withdraw once — payout batch-cancels leftover
+offers on-chain at the dust-storm fee and does not remake in the same
+request. Wait until that cancel is Confirmed, then withdraw once. Or:
 
 ```bash
 sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh

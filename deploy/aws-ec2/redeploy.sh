@@ -62,8 +62,8 @@ set_env_kv DAT_TREASURY_PAYOUT_URL "http://127.0.0.1:4200/payout"
 set_env_kv DAT_ENABLE_ONCHAIN_WITHDRAW true
 set_env_kv TREASURY_HOST "127.0.0.1"
 set_env_kv TREASURY_PORT "4200"
-if [[ -f "$ENV_FILE" ]] && { ! grep -q '^TREASURY_PAYOUT_FEE_MOJOS=' "$ENV_FILE" || grep -q '^TREASURY_PAYOUT_FEE_MOJOS=0$' "$ENV_FILE"; }; then
-  set_env_kv TREASURY_PAYOUT_FEE_MOJOS 1000000
+if [[ -f "$ENV_FILE" ]] && { ! grep -q '^TREASURY_PAYOUT_FEE_MOJOS=' "$ENV_FILE" || grep -qE '^TREASURY_PAYOUT_FEE_MOJOS=(0|1000000)$' "$ENV_FILE"; }; then
+  set_env_kv TREASURY_PAYOUT_FEE_MOJOS 9000000
 fi
 if [[ -f "$ENV_FILE" ]] && { ! grep -q '^DAT_WITHDRAW_FEE_MOJOS=' "$ENV_FILE" || grep -q '^DAT_WITHDRAW_FEE_MOJOS=1000000$' "$ENV_FILE"; }; then
   set_env_kv DAT_WITHDRAW_FEE_MOJOS 0

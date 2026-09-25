@@ -7,6 +7,7 @@ import {
   describeSageLoginNeeded,
   describeSageCancelFailed,
   describeSageCancelNeedsXch,
+  describeSageGhostLeftoverOffers,
   describeSageMempoolConflict,
   describeSageNoSpendableCoins,
   describeSageOfferCancelWait,
@@ -17,6 +18,7 @@ import {
   isSageMempoolConflict,
   leftoverSageOffersAreGhostRecords,
   leftoverSageOffersBlockNewPayout,
+  buildSageCancelOffersRequest,
   sageTreasuryHasPendingSpend,
   rememberSageOfferCancel,
   resetSageOfferCancelMemory,
@@ -148,7 +150,7 @@ describe("sage treasury coin selection", () => {
         pendingOfferCount: 1,
         pendingTransactionCount: 0,
       }),
-    ).toMatch(/stale local records/i);
+    ).toMatch(/dust-storm fee/i);
     expect(
       leftoverSageOffersAreGhostRecords({
         ...emptySageTreasuryFunds("ab".repeat(32)),
@@ -156,6 +158,7 @@ describe("sage treasury coin selection", () => {
         pendingTransactionCount: 0,
       }),
     ).toBe(true);
+    expect(describeSageGhostLeftoverOffers()).toMatch(/dust-storm/i);
     expect(
       describeSageNoSpendableCoins({
         ...emptySageTreasuryFunds("ab".repeat(32)),
@@ -198,7 +201,7 @@ describe("sage treasury coin selection", () => {
         },
         2_000n,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       sageTreasuryCanBuildPayout(
         {
@@ -214,15 +217,16 @@ describe("sage treasury coin selection", () => {
         pendingTransactionCount: 1,
       }),
     ).toBe(true);
-    expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/wait 1–2 minutes/i);
-    expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/do not tap Accept/i);
-    expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/0\.000001 XCH fee/i);
+    expect(describeSageOfferCancelWait(9_000_000n)).toMatch(/cancel Confirmed/i);
+    expect(describeSageOfferCancelWait(9_000_000n)).toMatch(/do not tap Accept/i);
+    expect(describeSageOfferCancelWait(9_000_000n)).toMatch(/0\.000009 XCH/i);
+    expect(describeSageOfferCancelWait(9_000_000n)).toMatch(/0\.09 mojo\/cost/i);
     expect(
       describeSageCancelNeedsXch(
         { ...emptySageTreasuryFunds("ab".repeat(32)), address: "xch1treasury", xchSelectableMojos: 0n },
-        1_000_000n,
+        9_000_000n,
       ),
-    ).toMatch(/needs a 0\.000001 XCH fee/i);
+    ).toMatch(/needs a 0\.000009 XCH dust-storm fee/i);
     expect(
       describeSageCancelFailed(
         { cancelled: [], mempoolConflict: [], failed: ["offer-1"], errors: ["Wallet error: no XCH"], skippedRecent: [] },
@@ -269,12 +273,18 @@ describe("sage treasury coin selection", () => {
         pendingOfferCount: 0,
       }),
     ).toMatch(/pending incoming DAT/i);
-    expect(buildSageCancelOfferRequest("offer-abc", 1_000_000n)).toEqual({
+    expect(buildSageCancelOfferRequest("offer-abc", 9_000_000n)).toEqual({
       offer_id: "offer-abc",
-      fee: "1000000",
+      fee: "9000000",
       auto_submit: true,
     });
-    expect(buildSageCancelOfferRequest("offer-abc", 0n).fee).toBe("1000000");
+    expect(buildSageCancelOfferRequest("offer-abc", 0n).fee).toBe("9000000");
+    expect(buildSageCancelOfferRequest("offer-abc", 1_000_000n).fee).toBe("9000000");
+    expect(buildSageCancelOffersRequest(["offer-abc", "offer-def"], 1_000_000n)).toEqual({
+      offer_ids: ["offer-abc", "offer-def"],
+      fee: "18000000",
+      auto_submit: true,
+    });
     resetSageOfferCancelMemory();
     rememberSageOfferCancel("offer-abc", 1_000);
     expect(wasSageOfferRecentlyCancelled("offer-abc", 1_000 + 60_000)).toBe(true);
@@ -306,7 +316,7 @@ describe("sage treasury coin selection", () => {
         pendingOfferCount: 1,
         pendingTransactionCount: 0,
       }),
-    ).toMatch(/stale local records/i);
+    ).toMatch(/on-chain cancel at the dust-storm fee/i);
   });
 });
 

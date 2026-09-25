@@ -2,16 +2,17 @@ import { resolveSageMakeOfferFeeMojos } from "@dat-poker/shared";
 import type { CatPayoutOfferParams } from "./cat-payout-offer.js";
 import {
   describeSageFundsBlock,
-  describeSageGhostLeftoverOffers,
   describeSagePendingPlayerTake,
   describeSagePendingTreasurySpend,
+  describeSageCancelFailed,
+  describeSageCancelNeedsXch,
+  describeSageOfferCancelWait,
   ensureSageTreasuryLoggedIn,
   leftoverSageOffersBlockNewPayout,
-  leftoverSageOffersAreGhostRecords,
   readSageTreasuryFunds,
   sageDatLooksLockedByPendingTake,
   sageTreasuryHasPendingSpend,
-  deleteOpenSageOffers,
+  cancelOpenSageOffers,
   remapSageOfferError,
   sageRpcAmount,
   treasuryWalletRpcRequest,
@@ -46,21 +47,23 @@ export async function createSageCatPayoutOffer(
 ): Promise<string> {
   await ensureSageTreasuryLoggedIn(rpc);
   const feeMojos = resolveSageMakeOfferFeeMojos(params.feeMojos);
-  let funds = await readSageTreasuryFunds(rpc, params.assetId);
+  const funds = await readSageTreasuryFunds(rpc, params.assetId);
+  if (leftoverSageOffersBlockNewPayout(funds)) {
+    if (funds.xchSelectableMojos === 0n && !sageTreasuryHasPendingSpend(funds)) {
+      throw new Error(describeSageCancelNeedsXch(funds, feeMojos));
+    }
+    const result = await cancelOpenSageOffers(rpc, feeMojos);
+    if (
+      result.failed.length > 0 &&
+      result.cancelled.length === 0 &&
+      result.mempoolConflict.length === 0 &&
+      result.skippedRecent.length === 0
+    ) {
+      throw new Error(describeSageCancelFailed(result, funds, feeMojos));
+    }
+    throw new Error(describeSageOfferCancelWait(feeMojos));
+  }
   if (sageTreasuryHasPendingSpend(funds)) {
-    throw new Error(describeSagePendingTreasurySpend());
-  }
-  if ((funds.pendingOfferCount ?? 0) > 0) {
-    await deleteOpenSageOffers(rpc);
-    funds = await readSageTreasuryFunds(rpc, params.assetId);
-    if (sageTreasuryHasPendingSpend(funds)) {
-      throw new Error(describeSagePendingTreasurySpend());
-    }
-  }
-  if (leftoverSageOffersBlockNewPayout(funds, params.amountMojos)) {
-    if (leftoverSageOffersAreGhostRecords(funds)) {
-      throw new Error(describeSageGhostLeftoverOffers());
-    }
     throw new Error(describeSagePendingTreasurySpend());
   }
   if (sageDatLooksLockedByPendingTake(funds)) {

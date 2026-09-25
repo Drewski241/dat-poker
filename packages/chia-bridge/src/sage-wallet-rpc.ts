@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import https from "node:https";
 import { URL } from "node:url";
-import { DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS, formatXchMojos } from "@dat-poker/shared";
+import {
+  DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+  formatXchMojos,
+  resolveSageCancelFeeMojos,
+  resolveSageMakeOfferFeeMojos,
+} from "@dat-poker/shared";
 
 export type TreasuryWalletBackend = "sage" | "chia";
 
@@ -183,12 +188,15 @@ export function leftoverSageOffersBlockNewPayout(
   funds: SageTreasuryFunds,
   neededMojos?: bigint,
 ): boolean {
-  if ((funds.pendingOfferCount ?? 0) <= 0) return false;
-  if (neededMojos != null && sageTreasuryCanBuildPayout(funds, neededMojos)) return false;
-  return true;
+  void neededMojos;
+  return (funds.pendingOfferCount ?? 0) > 0;
 }
 
-/** Leftover get_offers rows with no pending spend — GUI shows nothing to cancel. */
+/**
+ * Leftover get_offers rows with no pending spend. Those offers still lock DAT
+ * and/or XCH when a prior cancel fee was too low for the dust-storm mempool.
+ * Always cancel them on-chain — do not treat this as a local-only delete.
+ */
 export function leftoverSageOffersAreGhostRecords(funds: SageTreasuryFunds): boolean {
   return (funds.pendingOfferCount ?? 0) > 0 && !sageTreasuryHasPendingSpend(funds);
 }
@@ -231,9 +239,6 @@ export function describeSageNoSpendableCoins(
   const pending = funds.pendingOfferCount ?? 0;
 
   if (leftoverSageOffersBlockNewPayout(funds)) {
-    if (leftoverSageOffersAreGhostRecords(funds)) {
-      return describeSageGhostLeftoverOffers();
-    }
     const held =
       balance != null && balance > 0n
         ? ` Sage still shows ${formatDatMojos(balance, funds.datPrecision)} on this key, but it is not selectable.`
@@ -241,11 +246,11 @@ export function describeSageNoSpendableCoins(
     const count =
       pending > 0 ? ` ${pending} pending Sage offer(s) are reserving those coins.` : " The last unused withdraw offer is still reserving those coins.";
     return (
-      "Treasury DAT is locked in an unused Sage offer from an earlier withdraw — the coins did not leave this key." +
+      "Treasury DAT or XCH is locked in an unused Sage offer from an earlier withdraw — the coins did not leave this key." +
       held +
       count +
       addr +
-      " Do not tap Accept on the old offer again. Wait 1–2 minutes, then withdraw once — leftover offers are cancelled on-chain first, and a new offer is not built in the same request. Or run: sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh and wait before the next withdraw."
+      " Do not tap Accept on the old offer. Withdraw once to submit an on-chain cancel at the dust-storm fee (0.09 mojo/cost), then wait until treasury Transactions shows that cancel Confirmed before withdrawing again. A new offer is not built in the same request. Or run: sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh and wait before the next withdraw."
     );
   }
   if (sageDatLooksLockedByPendingTake(funds)) {
@@ -324,10 +329,10 @@ export function describeSagePendingPlayerTake(): string {
 
 export function describeSageGhostLeftoverOffers(): string {
   return (
-    "Treasury Sage still lists leftover offer rows in RPC, but there is no pending transaction " +
-    "and the GUI has nothing to cancel. Those rows are stale local records. " +
-    "Payout deletes them locally and does not cancel on-chain (on-chain cancel is what caused the mempool conflicts). " +
-    "Withdraw once. If DAT is not selectable yet, wait a minute for Sage to unlock the coins, then withdraw once. " +
+    "Treasury Sage still lists leftover offer rows and those coins stay locked even when " +
+    "Transactions shows no pending spend — a prior cancel fee was too low for the dust-storm mempool. " +
+    "Payout cancels every leftover offer on-chain at 0.09 mojo/cost and does not remake in the same request. " +
+    "Do not tap Accept on the old offer. Wait until that cancel is Confirmed, then withdraw once. " +
     "If player Sage already shows Confirmed DAT, you are done."
   );
 }
@@ -364,10 +369,10 @@ export function describeSageOfferCancelWait(
   feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
 ): string {
   return (
-    "A leftover treasury Sage offer is still reserving those DAT coins. " +
-    `Treasury submitted an on-chain cancel with a ${formatXchMojos(feeMojos)} fee ` +
-    "(same TREASURY_PAYOUT_FEE_MOJOS XCH fee as make_offer). " +
-    "Wait 1–2 minutes, do not tap Accept on the old offer, then withdraw once."
+    "Treasury submitted an on-chain cancel of leftover Sage offer(s) that still lock DAT or XCH. " +
+    `The cancel fee is ${formatXchMojos(feeMojos)} (0.09 mojo/cost dust-storm floor, TREASURY_PAYOUT_FEE_MOJOS). ` +
+    "Wait until treasury Sage Transactions shows that cancel Confirmed and no coins stay Pending. " +
+    "Do not tap Accept on the old offer. Do not withdraw again until the cancel confirms."
   );
 }
 
@@ -377,7 +382,7 @@ export function describeSageCancelNeedsXch(
 ): string {
   const addr = funds.address ? ` Treasury address: ${funds.address}.` : "";
   return (
-    `On-chain cancel of the leftover Sage offer needs a ${formatXchMojos(feeMojos)} fee, ` +
+    `On-chain cancel of leftover Sage offer(s) needs a ${formatXchMojos(feeMojos)} dust-storm fee (0.09 mojo/cost), ` +
     "but treasury Sage has no selectable XCH." +
     addr +
     " Send a little XCH to that address, wait for sync, then withdraw once. Do not Accept the old offer."
@@ -742,9 +747,25 @@ export function buildSageCancelOfferRequest(
   if (!id) {
     throw new Error("offer_id required to cancel a Sage offer");
   }
-  const fee = feeMojos > 0n ? feeMojos : DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS;
+  const fee = resolveSageMakeOfferFeeMojos(feeMojos);
   return {
     offer_id: id,
+    fee: sageRpcAmount(fee),
+    auto_submit: true,
+  };
+}
+
+export function buildSageCancelOffersRequest(
+  offerIds: string[],
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): { offer_ids: string[]; fee: string; auto_submit: true } {
+  const ids = offerIds.map((id) => id.trim()).filter(Boolean);
+  if (!ids.length) {
+    throw new Error("offer_ids required to cancel Sage offers");
+  }
+  const fee = resolveSageCancelFeeMojos(feeMojos, ids.length);
+  return {
+    offer_ids: ids,
     fee: sageRpcAmount(fee),
     auto_submit: true,
   };
@@ -761,6 +782,16 @@ export async function cancelSageOffer(
   });
 }
 
+export async function cancelSageOffers(
+  config: TreasuryWalletRpcConfig,
+  offerIds: string[],
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): Promise<void> {
+  await treasuryWalletRpcRequest(config, "cancel_offers", buildSageCancelOffersRequest(offerIds, feeMojos), {
+    timeoutMs: 45_000,
+  });
+}
+
 export async function cancelOpenSageOffers(
   config: TreasuryWalletRpcConfig,
   feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
@@ -771,13 +802,39 @@ export async function cancelOpenSageOffers(
   const failed: string[] = [];
   const errors: string[] = [];
   const skippedRecent: string[] = [];
+  const toCancel: string[] = [];
   for (const offerId of ids) {
     if (wasSageOfferRecentlyCancelled(offerId)) {
       skippedRecent.push(offerId);
-      continue;
+    } else {
+      toCancel.push(offerId);
     }
+  }
+  if (toCancel.length > 0) {
     try {
-      await cancelSageOffer(config, offerId, feeMojos);
+      await cancelSageOffers(config, toCancel, feeMojos);
+      for (const offerId of toCancel) {
+        rememberSageOfferCancel(offerId);
+        cancelled.push(offerId);
+      }
+      return { cancelled, mempoolConflict, failed, errors, skippedRecent };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isSageMempoolConflict(message)) {
+        for (const offerId of toCancel) {
+          rememberSageOfferCancel(offerId);
+          mempoolConflict.push(offerId);
+        }
+        if (message.trim()) errors.push(message.trim());
+        return { cancelled, mempoolConflict, failed, errors, skippedRecent };
+      }
+      if (message.trim()) errors.push(message.trim());
+    }
+  }
+  for (const offerId of toCancel) {
+    if (cancelled.includes(offerId) || mempoolConflict.includes(offerId)) continue;
+    try {
+      await cancelSageOffer(config, offerId, resolveSageCancelFeeMojos(feeMojos, 1));
       rememberSageOfferCancel(offerId);
       cancelled.push(offerId);
     } catch (error) {
