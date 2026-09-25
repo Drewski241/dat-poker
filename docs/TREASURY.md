@@ -71,15 +71,31 @@ need Sage RPC on **this** AWS host:
 sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 # first time, copies the prebuilt sage-cli built for Amazon Linux 2023 (glibc 2.34):
 sudo SAGE_INSTALL=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
-# Put the dedicated treasury spend key in /opt/dat-poker/.env (not wallet.key):
-#   TREASURY_SAGE_PRIVATE_KEY=...
-#   # or TREASURY_SAGE_MNEMONIC=word word …
-sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# Load the dedicated treasury spend key (not wallet.key). Prefer a file or silent TTY:
+sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+sudo TREASURY_SAGE_PRIVATE_KEY_FILE=/root/treasury.hex bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
 ```
 
 `dat-poker-sage-rpc` stays enabled with the website (`:9257`, localhost only).
 Player Sage stays on the tester phone/PC. `start-treasury.sh` is only a repair
 path if the HTTP unit is down.
+
+### Rotate the treasury spend key
+
+After a withdraw works — or if the current key was pasted in SSH or chat —
+load a **new** dedicated key. The wrapper always replaces Sage's logged-in
+fingerprint and writes the new `TREASURY_SAGE_FINGERPRINT` / receive address:
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+# or, from a root-only file (delete the file after it succeeds):
+sudo TREASURY_SAGE_PRIVATE_KEY_FILE=/root/treasury.hex bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+# keep the previous fingerprint in Sage (default is to delete it):
+sudo SAGE_KEEP_OLD_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+```
+
+The script does not print the secret. Fund the new treasury address with DAT
+and fee XCH before the next withdraw. Player Sage stays off this host.
 
 ---
 
@@ -276,6 +292,7 @@ WALLETCONNECT_PROJECT_ID=...
 |----------|--------|
 | `TREASURY_SAGE_PRIVATE_KEY` | Dedicated treasury spend key (hex/bech32). Imported into Sage RPC. Not `wallet.key`. |
 | `TREASURY_SAGE_MNEMONIC` | Same as the private key, if you have 12/24 words instead |
+| `TREASURY_SAGE_PRIVATE_KEY_FILE` | One-shot path for `load-treasury-key.sh` (64 hex or 12/24 words). Do not leave the file on disk. |
 | `TREASURY_SAGE_FINGERPRINT` | Set after import — service calls `login` before `make_offer` |
 | `TREASURY_OFFER_MODE=mock` | Dev only — fake offers, no on-chain DAT |
 | `DAT_WITHDRAW_PAYOUT_MODE=net` | Pay winnings only (virtual buy-in): stack − buy-in |
@@ -370,6 +387,7 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 | `walletRpcReachable: false` | Enable RPC in Sage Settings → Advanced; keep Sage open |
 | Certs not found | Check `~/.local/share/sage/ssl/` or set cert paths in `.env` |
 | Login / fingerprint errors | Set `TREASURY_SAGE_FINGERPRINT`; run `sage rpc login` manually |
+| Need to replace the treasury key | `sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh` |
 | No offer returned | Treasury Sage needs spendable DAT + XCH for fees |
 | GUI + CLI RPC conflict | Run only one Sage RPC at a time |
 | Player sees no offer | Confirm `dat-poker-treasury` is active; API `DAT_TREASURY_PAYOUT_URL=http://127.0.0.1:4200/payout` |
@@ -382,6 +400,8 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 - On the AWS website host, bind treasury to **127.0.0.1:4200** only. If treasury later moves off-box, restrict **4200** to the game API server IP.
 - Players never touch the treasury host; offers are delivered through the API → web → WalletConnect.
 - Use a dedicated treasury fingerprint with limited DAT balance.
+- Rotate with `load-treasury-key.sh` if the spend key was exposed. Do not
+  paste the secret into chat or SSH session logs.
 
 ## Related
 

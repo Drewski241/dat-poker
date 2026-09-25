@@ -5,6 +5,9 @@
 #   sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_FINGERPRINT=1234567890 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo SAGE_CREATE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+#   sudo SAGE_LOAD_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+#   sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+#   sudo TREASURY_SAGE_PRIVATE_KEY_FILE=/root/treasury.hex bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
 #   sudo SAGE_PASTE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_PRIVATE_KEY=hex_or_secret bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
 #   sudo TREASURY_SAGE_MNEMONIC='word word …' bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
@@ -85,10 +88,55 @@ print(parse_env(Path(sys.argv[1])).get(sys.argv[2], ""), end="")
 ' "$ENV_FILE" "$1"
 }
 
+apply_treasury_secret() {
+  local secret="$1"
+  secret="$(printf '%s' "$secret" | tr -d ' \r\n')"
+  if [[ -z "$secret" ]]; then
+    echo "empty treasury spend key" >&2
+    return 1
+  fi
+  if [[ "$secret" =~ ^[0-9a-fA-F]{64}$ || "$secret" =~ ^0[xX][0-9a-fA-F]{64}$ ]]; then
+    if [[ "$secret" =~ ^0[xX] ]]; then
+      secret="${secret:2}"
+    fi
+    TREASURY_SAGE_PRIVATE_KEY="$secret"
+    TREASURY_SAGE_MNEMONIC=""
+    set_kv TREASURY_SAGE_PRIVATE_KEY "$secret"
+    set_kv TREASURY_SAGE_MNEMONIC ""
+    echo "Wrote TREASURY_SAGE_PRIVATE_KEY to $ENV_FILE (${#secret} hex chars)."
+    return 0
+  fi
+  local words
+  words="$(printf '%s' "$secret" | wc -w)"
+  if [[ "$words" -eq 12 || "$words" -eq 24 ]]; then
+    TREASURY_SAGE_MNEMONIC="$secret"
+    TREASURY_SAGE_PRIVATE_KEY=""
+    set_kv TREASURY_SAGE_MNEMONIC "$secret"
+    set_kv TREASURY_SAGE_PRIVATE_KEY ""
+    echo "Wrote TREASURY_SAGE_MNEMONIC to $ENV_FILE ($words words)."
+    return 0
+  fi
+  echo "That value is ${#secret} chars / $words words. Sage needs 64 hex chars or 12/24 words." >&2
+  echo "An xch1 address or wallet.key path will not work." >&2
+  return 1
+}
+
+load_treasury_secret_from_file() {
+  local file="$1"
+  if [[ ! -f "$file" ]]; then
+    echo "missing TREASURY_SAGE_PRIVATE_KEY_FILE: $file" >&2
+    return 1
+  fi
+  echo "Loading treasury spend key from $file (value is not printed)."
+  apply_treasury_secret "$(tr -d ' \r\n' < "$file")"
+}
+
 paste_treasury_secret() {
   local secret
-  echo "No TREASURY_SAGE_PRIVATE_KEY in $ENV_FILE (only TREASURY_SAGE_FINGERPRINT was found last time)."
-  echo "Paste the Sage Settings → secret key (64 hex chars) or a 12/24-word mnemonic."
+  echo "Paste the dedicated treasury Sage secret key (64 hex chars) or a 12/24-word mnemonic."
+  if [[ "${SAGE_LOAD_KEY:-}" == "1" ]]; then
+    echo "This replaces the spend key Sage is using now. Fund the new address after it prints."
+  fi
   echo "It will not echo. Press Enter when done. Do not paste it into chat."
   if [[ -r /dev/tty ]]; then
     read -r -s -p "Treasury spend key: " secret </dev/tty
@@ -97,28 +145,50 @@ paste_treasury_secret() {
     read -r -s -p "Treasury spend key: " secret
     echo
   fi
-  secret="$(printf '%s' "$secret" | tr -d '\r\n')"
-  if [[ -z "$secret" ]]; then
-    echo "nothing pasted" >&2
-    return 1
+  apply_treasury_secret "$secret"
+}
+
+load_or_replace_treasury_secret() {
+  if [[ -n "${TREASURY_SAGE_PRIVATE_KEY_FILE:-}" ]]; then
+    load_treasury_secret_from_file "$TREASURY_SAGE_PRIVATE_KEY_FILE"
+    return
   fi
-  if [[ "$secret" =~ ^[0-9a-fA-F]{64}$ || "$secret" =~ ^0[xX][0-9a-fA-F]{64}$ ]]; then
-    TREASURY_SAGE_PRIVATE_KEY="$secret"
-    set_kv TREASURY_SAGE_PRIVATE_KEY "$secret"
-    echo "Wrote TREASURY_SAGE_PRIVATE_KEY to $ENV_FILE (${#secret} hex chars)."
-    return 0
+  if [[ -n "${CLI_TREASURY_PRIVATE_KEY:-}" ]]; then
+    echo "Loading treasury spend key from the command-line environment (value is not printed)."
+    apply_treasury_secret "$CLI_TREASURY_PRIVATE_KEY"
+    return
   fi
-  local words
-  words="$(printf '%s' "$secret" | wc -w)"
-  if [[ "$words" -eq 12 || "$words" -eq 24 ]]; then
-    TREASURY_SAGE_MNEMONIC="$secret"
-    set_kv TREASURY_SAGE_MNEMONIC "$secret"
-    echo "Wrote TREASURY_SAGE_MNEMONIC to $ENV_FILE ($words words)."
-    return 0
+  if [[ -n "${CLI_TREASURY_MNEMONIC:-}" ]]; then
+    echo "Loading treasury mnemonic from the command-line environment (value is not printed)."
+    apply_treasury_secret "$CLI_TREASURY_MNEMONIC"
+    return
   fi
-  echo "That paste is ${#secret} chars / $words words. Sage needs 64 hex chars or 12/24 words." >&2
-  echo "An xch1 address or wallet.key path will not work." >&2
+  if [[ "${SAGE_PASTE_KEY:-}" == "1" || -r /dev/tty ]]; then
+    paste_treasury_secret
+    return
+  fi
+  echo "SAGE_LOAD_KEY=1 needs a key file, a TTY paste, or TREASURY_SAGE_PRIVATE_KEY on the command line." >&2
+  echo "  sudo TREASURY_SAGE_PRIVATE_KEY_FILE=/root/treasury.hex bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh" >&2
+  echo "Do not paste the secret into chat." >&2
   return 1
+}
+
+delete_old_treasury_key() {
+  local old="$1"
+  if [[ "${SAGE_KEEP_OLD_KEY:-}" == "1" ]]; then
+    echo "Keeping previous Sage fingerprint $old (SAGE_KEEP_OLD_KEY=1)."
+    return 0
+  fi
+  if ! is_u32_fingerprint "$old"; then
+    return 0
+  fi
+  echo "Removing previous Sage fingerprint $old from this host."
+  if sage_rpc delete_key "$(python3 -c 'import json,sys
+sys.stdout.write(json.dumps({"fingerprint": int(sys.argv[1])}))' "$old")"; then
+    echo "Deleted previous fingerprint $old."
+  else
+    echo "Could not delete previous fingerprint $old. Login uses the new key; remove the old one in Sage if it is still listed." >&2
+  fi
 }
 
 describe_env_secret() {
@@ -473,6 +543,8 @@ if find_sage_bin >/dev/null; then
   fi
 fi
 
+CLI_TREASURY_PRIVATE_KEY="${TREASURY_SAGE_PRIVATE_KEY:-}"
+CLI_TREASURY_MNEMONIC="${TREASURY_SAGE_MNEMONIC:-}"
 if [[ -z "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
   TREASURY_SAGE_FINGERPRINT="$(read_env_kv TREASURY_SAGE_FINGERPRINT)"
 fi
@@ -498,8 +570,15 @@ if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]] && ! is_u32_fingerprint "$TREASURY_
   echo "Ignoring TREASURY_SAGE_FINGERPRINT (not a Sage integer id)."
   TREASURY_SAGE_FINGERPRINT=""
 fi
+PREVIOUS_TREASURY_FINGERPRINT=""
+if [[ -n "${TREASURY_SAGE_FINGERPRINT:-}" ]] && is_u32_fingerprint "$TREASURY_SAGE_FINGERPRINT"; then
+  PREVIOUS_TREASURY_FINGERPRINT="$TREASURY_SAGE_FINGERPRINT"
+fi
 echo "Sage spend-key env: $(describe_env_secret)"
-if [[ -z "${TREASURY_SAGE_PRIVATE_KEY:-}" && -z "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
+if [[ "${SAGE_LOAD_KEY:-}" == "1" || -n "${TREASURY_SAGE_PRIVATE_KEY_FILE:-}" ]]; then
+  echo "Loading a new treasury spend key (replaces the one Sage is using now)."
+  load_or_replace_treasury_secret
+elif [[ -z "${TREASURY_SAGE_PRIVATE_KEY:-}" && -z "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
   if [[ "${SAGE_PASTE_KEY:-}" == "1" || -r /dev/tty ]]; then
     paste_treasury_secret
   fi
@@ -507,12 +586,19 @@ fi
 
 if find_sage_bin >/dev/null; then
   ensure_sage_rpc_running || true
+  imported_treasury_key=0
   if [[ -n "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
     import_treasury_key "$TREASURY_SAGE_PRIVATE_KEY"
+    imported_treasury_key=1
   elif [[ -n "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
     import_treasury_key "$TREASURY_SAGE_MNEMONIC"
+    imported_treasury_key=1
   elif [[ "${SAGE_CREATE_KEY:-}" == "1" ]]; then
     create_treasury_key
+    imported_treasury_key=1
+  fi
+  if [[ "$imported_treasury_key" -eq 1 && -n "${PREVIOUS_TREASURY_FINGERPRINT:-}" && -n "${TREASURY_SAGE_FINGERPRINT:-}" && "$PREVIOUS_TREASURY_FINGERPRINT" != "$TREASURY_SAGE_FINGERPRINT" ]]; then
+    delete_old_treasury_key "$PREVIOUS_TREASURY_FINGERPRINT"
   fi
   if [[ -z "${TREASURY_SAGE_FINGERPRINT:-}" ]]; then
     mapfile -t SAGE_FPS < <(list_fingerprints)
@@ -527,16 +613,15 @@ if find_sage_bin >/dev/null; then
 sys.stdout.write(json.dumps({"fingerprint": int(sys.argv[1]), "network_id": sys.argv[2]}))' "$TREASURY_SAGE_FINGERPRINT" "${TREASURY_NETWORK_ID:-mainnet}")" | json_field address 2>/dev/null)"; then
       echo "Treasury receive address: $ADDR"
       echo "Fund this address with DAT and a little XCH for fees (not the player Sage)."
-      if [[ -z "${TREASURY_XCH_ADDRESS:-}" ]]; then
+      if [[ -z "${TREASURY_XCH_ADDRESS:-}" || "${SAGE_LOAD_KEY:-}" == "1" || -n "${TREASURY_SAGE_PRIVATE_KEY_FILE:-}" ]]; then
         TREASURY_XCH_ADDRESS="$ADDR"
       fi
     fi
   else
     echo "No treasury spend key on this Sage yet. walletRpcReachable stays false until you import one."
-    echo "Put the dedicated treasury private key or mnemonic in $ENV_FILE:"
-    echo "  TREASURY_SAGE_PRIVATE_KEY=your_hex_or_bech32_secret"
-    echo "  # or TREASURY_SAGE_MNEMONIC=word word …"
-    echo "Then: sudo bash $0"
+    echo "Load the dedicated treasury private key (do not paste it into chat):"
+    echo "  sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh"
+    echo "  sudo TREASURY_SAGE_PRIVATE_KEY_FILE=/root/treasury.hex bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh"
     echo "wallet.key in Sage ssl/ is only the RPC TLS cert — it is not this spend key."
   fi
 fi
@@ -592,7 +677,7 @@ if printf '%s' "$HEALTH" | python3 -c 'import json,sys; d=json.load(sys.stdin); 
   echo "Keep DAT + fee XCH on the treasury address. Player Sage is a different key."
 else
   echo "walletRpcReachable is still false. Sage has TLS certs but no logged-in spend key." >&2
-  echo "Add TREASURY_SAGE_PRIVATE_KEY or TREASURY_SAGE_MNEMONIC to $ENV_FILE, then:" >&2
-  echo "  sudo bash $0" >&2
+  echo "Load the dedicated treasury spend key (do not paste it into chat):" >&2
+  echo "  sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh" >&2
   exit 1
 fi

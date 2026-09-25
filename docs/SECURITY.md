@@ -70,8 +70,10 @@ does not move on-chain DAT.
    Do not expose `:4200` or Sage RPC `:9257` on the public security group.
 2. Player Sage stays off this box. Treasury Sage on this host is a dedicated
    spend key in `.env` (`TREASURY_SAGE_PRIVATE_KEY` or `TREASURY_SAGE_MNEMONIC`,
-   mode `640`). `TREASURY_WALLET_KEY_PATH` / `wallet.key` is only the RPC TLS
-   cert. Optional `TREASURY_SAGE_FINGERPRINT` / `TREASURY_XCH_ADDRESS`.
+   mode `640`). Load or rotate it with `deploy/aws-ec2/load-treasury-key.sh`
+   (file or silent TTY — do not paste the secret into chat).
+   `TREASURY_WALLET_KEY_PATH` / `wallet.key` is only the RPC TLS cert.
+   Optional `TREASURY_SAGE_FINGERPRINT` / `TREASURY_XCH_ADDRESS`.
 3. Accounts file: `data/accounts.json` (or `DAT_ACCOUNTS_PATH`). Ledger:
    `data/ledger.json` (or `DAT_LEDGER_PATH`). Keep mode `600`. Do not delete
    these on redeploy.

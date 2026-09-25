@@ -23,6 +23,7 @@ describe("sageCertSearchDirs", () => {
     expect(dirs).toContain("/home/ec2-user/.local/share/sage/ssl");
     expect(dirs).toContain("/opt/dat-poker/data/sage/ssl");
     expect(describeMissingSageCerts()).toMatch(/enable-treasury-sage\.sh/);
+    expect(describeSageLoginNeeded(false)).toMatch(/load-treasury-key\.sh/);
     expect(describeSageLoginNeeded(false)).toMatch(/TREASURY_SAGE_PRIVATE_KEY/);
     expect(describeSageLoginNeeded(true)).toMatch(/TREASURY_SAGE_FINGERPRINT/);
     expect(buildSageImportKeyRequest("abc def")).toEqual({

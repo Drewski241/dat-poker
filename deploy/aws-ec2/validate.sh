@@ -231,7 +231,7 @@ assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
 assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
-for f in landing.html nginx.conf dat-poker-api.service dat-poker-treasury.service dat-poker-sage-rpc.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh enable-onchain-withdraw.sh start-treasury.sh start-sage-rpc.sh enable-treasury-sage.sh public-url.sh; do
+for f in landing.html nginx.conf dat-poker-api.service dat-poker-treasury.service dat-poker-sage-rpc.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh enable-onchain-withdraw.sh start-treasury.sh start-sage-rpc.sh enable-treasury-sage.sh load-treasury-key.sh public-url.sh; do
   [[ -s "$DIR/$f" ]] && ok "$f exists" || bad "$f missing"
 done
 
@@ -243,6 +243,7 @@ bash -n "$DIR/enable-onchain-withdraw.sh" && ok "enable-onchain-withdraw.sh bash
 bash -n "$DIR/start-treasury.sh" && ok "start-treasury.sh bash syntax" || bad "start-treasury.sh bash syntax"
 bash -n "$DIR/start-sage-rpc.sh" && ok "start-sage-rpc.sh bash syntax" || bad "start-sage-rpc.sh bash syntax"
 bash -n "$DIR/enable-treasury-sage.sh" && ok "enable-treasury-sage.sh bash syntax" || bad "enable-treasury-sage.sh bash syntax"
+bash -n "$DIR/load-treasury-key.sh" && ok "load-treasury-key.sh bash syntax" || bad "load-treasury-key.sh bash syntax"
 bash -n "$DIR/public-url.sh" && ok "public-url.sh bash syntax" || bad "public-url.sh bash syntax"
 
 if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
@@ -256,6 +257,12 @@ if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'TREASURY_SAGE_PRIVATE_KEY' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'describe_env_secret' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'paste_treasury_secret' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'apply_treasury_secret' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'load_or_replace_treasury_secret' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'load_treasury_secret_from_file' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'SAGE_LOAD_KEY' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'TREASURY_SAGE_PRIVATE_KEY_FILE' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'delete_old_treasury_key' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'looks_like_secret_key' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'is_u32_fingerprint' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'tr -d' "$DIR/enable-treasury-sage.sh"; then
@@ -263,6 +270,54 @@ if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
 else
   bad "enable-treasury-sage.sh cert paths"
 fi
+
+if grep -q 'SAGE_LOAD_KEY=1' "$DIR/load-treasury-key.sh" \
+  && grep -q 'enable-treasury-sage.sh' "$DIR/load-treasury-key.sh"; then
+  ok "load-treasury-key.sh replaces the treasury spend key via enable-treasury-sage.sh"
+else
+  bad "load-treasury-key.sh SAGE_LOAD_KEY wiring"
+fi
+
+if bash "$DIR/load-treasury-key.sh" >/tmp/load-treasury-key.out 2>/tmp/load-treasury-key.err; then
+  bad "load-treasury-key.sh should require root"
+elif grep -q 'run as root' /tmp/load-treasury-key.err; then
+  ok "load-treasury-key.sh requires root"
+else
+  bad "load-treasury-key.sh root error"
+fi
+
+python3 - <<'PY' && ok "apply_treasury_secret writes hex/mnemonic and clears the other" || bad "apply_treasury_secret isolated test"
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "enable-treasury-sage.sh").read_text()
+start = script.index("set_kv() {")
+end = script.index("\ndescribe_env_secret() {")
+fns = script[start:end]
+hex_key = "ab" * 32
+mnemonic = "abandon " * 11 + "about"
+with tempfile.TemporaryDirectory() as tmp:
+    env_file = Path(tmp, ".env")
+    env_file.write_text("TREASURY_SAGE_MNEMONIC=old words here\nTREASURY_SAGE_PRIVATE_KEY=\n")
+    key_file = Path(tmp, "treasury.hex")
+    key_file.write_text("0x" + hex_key + "\n")
+    harness = Path(tmp, "harness.sh")
+    harness.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        f"ENV_FILE={env_file!s}\n"
+        + fns
+        + f"\nload_treasury_secret_from_file {key_file!s}\n"
+        + "grep -q '^TREASURY_SAGE_PRIVATE_KEY=" + hex_key + "$' \"$ENV_FILE\"\n"
+        + "grep -q '^TREASURY_SAGE_MNEMONIC=$' \"$ENV_FILE\"\n"
+        + f"apply_treasury_secret '{mnemonic}'\n"
+        + "grep -q '^TREASURY_SAGE_PRIVATE_KEY=$' \"$ENV_FILE\"\n"
+        + f"grep -q '^TREASURY_SAGE_MNEMONIC={mnemonic}$' \"$ENV_FILE\"\n"
+        + "if apply_treasury_secret 'xch1notakey'; then exit 2; fi\n"
+    )
+    subprocess.check_call(["bash", str(harness)], stdout=subprocess.DEVNULL)
+PY
 
 if grep -q 'StartLimitBurst=5' "$DIR/dat-poker-sage-rpc.service"; then
   ok "dat-poker-sage-rpc.service stops crash-looping after 5 failures"

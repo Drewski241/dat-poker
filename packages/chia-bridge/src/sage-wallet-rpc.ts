@@ -85,9 +85,8 @@ export function describeSageLoginNeeded(fingerprintSet: boolean): string {
   }
   return (
     "Sage RPC certs are present, but no treasury spend key is imported (sageFingerprint is null). " +
-    "Put the dedicated treasury private key or mnemonic in /opt/dat-poker/.env as " +
-    "TREASURY_SAGE_PRIVATE_KEY or TREASURY_SAGE_MNEMONIC (not TREASURY_WALLET_KEY_PATH — that is only the RPC TLS cert), " +
-    "then: sudo bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh"
+    "Load the dedicated treasury key with sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh " +
+    "(TREASURY_SAGE_PRIVATE_KEY or TREASURY_SAGE_MNEMONIC — not TREASURY_WALLET_KEY_PATH, that is only the RPC TLS cert)."
   );
 }
 

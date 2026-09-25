@@ -410,10 +410,17 @@ certs are present (`wallet.key` is not the Chia spend key). Put the dedicated
 treasury private key in `/opt/dat-poker/.env`:
 
 ```bash
-# The secret must be a line in /opt/dat-poker/.env, not pasted into chat.
-# Silent prompt (does not echo):
-sudo SAGE_PASTE_KEY=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+# The secret must not be pasted into chat. Silent prompt (does not echo):
+sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
+# or from a root-only file:
+sudo TREASURY_SAGE_PRIVATE_KEY_FILE=/root/treasury.hex bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh
 ```
+
+Use the same `load-treasury-key.sh` later to **replace** the treasury key
+(after this withdraw works, or if the current key was exposed). It imports
+the new secret, updates the fingerprint, and removes the previous Sage key
+unless you set `SAGE_KEEP_OLD_KEY=1`. Fund the new address before the next
+withdraw.
 
 ## Website address
 
