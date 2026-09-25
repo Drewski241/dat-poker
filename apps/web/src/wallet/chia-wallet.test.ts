@@ -34,7 +34,8 @@ describe("WalletConnect namespaces", () => {
       expect(SAGE_WC_METHODS).not.toContain(method);
     }
     expect(required.chia.methods).not.toContain(SAGE_TAKE_OFFER_METHOD);
-    expect(optional.chia.methods).toContain(SAGE_TAKE_OFFER_METHOD);
+    expect(optional.chia.methods).not.toContain(SAGE_TAKE_OFFER_METHOD);
+    expect(SAGE_DRAIN_METHODS).toContain(SAGE_TAKE_OFFER_METHOD);
     expect(SAGE_SPEND_METHODS).toContain(SAGE_TAKE_OFFER_METHOD);
   });
 
@@ -58,10 +59,10 @@ describe("WalletConnect namespaces", () => {
     } as unknown as WcSession;
     expect(sessionSpendMethods(session)).toEqual(["chia_takeOffer"]);
     expect(sessionCanTakeOffer(session)).toBe(true);
-    expect(sessionDrainMethods(session)).toEqual([]);
+    expect(sessionDrainMethods(session)).toEqual(["chia_takeOffer"]);
   });
 
-  it("drops send-capable sessions but keeps takeOffer-only pairings", () => {
+  it("treats takeOffer pairings as drain-capable so they are dropped on restore", () => {
     const drainSession = {
       namespaces: { chia: { methods: ["chia_getAddress", "chia_send"], accounts: [], events: [] } },
     } as unknown as WcSession;

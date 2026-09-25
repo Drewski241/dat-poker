@@ -49,10 +49,8 @@ import {
   loadPlayerWallet,
   mapWalletConnectError,
   restoreSession,
-  sessionCanTakeOffer,
   signRedeemMessage,
   signWithdrawMessage,
-  takeOffer,
   type WcSession,
 } from "./wallet/chia-wallet.js";
 
@@ -82,12 +80,10 @@ function SageOfferBox({
   return (
     <div className="sage-offer-box">
       <p>
-        Sage should show an <strong>Accept</strong> popup. There is no fee box —
-        treasury already attached the XCH network fee on the offer. Tap{" "}
-        <strong>Accept</strong> once. If player Sage already shows pending incoming DAT,
-        wait for Confirmed — do not withdraw again. If you already tapped Accept, wait — do not
-        Accept the old offer again. If no popup appears, disconnect and Connect Sage again, or
-        Offers → Import.
+        Copy this offer and import it in <strong>player Sage</strong> (Offers → Import →
+        Accept once). Do not tap a WalletConnect Accept popup — that is what caused the
+        player mempool conflict. If Sage already shows pending incoming DAT, wait for
+        Confirmed or remove that pending take first, then import this offer once.
       </p>
       <textarea readOnly rows={4} value={offer} />
       <button type="button" className="secondary" onClick={onCopy}>
@@ -1132,29 +1128,6 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     });
   };
 
-  const promptSageAcceptOffer = async (offer: string): Promise<void> => {
-    if (!session || !wcConfig) {
-      setStatus("Treasury offer is ready. Import it in player Sage — Offers → Import.");
-      return;
-    }
-    if (!sessionCanTakeOffer(session)) {
-      setStatus(
-        "Sage did not get an Accept popup because this pairing is older. Disconnect, Connect Sage again, then withdraw — or import the offer below.",
-      );
-      return;
-    }
-    const feeMojos = resolveSageTakeOfferFeeMojos(withdrawConfig?.feeMojos);
-    setStatus("Approve the DAT offer in Sage — tap Accept once. Treasury already paid the XCH fee.");
-    try {
-      await takeOffer(session, wcConfig.projectId, wcConfig.chainId, offer, feeMojos);
-      setStatus("Sage accepted the DAT offer. DAT should show in your player wallet.");
-    } catch (error) {
-      setStatus(
-        `${error instanceof Error ? error.message : "Sage did not accept the offer."} You can still import the offer below.`,
-      );
-    }
-  };
-
   const withdrawToSage = () => {
     if (!tableId || !playerId || !walletAddress) return;
     run("Withdrawing to Sage…", async () => {
@@ -1202,7 +1175,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
 
       if (result.mode === "offer" && result.offer) {
-        await promptSageAcceptOffer(result.offer);
+        setStatus("Treasury offer is ready. Copy it and import in player Sage — Offers → Import. Do not tap a WalletConnect Accept popup.");
       }
 
       setWithdrawResult(result);
@@ -1298,7 +1271,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         address: address ?? undefined,
       });
       if (result.mode === "offer" && result.offer) {
-        await promptSageAcceptOffer(result.offer);
+        setStatus("Treasury offer is ready. Copy it and import in player Sage — Offers → Import. Do not tap a WalletConnect Accept popup.");
       } else {
         setStatus(result.note);
       }
@@ -1766,7 +1739,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             {withdrawResult && (
               <div className="banner win">
                 {withdrawResult.mode === "offer" && withdrawResult.offer
-                  ? "Offer ready — Accept it in Sage, or import it if no popup appears."
+                  ? "Offer ready — copy it and import in player Sage (Offers → Import). Do not use a WalletConnect Accept popup."
                   : withdrawResult.note}
                 {withdrawResult.offer && (
                   <SageOfferBox
@@ -1776,7 +1749,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                     ).toString()}
                     onCopy={() => {
                       void navigator.clipboard.writeText(withdrawResult.offer ?? "");
-                      setStatus("Offer copied. Import it in player Sage if the Accept popup did not appear.");
+                      setStatus("Offer copied. In player Sage: Offers → Import. Do not tap a WalletConnect Accept popup.");
                     }}
                   />
                 )}
@@ -2049,7 +2022,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 ).toString()}
                 onCopy={() => {
                   void navigator.clipboard.writeText(withdrawResult.offer ?? "");
-                  setStatus("Offer copied. Import it in player Sage if the Accept popup did not appear.");
+                  setStatus("Offer copied. In player Sage: Offers → Import. Do not tap a WalletConnect Accept popup.");
                 }}
               />
             )}

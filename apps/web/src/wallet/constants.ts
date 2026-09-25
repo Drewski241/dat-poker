@@ -5,8 +5,8 @@ export const WALLETCONNECT_RELAY_URL = "wss://relay.walletconnect.com";
 
 /**
  * RPCs that can send coins out of Sage without a treasury offer.
- * The site must never request these. `chia_takeOffer` is separate — we only
- * call it with the offer1 string our treasury just built.
+ * The site must never request these. Do not request `chia_takeOffer` either —
+ * WalletConnect Accept submits a take that mempool-conflicts with paste/import.
  */
 export const SAGE_DRAIN_METHODS = [
   "chia_send",
@@ -14,6 +14,7 @@ export const SAGE_DRAIN_METHODS = [
   "chia_cancelOffer",
   "chip0002_signCoinSpends",
   "chip0002_sendTransaction",
+  "chia_takeOffer",
 ] as const;
 
 export const SAGE_TAKE_OFFER_METHOD = "chia_takeOffer";
@@ -36,7 +37,7 @@ export const SAGE_REQUIRED_METHODS = [
   "chia_signMessageByAddress",
 ] as const;
 
-/** Optional extras Sage may grant. Includes takeOffer for the treasury popup. */
+/** Optional extras Sage may grant. Sign/read only — no takeOffer popup. */
 export const SAGE_WC_METHODS = [
   "chip0002_connect",
   "chip0002_chainId",
@@ -46,7 +47,6 @@ export const SAGE_WC_METHODS = [
   "chip0002_signMessage",
   "chia_getAddress",
   "chia_signMessageByAddress",
-  SAGE_TAKE_OFFER_METHOD,
 ] as const;
 
 export function requiredNamespaces(chainId: string): ProposalTypes.RequiredNamespaces {

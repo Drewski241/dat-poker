@@ -387,7 +387,7 @@ export function restoreSession(projectId: string): Promise<WcSession | undefined
       try {
         await client.disconnect({
           topic: session.topic,
-          reason: { code: 6000, message: "Send/create-offer methods are not allowed on DAT Poker beta" },
+          reason: { code: 6000, message: "Send/create-offer/takeOffer methods are not allowed on DAT Poker beta" },
         });
       } catch {
         /* still refuse to reuse a drain-capable session */

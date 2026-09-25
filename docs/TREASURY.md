@@ -1,6 +1,6 @@
 # Treasury wallet setup (Sage + DAT withdraw)
 
-Players withdraw table winnings through the web app. The **treasury payout service** uses **Sage wallet RPC** to build a Chia offer; the player accepts it in their **player Sage wallet** via WalletConnect (`chia_takeOffer`).
+Players withdraw table winnings through the web app. The **treasury payout service** uses **Sage wallet RPC** to build a Chia offer; the player imports it in their **player Sage wallet** (Offers → Import). The site does not call WalletConnect `chia_takeOffer`.
 
 ```mermaid
 sequenceDiagram
@@ -16,8 +16,8 @@ sequenceDiagram
   Treasury->>Sage: make_offer (RPC :9257)
   Sage-->>Treasury: offer1...
   Treasury-->>API: { offer }
-  Web->>Player: chia_takeOffer
-  Player->>Player: Receive DAT CAT
+  Web->>Player: offer1 string (copy / import)
+  Player->>Player: Offers → Import → Receive DAT CAT
 ```
 
 ## Two Sage wallets
@@ -31,7 +31,7 @@ Use a **separate Sage key/fingerprint** for treasury — not the same profile pl
 
 A payout to the treasury Sage address cannot show as a new deposit (it is a self-transfer, and an untaken offer can lock those coins). Set `TREASURY_XCH_ADDRESS` so `/payout` rejects that address.
 
-When treasury is reachable, withdraw returns an `offer1…` string and the site asks player Sage (`chia_takeOffer`) to show an Accept popup. If that pairing is older or the popup does not appear, import the offer in **player** Sage (Offers → Import).
+When treasury is reachable, withdraw returns an `offer1…` string. Copy it and import it in **player** Sage (Offers → Import). Do not tap a WalletConnect Accept popup.
 
 **Player Sage stays on the user's phone or PC.** Treasury Sage is operator-controlled and never shares that device.
 
@@ -380,7 +380,7 @@ sage rpc get_keys '{}'
 2. API already points at `http://127.0.0.1:4200/payout` on the website host. Set `TREASURY_XCH_ADDRESS` so payouts cannot target the treasury key.
    If the play page says treasury is not reachable at `127.0.0.1:4200`, the systemd unit is down — redeploy or run `start-treasury.sh`.
 3. Player links a **separate** Sage address, unlocks DAT, clicks withdraw.
-4. Sage should pop up Accept. There is no fee box — treasury already attached the XCH network fee (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000009 XCH at 0.09 mojo/cost) on `make_offer`. Tap Accept once. If leftover offers still lock DAT or XCH, the first withdraw only submits an on-chain cancel — wait until treasury Transactions shows that cancel Confirmed, then withdraw once. If no popup appears, copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
+4. Copy the offer from the site. In **player Sage** (not treasury): Offers → Import → Accept once. If player Sage already shows pending incoming DAT from an old WalletConnect Accept, wait for Confirmed or remove that pending take first, then import this offer once. Do not tap a WalletConnect Accept popup.
 5. Player Sage DAT balance increases. Treasury Sage DAT decreases.
 
 Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (`50000` mojos).

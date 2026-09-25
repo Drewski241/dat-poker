@@ -752,12 +752,15 @@ block = text[start:end]
 assert "chia_send" not in block, block
 assert "chia_createOffer" not in block, block
 assert "chip0002_signCoinSpends" not in block, block
-assert "SAGE_TAKE_OFFER_METHOD" in block, block
+assert "SAGE_TAKE_OFFER_METHOD" not in block, block
+assert "chia_takeOffer" not in block, block
 req = text[text.index("export const SAGE_REQUIRED_METHODS"):text.index("export const SAGE_WC_METHODS")]
 assert "chia_takeOffer" not in req and "SAGE_TAKE_OFFER_METHOD" not in req, req
+drain = text[text.index("export const SAGE_DRAIN_METHODS"):text.index("export const SAGE_TAKE_OFFER_METHOD")]
+assert "chia_takeOffer" in drain, drain
 PY
 then
-  ok "WalletConnect namespaces omit Sage drain RPCs and optionally request takeOffer"
+  ok "WalletConnect namespaces omit Sage drain RPCs and do not request takeOffer"
 else
   bad "WalletConnect spend methods"
 fi

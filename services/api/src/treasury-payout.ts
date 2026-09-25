@@ -16,9 +16,10 @@ export function readTreasuryPayoutConfig(): TreasuryPayoutConfig {
 }
 
 /**
- * Host → player Sage payouts use a treasury offer. The site then calls
- * chia_takeOffer so Sage shows Accept. Treasury pays TREASURY_PAYOUT_FEE_MOJOS
- * XCH on make_offer — Sage Accept has no fee box.
+ * Host → player Sage payouts use a treasury offer. The player imports the
+ * offer1 string in Sage (Offers → Import). Do not call chia_takeOffer —
+ * WalletConnect Accept mempool-conflicts with import.
+ * Treasury pays TREASURY_PAYOUT_FEE_MOJOS XCH on make_offer.
  * Set DAT_ENABLE_ONCHAIN_WITHDRAW=false to force ledger-only.
  */
 export function onChainSageWithdrawEnabled(): boolean {
@@ -164,7 +165,7 @@ export function sageLedgerWithdrawNote(kind: "sng" | "table"): string {
 }
 
 export function sageOfferWithdrawNote(): string {
-  return "Treasury created a DAT offer and already attached the XCH network fee. Approve Accept in player Sage (not the treasury key). Sage has no fee box — tap Accept once. If you already tapped Accept, wait and do not Accept the old offer again. If no popup appears, Offers → Import and paste the offer.";
+  return "Treasury created a DAT offer and already attached the XCH network fee. Copy the offer and import it in player Sage (Offers → Import) — not the treasury key. Do not tap a WalletConnect Accept popup; that mempool-conflicts with import. If player Sage already shows pending incoming DAT, wait for Confirmed or remove that pending take, then import this offer once.";
 }
 
 export function computeWithdrawPayout(
