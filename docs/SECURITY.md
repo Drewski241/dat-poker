@@ -14,10 +14,11 @@ WalletConnect pairing for DAT Poker **only** requests:
 CHIP-0002 `signMessage` hashes with the `"Chia Signed Message"` prefix, so a
 signed link / withdraw **text** cannot be reused as a spend.
 
-The site **does not request** `chia_send`, `chia_createOffer`,
-`chia_takeOffer`, or `chip0002_signCoinSpends`. Old sessions that still have
-those methods are dropped on page load. On-chain `takeOffer` after withdraw
-is disabled on the game host.
+The site **does not request** `chia_send`, `chia_createOffer`, or
+`chip0002_signCoinSpends`. Old sessions that still have those methods are
+dropped on page load. After treasury builds a withdraw `offer1…` string, the
+site may call `chia_takeOffer` so player Sage shows an Accept popup. Testers
+can still import the offer by hand if the popup does not appear.
 
 Daily redeem and table stacks are **ledger credits**, not CAT sends. Account
 DAT is stored on the game host (`data/ledger.json`) so a redeploy does not
@@ -25,8 +26,9 @@ wipe testers’ balances or play-through unlocks. Open tables still reset.
 Treasury HTTP (`dat-poker-treasury`) runs on this website host
 ([TREASURY.md](./TREASURY.md)). Player Sage stays on the tester's device.
 
-Testers should still **read Sage prompts**. If Sage ever asks to send coins or
-take an offer during this beta, tap reject and report it on `/feedback`.
+Testers should still **read Sage prompts**. Accept an offer only when you just
+clicked withdraw and the site asked Sage to take the treasury DAT offer. If Sage
+asks to send coins, tap reject and report it on `/feedback`.
 
 ## Accounts
 

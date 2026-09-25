@@ -696,7 +696,8 @@ else
   bad "tester feedback"
 fi
 
-if grep -q 'SAGE_SPEND_METHODS' "$ROOT/apps/web/src/wallet/constants.ts" \
+if grep -q 'SAGE_DRAIN_METHODS' "$ROOT/apps/web/src/wallet/constants.ts" \
+  && grep -q 'SAGE_TAKE_OFFER_METHOD' "$ROOT/apps/web/src/wallet/constants.ts" \
   && ROOT="$ROOT" python3 - <<'PY'
 from pathlib import Path
 import os
@@ -705,10 +706,14 @@ start = text.index("export const SAGE_WC_METHODS")
 end = text.index("] as const", start)
 block = text[start:end]
 assert "chia_send" not in block, block
-assert "chia_takeOffer" not in block, block
+assert "chia_createOffer" not in block, block
+assert "chip0002_signCoinSpends" not in block, block
+assert "SAGE_TAKE_OFFER_METHOD" in block, block
+req = text[text.index("export const SAGE_REQUIRED_METHODS"):text.index("export const SAGE_WC_METHODS")]
+assert "chia_takeOffer" not in req and "SAGE_TAKE_OFFER_METHOD" not in req, req
 PY
 then
-  ok "WalletConnect namespaces omit Sage spend RPCs"
+  ok "WalletConnect namespaces omit Sage drain RPCs and optionally request takeOffer"
 else
   bad "WalletConnect spend methods"
 fi

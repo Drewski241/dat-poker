@@ -49,8 +49,10 @@ import {
   loadPlayerWallet,
   mapWalletConnectError,
   restoreSession,
+  sessionCanTakeOffer,
   signRedeemMessage,
   signWithdrawMessage,
+  takeOffer,
   type WcSession,
 } from "./wallet/chia-wallet.js";
 
@@ -68,6 +70,22 @@ const CARD_PREVIEW_HOLE = [
   { rank: "9", suit: "h" },
 ];
 const CARD_PREVIEW_HAND = describeLiveHand(CARD_PREVIEW_HOLE, CARD_PREVIEW_BOARD);
+
+function SageOfferBox({ offer, onCopy }: { offer: string; onCopy: () => void }) {
+  return (
+    <div className="sage-offer-box">
+      <p>
+        Sage should show an <strong>Accept</strong> popup. If it does not, disconnect and Connect
+        Sage again, or in <strong>player Sage</strong> (not treasury): Offers → Import, paste this
+        offer, and accept.
+      </p>
+      <textarea readOnly rows={4} value={offer} />
+      <button type="button" className="secondary" onClick={onCopy}>
+        Copy offer
+      </button>
+    </div>
+  );
+}
 
 function seatPositionLabel(
   seatIndex: number,
@@ -1101,6 +1119,28 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     });
   };
 
+  const promptSageAcceptOffer = async (offer: string): Promise<void> => {
+    if (!session || !wcConfig) {
+      setStatus("Treasury offer is ready. Import it in player Sage — Offers → Import.");
+      return;
+    }
+    if (!sessionCanTakeOffer(session)) {
+      setStatus(
+        "Sage did not get an Accept popup because this pairing is older. Disconnect, Connect Sage again, then withdraw — or import the offer below.",
+      );
+      return;
+    }
+    setStatus("Approve the DAT offer in Sage — tap Accept.");
+    try {
+      await takeOffer(session, wcConfig.projectId, wcConfig.chainId, offer);
+      setStatus("Sage accepted the DAT offer. DAT should show in your player wallet.");
+    } catch (error) {
+      setStatus(
+        `${error instanceof Error ? error.message : "Sage did not accept the offer."} You can still import the offer below.`,
+      );
+    }
+  };
+
   const withdrawToSage = () => {
     if (!tableId || !playerId || !walletAddress) return;
     run("Withdrawing to Sage…", async () => {
@@ -1148,7 +1188,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
 
       if (result.mode === "offer" && result.offer) {
-        setStatus("Treasury offer is ready. Import it in your player Sage wallet — not the treasury key.");
+        await promptSageAcceptOffer(result.offer);
       }
 
       setWithdrawResult(result);
@@ -1244,7 +1284,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         address: address ?? undefined,
       });
       if (result.mode === "offer" && result.offer) {
-        setStatus("Treasury offer is ready. Import it in your player Sage — Offers → Import.");
+        await promptSageAcceptOffer(result.offer);
       } else {
         setStatus(result.note);
       }
@@ -1712,26 +1752,16 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             {withdrawResult && (
               <div className="banner win">
                 {withdrawResult.mode === "offer" && withdrawResult.offer
-                  ? "Offer ready — import it in player Sage."
+                  ? "Offer ready — Accept it in Sage, or import it if no popup appears."
                   : withdrawResult.note}
                 {withdrawResult.offer && (
-                  <div className="sage-offer-box">
-                    <p>
-                      In <strong>player Sage</strong> (not treasury): Offers → Import. Paste this offer and
-                      accept it.
-                    </p>
-                    <textarea readOnly rows={4} value={withdrawResult.offer} />
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(withdrawResult.offer ?? "");
-                        setStatus("Offer copied. Import it in player Sage.");
-                      }}
-                    >
-                      Copy offer
-                    </button>
-                  </div>
+                  <SageOfferBox
+                    offer={withdrawResult.offer}
+                    onCopy={() => {
+                      void navigator.clipboard.writeText(withdrawResult.offer ?? "");
+                      setStatus("Offer copied. Import it in player Sage if the Accept popup did not appear.");
+                    }}
+                  />
                 )}
               </div>
             )}
@@ -1995,23 +2025,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             )}
             . {withdrawResult.note}
             {withdrawResult.offer && (
-              <div className="sage-offer-box">
-                <p>
-                  In <strong>player Sage</strong> (not treasury): Offers → Import. Paste this offer and
-                  accept it. DAT should then show in that wallet.
-                </p>
-                <textarea readOnly rows={4} value={withdrawResult.offer} />
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(withdrawResult.offer ?? "");
-                    setStatus("Offer copied. Import it in player Sage.");
-                  }}
-                >
-                  Copy offer
-                </button>
-              </div>
+              <SageOfferBox
+                offer={withdrawResult.offer}
+                onCopy={() => {
+                  void navigator.clipboard.writeText(withdrawResult.offer ?? "");
+                  setStatus("Offer copied. Import it in player Sage if the Accept popup did not appear.");
+                }}
+              />
             )}
           </div>
         )}

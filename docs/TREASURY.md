@@ -31,7 +31,7 @@ Use a **separate Sage key/fingerprint** for treasury — not the same profile pl
 
 A payout to the treasury Sage address cannot show as a new deposit (it is a self-transfer, and an untaken offer can lock those coins). Set `TREASURY_XCH_ADDRESS` so `/payout` rejects that address.
 
-WalletConnect `takeOffer` stays disabled. When treasury is reachable, withdraw returns an `offer1…` string. The player imports it in **their** Sage (Offers → Import) and accepts.
+When treasury is reachable, withdraw returns an `offer1…` string and the site asks player Sage (`chia_takeOffer`) to show an Accept popup. If that pairing is older or the popup does not appear, import the offer in **player** Sage (Offers → Import).
 
 **Player Sage stays on the user's phone or PC.** Treasury Sage is operator-controlled and never shares that device.
 
@@ -373,7 +373,7 @@ sage rpc get_keys '{}'
 2. API already points at `http://127.0.0.1:4200/payout` on the website host. Set `TREASURY_XCH_ADDRESS` so payouts cannot target the treasury key.
    If the play page says treasury is not reachable at `127.0.0.1:4200`, the systemd unit is down — redeploy or run `start-treasury.sh`.
 3. Player links a **separate** Sage address, unlocks DAT, clicks withdraw.
-4. Copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
+4. Sage should pop up Accept. If it does not, copy the offer from the site. In **player Sage** (not treasury): Offers → Import → accept.
 5. Player Sage DAT balance increases. Treasury Sage DAT decreases.
 
 Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (`50000` mojos).

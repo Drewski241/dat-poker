@@ -161,7 +161,7 @@ export function sageLedgerWithdrawNote(kind: "sng" | "table"): string {
 }
 
 export function sageOfferWithdrawNote(): string {
-  return "Treasury created a DAT offer. In your player Sage wallet (not the treasury key), open Offers → Import, paste the offer, and accept it.";
+  return "Treasury created a DAT offer. Approve Accept in player Sage (not the treasury key). If no popup appears, Offers → Import and paste the offer.";
 }
 
 export function computeWithdrawPayout(

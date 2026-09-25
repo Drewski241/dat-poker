@@ -65,8 +65,11 @@ The Vite web client (`apps/web`) implements Sage WalletConnect:
 5. **Start hand** — commit-reveal deal; you act when prompted. Solo vs house,
    the house bot bets, raises, and folds from its cards (it is not a check/call
    station).
-6. **Cash out** table stack to the account. On-chain Sage `takeOffer` is **disabled
-   on the game host**. See [SECURITY.md](./SECURITY.md) and [TREASURY.md](./TREASURY.md).
+6. **Cash out** table stack to the account, then **withdraw to player Sage**.
+   Treasury builds an `offer1…` string; the site calls `chia_takeOffer` so Sage
+   shows Accept. If the pairing is older, disconnect and Connect Sage again, or
+   import the offer (Offers → Import). See [SECURITY.md](./SECURITY.md) and
+   [TREASURY.md](./TREASURY.md).
 
 ### Mainnet test checklist
 
