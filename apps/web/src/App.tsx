@@ -26,6 +26,7 @@ import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import { allInBettingClosed, isCallAllIn, shouldHoldTableForRunout, shouldPlayAllInRunout } from "./all-in-runout.js";
 import { sngShouldAutoDeal } from "./sng-auto-deal.js";
 import { describeLiveHand } from "./live-hand.js";
+import { treasuryStatusText } from "./treasury-status.js";
 import {
   actionSecondsRemaining,
   autoActionOnTimeout,
@@ -1623,18 +1624,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             withdrawConfig.treasuryReachable && !withdrawConfig.treasuryError ? "ok-text" : "muted small"
           }>
             <p>
-              Treasury:{" "}
-              {withdrawConfig.treasuryReachable
-                ? withdrawConfig.treasuryError
-                  ? withdrawConfig.treasuryError
-                  : withdrawConfig.treasuryWalletRpcReachable === false
-                    ? `HTTP is up at ${withdrawConfig.treasuryHost ?? "payout service"}, but Sage RPC has no treasury key logged in. On the AWS host: sudo bash /opt/dat-poker/deploy/aws-ec2/load-treasury-key.sh`
-                    : `active at ${withdrawConfig.treasuryHost ?? "payout service"} — withdraw can send a DAT offer to your player Sage`}
-                : withdrawConfig.treasuryConfigured
-                  ? `configured but not reachable at ${withdrawConfig.treasuryHost ?? "the payout URL"}${
-                      withdrawConfig.treasuryError ? ` (${withdrawConfig.treasuryError})` : ""
-                    }. Redeploy so dat-poker-treasury stays up with the website, then check again.`
-                  : "not configured. Set DAT_TREASURY_PAYOUT_URL and start treasury."}
+              Treasury: {treasuryStatusText(withdrawConfig)}
             </p>
             {withdrawConfig.treasuryConfigured && (!withdrawConfig.treasuryReachable || withdrawConfig.treasuryError) && (
               <button
