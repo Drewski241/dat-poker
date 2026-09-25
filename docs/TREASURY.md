@@ -399,7 +399,7 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 | `DAT is locked in an unused Sage offer` / `pendingOfferCount` > 0 | If `/health` `datSelectableMojos` is already enough, leftover rows are stale local records — withdraw once (payout deletes them locally and builds a new fee-bearing offer). If DAT is not selectable, payout cancels on-chain (with fee) and does not re-cancel the same offer for 3 minutes. |
 | Mempool conflict right away | A treasury cancel (or earlier spend) of the same DAT coin is still in the mempool. Do not withdraw again. In **treasury** Sage, wait until Transactions shows no pending spends. `/health` `pendingTransactionCount` should be `0` before the next withdraw. |
 | `/health` `datLockedByPendingTake: true` | Same as above: DAT is still on the treasury key but not selectable, and `pendingOfferCount` is 0. |
-| Leftover-offer 400 after player Pending cleared | Player take left the mempool, so DAT should be selectable again. Redeploy this branch and withdraw once. Do not cancel from treasury if `/health` already shows spendable DAT. |
+| Leftover-offer 400 / no pending txs in treasury GUI | Sage RPC still lists leftover offer rows, but they are stale. Payout deletes them locally and does **not** cancel on-chain. Redeploy and withdraw once. |
 | No offer returned | Treasury Sage needs spendable DAT + XCH for fees |
 | Sage Accept fails / needs a fee | Sage Accept has no fee field. Treasury must attach XCH on `make_offer` (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000001 XCH). This host has spendable XCH. Redeploy so the next offer is not the leftover 0-fee offer. |
 | GUI + CLI RPC conflict | Run only one Sage RPC at a time |

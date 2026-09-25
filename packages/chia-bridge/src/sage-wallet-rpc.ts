@@ -188,6 +188,11 @@ export function leftoverSageOffersBlockNewPayout(
   return true;
 }
 
+/** Leftover get_offers rows with no pending spend — GUI shows nothing to cancel. */
+export function leftoverSageOffersAreGhostRecords(funds: SageTreasuryFunds): boolean {
+  return (funds.pendingOfferCount ?? 0) > 0 && !sageTreasuryHasPendingSpend(funds);
+}
+
 export function sageTreasuryCanBuildPayout(funds: SageTreasuryFunds, neededMojos: bigint): boolean {
   const dat = funds.datSelectableMojos;
   return dat != null && dat >= neededMojos;
@@ -226,6 +231,9 @@ export function describeSageNoSpendableCoins(
   const pending = funds.pendingOfferCount ?? 0;
 
   if (leftoverSageOffersBlockNewPayout(funds)) {
+    if (leftoverSageOffersAreGhostRecords(funds)) {
+      return describeSageGhostLeftoverOffers();
+    }
     const held =
       balance != null && balance > 0n
         ? ` Sage still shows ${formatDatMojos(balance, funds.datPrecision)} on this key, but it is not selectable.`
@@ -311,6 +319,16 @@ export function describeSagePendingPlayerTake(): string {
     "If it stays Pending for hours: in player Sage, remove/cancel that pending incoming take if Sage lets you, " +
     "wait until it disappears, then withdraw once so treasury can build a new fee-bearing offer. " +
     "If DAT already arrived in player Sage, you are done."
+  );
+}
+
+export function describeSageGhostLeftoverOffers(): string {
+  return (
+    "Treasury Sage still lists leftover offer rows in RPC, but there is no pending transaction " +
+    "and the GUI has nothing to cancel. Those rows are stale local records. " +
+    "Payout deletes them locally and does not cancel on-chain (on-chain cancel is what caused the mempool conflicts). " +
+    "Withdraw once. If DAT is not selectable yet, wait a minute for Sage to unlock the coins, then withdraw once. " +
+    "If player Sage already shows Confirmed DAT, you are done."
   );
 }
 

@@ -1,18 +1,15 @@
 import { resolveSageMakeOfferFeeMojos } from "@dat-poker/shared";
 import type { CatPayoutOfferParams } from "./cat-payout-offer.js";
 import {
-  cancelOpenSageOffers,
-  describeSageCancelFailed,
-  describeSageCancelNeedsXch,
   describeSageFundsBlock,
-  describeSageOfferCancelWait,
+  describeSageGhostLeftoverOffers,
   describeSagePendingPlayerTake,
   describeSagePendingTreasurySpend,
   ensureSageTreasuryLoggedIn,
   leftoverSageOffersBlockNewPayout,
+  leftoverSageOffersAreGhostRecords,
   readSageTreasuryFunds,
   sageDatLooksLockedByPendingTake,
-  sageTreasuryCanBuildPayout,
   sageTreasuryHasPendingSpend,
   deleteOpenSageOffers,
   remapSageOfferError,
@@ -53,7 +50,7 @@ export async function createSageCatPayoutOffer(
   if (sageTreasuryHasPendingSpend(funds)) {
     throw new Error(describeSagePendingTreasurySpend());
   }
-  if ((funds.pendingOfferCount ?? 0) > 0 && sageTreasuryCanBuildPayout(funds, params.amountMojos)) {
+  if ((funds.pendingOfferCount ?? 0) > 0) {
     await deleteOpenSageOffers(rpc);
     funds = await readSageTreasuryFunds(rpc, params.assetId);
     if (sageTreasuryHasPendingSpend(funds)) {
@@ -61,18 +58,10 @@ export async function createSageCatPayoutOffer(
     }
   }
   if (leftoverSageOffersBlockNewPayout(funds, params.amountMojos)) {
-    if (funds.xchSelectableMojos === 0n) {
-      throw new Error(describeSageCancelNeedsXch(funds, feeMojos));
+    if (leftoverSageOffersAreGhostRecords(funds)) {
+      throw new Error(describeSageGhostLeftoverOffers());
     }
-    const cancelled = await cancelOpenSageOffers(rpc, feeMojos);
-    if (
-      cancelled.cancelled.length === 0 &&
-      cancelled.mempoolConflict.length === 0 &&
-      cancelled.skippedRecent.length === 0
-    ) {
-      throw new Error(describeSageCancelFailed(cancelled, funds, feeMojos));
-    }
-    throw new Error(describeSageOfferCancelWait(feeMojos));
+    throw new Error(describeSagePendingTreasurySpend());
   }
   if (sageDatLooksLockedByPendingTake(funds)) {
     throw new Error(describeSagePendingPlayerTake());

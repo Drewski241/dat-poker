@@ -15,6 +15,7 @@ import {
   expandWalletPath,
   formatDatMojos,
   isSageMempoolConflict,
+  leftoverSageOffersAreGhostRecords,
   leftoverSageOffersBlockNewPayout,
   sageTreasuryHasPendingSpend,
   rememberSageOfferCancel,
@@ -133,6 +134,7 @@ describe("sage treasury coin selection", () => {
           datBalanceMojos: 50_000_000n,
           datSelectableMojos: 0n,
           pendingOfferCount: 1,
+          pendingTransactionCount: 1,
           xchSelectableMojos: 519_800_644_036n,
         },
         2_000n,
@@ -144,6 +146,23 @@ describe("sage treasury coin selection", () => {
         datBalanceMojos: 50_000_000n,
         datSelectableMojos: 0n,
         pendingOfferCount: 1,
+        pendingTransactionCount: 0,
+      }),
+    ).toMatch(/stale local records/i);
+    expect(
+      leftoverSageOffersAreGhostRecords({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        pendingOfferCount: 1,
+        pendingTransactionCount: 0,
+      }),
+    ).toBe(true);
+    expect(
+      describeSageNoSpendableCoins({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        datBalanceMojos: 50_000_000n,
+        datSelectableMojos: 0n,
+        pendingOfferCount: 1,
+        pendingTransactionCount: 1,
       }),
     ).toMatch(/release-treasury-offers\.sh/);
     expect(
@@ -285,8 +304,9 @@ describe("sage treasury coin selection", () => {
         datSelectableMojos: 0n,
         xchSelectableMojos: 519_800_644_036n,
         pendingOfferCount: 1,
+        pendingTransactionCount: 0,
       }),
-    ).toMatch(/locked in an unused Sage offer/i);
+    ).toMatch(/stale local records/i);
   });
 });
 
