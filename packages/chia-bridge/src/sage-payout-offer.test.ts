@@ -25,6 +25,7 @@ import {
   sageCertSearchDirs,
   sageDatLooksLockedByPendingTake,
   sageDatLooksLockedInOffer,
+  sageTreasuryCanBuildPayout,
 } from "./sage-wallet-rpc.js";
 import { buildSageCatGiftOfferRequest } from "./sage-payout-offer.js";
 
@@ -165,6 +166,25 @@ describe("sage treasury coin selection", () => {
         pendingOfferCount: 0,
       }),
     ).toBe(false);
+    expect(
+      leftoverSageOffersBlockNewPayout(
+        {
+          ...emptySageTreasuryFunds("ab".repeat(32)),
+          pendingOfferCount: 1,
+          datSelectableMojos: 50_000_000n,
+        },
+        2_000n,
+      ),
+    ).toBe(false);
+    expect(
+      sageTreasuryCanBuildPayout(
+        {
+          ...emptySageTreasuryFunds("ab".repeat(32)),
+          datSelectableMojos: 50_000_000n,
+        },
+        2_000n,
+      ),
+    ).toBe(true);
     expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/wait 1–2 minutes/i);
     expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/do not tap Accept/i);
     expect(describeSageOfferCancelWait(1_000_000n)).toMatch(/0\.000001 XCH fee/i);
@@ -176,7 +196,7 @@ describe("sage treasury coin selection", () => {
     ).toMatch(/needs a 0\.000001 XCH fee/i);
     expect(
       describeSageCancelFailed(
-        { cancelled: [], mempoolConflict: [], failed: ["offer-1"], errors: ["Wallet error: no XCH"] },
+        { cancelled: [], mempoolConflict: [], failed: ["offer-1"], errors: ["Wallet error: no XCH"], skippedRecent: [] },
         { ...emptySageTreasuryFunds("ab".repeat(32)), xchSelectableMojos: 1n },
         1_000_000n,
       ),

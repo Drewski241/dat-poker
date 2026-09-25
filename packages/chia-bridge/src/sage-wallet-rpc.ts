@@ -136,6 +136,7 @@ export interface SageOfferCancelResult {
   mempoolConflict: string[];
   failed: string[];
   errors: string[];
+  skippedRecent: string[];
 }
 
 export function emptySageTreasuryFunds(assetId?: string | null): SageTreasuryFunds {
@@ -176,8 +177,18 @@ export function openSageOfferIds(offers: SageOfferRecord[]): string[] {
     .filter((id): id is string => Boolean(id));
 }
 
-export function leftoverSageOffersBlockNewPayout(funds: SageTreasuryFunds): boolean {
-  return (funds.pendingOfferCount ?? 0) > 0;
+export function leftoverSageOffersBlockNewPayout(
+  funds: SageTreasuryFunds,
+  neededMojos?: bigint,
+): boolean {
+  if ((funds.pendingOfferCount ?? 0) <= 0) return false;
+  if (neededMojos != null && sageTreasuryCanBuildPayout(funds, neededMojos)) return false;
+  return true;
+}
+
+export function sageTreasuryCanBuildPayout(funds: SageTreasuryFunds, neededMojos: bigint): boolean {
+  const dat = funds.datSelectableMojos;
+  return dat != null && dat >= neededMojos;
 }
 
 export function sageDatLooksLockedInOffer(funds: SageTreasuryFunds): boolean {
@@ -639,6 +650,42 @@ export async function deleteSageOffer(config: TreasuryWalletRpcConfig, offerId: 
   await treasuryWalletRpcRequest(config, "delete_offer", { offer_id: offerId });
 }
 
+/** Local-only. Use when DAT is already selectable — on-chain cancel would spend those coins. */
+export async function deleteOpenSageOffers(config: TreasuryWalletRpcConfig): Promise<string[]> {
+  const ids = openSageOfferIds(await listSageOffers(config));
+  const deleted: string[] = [];
+  for (const offerId of ids) {
+    try {
+      await deleteSageOffer(config, offerId);
+      deleted.push(offerId);
+    } catch {
+      /* a completed offer can fail delete */
+    }
+  }
+  return deleted;
+}
+
+const recentSageOfferCancels = new Map<string, number>();
+const SAGE_CANCEL_COOLDOWN_MS = 3 * 60_000;
+
+export function rememberSageOfferCancel(offerId: string, now = Date.now()): void {
+  recentSageOfferCancels.set(offerId, now);
+}
+
+export function wasSageOfferRecentlyCancelled(offerId: string, now = Date.now()): boolean {
+  const at = recentSageOfferCancels.get(offerId);
+  if (at == null) return false;
+  if (now - at > SAGE_CANCEL_COOLDOWN_MS) {
+    recentSageOfferCancels.delete(offerId);
+    return false;
+  }
+  return true;
+}
+
+export function resetSageOfferCancelMemory(): void {
+  recentSageOfferCancels.clear();
+}
+
 export function buildSageCancelOfferRequest(
   offerId: string,
   feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
@@ -675,13 +722,20 @@ export async function cancelOpenSageOffers(
   const mempoolConflict: string[] = [];
   const failed: string[] = [];
   const errors: string[] = [];
+  const skippedRecent: string[] = [];
   for (const offerId of ids) {
+    if (wasSageOfferRecentlyCancelled(offerId)) {
+      skippedRecent.push(offerId);
+      continue;
+    }
     try {
       await cancelSageOffer(config, offerId, feeMojos);
+      rememberSageOfferCancel(offerId);
       cancelled.push(offerId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (isSageMempoolConflict(message)) {
+        rememberSageOfferCancel(offerId);
         mempoolConflict.push(offerId);
       } else {
         failed.push(offerId);
@@ -689,7 +743,7 @@ export async function cancelOpenSageOffers(
       }
     }
   }
-  return { cancelled, mempoolConflict, failed, errors };
+  return { cancelled, mempoolConflict, failed, errors, skippedRecent };
 }
 
 /**

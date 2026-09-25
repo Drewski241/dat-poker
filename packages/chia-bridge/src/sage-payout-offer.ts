@@ -11,6 +11,8 @@ import {
   leftoverSageOffersBlockNewPayout,
   readSageTreasuryFunds,
   sageDatLooksLockedByPendingTake,
+  sageTreasuryCanBuildPayout,
+  deleteOpenSageOffers,
   remapSageOfferError,
   sageRpcAmount,
   treasuryWalletRpcRequest,
@@ -45,16 +47,29 @@ export async function createSageCatPayoutOffer(
 ): Promise<string> {
   await ensureSageTreasuryLoggedIn(rpc);
   const feeMojos = resolveSageMakeOfferFeeMojos(params.feeMojos);
-  const funds = await readSageTreasuryFunds(rpc, params.assetId);
-  if (leftoverSageOffersBlockNewPayout(funds)) {
+  let funds = await readSageTreasuryFunds(rpc, params.assetId);
+  if ((funds.pendingOfferCount ?? 0) > 0 && sageTreasuryCanBuildPayout(funds, params.amountMojos)) {
+    await deleteOpenSageOffers(rpc);
+    funds = await readSageTreasuryFunds(rpc, params.assetId);
+  }
+  if (leftoverSageOffersBlockNewPayout(funds, params.amountMojos)) {
     if (funds.xchSelectableMojos === 0n) {
       throw new Error(describeSageCancelNeedsXch(funds, feeMojos));
     }
     const cancelled = await cancelOpenSageOffers(rpc, feeMojos);
-    if (cancelled.cancelled.length === 0 && cancelled.mempoolConflict.length === 0) {
+    funds = await readSageTreasuryFunds(rpc, params.assetId);
+    if (sageTreasuryCanBuildPayout(funds, params.amountMojos)) {
+      await deleteOpenSageOffers(rpc);
+      funds = await readSageTreasuryFunds(rpc, params.assetId);
+    } else if (
+      cancelled.cancelled.length === 0 &&
+      cancelled.mempoolConflict.length === 0 &&
+      cancelled.skippedRecent.length === 0
+    ) {
       throw new Error(describeSageCancelFailed(cancelled, funds, feeMojos));
+    } else {
+      throw new Error(describeSageOfferCancelWait(feeMojos));
     }
-    throw new Error(describeSageOfferCancelWait(feeMojos));
   }
   if (sageDatLooksLockedByPendingTake(funds)) {
     throw new Error(describeSagePendingPlayerTake());
