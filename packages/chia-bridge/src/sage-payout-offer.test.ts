@@ -126,6 +126,14 @@ describe("sage treasury coin selection", () => {
       ),
     ).toMatch(/locked in an unused Sage offer/i);
     expect(
+      describeSageNoSpendableCoins({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        datBalanceMojos: 50_000_000n,
+        datSelectableMojos: 0n,
+        pendingOfferCount: 1,
+      }),
+    ).toMatch(/release-treasury-offers\.sh/);
+    expect(
       remapSageOfferError("Wallet error: Coin selection error: no spendable coins", {
         ...emptySageTreasuryFunds("ab".repeat(32)),
         datSelectableMojos: 50_000_000n,

@@ -436,7 +436,7 @@ last unused withdraw offer is still reserving those coins. Redeploy, then
 retry withdraw — payout deletes leftover pending offers. Or:
 
 ```bash
-sudo SAGE_RELEASE_OFFERS=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh
+sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh
 ```
 
 ## Website address

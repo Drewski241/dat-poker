@@ -377,13 +377,39 @@ sage_rpc() {
   local method="$1"
   local body="${2:-{}}"
   local bin
-  # sage-cli serde rejects a trailing newline ("trailing characters").
+  # sage-cli serde rejects a trailing newline or extra "}".
   body="$(printf '%s' "$body" | tr -d '\r\n')"
+  body="$(python3 -c 'import json,sys
+raw=sys.argv[1]
+data=json.loads(raw)
+sys.stdout.write(json.dumps(data, separators=(",", ":")))
+' "$body")" || {
+    echo "sage rpc body is not valid JSON (not printed)" >&2
+    return 1
+  }
   bin="$(find_sage_bin)" || {
     echo "sage-cli is not installed" >&2
     return 1
   }
   sudo -u "$SAGE_USER" -H "$bin" rpc "$method" "$body"
+}
+
+build_import_key_body() {
+  TREASURY_IMPORT_KEY="$1" python3 -c '
+import json, os, sys
+key = os.environ.get("TREASURY_IMPORT_KEY", "")
+body = json.dumps(
+    {"name": "treasury", "key": key, "save_secrets": True, "login": True},
+    separators=(",", ":"),
+)
+parsed = json.loads(body)
+if body.count("{") != 1 or body.count("}") != 1 or not body.endswith("}"):
+    sys.stderr.write("import_key JSON brace mismatch\n")
+    raise SystemExit(1)
+if parsed.get("key") != key or parsed.get("name") != "treasury":
+    raise SystemExit(1)
+sys.stdout.write(body)
+'
 }
 
 release_open_sage_offers() {
@@ -467,8 +493,10 @@ import_treasury_key() {
   local secret="$1"
   local out fingerprint body
   echo "Importing dedicated treasury spend key from env into Sage RPC…"
-  body="$(TREASURY_IMPORT_KEY="$secret" python3 -c 'import json,os,sys
-sys.stdout.write(json.dumps({"name":"treasury","key":os.environ["TREASURY_IMPORT_KEY"],"save_secrets":True,"login":True}))')"
+  body="$(build_import_key_body "$secret")" || {
+    echo "import_key JSON was not valid (secret is not printed). Is Sage RPC up?" >&2
+    return 1
+  }
   out="$(sage_rpc import_key "$body")"
   fingerprint="$(printf '%s\n' "$out" | json_field fingerprint)" || {
     echo "import_key failed (do not paste the private key into chat). Is Sage RPC up?" >&2
@@ -619,13 +647,30 @@ fi
 if find_sage_bin >/dev/null; then
   ensure_sage_rpc_running || true
   imported_treasury_key=0
-  if [[ -n "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
-    import_treasury_key "$TREASURY_SAGE_PRIVATE_KEY"
-    imported_treasury_key=1
-  elif [[ -n "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
-    import_treasury_key "$TREASURY_SAGE_MNEMONIC"
-    imported_treasury_key=1
-  elif [[ "${SAGE_CREATE_KEY:-}" == "1" ]]; then
+  skip_import=0
+  if [[ "${SAGE_RELEASE_OFFERS:-}" == "1" && "${SAGE_LOAD_KEY:-}" != "1" && "${SAGE_CREATE_KEY:-}" != "1" && "${SAGE_PASTE_KEY:-}" != "1" ]]; then
+    skip_import=1
+    echo "SAGE_RELEASE_OFFERS: not re-importing the spend key (Sage is already logged in)."
+  fi
+  if [[ "$skip_import" -eq 0 && -n "${TREASURY_SAGE_PRIVATE_KEY:-}" ]]; then
+    if import_treasury_key "$TREASURY_SAGE_PRIVATE_KEY"; then
+      imported_treasury_key=1
+    elif [[ "${SAGE_RELEASE_OFFERS:-}" == "1" ]]; then
+      echo "import_key failed; continuing so leftover offers can still be released."
+    else
+      echo "import_key failed (do not paste the private key into chat)." >&2
+      exit 1
+    fi
+  elif [[ "$skip_import" -eq 0 && -n "${TREASURY_SAGE_MNEMONIC:-}" ]]; then
+    if import_treasury_key "$TREASURY_SAGE_MNEMONIC"; then
+      imported_treasury_key=1
+    elif [[ "${SAGE_RELEASE_OFFERS:-}" == "1" ]]; then
+      echo "import_key failed; continuing so leftover offers can still be released."
+    else
+      echo "import_key failed (do not paste the private key into chat)." >&2
+      exit 1
+    fi
+  elif [[ "$skip_import" -eq 0 && "${SAGE_CREATE_KEY:-}" == "1" ]]; then
     create_treasury_key
     imported_treasury_key=1
   fi

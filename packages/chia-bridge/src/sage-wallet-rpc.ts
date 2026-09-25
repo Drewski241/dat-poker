@@ -208,7 +208,7 @@ export function describeSageNoSpendableCoins(
       held +
       count +
       addr +
-      " Retry withdraw (treasury now deletes leftover pending offers) or run: sudo SAGE_RELEASE_OFFERS=1 bash /opt/dat-poker/deploy/aws-ec2/enable-treasury-sage.sh"
+      " Retry withdraw (treasury now deletes leftover pending offers) or run: sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh"
     );
   }
 

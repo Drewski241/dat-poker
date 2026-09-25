@@ -233,7 +233,7 @@ assert data["Resources"]["DatPokerInstance"]["Type"] == "AWS::EC2::Instance"
 assert "UserData" in data["Resources"]["DatPokerInstance"]["Properties"]
 PY
 
-for f in landing.html nginx.conf dat-poker-api.service dat-poker-treasury.service dat-poker-sage-rpc.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh enable-onchain-withdraw.sh start-treasury.sh start-sage-rpc.sh enable-treasury-sage.sh load-treasury-key.sh public-url.sh; do
+for f in landing.html nginx.conf dat-poker-api.service dat-poker-treasury.service dat-poker-sage-rpc.service user-data.sh cloudformation.yaml apache-commands.sh httpd-dat-poker.conf redeploy.sh beta-cloudformation.yaml console-user-data.sh Caddyfile caddy.service enable-https.sh enable-sage.sh enable-onchain-withdraw.sh start-treasury.sh start-sage-rpc.sh enable-treasury-sage.sh load-treasury-key.sh release-treasury-offers.sh public-url.sh; do
   [[ -s "$DIR/$f" ]] && ok "$f exists" || bad "$f missing"
 done
 
@@ -246,6 +246,7 @@ bash -n "$DIR/start-treasury.sh" && ok "start-treasury.sh bash syntax" || bad "s
 bash -n "$DIR/start-sage-rpc.sh" && ok "start-sage-rpc.sh bash syntax" || bad "start-sage-rpc.sh bash syntax"
 bash -n "$DIR/enable-treasury-sage.sh" && ok "enable-treasury-sage.sh bash syntax" || bad "enable-treasury-sage.sh bash syntax"
 bash -n "$DIR/load-treasury-key.sh" && ok "load-treasury-key.sh bash syntax" || bad "load-treasury-key.sh bash syntax"
+bash -n "$DIR/release-treasury-offers.sh" && ok "release-treasury-offers.sh bash syntax" || bad "release-treasury-offers.sh bash syntax"
 bash -n "$DIR/public-url.sh" && ok "public-url.sh bash syntax" || bad "public-url.sh bash syntax"
 
 if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
@@ -272,6 +273,7 @@ if grep -q 'wallet.crt' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'SAGE_RELEASE_OFFERS' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'get_offers' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'delete_offer' "$DIR/enable-treasury-sage.sh" \
+  && grep -q 'build_import_key_body' "$DIR/enable-treasury-sage.sh" \
   && grep -q 'tr -d' "$DIR/enable-treasury-sage.sh"; then
   ok "enable-treasury-sage.sh writes Sage RPC cert paths and uses prebuilt sage-cli"
 else
@@ -324,6 +326,39 @@ with tempfile.TemporaryDirectory() as tmp:
         + "if apply_treasury_secret 'xch1notakey'; then exit 2; fi\n"
     )
     subprocess.check_call(["bash", str(harness)], stdout=subprocess.DEVNULL)
+PY
+
+python3 - <<'PY' && ok "build_import_key_body writes compact JSON with one closing brace" || bad "build_import_key_body JSON"
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+script = Path(os.environ["DAT_POKER_EC2_DIR"], "enable-treasury-sage.sh").read_text()
+start = script.index("build_import_key_body() {")
+end = script.index("\nrelease_open_sage_offers() {")
+fns = script[start:end]
+hex_key = "ab" * 32
+with tempfile.TemporaryDirectory() as tmp:
+    harness = Path(tmp, "harness.sh")
+    out = Path(tmp, "body.json")
+    harness.write_text(
+        "#!/bin/bash\nset -euo pipefail\n"
+        + fns
+        + f"\nbuild_import_key_body {hex_key} > {out}\n"
+    )
+    subprocess.check_call(["bash", str(harness)])
+    body = out.read_text()
+    assert body.endswith("}")
+    assert body.count("{") == 1
+    assert body.count("}") == 1
+    assert "\n" not in body
+    import json
+    parsed = json.loads(body)
+    assert parsed["key"] == hex_key
+    assert parsed["name"] == "treasury"
+    assert parsed["save_secrets"] is True
+    assert parsed["login"] is True
 PY
 
 if grep -q 'StartLimitBurst=5' "$DIR/dat-poker-sage-rpc.service"; then
