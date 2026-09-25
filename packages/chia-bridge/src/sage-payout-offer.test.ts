@@ -23,6 +23,7 @@ import {
   readSageTreasurySecretFromEnv,
   remapSageOfferError,
   sageCertSearchDirs,
+  sageDatLooksLockedByPendingTake,
   sageDatLooksLockedInOffer,
 } from "./sage-wallet-rpc.js";
 import { buildSageCatGiftOfferRequest } from "./sage-payout-offer.js";
@@ -182,9 +183,37 @@ describe("sage treasury coin selection", () => {
     ).toMatch(/Cancel requires an XCH fee/i);
     expect(
       remapSageOfferError("Wallet error: mempool conflict", emptySageTreasuryFunds()),
-    ).toMatch(/do not tap Accept again/i);
-    expect(describeSageWalletRpcFailure(500, "DOUBLE_SPEND")).toMatch(/mempool conflict/i);
-    expect(describeSageMempoolConflict()).toMatch(/old offer/i);
+    ).toMatch(/pending incoming DAT/i);
+    expect(describeSageWalletRpcFailure(500, "DOUBLE_SPEND")).toMatch(/pending incoming DAT/i);
+    expect(describeSageMempoolConflict()).toMatch(/Do not withdraw again/i);
+    expect(
+      sageDatLooksLockedByPendingTake({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        datBalanceMojos: 50_000_000n,
+        datSelectableMojos: 0n,
+        pendingOfferCount: 0,
+      }),
+    ).toBe(true);
+    expect(
+      sageDatLooksLockedInOffer({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        datBalanceMojos: 50_000_000n,
+        datSelectableMojos: 0n,
+        pendingOfferCount: 0,
+      }),
+    ).toBe(false);
+    expect(
+      describeSageNoSpendableCoins({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        address: "xch1treasury",
+        syncedCoins: 4,
+        totalCoins: 4,
+        datBalanceMojos: 50_000_000n,
+        datSelectableMojos: 0n,
+        xchSelectableMojos: 519_800_644_036n,
+        pendingOfferCount: 0,
+      }),
+    ).toMatch(/pending incoming DAT/i);
     expect(buildSageCancelOfferRequest("offer-abc", 1_000_000n)).toEqual({
       offer_id: "offer-abc",
       fee: "1000000",

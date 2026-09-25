@@ -11,6 +11,7 @@ import {
   ensureSageTreasuryReady,
   pingTreasuryWalletRpc,
   readSageTreasuryFunds,
+  sageDatLooksLockedByPendingTake,
   sageLooksStillSyncing,
 } from "@dat-poker/chia-bridge";
 
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
       datSelectableMojos: funds?.datSelectableMojos?.toString() ?? null,
       datBalanceMojos: funds?.datBalanceMojos?.toString() ?? null,
       pendingOfferCount: funds?.pendingOfferCount ?? null,
+      datLockedByPendingTake: funds != null ? sageDatLooksLockedByPendingTake(funds) : null,
       xchSelectableMojos: funds?.xchSelectableMojos?.toString() ?? null,
       payoutFeeMojos: config.payoutFeeMojos.toString(),
     };

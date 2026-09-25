@@ -84,7 +84,8 @@ function SageOfferBox({
       <p>
         Sage should show an <strong>Accept</strong> popup. There is no fee box —
         treasury already attached the XCH network fee on the offer. Tap{" "}
-        <strong>Accept</strong> once. If you already tapped Accept, wait — do not
+        <strong>Accept</strong> once. If player Sage already shows pending incoming DAT,
+        wait for Confirmed — do not withdraw again. If you already tapped Accept, wait — do not
         Accept the old offer again. If no popup appears, disconnect and Connect Sage again, or
         Offers → Import.
       </p>

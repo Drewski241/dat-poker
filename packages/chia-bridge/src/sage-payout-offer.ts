@@ -6,9 +6,11 @@ import {
   describeSageCancelNeedsXch,
   describeSageFundsBlock,
   describeSageOfferCancelWait,
+  describeSagePendingPlayerTake,
   ensureSageTreasuryLoggedIn,
   leftoverSageOffersBlockNewPayout,
   readSageTreasuryFunds,
+  sageDatLooksLockedByPendingTake,
   remapSageOfferError,
   sageRpcAmount,
   treasuryWalletRpcRequest,
@@ -53,6 +55,9 @@ export async function createSageCatPayoutOffer(
       throw new Error(describeSageCancelFailed(cancelled, funds, feeMojos));
     }
     throw new Error(describeSageOfferCancelWait(feeMojos));
+  }
+  if (sageDatLooksLockedByPendingTake(funds)) {
+    throw new Error(describeSagePendingPlayerTake());
   }
   const blocked = describeSageFundsBlock(funds, params.amountMojos);
   if (blocked) {

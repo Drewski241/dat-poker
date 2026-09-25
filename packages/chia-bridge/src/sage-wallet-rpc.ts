@@ -176,9 +176,17 @@ export function openSageOfferIds(offers: SageOfferRecord[]): string[] {
     .filter((id): id is string => Boolean(id));
 }
 
+export function leftoverSageOffersBlockNewPayout(funds: SageTreasuryFunds): boolean {
+  return (funds.pendingOfferCount ?? 0) > 0;
+}
+
 export function sageDatLooksLockedInOffer(funds: SageTreasuryFunds): boolean {
-  const pending = funds.pendingOfferCount ?? 0;
-  if (pending > 0) return true;
+  return leftoverSageOffersBlockNewPayout(funds);
+}
+
+/** DAT still on the key but not selectable, and treasury has no open offer — a player take is in mempool. */
+export function sageDatLooksLockedByPendingTake(funds: SageTreasuryFunds): boolean {
+  if (leftoverSageOffersBlockNewPayout(funds)) return false;
   const selectable = funds.datSelectableMojos;
   const balance = funds.datBalanceMojos;
   return selectable === 0n && balance != null && balance > 0n;
@@ -204,7 +212,7 @@ export function describeSageNoSpendableCoins(
   const balance = funds.datBalanceMojos;
   const pending = funds.pendingOfferCount ?? 0;
 
-  if (sageDatLooksLockedInOffer(funds)) {
+  if (leftoverSageOffersBlockNewPayout(funds)) {
     const held =
       balance != null && balance > 0n
         ? ` Sage still shows ${formatDatMojos(balance, funds.datPrecision)} on this key, but it is not selectable.`
@@ -218,6 +226,9 @@ export function describeSageNoSpendableCoins(
       addr +
       " Do not tap Accept on the old offer again. Wait 1–2 minutes, then withdraw once — leftover offers are cancelled on-chain first, and a new offer is not built in the same request. Or run: sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh and wait before the next withdraw."
     );
+  }
+  if (sageDatLooksLockedByPendingTake(funds)) {
+    return describeSagePendingPlayerTake();
   }
 
   if (sageLooksStillSyncing(funds) && (dat == null || dat === 0n)) {
@@ -255,11 +266,7 @@ export function describeSageNoSpendableCoins(
     );
   }
   if (dat != null && dat > 0n && funds.datSpendableCoins === 0) {
-    return (
-      `Treasury Sage sees ${formatDatMojos(dat, funds.datPrecision)} but 0 spendable DAT coins (likely locked in an offer).` +
-      addr +
-      " Cancel pending treasury offers, then withdraw again."
-    );
+    return describeSagePendingPlayerTake();
   }
   return (
     "Treasury Sage has no spendable coins for this DAT offer." +
@@ -280,13 +287,28 @@ export function isSageMempoolConflict(text: string): boolean {
   );
 }
 
-export function describeSageMempoolConflict(): string {
+export function describeSagePendingPlayerTake(): string {
   return (
-    "Treasury Sage hit a mempool conflict — the same DAT coin is already being spent " +
-    "(an earlier unused offer, a cancel, or a player Accept that is still pending). " +
-    "Do not tap Accept again and do not import the old offer. Wait 1–2 minutes for the " +
-    "mempool to clear, then withdraw once. If DAT already arrived in player Sage, you are done."
+    "Player Sage already has a pending incoming DAT take for this withdraw. " +
+    "That take is spending the treasury DAT coin in the mempool, so treasury has no open offer to cancel " +
+    "and a new withdraw offer will mempool-conflict. " +
+    "Do not withdraw again. Do not tap Accept again. Do not cancel from treasury. " +
+    "Wait until that pending incoming DAT shows Confirmed in player Sage " +
+    "(a 0-fee take can sit Pending a long time). " +
+    "If it stays Pending for hours: in player Sage, remove/cancel that pending incoming take if Sage lets you, " +
+    "wait until it disappears, then withdraw once so treasury can build a new fee-bearing offer. " +
+    "If DAT already arrived in player Sage, you are done."
   );
+}
+
+export function describeSageMempoolConflict(funds?: SageTreasuryFunds): string {
+  if (funds && leftoverSageOffersBlockNewPayout(funds)) {
+    return (
+      "Treasury Sage hit a mempool conflict while a leftover offer is still open. " +
+      "Do not tap Accept again. Wait 1–2 minutes, then withdraw once."
+    );
+  }
+  return describeSagePendingPlayerTake();
 }
 
 export function sageRpcAmount(mojos: bigint): string {
@@ -337,10 +359,6 @@ export function describeSageCancelFailed(
   );
 }
 
-export function leftoverSageOffersBlockNewPayout(funds: SageTreasuryFunds): boolean {
-  return (funds.pendingOfferCount ?? 0) > 0;
-}
-
 export function describeSageWalletRpcFailure(statusCode: number | undefined, body: string): string {
   const trimmed = body.trim();
   if (isSageMempoolConflict(trimmed)) {
@@ -372,7 +390,7 @@ export function remapSageOfferError(
   neededMojos?: bigint,
 ): string {
   if (isSageMempoolConflict(message)) {
-    return describeSageMempoolConflict();
+    return describeSageMempoolConflict(funds);
   }
   if (isSageCoinSelectionError(message)) {
     return describeSageNoSpendableCoins(funds, neededMojos);
