@@ -116,6 +116,27 @@ export function formatDatMojos(mojos: bigint, precision = 3): string {
   return `${whole.toString()}.${fracStr} DAT`;
 }
 
+export interface SageLeftoverOffer {
+  offerId: string;
+  status: string;
+  offeredMojos: string | null;
+  offeredAssetId: string | null;
+}
+
+export interface SagePendingTransaction {
+  transactionId: string;
+  feeMojos: string | null;
+  spentCoinIds: string[];
+}
+
+export interface SageLockedCoin {
+  coinId: string;
+  asset: "DAT" | "XCH";
+  amountMojos: string;
+  offerId: string | null;
+  transactionId: string | null;
+}
+
 export interface SageTreasuryFunds {
   address: string | null;
   syncedCoins: number | null;
@@ -126,6 +147,9 @@ export interface SageTreasuryFunds {
   datSpendableCoins: number | null;
   pendingOfferCount: number | null;
   pendingTransactionCount: number | null;
+  leftoverOffers: SageLeftoverOffer[];
+  pendingTransactions: SagePendingTransaction[];
+  lockedCoins: SageLockedCoin[];
   datTicker: string;
   datPrecision: number;
   assetId: string | null;
@@ -135,6 +159,13 @@ export interface SageOfferRecord {
   offer_id?: string;
   offerId?: string;
   status?: unknown;
+  summary?: {
+    maker?: Array<{
+      asset?: { asset_id?: string | null; ticker?: string } | null;
+      amount?: unknown;
+    }>;
+    fee?: unknown;
+  };
 }
 
 export interface SageOfferCancelResult {
@@ -143,6 +174,8 @@ export interface SageOfferCancelResult {
   failed: string[];
   errors: string[];
   skippedRecent: string[];
+  submittedOnChain: boolean;
+  coinSpendCount: number;
 }
 
 export function emptySageTreasuryFunds(assetId?: string | null): SageTreasuryFunds {
@@ -157,6 +190,9 @@ export function emptySageTreasuryFunds(assetId?: string | null): SageTreasuryFun
     datSpendableCoins: null,
     pendingOfferCount: null,
     pendingTransactionCount: null,
+    leftoverOffers: [],
+    pendingTransactions: [],
+    lockedCoins: [],
     datTicker: "DAT",
     datPrecision: 3,
     assetId: normalized && /^[a-f0-9]{64}$/.test(normalized) ? normalized : null,
@@ -184,21 +220,31 @@ export function openSageOfferIds(offers: SageOfferRecord[]): string[] {
     .filter((id): id is string => Boolean(id));
 }
 
+export function leftoverCoinsLockedByOffer(funds: SageTreasuryFunds): boolean {
+  return (funds.lockedCoins ?? []).some((coin) => Boolean(coin.offerId));
+}
+
 export function leftoverSageOffersBlockNewPayout(
   funds: SageTreasuryFunds,
   neededMojos?: bigint,
 ): boolean {
-  void neededMojos;
-  return (funds.pendingOfferCount ?? 0) > 0;
+  if ((funds.pendingOfferCount ?? 0) <= 0) return false;
+  if (sageTreasuryHasPendingSpend(funds)) return true;
+  if (leftoverCoinsLockedByOffer(funds)) return true;
+  if (neededMojos != null && sageTreasuryCanBuildPayout(funds, neededMojos)) return false;
+  return !leftoverSageOffersAreGhostRecords(funds);
 }
 
 /**
- * Leftover get_offers rows with no pending spend. Those offers still lock DAT
- * and/or XCH when a prior cancel fee was too low for the dust-storm mempool.
- * Always cancel them on-chain — do not treat this as a local-only delete.
+ * Leftover get_offers rows that do not hold any coin (no offer_id on unspent
+ * coins, no pending spend). Sage GUI is empty. Delete locally — do not cancel.
  */
 export function leftoverSageOffersAreGhostRecords(funds: SageTreasuryFunds): boolean {
-  return (funds.pendingOfferCount ?? 0) > 0 && !sageTreasuryHasPendingSpend(funds);
+  return (
+    (funds.pendingOfferCount ?? 0) > 0 &&
+    !sageTreasuryHasPendingSpend(funds) &&
+    !leftoverCoinsLockedByOffer(funds)
+  );
 }
 
 export function sageTreasuryCanBuildPayout(funds: SageTreasuryFunds, neededMojos: bigint): boolean {
@@ -235,23 +281,12 @@ export function describeSageNoSpendableCoins(
     : " Set DAT_GOVERNANCE_TOKEN_ASSET_ID to the 64-hex DAT CAT id.";
   const dat = funds.datSelectableMojos;
   const xch = funds.xchSelectableMojos;
-  const balance = funds.datBalanceMojos;
-  const pending = funds.pendingOfferCount ?? 0;
 
+  if (leftoverSageOffersAreGhostRecords(funds)) {
+    return describeSageGhostLeftoverOffers();
+  }
   if (leftoverSageOffersBlockNewPayout(funds)) {
-    const held =
-      balance != null && balance > 0n
-        ? ` Sage still shows ${formatDatMojos(balance, funds.datPrecision)} on this key, but it is not selectable.`
-        : "";
-    const count =
-      pending > 0 ? ` ${pending} pending Sage offer(s) are reserving those coins.` : " The last unused withdraw offer is still reserving those coins.";
-    return (
-      "Treasury DAT or XCH is locked in an unused Sage offer from an earlier withdraw — the coins did not leave this key." +
-      held +
-      count +
-      addr +
-      " Do not tap Accept on the old offer. Withdraw once to submit an on-chain cancel at the dust-storm fee (0.09 mojo/cost), then wait until treasury Transactions shows that cancel Confirmed before withdrawing again. A new offer is not built in the same request. Or run: sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh and wait before the next withdraw."
-    );
+    return describeSageLockHold(funds);
   }
   if (sageDatLooksLockedByPendingTake(funds)) {
     return describeSagePendingPlayerTake();
@@ -329,21 +364,142 @@ export function describeSagePendingPlayerTake(): string {
 
 export function describeSageGhostLeftoverOffers(): string {
   return (
-    "Treasury Sage still lists leftover offer rows and those coins stay locked even when " +
-    "Transactions shows no pending spend — a prior cancel fee was too low for the dust-storm mempool. " +
-    "Payout cancels every leftover offer on-chain at 0.09 mojo/cost and does not remake in the same request. " +
-    "Do not tap Accept on the old offer. Wait until that cancel is Confirmed, then withdraw once. " +
+    "Treasury Sage RPC still lists leftover offer rows, but get_coins shows no coin with those offer ids " +
+    "and get_pending_transactions is empty — the GUI is right, nothing is on-chain. " +
+    "Those rows are stale local records. Payout deletes them and builds a new fee-bearing offer. " +
+    "Withdraw once. If player Sage already shows Confirmed DAT, you are done."
+  );
+}
+
+export function describeSagePendingTreasurySpend(funds?: SageTreasuryFunds): string {
+  const hold = funds ? formatSageHoldDetails(funds) : "";
+  return (
+    "Treasury Sage still has a pending on-chain spend (usually the leftover-offer cancel) " +
+    "for the same DAT or XCH coin. A new withdraw offer mempool-conflicts immediately. " +
+    hold +
+    " Do not withdraw again. Do not cancel from treasury. " +
+    "Wait until /health pendingTransactions is empty and treasury Transactions shows no pending spends, then withdraw once. " +
     "If player Sage already shows Confirmed DAT, you are done."
   );
 }
 
-export function describeSagePendingTreasurySpend(): string {
+export function summarizeSageLeftoverOffer(offer: SageOfferRecord): SageLeftoverOffer | null {
+  const offerId = sageOfferId(offer);
+  if (!offerId || !isOpenSageOfferStatus(offer.status)) return null;
+  const maker = offer.summary?.maker?.[0];
+  const offered = parseSageAmount(maker?.amount);
+  const assetId =
+    typeof maker?.asset?.asset_id === "string" && maker.asset.asset_id.trim()
+      ? maker.asset.asset_id.replace(/^0x/i, "").toLowerCase()
+      : null;
+  return {
+    offerId,
+    status: String(offer.status ?? "pending"),
+    offeredMojos: offered != null ? offered.toString() : null,
+    offeredAssetId: assetId,
+  };
+}
+
+export function summarizeSagePendingTransaction(raw: unknown): SagePendingTransaction | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as {
+    transaction_id?: unknown;
+    transactionId?: unknown;
+    fee?: unknown;
+    spent?: unknown;
+  };
+  const transactionId =
+    typeof record.transaction_id === "string"
+      ? record.transaction_id.trim()
+      : typeof record.transactionId === "string"
+        ? record.transactionId.trim()
+        : "";
+  if (!transactionId) return null;
+  const spentCoinIds: string[] = [];
+  if (Array.isArray(record.spent)) {
+    for (const item of record.spent) {
+      if (typeof item === "string" && item.trim()) {
+        spentCoinIds.push(item.trim());
+      } else if (item && typeof item === "object") {
+        const coinId = (item as { coin_id?: unknown; coinId?: unknown }).coin_id
+          ?? (item as { coinId?: unknown }).coinId;
+        if (typeof coinId === "string" && coinId.trim()) spentCoinIds.push(coinId.trim());
+      }
+    }
+  }
+  const fee = parseSageAmount(record.fee);
+  return {
+    transactionId,
+    feeMojos: fee != null ? fee.toString() : null,
+    spentCoinIds,
+  };
+}
+
+export function summarizeSageLockedCoin(
+  raw: unknown,
+  asset: "DAT" | "XCH",
+): SageLockedCoin | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as {
+    coin_id?: unknown;
+    coinId?: unknown;
+    amount?: unknown;
+    offer_id?: unknown;
+    offerId?: unknown;
+    transaction_id?: unknown;
+    transactionId?: unknown;
+    spent_height?: unknown;
+  };
+  if (record.spent_height != null) return null;
+  const coinId =
+    typeof record.coin_id === "string"
+      ? record.coin_id.trim()
+      : typeof record.coinId === "string"
+        ? record.coinId.trim()
+        : "";
+  const offerId =
+    typeof record.offer_id === "string" && record.offer_id.trim()
+      ? record.offer_id.trim()
+      : typeof record.offerId === "string" && record.offerId.trim()
+        ? record.offerId.trim()
+        : null;
+  const transactionId =
+    typeof record.transaction_id === "string" && record.transaction_id.trim()
+      ? record.transaction_id.trim()
+      : typeof record.transactionId === "string" && record.transactionId.trim()
+        ? record.transactionId.trim()
+        : null;
+  if (!coinId || (!offerId && !transactionId)) return null;
+  const amount = parseSageAmount(record.amount) ?? 0n;
+  return { coinId, asset, amountMojos: amount.toString(), offerId, transactionId };
+}
+
+export function formatSageHoldDetails(funds: SageTreasuryFunds): string {
+  const offers = (funds.leftoverOffers ?? []).map((offer) => offer.offerId.slice(0, 16));
+  const txs = (funds.pendingTransactions ?? []).map((tx) => tx.transactionId.slice(0, 16));
+  const coins = (funds.lockedCoins ?? []).map((coin) => {
+    const hold = coin.offerId
+      ? `offer ${coin.offerId.slice(0, 12)}`
+      : coin.transactionId
+        ? `tx ${coin.transactionId.slice(0, 12)}`
+        : "unknown";
+    return `${coin.asset} ${coin.coinId.slice(0, 12)}… (${hold})`;
+  });
+  const parts: string[] = [];
+  if (offers.length) parts.push(` Leftover offer id(s): ${offers.join(", ")}.`);
+  if (txs.length) parts.push(` Pending tx id(s): ${txs.join(", ")}.`);
+  if (coins.length) parts.push(` Locked coin(s): ${coins.join("; ")}.`);
+  return parts.join("");
+}
+
+export function describeSageLockHold(funds: SageTreasuryFunds): string {
+  const addr = funds.address ? ` Treasury address: ${funds.address}.` : "";
   return (
-    "Treasury Sage still has a pending on-chain spend (usually the leftover-offer cancel) " +
-    "for the same DAT coin. A new withdraw offer mempool-conflicts immediately. " +
-    "Do not withdraw again. Do not cancel from treasury. " +
-    "In treasury Sage, wait until Transactions shows no pending spends, then withdraw once. " +
-    "If player Sage already shows Confirmed DAT, you are done."
+    "Treasury DAT or XCH is locked by a leftover Sage offer or pending spend — the coins did not leave this key." +
+    formatSageHoldDetails(funds) +
+    addr +
+    " curl http://127.0.0.1:4200/health for leftoverOffers, pendingTransactions, and lockedCoins. " +
+    "Do not tap Accept on the old offer. Withdraw once so treasury cancels the leftover that still has a coin, then wait until those fields are empty."
   );
 }
 
@@ -355,7 +511,7 @@ export function describeSageMempoolConflict(funds?: SageTreasuryFunds): string {
   if (funds && sageDatLooksLockedByPendingTake(funds) && !sageTreasuryHasPendingSpend(funds)) {
     return describeSagePendingPlayerTake();
   }
-  return describeSagePendingTreasurySpend();
+  return describeSagePendingTreasurySpend(funds);
 }
 
 export function sageRpcAmount(mojos: bigint): string {
@@ -367,11 +523,14 @@ export function sageRpcAmount(mojos: bigint): string {
 
 export function describeSageOfferCancelWait(
   feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+  funds?: SageTreasuryFunds,
 ): string {
+  const hold = funds ? formatSageHoldDetails(funds) : "";
   return (
     "Treasury submitted an on-chain cancel of leftover Sage offer(s) that still lock DAT or XCH. " +
-    `The cancel fee is ${formatXchMojos(feeMojos)} (0.09 mojo/cost dust-storm floor, TREASURY_PAYOUT_FEE_MOJOS). ` +
-    "Wait until treasury Sage Transactions shows that cancel Confirmed and no coins stay Pending. " +
+    `The cancel fee is ${formatXchMojos(feeMojos)} (0.09 mojo/cost dust-storm floor, TREASURY_PAYOUT_FEE_MOJOS).` +
+    hold +
+    " Wait until /health pendingTransactions is empty and treasury Transactions shows that cancel Confirmed. " +
     "Do not tap Accept on the old offer. Do not withdraw again until the cancel confirms."
   );
 }
@@ -670,28 +829,67 @@ export async function readSageTreasuryFunds(
   }
   try {
     const listed = await listSageOffers(config);
-    funds.pendingOfferCount = openSageOfferIds(listed).length;
+    funds.leftoverOffers = listed
+      .map(summarizeSageLeftoverOffer)
+      .filter((offer): offer is SageLeftoverOffer => offer != null);
+    funds.pendingOfferCount = funds.leftoverOffers.length;
   } catch {
     /* get_offers is best-effort */
   }
   try {
     const pending = await listSagePendingTransactions(config);
+    funds.pendingTransactions = pending;
     funds.pendingTransactionCount = pending.length;
   } catch {
     /* get_pending_transactions is best-effort */
+  }
+  try {
+    funds.lockedCoins = await listSageLockedCoins(config, funds.assetId);
+  } catch {
+    /* get_coins is best-effort */
   }
   return funds;
 }
 
 export async function listSagePendingTransactions(
   config: TreasuryWalletRpcConfig,
-): Promise<Array<{ transaction_id?: string }>> {
-  const listed = await treasuryWalletRpcRequest<{ transactions?: Array<{ transaction_id?: string }> }>(
+): Promise<SagePendingTransaction[]> {
+  const listed = await treasuryWalletRpcRequest<{ transactions?: unknown[] }>(
     config,
     "get_pending_transactions",
     {},
   );
-  return Array.isArray(listed.transactions) ? listed.transactions : [];
+  return (Array.isArray(listed.transactions) ? listed.transactions : [])
+    .map(summarizeSagePendingTransaction)
+    .filter((tx): tx is SagePendingTransaction => tx != null);
+}
+
+export async function listSageLockedCoins(
+  config: TreasuryWalletRpcConfig,
+  datAssetId?: string | null,
+): Promise<SageLockedCoin[]> {
+  const locked: SageLockedCoin[] = [];
+  const requests: Array<{ asset: "DAT" | "XCH"; body: Record<string, unknown> }> = [
+    { asset: "XCH", body: { offset: 0, limit: 50 } },
+  ];
+  if (datAssetId) {
+    requests.unshift({
+      asset: "DAT",
+      body: { asset_id: datAssetId, offset: 0, limit: 50 },
+    });
+  }
+  for (const request of requests) {
+    try {
+      const listed = await treasuryWalletRpcRequest<{ coins?: unknown[] }>(config, "get_coins", request.body);
+      for (const coin of Array.isArray(listed.coins) ? listed.coins : []) {
+        const summarized = summarizeSageLockedCoin(coin, request.asset);
+        if (summarized) locked.push(summarized);
+      }
+    } catch {
+      /* get_coins is best-effort */
+    }
+  }
+  return locked;
 }
 
 export async function listSageOffers(config: TreasuryWalletRpcConfig): Promise<SageOfferRecord[]> {
@@ -772,24 +970,34 @@ export function buildSageCancelOffersRequest(
 }
 
 /** On-chain cancel — invalidates leftover offer1. Local delete_offer does not. */
+export function sageCancelSubmittedOnChain(response: { coin_spends?: unknown[] } | void): boolean {
+  return Array.isArray(response?.coin_spends) && response.coin_spends.length > 0;
+}
+
 export async function cancelSageOffer(
   config: TreasuryWalletRpcConfig,
   offerId: string,
   feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
-): Promise<void> {
-  await treasuryWalletRpcRequest(config, "cancel_offer", buildSageCancelOfferRequest(offerId, feeMojos), {
-    timeoutMs: 45_000,
-  });
+): Promise<{ coin_spends?: unknown[] }> {
+  return treasuryWalletRpcRequest<{ coin_spends?: unknown[] }>(
+    config,
+    "cancel_offer",
+    buildSageCancelOfferRequest(offerId, feeMojos),
+    { timeoutMs: 45_000 },
+  );
 }
 
 export async function cancelSageOffers(
   config: TreasuryWalletRpcConfig,
   offerIds: string[],
   feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
-): Promise<void> {
-  await treasuryWalletRpcRequest(config, "cancel_offers", buildSageCancelOffersRequest(offerIds, feeMojos), {
-    timeoutMs: 45_000,
-  });
+): Promise<{ coin_spends?: unknown[] }> {
+  return treasuryWalletRpcRequest<{ coin_spends?: unknown[] }>(
+    config,
+    "cancel_offers",
+    buildSageCancelOffersRequest(offerIds, feeMojos),
+    { timeoutMs: 45_000 },
+  );
 }
 
 export async function cancelOpenSageOffers(
@@ -802,6 +1010,7 @@ export async function cancelOpenSageOffers(
   const failed: string[] = [];
   const errors: string[] = [];
   const skippedRecent: string[] = [];
+  let coinSpendCount = 0;
   const toCancel: string[] = [];
   for (const offerId of ids) {
     if (wasSageOfferRecentlyCancelled(offerId)) {
@@ -812,12 +1021,21 @@ export async function cancelOpenSageOffers(
   }
   if (toCancel.length > 0) {
     try {
-      await cancelSageOffers(config, toCancel, feeMojos);
+      const response = await cancelSageOffers(config, toCancel, feeMojos);
+      coinSpendCount = Array.isArray(response.coin_spends) ? response.coin_spends.length : 0;
       for (const offerId of toCancel) {
         rememberSageOfferCancel(offerId);
         cancelled.push(offerId);
       }
-      return { cancelled, mempoolConflict, failed, errors, skippedRecent };
+      return {
+        cancelled,
+        mempoolConflict,
+        failed,
+        errors,
+        skippedRecent,
+        submittedOnChain: coinSpendCount > 0,
+        coinSpendCount,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (isSageMempoolConflict(message)) {
@@ -826,7 +1044,15 @@ export async function cancelOpenSageOffers(
           mempoolConflict.push(offerId);
         }
         if (message.trim()) errors.push(message.trim());
-        return { cancelled, mempoolConflict, failed, errors, skippedRecent };
+        return {
+          cancelled,
+          mempoolConflict,
+          failed,
+          errors,
+          skippedRecent,
+          submittedOnChain: true,
+          coinSpendCount,
+        };
       }
       if (message.trim()) errors.push(message.trim());
     }
@@ -834,7 +1060,8 @@ export async function cancelOpenSageOffers(
   for (const offerId of toCancel) {
     if (cancelled.includes(offerId) || mempoolConflict.includes(offerId)) continue;
     try {
-      await cancelSageOffer(config, offerId, resolveSageCancelFeeMojos(feeMojos, 1));
+      const response = await cancelSageOffer(config, offerId, resolveSageCancelFeeMojos(feeMojos, 1));
+      coinSpendCount += Array.isArray(response.coin_spends) ? response.coin_spends.length : 0;
       rememberSageOfferCancel(offerId);
       cancelled.push(offerId);
     } catch (error) {
@@ -848,7 +1075,15 @@ export async function cancelOpenSageOffers(
       }
     }
   }
-  return { cancelled, mempoolConflict, failed, errors, skippedRecent };
+  return {
+    cancelled,
+    mempoolConflict,
+    failed,
+    errors,
+    skippedRecent,
+    submittedOnChain: coinSpendCount > 0 || mempoolConflict.length > 0,
+    coinSpendCount,
+  };
 }
 
 /**

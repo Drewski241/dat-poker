@@ -18,6 +18,11 @@ import {
   isSageMempoolConflict,
   leftoverSageOffersAreGhostRecords,
   leftoverSageOffersBlockNewPayout,
+  leftoverCoinsLockedByOffer,
+  summarizeSageLeftoverOffer,
+  summarizeSagePendingTransaction,
+  summarizeSageLockedCoin,
+  formatSageHoldDetails,
   buildSageCancelOffersRequest,
   sageTreasuryHasPendingSpend,
   rememberSageOfferCancel,
@@ -141,7 +146,7 @@ describe("sage treasury coin selection", () => {
         },
         2_000n,
       ),
-    ).toMatch(/locked in an unused Sage offer/i);
+    ).toMatch(/locked by a leftover Sage offer/i);
     expect(
       describeSageNoSpendableCoins({
         ...emptySageTreasuryFunds("ab".repeat(32)),
@@ -150,7 +155,7 @@ describe("sage treasury coin selection", () => {
         pendingOfferCount: 1,
         pendingTransactionCount: 0,
       }),
-    ).toMatch(/dust-storm fee/i);
+    ).toMatch(/stale local records/i);
     expect(
       leftoverSageOffersAreGhostRecords({
         ...emptySageTreasuryFunds("ab".repeat(32)),
@@ -158,7 +163,7 @@ describe("sage treasury coin selection", () => {
         pendingTransactionCount: 0,
       }),
     ).toBe(true);
-    expect(describeSageGhostLeftoverOffers()).toMatch(/dust-storm/i);
+    expect(describeSageGhostLeftoverOffers()).toMatch(/stale local records/i);
     expect(
       describeSageNoSpendableCoins({
         ...emptySageTreasuryFunds("ab".repeat(32)),
@@ -167,7 +172,7 @@ describe("sage treasury coin selection", () => {
         pendingOfferCount: 1,
         pendingTransactionCount: 1,
       }),
-    ).toMatch(/release-treasury-offers\.sh/);
+    ).toMatch(/leftoverOffers, pendingTransactions, and lockedCoins/i);
     expect(
       remapSageOfferError("Wallet error: Coin selection error: no spendable coins", {
         ...emptySageTreasuryFunds("ab".repeat(32)),
@@ -185,7 +190,7 @@ describe("sage treasury coin selection", () => {
         ...emptySageTreasuryFunds("ab".repeat(32)),
         pendingOfferCount: 1,
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       leftoverSageOffersBlockNewPayout({
         ...emptySageTreasuryFunds("ab".repeat(32)),
@@ -201,7 +206,7 @@ describe("sage treasury coin selection", () => {
         },
         2_000n,
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       sageTreasuryCanBuildPayout(
         {
@@ -229,7 +234,7 @@ describe("sage treasury coin selection", () => {
     ).toMatch(/needs a 0\.000009 XCH dust-storm fee/i);
     expect(
       describeSageCancelFailed(
-        { cancelled: [], mempoolConflict: [], failed: ["offer-1"], errors: ["Wallet error: no XCH"], skippedRecent: [] },
+        { cancelled: [], mempoolConflict: [], failed: ["offer-1"], errors: ["Wallet error: no XCH"], skippedRecent: [], submittedOnChain: false, coinSpendCount: 0 },
         { ...emptySageTreasuryFunds("ab".repeat(32)), xchSelectableMojos: 1n },
         1_000_000n,
       ),
@@ -302,7 +307,62 @@ describe("sage treasury coin selection", () => {
         datBalanceMojos: 50_000_000n,
         datSelectableMojos: 0n,
         pendingOfferCount: 1,
+        lockedCoins: [
+          {
+            coinId: "aa".repeat(32),
+            asset: "DAT",
+            amountMojos: "50000000",
+            offerId: "offer-lock",
+            transactionId: null,
+          },
+        ],
       }),
+    ).toBe(true);
+    expect(
+      leftoverCoinsLockedByOffer({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        lockedCoins: [
+          {
+            coinId: "aa".repeat(32),
+            asset: "DAT",
+            amountMojos: "50000000",
+            offerId: "offer-lock",
+            transactionId: null,
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      leftoverSageOffersAreGhostRecords({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        pendingOfferCount: 1,
+        pendingTransactionCount: 0,
+        lockedCoins: [
+          {
+            coinId: "aa".repeat(32),
+            asset: "DAT",
+            amountMojos: "50000000",
+            offerId: "offer-lock",
+            transactionId: null,
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      leftoverSageOffersBlockNewPayout({
+        ...emptySageTreasuryFunds("ab".repeat(32)),
+        pendingOfferCount: 1,
+        datSelectableMojos: 50_000_000n,
+        lockedCoins: [
+          {
+            coinId: "aa".repeat(32),
+            asset: "XCH",
+            amountMojos: "9000000",
+            offerId: "offer-lock",
+            transactionId: null,
+          },
+        ],
+      }, 2_000n),
     ).toBe(true);
     expect(
       describeSageNoSpendableCoins({
@@ -316,7 +376,56 @@ describe("sage treasury coin selection", () => {
         pendingOfferCount: 1,
         pendingTransactionCount: 0,
       }),
-    ).toMatch(/on-chain cancel at the dust-storm fee/i);
+    ).toMatch(/stale local records/i);
+    expect(summarizeSageLeftoverOffer({
+      offer_id: "offer-abc",
+      status: "pending",
+      summary: { maker: [{ asset: { asset_id: "ab".repeat(32) }, amount: "2000" }] },
+    })).toEqual({
+      offerId: "offer-abc",
+      status: "pending",
+      offeredMojos: "2000",
+      offeredAssetId: "ab".repeat(32),
+    });
+    expect(summarizeSagePendingTransaction({
+      transaction_id: "tx-hold",
+      fee: "9000000",
+      spent: [{ coin_id: "coin-1" }],
+    })).toEqual({
+      transactionId: "tx-hold",
+      feeMojos: "9000000",
+      spentCoinIds: ["coin-1"],
+    });
+    expect(summarizeSageLockedCoin({
+      coin_id: "coin-lock",
+      amount: "50000000",
+      offer_id: "offer-lock",
+      spent_height: null,
+    }, "DAT")).toEqual({
+      coinId: "coin-lock",
+      asset: "DAT",
+      amountMojos: "50000000",
+      offerId: "offer-lock",
+      transactionId: null,
+    });
+    expect(summarizeSageLockedCoin({
+      coin_id: "spent-coin",
+      amount: "1",
+      offer_id: "offer-lock",
+      spent_height: 1,
+    }, "DAT")).toBeNull();
+    expect(formatSageHoldDetails({
+      ...emptySageTreasuryFunds("ab".repeat(32)),
+      leftoverOffers: [{ offerId: "offer-abcdef1234567890", status: "pending", offeredMojos: "2000", offeredAssetId: null }],
+      pendingTransactions: [{ transactionId: "tx-abcdef1234567890", feeMojos: "9000000", spentCoinIds: ["coin-1"] }],
+      lockedCoins: [{
+        coinId: "coinabcdef1234567890",
+        asset: "DAT",
+        amountMojos: "2000",
+        offerId: "offer-abcdef1234567890",
+        transactionId: null,
+      }],
+    })).toMatch(/Leftover offer id\(s\): offer-abcdef1234/);
   });
 });
 

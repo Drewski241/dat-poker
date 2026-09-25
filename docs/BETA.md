@@ -431,12 +431,13 @@ RPC is up but has not indexed the CAT yet (or XCH for fees is missing).
 as `50000000` after sync. Confirm `DAT_GOVERNANCE_TOKEN_ASSET_ID` and send
 a little XCH to the printed treasury address.
 
-If `/health` shows leftover `pendingOfferCount` (DAT or XCH still tied up),
-those unused withdraw offers are still reserving coins — even when
-Transactions looks empty, if the last cancel fee was below 0.09 mojo/cost.
-Do not Accept the old offer. Withdraw once — payout batch-cancels leftover
-offers on-chain at the dust-storm fee and does not remake in the same
-request. Wait until that cancel is Confirmed, then withdraw once. Or:
+If `/health` shows leftover `pendingOfferCount`, look at `leftoverOffers`,
+`pendingTransactions`, and `lockedCoins`. Empty `lockedCoins` + empty
+`pendingTransactions` means the GUI is right — those offer rows are stale
+local records. Withdraw once; payout deletes them and builds a new offer.
+If `lockedCoins` lists an `offerId` or `pendingTransactions` has a tx id,
+that is the hold. Do not Accept the old offer. Withdraw once so treasury
+cancels that leftover on-chain, then wait until those fields are empty. Or:
 
 ```bash
 sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh

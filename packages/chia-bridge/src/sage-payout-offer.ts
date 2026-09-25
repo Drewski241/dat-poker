@@ -7,12 +7,15 @@ import {
   describeSageCancelFailed,
   describeSageCancelNeedsXch,
   describeSageOfferCancelWait,
+  describeSageLockHold,
   ensureSageTreasuryLoggedIn,
   leftoverSageOffersBlockNewPayout,
   readSageTreasuryFunds,
   sageDatLooksLockedByPendingTake,
+  sageTreasuryCanBuildPayout,
   sageTreasuryHasPendingSpend,
   cancelOpenSageOffers,
+  deleteOpenSageOffers,
   remapSageOfferError,
   sageRpcAmount,
   treasuryWalletRpcRequest,
@@ -47,25 +50,41 @@ export async function createSageCatPayoutOffer(
 ): Promise<string> {
   await ensureSageTreasuryLoggedIn(rpc);
   const feeMojos = resolveSageMakeOfferFeeMojos(params.feeMojos);
-  const funds = await readSageTreasuryFunds(rpc, params.assetId);
-  if (leftoverSageOffersBlockNewPayout(funds)) {
-    if (funds.xchSelectableMojos === 0n && !sageTreasuryHasPendingSpend(funds)) {
-      throw new Error(describeSageCancelNeedsXch(funds, feeMojos));
-    }
-    const result = await cancelOpenSageOffers(rpc, feeMojos);
-    if (
-      result.failed.length > 0 &&
-      result.cancelled.length === 0 &&
-      result.mempoolConflict.length === 0 &&
-      result.skippedRecent.length === 0
-    ) {
-      throw new Error(describeSageCancelFailed(result, funds, feeMojos));
-    }
-    throw new Error(describeSageOfferCancelWait(feeMojos));
-  }
+  let funds = await readSageTreasuryFunds(rpc, params.assetId);
+
   if (sageTreasuryHasPendingSpend(funds)) {
-    throw new Error(describeSagePendingTreasurySpend());
+    throw new Error(describeSagePendingTreasurySpend(funds));
   }
+
+  if ((funds.pendingOfferCount ?? 0) > 0) {
+    if (leftoverSageOffersBlockNewPayout(funds, params.amountMojos)) {
+      if (funds.xchSelectableMojos === 0n) {
+        throw new Error(describeSageCancelNeedsXch(funds, feeMojos));
+      }
+      const result = await cancelOpenSageOffers(rpc, feeMojos);
+      if (
+        result.failed.length > 0 &&
+        result.cancelled.length === 0 &&
+        result.mempoolConflict.length === 0 &&
+        result.skippedRecent.length === 0
+      ) {
+        throw new Error(describeSageCancelFailed(result, funds, feeMojos));
+      }
+      funds = await readSageTreasuryFunds(rpc, params.assetId);
+      if (sageTreasuryHasPendingSpend(funds) || result.submittedOnChain) {
+        throw new Error(describeSageOfferCancelWait(feeMojos, funds));
+      }
+    }
+    await deleteOpenSageOffers(rpc);
+    funds = await readSageTreasuryFunds(rpc, params.assetId);
+    if (sageTreasuryHasPendingSpend(funds)) {
+      throw new Error(describeSagePendingTreasurySpend(funds));
+    }
+    if (leftoverSageOffersBlockNewPayout(funds, params.amountMojos) && !sageTreasuryCanBuildPayout(funds, params.amountMojos)) {
+      throw new Error(describeSageLockHold(funds));
+    }
+  }
+
   if (sageDatLooksLockedByPendingTake(funds)) {
     throw new Error(describeSagePendingPlayerTake());
   }
