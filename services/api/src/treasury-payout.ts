@@ -1,3 +1,5 @@
+import { resolveSageTakeOfferFeeMojos } from "@dat-poker/shared";
+
 export type WithdrawPayoutMode = "net" | "full";
 
 export interface TreasuryPayoutConfig {
@@ -9,14 +11,14 @@ export interface TreasuryPayoutConfig {
 export function readTreasuryPayoutConfig(): TreasuryPayoutConfig {
   const payoutMode = process.env.DAT_WITHDRAW_PAYOUT_MODE === "full" ? "full" : "net";
   const treasuryPayoutUrl = process.env.DAT_TREASURY_PAYOUT_URL?.trim() || null;
-  const withdrawFeeMojos = BigInt(process.env.DAT_WITHDRAW_FEE_MOJOS ?? "0");
+  const withdrawFeeMojos = resolveSageTakeOfferFeeMojos(process.env.DAT_WITHDRAW_FEE_MOJOS);
   return { payoutMode, treasuryPayoutUrl, withdrawFeeMojos };
 }
 
 /**
- * Host → player Sage payouts use a treasury offer the player imports in Sage.
- * WalletConnect takeOffer stays disabled. Default on when a treasury URL is set;
- * set DAT_ENABLE_ONCHAIN_WITHDRAW=false to force ledger-only.
+ * Host → player Sage payouts use a treasury offer. The site then calls
+ * chia_takeOffer so Sage shows Accept (player pays DAT_WITHDRAW_FEE_MOJOS XCH).
+ * Set DAT_ENABLE_ONCHAIN_WITHDRAW=false to force ledger-only.
  */
 export function onChainSageWithdrawEnabled(): boolean {
   const raw = process.env.DAT_ENABLE_ONCHAIN_WITHDRAW?.trim().toLowerCase();
@@ -161,7 +163,7 @@ export function sageLedgerWithdrawNote(kind: "sng" | "table"): string {
 }
 
 export function sageOfferWithdrawNote(): string {
-  return "Treasury created a DAT offer. Approve Accept in player Sage (not the treasury key). If no popup appears, Offers → Import and paste the offer.";
+  return "Treasury created a DAT offer. Approve Accept in player Sage (not the treasury key). Accept uses a small XCH fee from that wallet. If no popup appears, Offers → Import and paste the offer.";
 }
 
 export function computeWithdrawPayout(

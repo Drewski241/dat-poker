@@ -12,6 +12,7 @@ import {
   sessionCanTakeOffer,
   sessionDrainMethods,
 } from "./constants.js";
+import { DEFAULT_SAGE_TAKE_OFFER_FEE_MOJOS } from "@dat-poker/shared";
 import { isMobileUserAgent } from "./wc-link.js";
 
 let clientPromise: Promise<SignClient> | null = null;
@@ -317,7 +318,7 @@ export async function takeOffer(
   projectId: string,
   chainId: string,
   offer: string,
-  feeMojos = 0n,
+  feeMojos = DEFAULT_SAGE_TAKE_OFFER_FEE_MOJOS,
 ): Promise<{ success: boolean }> {
   const trimmed = offer.trim();
   if (!isChiaOfferString(trimmed)) {

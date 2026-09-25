@@ -67,9 +67,10 @@ The Vite web client (`apps/web`) implements Sage WalletConnect:
    station).
 6. **Cash out** table stack to the account, then **withdraw to player Sage**.
    Treasury builds an `offer1…` string; the site calls `chia_takeOffer` so Sage
-   shows Accept. If the pairing is older, disconnect and Connect Sage again, or
-   import the offer (Offers → Import). See [SECURITY.md](./SECURITY.md) and
-   [TREASURY.md](./TREASURY.md).
+   shows Accept. Accept spends a small **XCH** fee from **player** Sage
+   (`DAT_WITHDRAW_FEE_MOJOS`, default 0.000001 XCH). If the pairing is older,
+   disconnect and Connect Sage again, or import the offer (Offers → Import).
+   See [SECURITY.md](./SECURITY.md) and [TREASURY.md](./TREASURY.md).
 
 ### Mainnet test checklist
 

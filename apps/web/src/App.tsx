@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CAT_MOJOS_PER_TOKEN, computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatAmount, formatDatMojos, isHousePlayerId } from "@dat-poker/shared";
+import { CAT_MOJOS_PER_TOKEN, computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatAmount, formatDatMojos, formatXchMojos, isHousePlayerId, resolveSageTakeOfferFeeMojos } from "@dat-poker/shared";
 import {
   api,
   restoreApiAuthToken,
@@ -71,13 +71,21 @@ const CARD_PREVIEW_HOLE = [
 ];
 const CARD_PREVIEW_HAND = describeLiveHand(CARD_PREVIEW_HOLE, CARD_PREVIEW_BOARD);
 
-function SageOfferBox({ offer, onCopy }: { offer: string; onCopy: () => void }) {
+function SageOfferBox({
+  offer,
+  feeMojos,
+  onCopy,
+}: {
+  offer: string;
+  feeMojos: string;
+  onCopy: () => void;
+}) {
   return (
     <div className="sage-offer-box">
       <p>
-        Sage should show an <strong>Accept</strong> popup. If it does not, disconnect and Connect
-        Sage again, or in <strong>player Sage</strong> (not treasury): Offers → Import, paste this
-        offer, and accept.
+        Sage should show an <strong>Accept</strong> popup. Accept spends a{" "}
+        <strong>{formatXchMojos(feeMojos)}</strong> fee from your <strong>player</strong> Sage (XCH,
+        not DAT). If no popup appears, disconnect and Connect Sage again, or Offers → Import.
       </p>
       <textarea readOnly rows={4} value={offer} />
       <button type="button" className="secondary" onClick={onCopy}>
@@ -154,6 +162,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     treasuryError: string | null;
     treasuryWalletRpcReachable: boolean | null;
     onChainPayoutEnabled: boolean;
+    feeMojos: string;
   } | null>(null);
 
   const [session, setSession] = useState<WcSession | null>(null);
@@ -245,6 +254,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             treasuryError: config.withdraw.treasuryError ?? null,
             treasuryWalletRpcReachable: config.withdraw.treasuryWalletRpcReachable ?? null,
             onChainPayoutEnabled: Boolean(config.withdraw.onChainPayoutEnabled),
+            feeMojos: resolveSageTakeOfferFeeMojos(config.withdraw.feeMojos).toString(),
           });
         }
         if (restoreApiAuthToken()) {
@@ -319,6 +329,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         treasuryError: config.withdraw.treasuryError ?? null,
         treasuryWalletRpcReachable: config.withdraw.treasuryWalletRpcReachable ?? null,
         onChainPayoutEnabled: Boolean(config.withdraw.onChainPayoutEnabled),
+        feeMojos: resolveSageTakeOfferFeeMojos(config.withdraw.feeMojos).toString(),
       });
     }
   }, []);
@@ -1130,9 +1141,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       );
       return;
     }
-    setStatus("Approve the DAT offer in Sage — tap Accept.");
+    const feeMojos = resolveSageTakeOfferFeeMojos(withdrawConfig?.feeMojos);
+    setStatus(`Approve the DAT offer in Sage — tap Accept (${formatXchMojos(feeMojos)} fee from player Sage).`);
     try {
-      await takeOffer(session, wcConfig.projectId, wcConfig.chainId, offer);
+      await takeOffer(session, wcConfig.projectId, wcConfig.chainId, offer, feeMojos);
       setStatus("Sage accepted the DAT offer. DAT should show in your player wallet.");
     } catch (error) {
       setStatus(
@@ -1757,6 +1769,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 {withdrawResult.offer && (
                   <SageOfferBox
                     offer={withdrawResult.offer}
+                    feeMojos={resolveSageTakeOfferFeeMojos(
+                      withdrawResult.feeMojos ?? withdrawConfig?.feeMojos,
+                    ).toString()}
                     onCopy={() => {
                       void navigator.clipboard.writeText(withdrawResult.offer ?? "");
                       setStatus("Offer copied. Import it in player Sage if the Accept popup did not appear.");
@@ -2027,6 +2042,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             {withdrawResult.offer && (
               <SageOfferBox
                 offer={withdrawResult.offer}
+                feeMojos={resolveSageTakeOfferFeeMojos(
+                  withdrawResult.feeMojos ?? withdrawConfig?.feeMojos,
+                ).toString()}
                 onCopy={() => {
                   void navigator.clipboard.writeText(withdrawResult.offer ?? "");
                   setStatus("Offer copied. Import it in player Sage if the Accept popup did not appear.");

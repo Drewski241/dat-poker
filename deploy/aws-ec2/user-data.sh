@@ -195,6 +195,9 @@ write_env() {
   set_env_kv DAT_ENABLE_ONCHAIN_WITHDRAW true
   set_env_kv TREASURY_HOST "127.0.0.1"
   set_env_kv TREASURY_PORT "4200"
+  if ! grep -q '^DAT_WITHDRAW_FEE_MOJOS=' "$INSTALL_ROOT/.env"; then
+    set_env_kv DAT_WITHDRAW_FEE_MOJOS 1000000
+  fi
 }
 
 install_app() {

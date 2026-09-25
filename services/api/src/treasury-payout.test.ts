@@ -4,6 +4,7 @@ import {
   inspectTreasuryPayout,
   looksLikeXchAddress,
   onChainSageWithdrawEnabled,
+  readTreasuryPayoutConfig,
   treasuryPayoutHealthUrl,
   treasurySelfPayoutError,
 } from "./treasury-payout.js";
@@ -19,6 +20,26 @@ describe("computeWithdrawPayout", () => {
 
   it("pays full stack in full mode", () => {
     expect(computeWithdrawPayout(1_050_000n, 1_000_000n, "full")).toBe(1_050_000n);
+  });
+});
+
+describe("readTreasuryPayoutConfig", () => {
+  afterEach(() => {
+    delete process.env.DAT_WITHDRAW_PAYOUT_MODE;
+    delete process.env.DAT_TREASURY_PAYOUT_URL;
+    delete process.env.DAT_WITHDRAW_FEE_MOJOS;
+  });
+
+  it("defaults Accept fee to 0.000001 XCH when unset or zero", () => {
+    delete process.env.DAT_WITHDRAW_FEE_MOJOS;
+    expect(readTreasuryPayoutConfig().withdrawFeeMojos).toBe(1_000_000n);
+    process.env.DAT_WITHDRAW_FEE_MOJOS = "0";
+    expect(readTreasuryPayoutConfig().withdrawFeeMojos).toBe(1_000_000n);
+  });
+
+  it("keeps an operator override", () => {
+    process.env.DAT_WITHDRAW_FEE_MOJOS = "5000000";
+    expect(readTreasuryPayoutConfig().withdrawFeeMojos).toBe(5_000_000n);
   });
 });
 

@@ -35,6 +35,9 @@ set_kv() {
 
 set_kv DAT_TREASURY_PAYOUT_URL "$PAYOUT_URL"
 set_kv DAT_ENABLE_ONCHAIN_WITHDRAW true
+if ! grep -q '^DAT_WITHDRAW_FEE_MOJOS=' "$ENV_FILE"; then
+  set_kv DAT_WITHDRAW_FEE_MOJOS 1000000
+fi
 if [[ -n "$TREASURY_ADDR" ]]; then
   set_kv TREASURY_XCH_ADDRESS "$TREASURY_ADDR"
 fi

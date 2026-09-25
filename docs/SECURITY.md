@@ -17,8 +17,10 @@ signed link / withdraw **text** cannot be reused as a spend.
 The site **does not request** `chia_send`, `chia_createOffer`, or
 `chip0002_signCoinSpends`. Old sessions that still have those methods are
 dropped on page load. After treasury builds a withdraw `offer1…` string, the
-site may call `chia_takeOffer` so player Sage shows an Accept popup. Testers
-can still import the offer by hand if the popup does not appear.
+site may call `chia_takeOffer` so player Sage shows an Accept popup. Accept
+spends a small XCH fee from that player wallet (`DAT_WITHDRAW_FEE_MOJOS`,
+default 0.000001 XCH). Testers can still import the offer by hand if the
+popup does not appear.
 
 Daily redeem and table stacks are **ledger credits**, not CAT sends. Account
 DAT is stored on the game host (`data/ledger.json`) so a redeploy does not
