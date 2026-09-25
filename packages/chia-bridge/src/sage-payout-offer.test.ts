@@ -1,24 +1,32 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   buildSageCancelOfferRequest,
   buildSageImportKeyRequest,
+  buildSageSendCatRequest,
   describeMissingSageCerts,
   describeSageFundsBlock,
   describeSageLoginNeeded,
   describeSageCancelFailed,
   describeSageCancelNeedsXch,
+  describeSageEvictWait,
   describeSageGhostLeftoverOffers,
   describeSageMempoolConflict,
   describeSageNoSpendableCoins,
   describeSageOfferCancelWait,
+  describeSageReuseOffer,
   describeSageWalletRpcFailure,
   emptySageTreasuryFunds,
   expandWalletPath,
   formatDatMojos,
+  isCompletedSageOfferStatus,
   isSageMempoolConflict,
   leftoverSageOffersAreGhostRecords,
   leftoverSageOffersBlockNewPayout,
   leftoverCoinsLockedByOffer,
+  normalizeSageOfferStatus,
   summarizeSageLeftoverOffer,
   summarizeSagePendingTransaction,
   summarizeSageLockedCoin,
@@ -39,6 +47,13 @@ import {
   sageDatLooksLockedInOffer,
   sageTreasuryCanBuildPayout,
 } from "./sage-wallet-rpc.js";
+import {
+  decideSagePayoutAction,
+  emptyTreasuryLastOffer,
+  readTreasuryLastOffer,
+  shouldEvictStuckPlayerTake,
+  writeTreasuryLastOffer,
+} from "./sage-last-offer.js";
 import { buildSageCatGiftOfferRequest } from "./sage-payout-offer.js";
 
 describe("expandWalletPath", () => {
@@ -426,6 +441,151 @@ describe("sage treasury coin selection", () => {
         transactionId: null,
       }],
     })).toMatch(/Leftover offer id\(s\): offer-abcdef1234/);
+  });
+});
+
+describe("Sage offer status + send_cat evict", () => {
+  it("normalizes Sage offer statuses", () => {
+    expect(normalizeSageOfferStatus(0)).toBe("pending");
+    expect(normalizeSageOfferStatus("active")).toBe("active");
+    expect(normalizeSageOfferStatus(2)).toBe("completed");
+    expect(normalizeSageOfferStatus("cancelled")).toBe("cancelled");
+    expect(isCompletedSageOfferStatus(2)).toBe(true);
+    expect(describeSageReuseOffer()).toMatch(/do not paste it again/i);
+    expect(describeSageEvictWait(9_000_000n)).toMatch(/sent selectable DAT back to itself/i);
+    expect(describeSageEvictWait(9_000_000n)).toMatch(/evictPending/i);
+  });
+
+  it("builds send_cat of selectable DAT to the treasury address", () => {
+    expect(
+      buildSageSendCatRequest({
+        assetId: "d12fbf63bb015fa0e988509b971ad4c9da7cc5fc30f2499d3aab38c3fadc531c",
+        address: "xch1treasury",
+        amountMojos: 49_998_000n,
+        feeMojos: 1_000_000n,
+      }),
+    ).toEqual({
+      asset_id: "d12fbf63bb015fa0e988509b971ad4c9da7cc5fc30f2499d3aab38c3fadc531c",
+      address: "xch1treasury",
+      amount: "49998000",
+      fee: "9000000",
+      include_hint: true,
+      auto_submit: true,
+    });
+  });
+
+  it("round-trips the last-offer file", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "sage-last-")), "treasury-last-offer.json");
+    writeTreasuryLastOffer(
+      emptyTreasuryLastOffer({
+        offer: "offer1abc",
+        offerId: "offer-id-1",
+        amountMojos: "2000",
+        assetId: "ab".repeat(32),
+        status: "pending",
+      }),
+      path,
+    );
+    expect(readTreasuryLastOffer(path)?.offer).toBe("offer1abc");
+    expect(JSON.parse(readFileSync(path, "utf8")).offerId).toBe("offer-id-1");
+  });
+});
+
+describe("decideSagePayoutAction", () => {
+  const selectable = {
+    ...emptySageTreasuryFunds("ab".repeat(32)),
+    address: "xch1treasury",
+    datSelectableMojos: 49_998_000n,
+    datBalanceMojos: 49_998_000n,
+    xchSelectableMojos: 519_800_644_036n,
+    pendingOfferCount: 0,
+    pendingTransactionCount: 0,
+  };
+
+  it("reuses a still-pending last offer instead of remaking", () => {
+    const action = decideSagePayoutAction({
+      funds: selectable,
+      neededMojos: 2_000n,
+      feeMojos: 9_000_000n,
+      lastOffer: emptyTreasuryLastOffer({ offer: "offer1same", status: "pending" }),
+      reusable: { offer: "offer1same", offerId: "id-1", status: "pending" },
+    });
+    expect(action.kind).toBe("reuse");
+    if (action.kind === "reuse") {
+      expect(action.offer).toBe("offer1same");
+      expect(action.message).toMatch(/do not paste it again/i);
+    }
+  });
+
+  it("evicts when coins look free and there is no reusable last offer", () => {
+    expect(
+      shouldEvictStuckPlayerTake({
+        funds: selectable,
+        neededMojos: 2_000n,
+        lastOffer: null,
+        reusable: null,
+      }),
+    ).toBe(true);
+    const action = decideSagePayoutAction({
+      funds: selectable,
+      neededMojos: 2_000n,
+      feeMojos: 9_000_000n,
+      lastOffer: null,
+      reusable: null,
+    });
+    expect(action.kind).toBe("evict");
+    if (action.kind === "evict") {
+      expect(action.amountMojos).toBe(49_998_000n);
+      expect(action.address).toBe("xch1treasury");
+      expect(action.feeMojos).toBe(9_000_000n);
+    }
+  });
+
+  it("makes a new offer after the evict confirms", () => {
+    const action = decideSagePayoutAction({
+      funds: selectable,
+      neededMojos: 2_000n,
+      feeMojos: 9_000_000n,
+      lastOffer: emptyTreasuryLastOffer({
+        evictedAt: "2026-09-25T00:00:00.000Z",
+        status: "cancelled",
+      }),
+      reusable: null,
+    });
+    expect(action.kind).toBe("make-offer");
+  });
+
+  it("waits when an evict is still pending", () => {
+    const action = decideSagePayoutAction({
+      funds: { ...selectable, pendingTransactionCount: 1 },
+      neededMojos: 2_000n,
+      feeMojos: 9_000_000n,
+      lastOffer: emptyTreasuryLastOffer({ evictedAt: "2026-09-25T00:00:00.000Z" }),
+      reusable: null,
+    });
+    expect(action.kind).toBe("wait-evict");
+  });
+
+  it("makes a new payout after the last offer completed", () => {
+    const action = decideSagePayoutAction({
+      funds: selectable,
+      neededMojos: 2_000n,
+      feeMojos: 9_000_000n,
+      lastOffer: emptyTreasuryLastOffer({ offer: "offer1done", status: "completed" }),
+      reusable: { offer: "offer1done", offerId: "id-1", status: "completed" },
+    });
+    expect(action.kind).toBe("make-offer");
+  });
+
+  it("tells the player they are done when the last offer completed and DAT is gone", () => {
+    const action = decideSagePayoutAction({
+      funds: { ...selectable, datSelectableMojos: 0n, datBalanceMojos: 0n },
+      neededMojos: 2_000n,
+      feeMojos: 9_000_000n,
+      lastOffer: emptyTreasuryLastOffer({ offer: "offer1done", status: "completed" }),
+      reusable: { offer: "offer1done", offerId: "id-1", status: "completed" },
+    });
+    expect(action.kind).toBe("completed");
   });
 });
 

@@ -8,6 +8,7 @@ export interface CatPayoutOfferParams {
   assetId: string;
   amountMojos: bigint;
   feeMojos?: bigint;
+  lastOfferPath?: string;
 }
 
 export function buildCatGiftOfferRequest(params: CatPayoutOfferParams): Record<string, unknown> {

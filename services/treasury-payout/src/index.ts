@@ -6,6 +6,7 @@ import cors from "@fastify/cors";
 import { buildPayoutOffer, readTreasuryServiceConfig, type PayoutRequestBody } from "./payout.js";
 import {
   describeMissingSageCerts,
+  describeSageEvictWait,
   describeSageLoginNeeded,
   describeSageNoSpendableCoins,
   formatSageHoldDetails,
@@ -14,8 +15,10 @@ import {
   ensureSageTreasuryReady,
   pingTreasuryWalletRpc,
   readSageTreasuryFunds,
+  readTreasuryLastOffer,
   sageDatLooksLockedByPendingTake,
   sageLooksStillSyncing,
+  sageTreasuryHasPendingSpend,
 } from "@dat-poker/chia-bridge";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -49,10 +52,22 @@ async function main(): Promise<void> {
       config.offerMode === "rpc" && walletConfigured && walletRpcReachable
         ? await readSageTreasuryFunds(config.walletRpc, config.defaultAssetId ?? undefined)
         : null;
+    const lastOffer = readTreasuryLastOffer();
+    const evictPending = Boolean(lastOffer?.evictedAt) && funds != null && sageTreasuryHasPendingSpend(funds);
     const noSpendableDat =
       funds != null &&
       (funds.datSelectableMojos === 0n ||
         (sageLooksStillSyncing(funds) && (funds.datSelectableMojos == null || funds.datSelectableMojos === 0n)));
+    const walletError =
+      config.offerMode === "rpc" && !walletConfigured
+        ? describeMissingSageCerts()
+        : config.offerMode === "rpc" && walletConfigured && walletRpcReachable === false
+          ? describeSageLoginNeeded(fingerprintSet)
+          : evictPending
+            ? describeSageEvictWait(config.payoutFeeMojos)
+            : noSpendableDat
+              ? describeSageNoSpendableCoins(funds ?? undefined)
+              : null;
     return {
       status: "ok",
       offerMode: config.offerMode,
@@ -61,14 +76,7 @@ async function main(): Promise<void> {
       walletRpcUrl: config.walletRpc.url,
       walletConfigured,
       walletRpcReachable,
-      walletError:
-        config.offerMode === "rpc" && !walletConfigured
-          ? describeMissingSageCerts()
-          : config.offerMode === "rpc" && walletConfigured && walletRpcReachable === false
-            ? describeSageLoginNeeded(fingerprintSet)
-            : noSpendableDat
-              ? describeSageNoSpendableCoins(funds ?? undefined)
-              : null,
+      walletError,
       sageFingerprint: config.walletRpc.sageFingerprint ?? null,
       treasuryAddress: funds?.address ?? config.treasuryAddress,
       sageSyncedCoins: funds?.syncedCoins ?? null,
@@ -84,6 +92,11 @@ async function main(): Promise<void> {
       leftoverOffersBlockPayout: funds != null ? leftoverSageOffersBlockNewPayout(funds) : null,
       lockHold: funds != null ? formatSageHoldDetails(funds).trim() || null : null,
       datLockedByPendingTake: funds != null ? sageDatLooksLockedByPendingTake(funds) : null,
+      lastOfferId: lastOffer?.offerId ?? null,
+      lastOfferStatus: lastOffer?.status ?? null,
+      lastOfferCreatedAt: lastOffer?.createdAt ?? null,
+      evictPending,
+      evictedAt: lastOffer?.evictedAt ?? null,
       xchSelectableMojos: funds?.xchSelectableMojos?.toString() ?? null,
       payoutFeeMojos: config.payoutFeeMojos.toString(),
     };

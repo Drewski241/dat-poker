@@ -302,7 +302,8 @@ WALLETCONNECT_PROJECT_ID=...
 | `TREASURY_OFFER_MODE=mock` | Dev only — fake offers, no on-chain DAT |
 | `DAT_WITHDRAW_PAYOUT_MODE=net` | Pay winnings only (virtual buy-in): stack − buy-in |
 | `DAT_WITHDRAW_FEE_MOJOS` | Player `chia_takeOffer` fee. Default `0`. Sage Accept has no fee box. |
-| `TREASURY_PAYOUT_FEE_MOJOS` | Treasury Sage **XCH** fee on `make_offer` **and** on-chain `cancel_offers`. Default `9000000` = 0.000009 XCH = ceil(100M cost × **0.09 mojo/cost**) so leftover cancels enter the dust-storm mempool. `0`, unset, or the old `1000000` default is raised to that floor. Batch cancel scales by leftover offer count. Treasury must have spendable XCH (this host already does). |
+| `TREASURY_PAYOUT_FEE_MOJOS` | Treasury Sage **XCH** fee on `make_offer`, on-chain `cancel_offers`, and the DAT self-send that evicts a leftover player take. Default `9000000` = 0.000009 XCH = ceil(100M cost × **0.09 mojo/cost**) so those spends enter the dust-storm mempool. `0`, unset, or the old `1000000` default is raised to that floor. Batch cancel scales by leftover offer count. Treasury must have spendable XCH (this host already does). |
+| `TREASURY_LAST_OFFER_PATH` | JSON file for the last `offer1` / evict marker. Default `data/treasury-last-offer.json` (cwd `/opt/dat-poker` on AWS). |
 | `TREASURY_WALLET_BACKEND=chia` | Legacy reference wallet only (not recommended) |
 
 ---
@@ -380,7 +381,7 @@ sage rpc get_keys '{}'
 2. API already points at `http://127.0.0.1:4200/payout` on the website host. Set `TREASURY_XCH_ADDRESS` so payouts cannot target the treasury key.
    If the play page says treasury is not reachable at `127.0.0.1:4200`, the systemd unit is down — redeploy or run `start-treasury.sh`.
 3. Player links a **separate** Sage address, unlocks DAT, clicks withdraw.
-4. Copy the offer from the site. In **player Sage** (not treasury): Offers → Import → Accept once. If player Sage already shows pending incoming DAT from an old WalletConnect Accept, wait for Confirmed or remove that pending take first, then import this offer once. Do not tap a WalletConnect Accept popup.
+4. Copy the offer from the site. In **player Sage** (not treasury): Offers → Import → Accept **once**. Do not paste it a second time. If player Sage already shows pending incoming DAT, wait for Confirmed — pasting again mempool-conflicts. If DAT already arrived, you are done. After this redeploy, the **first** withdraw may only evict the leftover player take (treasury `send_cat` to itself at 0.09 mojo/cost). Wait until `/health` `evictPending` is false, then withdraw once more and import that new offer once.
 5. Player Sage DAT balance increases. Treasury Sage DAT decreases.
 
 Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (`50000` mojos).
@@ -400,6 +401,8 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 | Mempool conflict right away | `/health` `pendingTransactions` lists the spend that still holds the coin. Do not withdraw again until that list is empty. |
 | `/health` `datLockedByPendingTake: true` | DAT is still on the treasury key but not selectable, and no leftover offer/tx holds a coin. Do not cancel from treasury — wait for the player take. |
 | Leftover-offer 400 / no pending txs in treasury GUI | Those leftover rows are stale. Redeploy and withdraw once — payout deletes them locally and builds a new offer. `/health` `leftoverOffers` shows the row ids; `lockedCoins` stays empty when nothing is on-chain. |
+| Player paste mempool-conflicts / treasury leftover empty | A leftover player take is still in the mempool. Treasury will not remake on those coins. First withdraw after redeploy evicts selectable DAT back to the treasury address at 0.09 mojo/cost. Wait until `/health` `evictPending` is false and `pendingTransactions` is empty. Then withdraw once and import that offer once. `/health` `lastOfferStatus` pending/active means the same offer is reused — do not paste it again. |
+| `/health` `evictPending: true` | Treasury self-send is still in the mempool. Do not withdraw again until it confirms. |
 | No offer returned | Treasury Sage needs spendable DAT + XCH for fees |
 | Sage Accept fails / needs a fee | Sage Accept has no fee field. Treasury must attach XCH on `make_offer` (`TREASURY_PAYOUT_FEE_MOJOS`, default 0.000009 XCH). This host has spendable XCH. Redeploy so leftover 0-fee / 1e6-fee offers are cancelled first. |
 | GUI + CLI RPC conflict | Run only one Sage RPC at a time |

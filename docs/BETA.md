@@ -447,11 +447,12 @@ sudo bash /opt/dat-poker/deploy/aws-ec2/release-treasury-offers.sh
 Wait after that cancel before the next withdraw.
 
 If treasury has **no** open offers but player Sage shows **pending incoming DAT**,
-that take is already spending the treasury coin. Do not withdraw again and
-do not cancel from treasury. Wait until the incoming DAT is Confirmed. A
-0-fee take can sit Pending a long time. If it stays Pending for hours,
-remove/cancel that pending incoming take in player Sage, wait until it
-disappears, then withdraw once.
+that take is already spending the treasury coin. Do not paste a new offer —
+treasury remaking the same coins is what mempool-conflicts. After redeploy,
+the first withdraw evicts those coins on-chain (`send_cat` to the treasury
+address at 0.09 mojo/cost). Wait until `/health` `evictPending` is false,
+then withdraw once and import that new offer once. If incoming DAT is
+already Confirmed, you are done.
 
 ## Website address
 

@@ -165,7 +165,7 @@ export function sageLedgerWithdrawNote(kind: "sng" | "table"): string {
 }
 
 export function sageOfferWithdrawNote(): string {
-  return "Treasury created a DAT offer and already attached the XCH network fee. Copy the offer and import it in player Sage (Offers → Import) — not the treasury key. Do not tap a WalletConnect Accept popup; that mempool-conflicts with import. If player Sage already shows pending incoming DAT, wait for Confirmed or remove that pending take, then import this offer once.";
+  return "Treasury created a DAT offer and already attached the XCH network fee. Copy the offer and import it in player Sage (Offers → Import) once — not the treasury key. Do not paste it a second time. Do not tap a WalletConnect Accept popup. If player Sage already shows pending incoming DAT, wait for Confirmed — pasting again mempool-conflicts. If DAT already arrived, you are done.";
 }
 
 export function computeWithdrawPayout(
@@ -200,13 +200,13 @@ export async function requestTreasuryOffer(params: {
         address: params.recipientAddress,
         amountMojos: params.amountMojos.toString(),
       }),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(60_000),
     });
   } catch (e) {
     const raw = (e as Error).message || "request failed";
     if (/timeout|aborted/i.test(raw) || (e as { name?: string }).name === "TimeoutError") {
       throw new Error(
-        "Treasury Sage did not finish the offer in 20s. On the AWS host, confirm Sage RPC :9257 is logged in, then try again.",
+        "Treasury Sage did not finish the offer in 60s. On the AWS host, confirm Sage RPC :9257 is logged in, then try again.",
       );
     }
     throw e;

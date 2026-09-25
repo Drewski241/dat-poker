@@ -24,9 +24,33 @@ export interface TreasuryWalletRpcConfig {
 
 export interface SageMakeOfferResponse {
   offer?: string;
+  offer_id?: string;
   success?: boolean;
   error?: string;
 }
+
+export interface SageViewOfferResponse {
+  offer?: unknown;
+  status?: unknown;
+}
+
+export interface SageGetOfferResponse {
+  offer?: SageOfferRecord & { offer?: string };
+}
+
+export interface SageSendCatResponse {
+  summary?: unknown;
+  coin_spends?: unknown[];
+  transaction_id?: string;
+}
+
+export type SageOfferStatusName =
+  | "pending"
+  | "active"
+  | "completed"
+  | "cancelled"
+  | "expired"
+  | "unknown";
 
 export interface CreateOfferForIdsResponse {
   success: boolean;
@@ -204,13 +228,39 @@ export function sageOfferId(offer: SageOfferRecord): string | null {
   return typeof id === "string" && id.trim() ? id.trim() : null;
 }
 
-/** Pending/active Sage offers reserve maker coins until taken, deleted, or cancelled. */
-export function isOpenSageOfferStatus(status: unknown): boolean {
-  if (typeof status === "number") return status === 0 || status === 1;
+export function normalizeSageOfferStatus(status: unknown): SageOfferStatusName {
+  if (typeof status === "number") {
+    if (status === 0) return "pending";
+    if (status === 1) return "active";
+    if (status === 2) return "completed";
+    if (status === 3) return "cancelled";
+    if (status === 4) return "expired";
+    return "unknown";
+  }
   const normalized = String(status ?? "")
     .trim()
     .toLowerCase();
-  return normalized === "pending" || normalized === "active" || normalized === "0" || normalized === "1";
+  if (normalized === "pending" || normalized === "0") return "pending";
+  if (normalized === "active" || normalized === "1") return "active";
+  if (normalized === "completed" || normalized === "2") return "completed";
+  if (normalized === "cancelled" || normalized === "canceled" || normalized === "3") return "cancelled";
+  if (normalized === "expired" || normalized === "4") return "expired";
+  return "unknown";
+}
+
+/** Pending/active Sage offers reserve maker coins until taken, deleted, or cancelled. */
+export function isOpenSageOfferStatus(status: unknown): boolean {
+  const normalized = normalizeSageOfferStatus(status);
+  return normalized === "pending" || normalized === "active";
+}
+
+export function isCompletedSageOfferStatus(status: unknown): boolean {
+  return normalizeSageOfferStatus(status) === "completed";
+}
+
+export function isClosedSageOfferStatus(status: unknown): boolean {
+  const normalized = normalizeSageOfferStatus(status);
+  return normalized === "completed" || normalized === "cancelled" || normalized === "expired";
 }
 
 export function openSageOfferIds(offers: SageOfferRecord[]): string[] {
@@ -353,12 +403,54 @@ export function describeSagePendingPlayerTake(): string {
     "Player Sage already has a pending incoming DAT take for this withdraw. " +
     "That take is spending the treasury DAT coin in the mempool, so treasury has no open offer to cancel " +
     "and a new withdraw offer will mempool-conflict. " +
-    "Do not withdraw again. Do not tap Accept again. Do not cancel from treasury. " +
+    "Do not withdraw again. Do not paste the offer again. Do not tap Accept again. Do not cancel from treasury. " +
     "Wait until that pending incoming DAT shows Confirmed in player Sage " +
     "(a 0-fee take can sit Pending a long time). " +
     "If it stays Pending for hours: in player Sage, remove/cancel that pending incoming take if Sage lets you, " +
-    "wait until it disappears, then withdraw once so treasury can build a new fee-bearing offer. " +
+    "wait until it disappears, then withdraw once so treasury can evict the leftover take and build a new fee-bearing offer. " +
     "If DAT already arrived in player Sage, you are done."
+  );
+}
+
+export function describeSageReuseOffer(): string {
+  return (
+    "Treasury is reusing the same DAT offer from the last withdraw. " +
+    "If you already imported or Accepted it in player Sage, do not paste it again — " +
+    "a second take of the same coins mempool-conflicts. " +
+    "Wait until incoming DAT is Confirmed. If player Sage already shows Confirmed DAT, you are done."
+  );
+}
+
+export function describeSageOfferCompleted(): string {
+  return (
+    "The last treasury DAT offer already completed. " +
+    "If player Sage shows Confirmed DAT, you are done. " +
+    "Withdraw again only for a new payout."
+  );
+}
+
+export function describeSageEvictWait(
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): string {
+  return (
+    "Treasury sent selectable DAT back to itself at the 0.09 mojo/cost dust-storm fee " +
+    ` (${formatXchMojos(feeMojos)}, TREASURY_PAYOUT_FEE_MOJOS) so the leftover player take can drop from the mempool. ` +
+    "Wait until /health pendingTransactions is empty and evictPending is false. " +
+    "Then withdraw once and import that new offer once. Do not paste the old offer. " +
+    "If player Sage already shows Confirmed DAT, you are done."
+  );
+}
+
+export function describeSageEvictNeedsXch(
+  funds: SageTreasuryFunds,
+  feeMojos: bigint = DEFAULT_SAGE_MAKE_OFFER_FEE_MOJOS,
+): string {
+  const addr = funds.address ? ` Treasury address: ${funds.address}.` : "";
+  return (
+    `Evicting a leftover player take needs a ${formatXchMojos(feeMojos)} dust-storm fee (0.09 mojo/cost), ` +
+    "but treasury Sage has no selectable XCH." +
+    addr +
+    " Send a little XCH to that address, wait for sync, then withdraw once. Do not paste the old offer."
   );
 }
 
@@ -895,6 +987,85 @@ export async function listSageLockedCoins(
 export async function listSageOffers(config: TreasuryWalletRpcConfig): Promise<SageOfferRecord[]> {
   const listed = await treasuryWalletRpcRequest<{ offers?: SageOfferRecord[] }>(config, "get_offers", {});
   return Array.isArray(listed.offers) ? listed.offers : [];
+}
+
+export async function viewSageOffer(
+  config: TreasuryWalletRpcConfig,
+  offer: string,
+): Promise<SageViewOfferResponse | null> {
+  const trimmed = offer.trim();
+  if (!trimmed) return null;
+  try {
+    return await treasuryWalletRpcRequest<SageViewOfferResponse>(config, "view_offer", { offer: trimmed });
+  } catch {
+    return null;
+  }
+}
+
+export async function getSageOffer(
+  config: TreasuryWalletRpcConfig,
+  offerId: string,
+): Promise<(SageOfferRecord & { offer?: string }) | null> {
+  const id = offerId.trim();
+  if (!id) return null;
+  try {
+    const listed = await treasuryWalletRpcRequest<SageGetOfferResponse>(config, "get_offer", {
+      offer_id: id,
+    });
+    return listed.offer ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function buildSageSendCatRequest(params: {
+  assetId: string;
+  address: string;
+  amountMojos: bigint;
+  feeMojos: bigint;
+}): {
+  asset_id: string;
+  address: string;
+  amount: string;
+  fee: string;
+  include_hint: true;
+  auto_submit: true;
+} {
+  const assetId = params.assetId.replace(/^0x/i, "").toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(assetId)) {
+    throw new Error("Invalid CAT asset id (expected 64 hex chars)");
+  }
+  if (!params.address.trim()) {
+    throw new Error("Treasury address required to evict a leftover player take");
+  }
+  if (params.amountMojos <= 0n) {
+    throw new Error("Evict amount must be positive");
+  }
+  return {
+    asset_id: assetId,
+    address: params.address.trim(),
+    amount: sageRpcAmount(params.amountMojos),
+    fee: sageRpcAmount(resolveSageMakeOfferFeeMojos(params.feeMojos)),
+    include_hint: true,
+    auto_submit: true,
+  };
+}
+
+export async function sendSageCat(
+  config: TreasuryWalletRpcConfig,
+  params: {
+    assetId: string;
+    address: string;
+    amountMojos: bigint;
+    feeMojos: bigint;
+  },
+): Promise<SageSendCatResponse> {
+  return treasuryWalletRpcRequest<SageSendCatResponse>(
+    config,
+    "send_cat",
+    buildSageSendCatRequest(params),
+    { timeoutMs: 45_000 },
+  );
 }
 
 export async function deleteSageOffer(config: TreasuryWalletRpcConfig, offerId: string): Promise<void> {

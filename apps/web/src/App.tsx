@@ -81,9 +81,9 @@ function SageOfferBox({
     <div className="sage-offer-box">
       <p>
         Copy this offer and import it in <strong>player Sage</strong> (Offers → Import →
-        Accept once). Do not tap a WalletConnect Accept popup — that is what caused the
-        player mempool conflict. If Sage already shows pending incoming DAT, wait for
-        Confirmed or remove that pending take first, then import this offer once.
+        Accept once). Do not paste it a second time and do not tap a WalletConnect
+        Accept popup — a second take mempool-conflicts. If Sage already shows pending
+        incoming DAT, wait for Confirmed. If DAT already arrived, you are done.
       </p>
       <textarea readOnly rows={4} value={offer} />
       <button type="button" className="secondary" onClick={onCopy}>
