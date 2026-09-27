@@ -179,11 +179,75 @@ security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
 In Session Manager:
 
 ```bash
-sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh
 ```
 
-Use this feature branch name instead of `main` until it is merged. Restarting
-the API clears open tables; account DAT and play-through unlocks stay in `data/ledger.json`.
+(`up.sh` fetches `cursor/fix-sng-prize-pool-d148` and runs `redeploy.sh`, or
+downloads `redeploy.sh` from GitHub if your checkout is still old.)
+
+Use `main` after the feature PR merges:
+
+```bash
+sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/up.sh
+```
+
+Restarting the API clears open tables; account DAT and play-through unlocks
+stay in `data/ledger.json`.
+
+### Update from your phone (Session Manager, no copy-paste)
+
+On a phone you usually **cannot paste** into the AWS terminal. Type **one line
+at a time**, press Enter, wait for the prompt, then the next line.
+
+**Step 0 — why “no such file”?**
+
+```bash
+ls /opt/dat-poker
+```
+
+- **No such file or directory:** this instance was never bootstrapped with DAT
+  POKER (for example only the Apache tutorial). Redeploy will never work here.
+  From a **laptop** browser, launch a **new** Amazon Linux 2023 instance and
+  paste [console-user-data.sh](../deploy/aws-ec2/console-user-data.sh) into
+  User data ([§ EC2 console](#option-a--ec2-console-recommended)).
+- **You see files:** continue below.
+
+**Step 1 — pull the branch that contains `deploy/aws-ec2/up.sh`**
+
+```bash
+cd /opt/dat-poker
+```
+
+```bash
+export R=cursor/fix-sng-prize-pool-d148
+```
+
+```bash
+sudo git fetch --depth 1 origin $R
+```
+
+```bash
+sudo git checkout -f FETCH_HEAD
+```
+
+**Step 2 — rebuild**
+
+```bash
+sudo bash deploy/aws-ec2/up.sh
+```
+
+Wait until the last line is **`beta redeploy ok`** (several minutes).
+
+If `up.sh` is still missing after step 1, the fetch failed (typo in `$R` or no
+network). Run `sudo git remote -v` and try the fetch again.
+
+**Step 3 — quick check**
+
+```bash
+curl -s http://127.0.0.1/health
+```
+
+You want JSON with `"status":"ok"`.
 
 Wait until it prints `beta redeploy ok`. If it dies on
 `www.datspiritpoker.com: command not found`, the API already restarted —

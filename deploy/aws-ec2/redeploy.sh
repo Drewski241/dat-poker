@@ -5,8 +5,16 @@ set -euxo pipefail
 echo "=== DAT POKER redeploy.sh (git pull + rebuild). Wait for: beta redeploy ok ==="
 
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/dat-poker}"
-WEB_ROOT="${WEB_ROOT:-/usr/share/nginx/html}"
-REPO_REF="${DAT_POKER_REPO_REF:-main}"
+if [[ -z "${WEB_ROOT:-}" ]]; then
+  if [[ -d /usr/share/nginx/html ]]; then
+    WEB_ROOT="/usr/share/nginx/html"
+  elif [[ -d /var/www/html ]]; then
+    WEB_ROOT="/var/www/html"
+  else
+    WEB_ROOT="/usr/share/nginx/html"
+  fi
+fi
+REPO_REF="${DAT_POKER_REPO_REF:-cursor/fix-sng-prize-pool-d148}"
 
 cd "$INSTALL_ROOT"
 export CI=true
