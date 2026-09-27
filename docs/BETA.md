@@ -209,7 +209,7 @@ ls /opt/dat-poker
   POKER (for example only the Apache tutorial). Redeploy will never work here.
   From a **laptop** browser, launch a **new** Amazon Linux 2023 instance and
   paste [console-user-data.sh](../deploy/aws-ec2/console-user-data.sh) into
-  User data ([§ EC2 console](#option-a--ec2-console-recommended)).
+  User data ([Console launch](#console-launch-no-aws-cli)).
 - **You see files:** continue below.
 
 **Step 1 — pull the branch that contains `deploy/aws-ec2/up.sh`**
