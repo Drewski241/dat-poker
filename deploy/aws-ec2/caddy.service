@@ -1,0 +1,22 @@
+[Unit]
+Description=DAT POKER Caddy (HTTPS)
+After=network.target dat-poker-api.service
+
+[Service]
+Type=simple
+User=caddy
+Group=caddy
+EnvironmentFile=-/etc/caddy/caddy.env
+Environment=HOME=/var/lib/caddy
+Environment=XDG_DATA_HOME=/var/lib/caddy
+Environment=XDG_CONFIG_HOME=/var/lib/caddy
+ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+PrivateTmp=true
+ProtectSystem=full
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
