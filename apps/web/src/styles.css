@@ -582,6 +582,46 @@ button.secondary {
   color: var(--accent, #3dd68c);
 }
 
+.nft-promo {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border-radius: 10px;
+  background: rgba(61, 214, 140, 0.08);
+  border: 1px solid rgba(61, 214, 140, 0.25);
+}
+
+.nft-promo-image {
+  width: 7.5rem;
+  height: 7.5rem;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: var(--panel);
+}
+
+.nft-promo-copy h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.nft-promo-desc {
+  margin: 0.35rem 0;
+  font-size: 0.9rem;
+}
+
+.nft-promo-status {
+  margin: 0.35rem 0 0;
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.nft-promo-id {
+  word-break: break-all;
+  margin-bottom: 0;
+}
+
 .lobby {
   margin-top: 1rem;
 }

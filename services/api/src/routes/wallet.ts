@@ -25,6 +25,7 @@ import {
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
 } from "../treasury-payout.js";
+import { mtt16NftRewardForPlayer } from "../mtt16-nft-challenge-store.js";
 import { getTableEngine, persistTablePlaythrough, playthroughFields } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import type { NlheTableEngine } from "@dat-poker/game-engine";
@@ -113,6 +114,12 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
   });
 
   app.get("/v1/wallet/dat-token", async () => readDatTokenConfig());
+
+  app.get("/v1/wallet/mtt16-nft-reward", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    return mtt16NftRewardForPlayer(session.playerId);
+  });
 
   app.get<{ Querystring: { address?: string } }>("/v1/wallet/account", async (req, reply) => {
     const session = requirePlayer(req, reply);

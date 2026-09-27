@@ -216,6 +216,30 @@ export interface SngSnapshot {
   pendingFinalTable?: boolean;
 }
 
+export interface Mtt16NftPromo {
+  enabled: boolean;
+  nftId: string;
+  winsRequired: number;
+  description: string | null;
+  edition: string | null;
+  imageUrl: string | null;
+  winnerPlayerId: string | null;
+  awarded: boolean;
+  yourWins: number;
+  winsToGo: number;
+  leader: { playerId: string; wins: number } | null;
+}
+
+export interface Mtt16NftReward {
+  eligible: boolean;
+  wins: number;
+  winsRequired: number;
+  offer: string | null;
+  feeMojos: string | null;
+  offerError: string | null;
+  awardedAt: string | null;
+}
+
 export interface LobbyTable {
   tableId: string;
   format?: "cash" | "sng" | "mtt";
@@ -519,6 +543,10 @@ export const api = {
     request<{ seatedHumans: number; humansInHand: number; tableCount: number }>(
       "/v1/lobby/presence",
     ),
+
+  mtt16NftPromo: () => request<Mtt16NftPromo>("/v1/lobby/mtt16-nft-promo"),
+
+  mtt16NftReward: () => request<Mtt16NftReward>("/v1/wallet/mtt16-nft-reward"),
 
   createTable: (body?: { format?: "cash" | "sng"; fillHouse?: boolean; minHumansToStart?: number }) =>
     request<{ tableId: string; config: TableConfigResponse; sng?: SngSnapshot | null }>("/v1/tables", {

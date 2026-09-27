@@ -12,6 +12,8 @@ import {
   type PlayerAction,
   type PlaythroughInfo,
   type LobbyTable,
+  type Mtt16NftPromo,
+  type Mtt16NftReward,
   type SngSnapshot,
   type TableSeat,
   type WithdrawResult,
@@ -145,6 +147,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [tableMaxSeats, setTableMaxSeats] = useState(6);
   const [sng, setSng] = useState<SngSnapshot | null>(null);
   const [lobbyTables, setLobbyTables] = useState<LobbyTable[]>([]);
+  const [mtt16NftPromo, setMtt16NftPromo] = useState<Mtt16NftPromo | null>(null);
+  const [mtt16NftReward, setMtt16NftReward] = useState<Mtt16NftReward | null>(null);
   /** When seated: full-screen table vs lobby (account, withdraw, leave). */
   const [tableFocusMode, setTableFocusMode] = useState(true);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
@@ -348,11 +352,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         (res) => setLobbyTables(res.tables),
         () => setLobbyTables([]),
       );
+      void api.mtt16NftPromo().then(setMtt16NftPromo, () => setMtt16NftPromo(null));
+      if (playerId) {
+        void api.mtt16NftReward().then(setMtt16NftReward, () => setMtt16NftReward(null));
+      } else {
+        setMtt16NftReward(null);
+      }
     };
     load();
     const timer = window.setInterval(load, 15_000);
     return () => window.clearInterval(timer);
-  }, [apiOk, atTableRoom, tableId, handInProgress]);
+  }, [apiOk, atTableRoom, tableId, handInProgress, playerId]);
 
   useEffect(() => {
     if (sng?.status !== "finished" || !playerId) return;
@@ -1580,6 +1590,64 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               50% / 30% / 20%. House seats in the money are not paid. Each completed SNG
               hand unlocks 1 DAT you can withdraw from leftover account chips or prizes.
             </p>
+            {mtt16NftPromo?.enabled ? (
+              <div className="nft-promo">
+                {mtt16NftPromo.imageUrl ? (
+                  <img
+                    className="nft-promo-image"
+                    src={mtt16NftPromo.imageUrl}
+                    alt="16-player SNG NFT reward"
+                  />
+                ) : null}
+                <div className="nft-promo-copy">
+                  <h3>First to 5 × 16-player SNG wins</h3>
+                  <p className="muted small">
+                    Treasury NFT prize for the first player to win five 16-player sit-n-go tournaments
+                    (1st place each time).
+                  </p>
+                  {mtt16NftPromo.description ? (
+                    <p className="nft-promo-desc">{mtt16NftPromo.description}</p>
+                  ) : null}
+                  {mtt16NftPromo.edition ? (
+                    <p className="muted small">Edition {mtt16NftPromo.edition}</p>
+                  ) : null}
+                  {mtt16NftPromo.awarded ? (
+                    <p className="nft-promo-status">
+                      Claimed by{" "}
+                      {playerLabel(mtt16NftPromo.winnerPlayerId ?? "", playerId)}
+                    </p>
+                  ) : playerId ? (
+                    <p className="nft-promo-status">
+                      Your wins: {mtt16NftPromo.yourWins} / {mtt16NftPromo.winsRequired}
+                      {mtt16NftPromo.winsToGo > 0
+                        ? ` · ${mtt16NftPromo.winsToGo} to go`
+                        : " · eligible for treasury NFT offer"}
+                    </p>
+                  ) : (
+                    <p className="muted small">Sign in to track your win count.</p>
+                  )}
+                  {mtt16NftPromo.leader && !mtt16NftPromo.awarded ? (
+                    <p className="muted small">
+                      Leader: {playerLabel(mtt16NftPromo.leader.playerId, playerId)} (
+                      {mtt16NftPromo.leader.wins} win{mtt16NftPromo.leader.wins === 1 ? "" : "s"})
+                    </p>
+                  ) : null}
+                  <p className="muted small nft-promo-id">{mtt16NftPromo.nftId}</p>
+                  {mtt16NftReward?.eligible && mtt16NftReward.offer ? (
+                    <p className="muted small">
+                      Treasury offer ready
+                      {mtt16NftReward.feeMojos && BigInt(mtt16NftReward.feeMojos) > 0n
+                        ? ` (includes ${(Number(mtt16NftReward.feeMojos) / 1e12).toFixed(6)} XCH tx fee)`
+                        : ""}
+                      . Accept in Sage when WalletConnect takeOffer is enabled.
+                    </p>
+                  ) : null}
+                  {mtt16NftReward?.eligible && mtt16NftReward.offerError ? (
+                    <p className="error small">{mtt16NftReward.offerError}</p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             <div className="lobby">
               <h3>Active sit-n-gos</h3>
               <p className="muted small">

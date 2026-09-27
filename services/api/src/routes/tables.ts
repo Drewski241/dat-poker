@@ -43,6 +43,12 @@ import {
   resetHandHistoryForTests,
 } from "../hand-history-store.js";
 import { playHouseIfDue } from "../house-play.js";
+import {
+  getMtt16NftPromoMeta,
+  loadMtt16NftChallengeStore,
+  mtt16NftChallengePublicView,
+  recordMtt16FirstPlaceWin,
+} from "../mtt16-nft-challenge-store.js";
 
 export interface UnseatedInactivePlayer {
   playerId: string;
@@ -57,6 +63,7 @@ export interface UnseatInactiveResult {
 const tables = new Map<string, NlheTableEngine>();
 const sngByTable = new Map<string, SngTournament>();
 const mttByTable = new Map<string, MttEvent>();
+const mtt16WinRecorded = new Set<string>();
 const playerLabels = new Map<string, string>();
 export { HOUSE_PLAYER_ID };
 
@@ -412,7 +419,15 @@ function takeBuyInFromAccountOrProof(params: {
 }
 
 export function registerTableRoutes(app: FastifyInstance): void {
+  loadMtt16NftChallengeStore();
+
   app.get("/v1/lobby/presence", async () => lobbyPresence());
+
+  app.get("/v1/lobby/mtt16-nft-promo", async (req) => {
+    const session = readPlayerSession(req);
+    await getMtt16NftPromoMeta();
+    return mtt16NftChallengePublicView(session?.playerId);
+  });
 
   app.get("/v1/tables", async (req) => {
     const session = readPlayerSession(req);
@@ -1124,6 +1139,7 @@ export function resetTablesForTests(): void {
   tables.clear();
   sngByTable.clear();
   mttByTable.clear();
+  mtt16WinRecorded.clear();
   playerLabels.clear();
   resetHandHistoryForTests();
 }
@@ -1209,6 +1225,14 @@ function settleMttPrizes(mtt: MttEvent): void {
     creditAccount(row.playerId, row.prizeMojos);
     mtt.markPrizePaid(row.playerId);
   }
+  if (mtt16WinRecorded.has(mtt.eventId)) return;
+  mtt16WinRecorded.add(mtt.eventId);
+  const tableId = mtt.tableIds()[0];
+  if (!tableId) return;
+  const champion = mtt.snapshot(tableId).placements.find((row) => row.place === 1);
+  if (!champion || isHousePlayerId(champion.playerId)) return;
+  const payoutAddress = playerLabels.get(champion.playerId) ?? champion.playerId;
+  recordMtt16FirstPlaceWin(champion.playerId, payoutAddress);
 }
 
 export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): void {
