@@ -47,6 +47,7 @@ import {
   getMtt16NftPromoMeta,
   loadMtt16NftChallengeStore,
   mtt16NftChallengePublicView,
+  readMtt16NftChallengeConfig,
   recordMtt16FirstPlaceWin,
 } from "../mtt16-nft-challenge-store.js";
 
@@ -427,6 +428,28 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const session = readPlayerSession(req);
     await getMtt16NftPromoMeta();
     return mtt16NftChallengePublicView(session?.playerId);
+  });
+
+  app.get("/v1/lobby/mtt16-nft-image", async (_req, reply) => {
+    const cfg = readMtt16NftChallengeConfig();
+    if (!cfg.enabled) {
+      return reply.status(404).send({ error: "NFT promo disabled" });
+    }
+    const meta = await getMtt16NftPromoMeta();
+    if (!meta?.imageUrl) {
+      return reply.status(404).send({ error: "NFT image metadata unavailable" });
+    }
+    try {
+      const upstream = await fetch(meta.imageUrl, { signal: AbortSignal.timeout(20_000) });
+      if (!upstream.ok) {
+        return reply.status(502).send({ error: "Could not fetch NFT image from Coinset" });
+      }
+      const body = Buffer.from(await upstream.arrayBuffer());
+      const type = upstream.headers.get("content-type") ?? "image/png";
+      return reply.header("Cache-Control", "public, max-age=3600").type(type).send(body);
+    } catch (e) {
+      return reply.status(502).send({ error: (e as Error).message });
+    }
   });
 
   app.get("/v1/tables", async (req) => {

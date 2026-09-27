@@ -154,7 +154,8 @@ export function mtt16NftChallengePublicView(viewerPlayerId?: string | null): {
     winsRequired: cfg.winsRequired,
     description: meta?.description ?? null,
     edition: meta?.edition ?? null,
-    imageUrl: meta?.imageUrl ?? null,
+    /** Same-origin proxy so HTTPS CSP (img-src 'self') can load the Coinset PNG. */
+    imageUrl: meta?.imageUrl ? "/v1/lobby/mtt16-nft-image" : null,
     winnerPlayerId: state.winnerPlayerId,
     awarded: Boolean(state.winnerPlayerId),
     yourWins,

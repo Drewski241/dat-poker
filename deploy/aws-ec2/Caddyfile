@@ -13,7 +13,7 @@
     X-Frame-Options DENY
     Referrer-Policy strict-origin-when-cross-origin
     Permissions-Policy "camera=(), microphone=(), geolocation=()"
-    Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; connect-src 'self' wss://relay.walletconnect.com https://relay.walletconnect.com https://*.walletconnect.com https://*.walletconnect.org https://*.reown.com wss://*.walletconnect.com wss://*.reown.com"
+    Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https://coinset.org; connect-src 'self' wss://relay.walletconnect.com https://relay.walletconnect.com https://*.walletconnect.com https://*.walletconnect.org https://*.reown.com wss://*.walletconnect.com wss://*.reown.com"
   }
 
   handle /health* {

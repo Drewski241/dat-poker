@@ -20,13 +20,24 @@ export async function fetchCoinsetNftMeta(nftId: string): Promise<CoinsetNftMeta
   });
   if (!res.ok) return null;
   const md = await res.text();
+  return parseCoinsetNftMarkdown(id, md, coinsetBase());
+}
+
+export function parseCoinsetNftMarkdown(
+  nftId: string,
+  md: string,
+  baseUrl: string,
+): CoinsetNftMeta | null {
   const description = md.match(/^\-\s+\*\*Description:\*\*\s*(.+)$/m)?.[1]?.trim() ?? null;
   const edition = md.match(/^\-\s+\*\*Edition:\*\*\s*(.+)$/m)?.[1]?.trim() ?? null;
-  const mediaPath = md.match(/^\-\s+\*\*Media URL:\*\*\s*(.+)$/m)?.[1]?.trim();
+  const mediaPath =
+    md.match(/^\-\s+\*\*Media URL:\*\*\s*(.+)$/m)?.[1]?.trim() ??
+    md.match(/\|\s*data\s*\|\s*image\/[^|]*\|\s*\[link\]\((\/content\/[^)]+)\)/)?.[1]?.trim();
+  const base = baseUrl.replace(/\/$/, "");
   const imageUrl = mediaPath
     ? mediaPath.startsWith("http")
       ? mediaPath
-      : `${coinsetBase()}${mediaPath.startsWith("/") ? mediaPath : `/${mediaPath}`}`
+      : `${base}${mediaPath.startsWith("/") ? mediaPath : `/${mediaPath}`}`
     : null;
-  return { nftId: id, description, edition, imageUrl };
+  return { nftId, description, edition, imageUrl };
 }
