@@ -6,7 +6,7 @@ The **$20** email maps to AWS Builder Center
 [docs/AWS_EC2.md](../../docs/AWS_EC2.md).
 
 After that credit posts, run the poker **beta** with
-[docs/BETA.md](../../docs/BETA.md).
+[docs/BETA.md](../../docs/BETA.md) or the short runbook [DEPLOY.md](./DEPLOY.md).
 
 **You must launch from your AWS account.** Do not paste `user-data.sh` during
 the Apache tutorial.

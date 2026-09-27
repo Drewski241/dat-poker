@@ -62,7 +62,7 @@ User data is a script AWS runs **once**, on first boot. It is not a setting on y
 2. Find **Advanced details** and click the row to expand it (it is collapsed by default).
 3. Scroll inside that section. You already set **IAM instance profile** here. Keep going.
 4. Find the **User data** box (a large empty text area). Directly under it, leave **User data already base64 encoded** **unchecked**.
-5. Open [console-user-data.sh on GitHub](https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/aws-ec2-first-server-6971/deploy/aws-ec2/console-user-data.sh), Select All, Copy.
+5. Open [console-user-data.sh on GitHub](https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/fix-sng-prize-pool-d148/deploy/aws-ec2/console-user-data.sh), Select All, Copy.
 6. Click in the AWS **User data** box and Paste. You should see something like:
 
    ```bash
@@ -70,7 +70,7 @@ User data is a script AWS runs **once**, on first boot. It is not a setting on y
    # Paste this entire box into EC2 Launch instance → Advanced details → User data.
    # Leave “User data already base64 encoded” unchecked.
    set -euxo pipefail
-   export DAT_POKER_REPO_REF="${DAT_POKER_REPO_REF:-cursor/aws-ec2-first-server-6971}"
+   export DAT_POKER_REPO_REF="${DAT_POKER_REPO_REF:-cursor/fix-sng-prize-pool-d148}"
    export DAT_POKER_STAGE="${DAT_POKER_STAGE:-beta}"
    curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/${DAT_POKER_REPO_REF}/deploy/aws-ec2/user-data.sh" | bash
    ```
@@ -80,8 +80,8 @@ User data is a script AWS runs **once**, on first boot. It is not a setting on y
 If you already launched without this box filled, User data will not run. Terminate that instance and launch a new one, **or** in Session Manager run:
 
 ```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971 DAT_POKER_STAGE=beta
-curl -fsSL https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/aws-ec2-first-server-6971/deploy/aws-ec2/user-data.sh | bash'
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/fix-sng-prize-pool-d148 DAT_POKER_STAGE=beta
+curl -fsSL https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/fix-sng-prize-pool-d148/deploy/aws-ec2/user-data.sh | bash'
 ```
 
 ### 3. Elastic IP
@@ -239,7 +239,7 @@ less, set `DAT_MIN_BUY_IN_MOJOS=1000` (1 DAT) when you run `enable-sage.sh`.
 In Session Manager (or the `ec2-user@ip-172-31-…` shell):
 
 ```bash
-sudo DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+sudo DAT_POKER_REPO_REF=cursor/fix-sng-prize-pool-d148 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 ```
 
 Wait until it prints `beta redeploy ok`. In-memory tables reset.
@@ -432,7 +432,7 @@ Do this only after `dig +short datspiritpoker.com` prints the Elastic IP.
 In Session Manager:
 
 ```bash
-sudo DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+sudo DAT_POKER_REPO_REF=cursor/fix-sng-prize-pool-d148 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 sudo DAT_POKER_DOMAIN=datspiritpoker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 ```
 
@@ -450,7 +450,7 @@ If Caddy prints `Job for caddy.service failed`, the script now dumps the
 Caddyfile and `journalctl -u caddy`. Pull the fix without a full rebuild:
 
 ```bash
-sudo git -C /opt/dat-poker fetch --depth 1 origin cursor/aws-ec2-first-server-6971
+sudo git -C /opt/dat-poker fetch --depth 1 origin cursor/fix-sng-prize-pool-d148
 sudo git -C /opt/dat-poker -c advice.detachedHead=false checkout -f FETCH_HEAD
 sudo DAT_POKER_DOMAIN=datspiritpoker.com bash /opt/dat-poker/deploy/aws-ec2/enable-https.sh
 ```
@@ -492,7 +492,7 @@ new address, then re-run `enable-https.sh` with
 Load this landing page onto the box after you push:
 
 ```bash
-sudo DAT_POKER_REPO_REF=cursor/aws-ec2-first-server-6971 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
+sudo DAT_POKER_REPO_REF=cursor/fix-sng-prize-pool-d148 bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh
 ```
 
 ## Stop spending credits
