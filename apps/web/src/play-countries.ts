@@ -12,6 +12,7 @@ export const PLAY_COUNTRY_OPTIONS: { code: string; label: string }[] = [
   { code: "NL", label: "Netherlands" },
   { code: "SE", label: "Sweden" },
   { code: "NO", label: "Norway" },
+  { code: "PL", label: "Poland" },
   { code: "CH", label: "Switzerland" },
   { code: "JP", label: "Japan" },
   { code: "MX", label: "Mexico" },
