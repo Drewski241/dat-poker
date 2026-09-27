@@ -123,7 +123,7 @@ export async function getMtt16NftPromoMeta(): Promise<CoinsetNftMeta | null> {
   return meta;
 }
 
-function leaderBoard(winsRequired: number): { playerId: string; wins: number }[] {
+function leaderBoard(): { playerId: string; wins: number }[] {
   return Object.entries(state.winsByPlayer)
     .map(([playerId, wins]) => ({ playerId, wins }))
     .filter((row) => row.wins > 0)
@@ -147,7 +147,7 @@ export function mtt16NftChallengePublicView(viewerPlayerId?: string | null): {
   const cfg = readMtt16NftChallengeConfig();
   const meta = cachedMeta?.meta;
   const yourWins = viewerPlayerId ? (state.winsByPlayer[viewerPlayerId] ?? 0) : 0;
-  const leaders = leaderBoard(cfg.winsRequired);
+  const leaders = leaderBoard();
   return {
     enabled: cfg.enabled,
     nftId: cfg.nftId,
