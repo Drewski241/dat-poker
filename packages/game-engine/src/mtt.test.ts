@@ -22,7 +22,9 @@ describe("16-player MTT", () => {
     expect(event.snapshot(ids[0]).tableLabel).toBe("Table 1");
     expect(event.snapshot(ids[1]).tableLabel).toBe("Table 2");
     expect(event.snapshot(ids[0]).eventPlayersRemaining).toBe(16);
-    expect(event.prizePoolMojos).toBe(DAT_MTT_DEFAULTS.buyInMojos);
+    expect(event.prizePoolMojos).toBe(
+      DAT_MTT_DEFAULTS.buyInMojos * BigInt(DAT_MTT_DEFAULTS.fieldSize),
+    );
   });
 
   it("moves survivors to a final table when eight or fewer remain", () => {

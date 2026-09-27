@@ -1576,7 +1576,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             </button>
             <p className="muted small">
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
-              Prize pool is each human buy-in. Finish 1st, 2nd, or 3rd overall to get paid
+              Prize pool is every seat buy-in (you and house bots). Finish 1st, 2nd, or 3rd overall to get paid
               50% / 30% / 20%. House seats in the money are not paid. Each completed SNG
               hand unlocks 1 DAT you can withdraw from leftover account chips or prizes.
             </p>

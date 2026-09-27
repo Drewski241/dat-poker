@@ -82,7 +82,6 @@ export class SngTournament {
   readonly startingStackMojos: bigint;
   private readonly blindLevels: SngBlindLevel[];
   private readonly payoutShares: SngPayoutShare[];
-  private readonly humanEntrants = new Set<PlayerId>();
   private readonly handsPerLevel: number;
   private readonly levelDurationMs: number;
   private status: SngStatus = "registering";
@@ -133,14 +132,16 @@ export class SngTournament {
     if (this.status === "finished") {
       throw new Error("SNG is finished");
     }
-    const claimed = this.engine.claimHouseSeat(playerId, seatIndex);
-    this.noteHumanEntrant(playerId);
-    return claimed;
+    return this.engine.claimHouseSeat(playerId, seatIndex);
   }
 
+  /** Buy-in from every seated player (human and house) once the SNG is running. */
   get prizePoolMojos(): bigint {
-    this.syncHumanEntrants();
-    return this.buyInMojos * BigInt(this.humanEntrants.size);
+    const seats =
+      this.status === "registering"
+        ? this.engine.getSeatedPlayers().length
+        : this.maxSeats;
+    return this.buyInMojos * BigInt(seats);
   }
 
   fillHouseSeats(): string[] {
@@ -171,7 +172,6 @@ export class SngTournament {
     }
     this.status = "running";
     this.startedAtMs = nowMs;
-    this.syncHumanEntrants();
     this.applyBlindLevel();
   }
 
@@ -299,18 +299,6 @@ export class SngTournament {
       handsPerLevel: this.handsPerLevel,
       levelCount: this.blindLevels.length,
     });
-  }
-
-  private syncHumanEntrants(): void {
-    for (const seated of this.engine.getSeatedPlayers()) {
-      this.noteHumanEntrant(seated.playerId);
-    }
-  }
-
-  private noteHumanEntrant(playerId: PlayerId): void {
-    if (!isHousePlayerId(playerId)) {
-      this.humanEntrants.add(playerId);
-    }
   }
 
   private payoutPreview(): Array<SngPayoutShare & { prizeMojos: bigint }> {

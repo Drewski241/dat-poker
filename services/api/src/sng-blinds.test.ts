@@ -100,11 +100,11 @@ describe("9-max SNG blind clock", () => {
     expect(body.sng.levelDurationMs).toBe(180_000);
     expect(body.sng.nextLevelAtMs).toBe(body.sng.startedAtMs + 180_000);
     expect(body.sng.buyInMojos).toBe("1000000");
-    expect(body.sng.prizePoolMojos).toBe("1000000");
+    expect(body.sng.prizePoolMojos).toBe("9000000");
     expect(body.sng.payouts).toEqual([
-      { place: 1, bps: 5000, prizeMojos: "500000" },
-      { place: 2, bps: 3000, prizeMojos: "300000" },
-      { place: 3, bps: 2000, prizeMojos: "200000" },
+      { place: 1, bps: 5000, prizeMojos: "4500000" },
+      { place: 2, bps: 3000, prizeMojos: "2700000" },
+      { place: 3, bps: 2000, prizeMojos: "1800000" },
     ]);
 
     const sng = getSng(body.tableId);

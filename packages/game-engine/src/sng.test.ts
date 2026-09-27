@@ -16,7 +16,9 @@ describe("SngTournament", () => {
     expect(sng.canStart()).toBe(true);
     sng.start();
     expect(sng.getStatus()).toBe("running");
-    expect(sng.snapshot().prizePoolMojos).toBe(DAT_SNG_DEFAULTS.buyInMojos);
+    expect(sng.snapshot().prizePoolMojos).toBe(
+      DAT_SNG_DEFAULTS.buyInMojos * BigInt(DAT_SNG_DEFAULTS.maxSeats),
+    );
     expect(sng.snapshot().payouts.map((row) => row.place)).toEqual([1, 2, 3]);
   });
 
@@ -42,10 +44,10 @@ describe("SngTournament", () => {
     const snap = sng.snapshot();
     expect(snap.status).toBe("finished");
     expect(snap.placements.find((p) => p.playerId === "alice")?.place).toBe(1);
-    expect(sng.prizeFor("alice")).toBe(500_000n);
+    expect(sng.prizeFor("alice")).toBe(1_500_000n);
     expect(snap.placements.filter((p) => isHousePlayerId(p.playerId)).every((p) => p.prizeMojos === 0n)).toBe(true);
     const paid = snap.placements.reduce((sum, row) => sum + row.prizeMojos, 0n);
-    expect(paid).toBe(500_000n);
+    expect(paid).toBe(1_500_000n);
   });
 
   it("pays 50/30/20 to the top three humans in a 9-max", () => {
@@ -71,10 +73,12 @@ describe("SngTournament", () => {
 
     const snap = sng.snapshot();
     expect(snap.status).toBe("finished");
-    expect(snap.prizePoolMojos).toBe(DAT_SNG_DEFAULTS.buyInMojos * 3n);
-    expect(snap.placements.find((p) => p.playerId === "alice")).toMatchObject({ place: 1, prizeMojos: 1_500_000n });
-    expect(snap.placements.find((p) => p.playerId === "bob")).toMatchObject({ place: 2, prizeMojos: 900_000n });
-    expect(snap.placements.find((p) => p.playerId === "carol")).toMatchObject({ place: 3, prizeMojos: 600_000n });
+    expect(snap.prizePoolMojos).toBe(
+      DAT_SNG_DEFAULTS.buyInMojos * BigInt(DAT_SNG_DEFAULTS.maxSeats),
+    );
+    expect(snap.placements.find((p) => p.playerId === "alice")).toMatchObject({ place: 1, prizeMojos: 4_500_000n });
+    expect(snap.placements.find((p) => p.playerId === "bob")).toMatchObject({ place: 2, prizeMojos: 2_700_000n });
+    expect(snap.placements.find((p) => p.playerId === "carol")).toMatchObject({ place: 3, prizeMojos: 1_800_000n });
     expect(snap.placements.filter((p) => isHousePlayerId(p.playerId)).every((p) => p.prizeMojos === 0n)).toBe(true);
     const paid = snap.placements.reduce((sum, row) => sum + row.prizeMojos, 0n);
     expect(paid).toBe(snap.prizePoolMojos);
@@ -101,10 +105,10 @@ describe("SngTournament", () => {
 
     const snap = sng.snapshot();
     expect(snap.status).toBe("finished");
-    expect(snap.placements.find((p) => p.playerId === "alice")).toMatchObject({ place: 3, prizeMojos: 200_000n });
+    expect(snap.placements.find((p) => p.playerId === "alice")).toMatchObject({ place: 3, prizeMojos: 1_800_000n });
     expect(snap.placements.filter((p) => isHousePlayerId(p.playerId)).every((p) => p.prizeMojos === 0n)).toBe(true);
     expect(sng.unpaidHumanPrizes()).toEqual([
-      expect.objectContaining({ playerId: "alice", place: 3, prizeMojos: 200_000n }),
+      expect.objectContaining({ playerId: "alice", place: 3, prizeMojos: 1_800_000n }),
     ]);
   });
 
@@ -164,7 +168,9 @@ describe("SngTournament", () => {
     expect(sng.engine.getPlayerStack("bob")).toBe(750_000n);
     expect(sng.engine.getPlayerStack(houseSeatPlayerId(3))).toBeNull();
     expect(sng.humanCount()).toBe(2);
-    expect(sng.snapshot().prizePoolMojos).toBe(DAT_SNG_DEFAULTS.buyInMojos * 2n);
+    expect(sng.snapshot().prizePoolMojos).toBe(
+      DAT_SNG_DEFAULTS.buyInMojos * BigInt(DAT_SNG_DEFAULTS.maxSeats),
+    );
     expect(sng.snapshot().houseSeatsAvailable).toBe(7);
 
     expect(() => sng.claimHouseSeat("alice")).toThrow(/already seated/i);
@@ -186,7 +192,7 @@ describe("SngTournament", () => {
     expect(sng.engine.getActivePlayerCount()).toBe(0);
     expect(sng.engine.houseSeats()).toHaveLength(0);
     expect(snap.placements.find((p) => p.playerId === "alice")?.place).toBe(3);
-    expect(sng.prizeFor("alice")).toBe(200_000n);
+    expect(sng.prizeFor("alice")).toBe(600_000n);
   });
 
   it("raises blinds on the clock between hands and waits if a hand is live", () => {

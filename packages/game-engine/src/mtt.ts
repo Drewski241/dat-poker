@@ -52,7 +52,6 @@ export class MttEvent {
   readonly finalTableSeats = DAT_MTT_DEFAULTS.finalTableSeats;
   private readonly blindLevels: SngBlindLevel[];
   private readonly payoutShares: SngPayoutShare[];
-  private readonly humanEntrants = new Set<PlayerId>();
   private readonly handsPerLevel: number;
   private readonly levelDurationMs: number;
   private readonly tables: MttTable[] = [];
@@ -121,9 +120,11 @@ export class MttEvent {
     return this.needsFinalTable() || this.needsBalance();
   }
 
+  /** Buy-in from every seated player (human and house) across the field once running. */
   get prizePoolMojos(): bigint {
-    this.syncHumanEntrants();
-    return this.buyInMojos * BigInt(this.humanEntrants.size);
+    const seats =
+      this.status === "registering" ? this.totalSeated() : this.fieldSize;
+    return this.buyInMojos * BigInt(seats);
   }
 
   fillHouseSeats(): string[] {
@@ -151,7 +152,6 @@ export class MttEvent {
       throw new Error("That table has already moved to the final table");
     }
     const claimed = table.engine.claimHouseSeat(playerId, seatIndex);
-    this.noteHumanEntrant(playerId);
     return { ...claimed, tableId };
   }
 
@@ -175,7 +175,6 @@ export class MttEvent {
   seatPlayer(tableId: string, playerId: PlayerId, seatIndex: number): void {
     const table = this.requireTable(tableId);
     table.engine.seatPlayer(playerId, seatIndex, this.startingStackMojos);
-    this.noteHumanEntrant(playerId);
   }
 
   humanCount(): number {
@@ -198,7 +197,6 @@ export class MttEvent {
     }
     this.status = "running";
     this.startedAtMs = nowMs;
-    this.syncHumanEntrants();
     this.applyBlindLevel();
   }
 
@@ -544,18 +542,11 @@ export class MttEvent {
     });
   }
 
-  private syncHumanEntrants(): void {
-    for (const table of this.tables) {
-      for (const seated of table.engine.getSeatedPlayers()) {
-        this.noteHumanEntrant(seated.playerId);
-      }
-    }
-  }
-
-  private noteHumanEntrant(playerId: PlayerId): void {
-    if (!isHousePlayerId(playerId)) {
-      this.humanEntrants.add(playerId);
-    }
+  private totalSeated(): number {
+    return this.tables.reduce(
+      (sum, table) => sum + table.engine.getSeatedPlayers().length,
+      0,
+    );
   }
 
   private payoutPreview(): Array<SngPayoutShare & { prizeMojos: bigint }> {
