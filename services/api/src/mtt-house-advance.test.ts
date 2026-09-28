@@ -125,9 +125,9 @@ describe("MTT house-only sibling pace", () => {
 
     const claimed = await app.inject({
       method: "POST",
-      url: `/v1/tables/${siblingId}/claim-seat`,
+      url: `/v1/tables/${siblingId}/claim-house`,
       headers: auth(bob.token),
-      payload: { playerId: bob.session.playerId },
+      payload: { playerId: bob.session.playerId, buyInMojos: "1000000", devAck: true },
     });
     expect(claimed.statusCode).toBe(200);
     expect(tableHasLivingHuman(mtt.engineFor(siblingId)!)).toBe(true);
