@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   formatHandCategory,
+  LOSS_SOAK_MS,
+  BUST_LOBBY_RETURN_MS,
   runoutAllInPlayerIds,
   runoutHandsToShow,
   runoutHoldMs,
@@ -13,6 +15,7 @@ import {
   allInBettingClosed,
   isCallAllIn,
   shouldHoldTableForRunout,
+  shouldHoldTableForBustExit,
 } from "./all-in-runout.js";
 
 describe("all-in runout", () => {
@@ -60,7 +63,18 @@ describe("all-in runout", () => {
     ).toBe(true);
     expect(runoutStreets(5)).toEqual(["allin", "hands"]);
     expect(runoutHoldMs("hands", true)).toBeGreaterThan(runoutHoldMs("hands", false));
+    expect(runoutHoldMs("hands", true)).toBeGreaterThanOrEqual(7000);
+    expect(runoutHoldMs("flop", true)).toBeGreaterThan(runoutHoldMs("flop", false));
     expect(runoutHoldMs("flop")).toBeGreaterThanOrEqual(2000);
+  });
+
+  it("holds the finished table through loss soak before lobby return", () => {
+    expect(LOSS_SOAK_MS).toBeGreaterThanOrEqual(5000);
+    expect(BUST_LOBBY_RETURN_MS).toBeGreaterThanOrEqual(3000);
+    expect(shouldHoldTableForBustExit({ holdRunout: true, holdLossSoak: false, runoutPending: false })).toBe(true);
+    expect(shouldHoldTableForBustExit({ holdRunout: false, holdLossSoak: true, runoutPending: false })).toBe(true);
+    expect(shouldHoldTableForBustExit({ holdRunout: false, holdLossSoak: false, runoutPending: true })).toBe(true);
+    expect(shouldHoldTableForBustExit({ holdRunout: false, holdLossSoak: false, runoutPending: false })).toBe(false);
   });
 
   it("does not replay a check-down the player already saw", () => {

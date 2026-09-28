@@ -20,12 +20,19 @@ import {
 } from "./api.js";
 import { AuthPanel, ChangePasswordForm } from "./AuthPanel.js";
 import { CardRow } from "./components/PlayingCard.js";
-import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
-import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
+import { BigWinOverlayHost } from "./components/BigWinOverlayHost.js";
 import { TableRoom } from "./components/TableRoom.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
-import { allInBettingClosed, isCallAllIn, shouldHoldTableForRunout, shouldPlayAllInRunout } from "./all-in-runout.js";
+import {
+  allInBettingClosed,
+  BUST_LOBBY_RETURN_MS,
+  isCallAllIn,
+  LOSS_SOAK_MS,
+  shouldHoldTableForBustExit,
+  shouldHoldTableForRunout,
+  shouldPlayAllInRunout,
+} from "./all-in-runout.js";
 import { sngShouldAutoDeal } from "./sng-auto-deal.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -36,6 +43,7 @@ import {
   turnTimerKey,
 } from "./player-turn-timer.js";
 import {
+  parseBigWinPreviewHash,
   pickBigWinOverlay,
   readStoredBigWinOverlay,
   shouldCelebrateBigWin,
@@ -170,6 +178,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   });
   const runoutFromBoardLenRef = useRef<number | null>(null);
   const holdTableForRunoutRef = useRef(false);
+  const holdLossSoakRef = useRef(false);
+  const lossSoakTimerRef = useRef<number | null>(null);
+  const bustLobbyTimerRef = useRef<number | null>(null);
+  const bigWinActiveRef = useRef(false);
   const playedRunouts = useRef(new Set<string>());
   const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
   const [handHistoryOpen, setHandHistoryOpen] = useState(false);
@@ -280,13 +292,32 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (t.maxSeats) setTableMaxSeats(t.maxSeats);
     setSng(t.sng ?? null);
     if (t.sng?.status === "finished" && playerId && !t.seats.some((s) => s.playerId === playerId)) {
-      const hold = holdTableForRunoutRef.current || shouldHoldTableForRunout(
+      const runoutPending = shouldHoldTableForRunout(
         { ...liveHandMeta.current, viewerId: playerId },
         t.lastHandResult ?? null,
         runoutFromBoardLenRef.current != null,
         Boolean(t.lastHandResult && playedRunouts.current.has(t.lastHandResult.handId)),
       );
-      if (!hold) setTableFocusMode(false);
+      const hold = shouldHoldTableForBustExit({
+        holdRunout: holdTableForRunoutRef.current,
+        holdLossSoak: holdLossSoakRef.current || bigWinActiveRef.current,
+        runoutPending,
+      });
+      // Finished/bust players stay on the table through the all-in cinema + loss soak
+      // so they can see the outcome before auto-returning to the lobby.
+      if (!hold && bustLobbyTimerRef.current == null) {
+        bustLobbyTimerRef.current = window.setTimeout(() => {
+          bustLobbyTimerRef.current = null;
+          if (
+            !holdTableForRunoutRef.current &&
+            !holdLossSoakRef.current &&
+            !bigWinActiveRef.current &&
+            runoutFromBoardLenRef.current == null
+          ) {
+            setTableFocusMode(false);
+          }
+        }, BUST_LOBBY_RETURN_MS);
+      }
     }
     if (t.smallBlindMojos) {
       try {
@@ -395,15 +426,33 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       return;
     }
     if (!handResult || playedRunouts.current.has(handResult.handId)) return;
-    if (!shouldPlayAllInRunout({ ...liveHandMeta.current, viewerId: playerId }, handResult)) return;
-    holdTableForRunoutRef.current = true;
+    const live = { ...liveHandMeta.current, viewerId: playerId };
+    if (shouldPlayAllInRunout(live, handResult)) {
+      holdTableForRunoutRef.current = true;
+      playedRunouts.current.add(handResult.handId);
+      setRunoutFromBoardLen(
+        typeof handResult.runoutFromBoardLen === "number"
+          ? handResult.runoutFromBoardLen
+          : liveHandMeta.current.boardLen,
+      );
+      return;
+    }
+    // Preemptive all-in hold with no cinema (e.g. fold win) — soak on a loss, else release.
+    if (!holdTableForRunoutRef.current) return;
     playedRunouts.current.add(handResult.handId);
-    setRunoutFromBoardLen(
-      typeof handResult.runoutFromBoardLen === "number"
-        ? handResult.runoutFromBoardLen
-        : liveHandMeta.current.boardLen,
-    );
-  }, [hand, handResult, playerId]);
+    const lost = Boolean(playerId && handResult.winnerId !== playerId);
+    if (lost && (tableFormat === "sng" || tableFormat === "mtt")) {
+      holdTableForRunoutRef.current = false;
+      holdLossSoakRef.current = true;
+      if (lossSoakTimerRef.current != null) window.clearTimeout(lossSoakTimerRef.current);
+      lossSoakTimerRef.current = window.setTimeout(() => {
+        lossSoakTimerRef.current = null;
+        holdLossSoakRef.current = false;
+      }, LOSS_SOAK_MS);
+    } else {
+      holdTableForRunoutRef.current = false;
+    }
+  }, [hand, handResult, playerId, tableFormat]);
 
   useEffect(() => {
     if (hand || handInProgress) {
@@ -898,6 +947,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         p.playerId === playerId ? { ...p, allIn: true, stackMojos: "0" } : p,
       );
       const bettingClosed = allInBettingClosed(nextPlayers);
+      // Hold the table immediately so a finished SNG cannot kick to lobby before the runout arms.
+      holdTableForRunoutRef.current = true;
+      if (bustLobbyTimerRef.current != null) {
+        window.clearTimeout(bustLobbyTimerRef.current);
+        bustLobbyTimerRef.current = null;
+      }
       liveHandMeta.current = {
         handId: hand.handId,
         boardLen: bettingClosed
@@ -1004,6 +1059,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   })();
 
   const leaveTableView = () => {
+    if (lossSoakTimerRef.current != null) {
+      window.clearTimeout(lossSoakTimerRef.current);
+      lossSoakTimerRef.current = null;
+    }
+    if (bustLobbyTimerRef.current != null) {
+      window.clearTimeout(bustLobbyTimerRef.current);
+      bustLobbyTimerRef.current = null;
+    }
+    holdTableForRunoutRef.current = false;
+    holdLossSoakRef.current = false;
+    setRunoutFromBoardLen(null);
     setTableId(null);
     setTableSeats([]);
     setSng(null);
@@ -1264,12 +1330,16 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   ]);
 
   useEffect(() => {
-    if (window.location.hash === "#lucky") {
-      setBigWin("irish");
+    bigWinActiveRef.current = bigWin != null;
+    if (bigWin != null && bustLobbyTimerRef.current != null) {
+      window.clearTimeout(bustLobbyTimerRef.current);
+      bustLobbyTimerRef.current = null;
     }
-    if (window.location.hash === "#hunter") {
-      setBigWin("hunter");
-    }
+  }, [bigWin]);
+
+  useEffect(() => {
+    const bigWinPreview = parseBigWinPreviewHash(window.location.hash);
+    if (bigWinPreview) setBigWin(bigWinPreview);
     if (window.location.hash === "#cards") {
       setCardPreview(true);
     }
@@ -1305,8 +1375,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   return (
     <div className={`app ${atTableRoom ? "app--table-room" : "app--lobby"}`}>
-      {bigWin === "irish" && <LuckyIrishWin onFinished={() => setBigWin(null)} />}
-      {bigWin === "hunter" && <HunterBullseyeWin onFinished={() => setBigWin(null)} />}
+      {bigWin && (
+        <BigWinOverlayHost
+          overlay={bigWin}
+          onFinished={() => {
+            setBigWin(null);
+            bigWinActiveRef.current = false;
+          }}
+        />
+      )}
       {showSlothReminder && (
         <YourTurnSloth secondsLeft={slothPreview ? undefined : actionSecondsLeft} />
       )}
@@ -1358,7 +1435,19 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             canDeal={Boolean(myTableSeat) && sng?.status !== "finished"}
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
-            onOpenLobby={() => setTableFocusMode(false)}
+            onOpenLobby={() => {
+              if (lossSoakTimerRef.current != null) {
+                window.clearTimeout(lossSoakTimerRef.current);
+                lossSoakTimerRef.current = null;
+              }
+              if (bustLobbyTimerRef.current != null) {
+                window.clearTimeout(bustLobbyTimerRef.current);
+                bustLobbyTimerRef.current = null;
+              }
+              holdTableForRunoutRef.current = false;
+              holdLossSoakRef.current = false;
+              setTableFocusMode(false);
+            }}
             handHistoryCount={handHistory.length}
             onOpenHandHistory={() => setHandHistoryOpen(true)}
             playerLabel={playerLabel}
@@ -1376,8 +1465,25 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             sng={tableFormat === "sng" || tableFormat === "mtt" ? sng : null}
             runoutFromBoardLen={runoutFromBoardLen}
             onRunoutFinished={() => {
-              holdTableForRunoutRef.current = false;
               setRunoutFromBoardLen(null);
+              const lost = Boolean(handResult && playerId && handResult.winnerId !== playerId);
+              const tourney = tableFormat === "sng" || tableFormat === "mtt";
+              if (lost && tourney) {
+                // Keep the felt up after the cinema so a busted player can soak in the loss.
+                holdTableForRunoutRef.current = false;
+                holdLossSoakRef.current = true;
+                if (lossSoakTimerRef.current != null) window.clearTimeout(lossSoakTimerRef.current);
+                if (bustLobbyTimerRef.current != null) {
+                  window.clearTimeout(bustLobbyTimerRef.current);
+                  bustLobbyTimerRef.current = null;
+                }
+                lossSoakTimerRef.current = window.setTimeout(() => {
+                  lossSoakTimerRef.current = null;
+                  holdLossSoakRef.current = false;
+                }, LOSS_SOAK_MS);
+              } else {
+                holdTableForRunoutRef.current = false;
+              }
             }}
             playthroughHandsPlayed={handsPlayed}
             playthroughHandsRequired={handsRequired}
