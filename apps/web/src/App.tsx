@@ -52,6 +52,7 @@ import {
   restoreSession,
   signRedeemMessage,
   signWithdrawMessage,
+  takeOffer,
   type WcSession,
 } from "./wallet/chia-wallet.js";
 
@@ -264,6 +265,28 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setAccountMojos(acc.balanceMojos);
     setRedeemedToday(acc.redeemedToday);
     setAccountPlaythrough(acc.playthrough ?? null);
+    try {
+      const { pending } = await api.pendingWithdraw();
+      if (pending?.offer) {
+        setWithdrawResult((prev) => {
+          if (prev?.offer) return prev;
+          return {
+            ok: true,
+            withdrawalId: pending.withdrawalId,
+            stackMojos: pending.stackMojos,
+            originalBuyInMojos: pending.stackMojos,
+            payoutMojos: pending.payoutMojos,
+            payoutMode: "full",
+            mode: "offer",
+            offer: pending.offer,
+            feeMojos: pending.feeMojos,
+            note: "Pending treasury offer — accept in Sage or copy/paste the offer string below.",
+          };
+        });
+      }
+    } catch {
+      /* older API without pending endpoint */
+    }
   }, []);
 
   const refreshTable = useCallback(async (id: string) => {
@@ -1040,6 +1063,40 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     });
   };
 
+  const acceptWithdrawOffer = async (result: WithdrawResult) => {
+    if (result.mode !== "offer" || !result.offer) return;
+    if (session && wcConfig) {
+      try {
+        setStatus("Approve the treasury offer in Sage to receive DAT…");
+        await takeOffer(
+          session,
+          wcConfig.projectId,
+          wcConfig.chainId,
+          result.offer,
+          BigInt(result.feeMojos || "0"),
+        );
+        await api.completeWithdraw(result.withdrawalId);
+        setStatus("Sage accepted the offer — DAT should appear in your wallet shortly.");
+        if (datToken?.assetId) {
+          const { balance } = await loadPlayerWallet(
+            session,
+            wcConfig.projectId,
+            wcConfig.chainId,
+            datToken.assetId,
+          );
+          setDatBalance(balance.spendable);
+        }
+        return;
+      } catch (e) {
+        setStatus(
+          `${e instanceof Error ? e.message : String(e)} Copy the offer below and import it in Sage if needed.`,
+        );
+      }
+    } else {
+      setStatus("Copy the offer below and import it in Sage (Offers → Import).");
+    }
+  };
+
   const withdrawToSage = () => {
     if (!tableId || !playerId || !walletAddress) return;
     run("Withdrawing to Sage…", async () => {
@@ -1075,17 +1132,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         };
       }
 
-      setStatus("Cashing out table stack…");
+      setStatus("Requesting treasury withdraw offer…");
       const result = await api.withdraw(tableId, playerId, {
         withdrawProof,
         devAck: datToken?.devBuyInEnabled,
       });
-
-      if (result.mode === "offer" && result.offer) {
-        setStatus(
-          "On-chain Sage takeOffer is disabled on this host so DAT cannot leave your wallet. Stack is in your table account.",
-        );
-      }
 
       setWithdrawResult(result);
       if (result.playthrough) setAccountPlaythrough(result.playthrough);
@@ -1097,16 +1148,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         setHand(null);
         setHandResult(null);
       }
-
-      if (session && wcConfig && datToken?.assetId) {
-        const { balance } = await loadPlayerWallet(
-          session,
-          wcConfig.projectId,
-          wcConfig.chainId,
-          datToken.assetId,
-        );
-        setDatBalance(balance.spendable);
-      }
+      await acceptWithdrawOffer(result);
       await refreshAccount(playerId);
     });
   };
@@ -1114,6 +1156,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const withdrawUnlockedFromAccount = () => {
     if (!playerId) return;
     run("Withdrawing unlocked DAT…", async () => {
+      if (!session || !walletAddress) {
+        throw new Error("Connect Sage, then Link Sage address, before withdrawing");
+      }
       const unlocked = accountPlaythrough?.unlockedMojos ?? unlockedMojos;
       if (!unlocked || BigInt(unlocked) <= 0n) {
         throw new Error("Play sit-n-go or cash hands to unlock DAT first");
@@ -1141,6 +1186,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           pubkey: signed.pubkey,
         };
       }
+      setStatus("Requesting treasury withdraw offer…");
       const result = await api.withdraw(tableId, playerId, {
         withdrawProof,
         devAck: datToken?.devBuyInEnabled,
@@ -1148,6 +1194,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
       setWithdrawResult(result);
       if (result.playthrough) setAccountPlaythrough(result.playthrough);
+      await acceptWithdrawOffer(result);
       await refreshAccount(playerId);
     });
   };
@@ -1518,16 +1565,24 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           </button>
         ) : (
           <>
-            <p className="ok-text">Sage paired</p>
+            <p className="ok-text">
+              {walletAddress ? "Sage paired and linked" : "Sage paired — next: link your address"}
+            </p>
             <div className="row">
-              <button type="button" disabled={busy} className="secondary" onClick={linkSageWallet}>
-                Link Sage address
-              </button>
+              {!walletAddress ? (
+                <button type="button" disabled={busy} onClick={linkSageWallet}>
+                  1. Link Sage address
+                </button>
+              ) : (
+                <button type="button" disabled={busy} className="secondary" onClick={linkSageWallet}>
+                  Re-link Sage address
+                </button>
+              )}
               <button type="button" disabled={busy} className="secondary" onClick={disconnectSage}>
                 Disconnect Sage
               </button>
             </div>
-            {walletAddress && (
+            {walletAddress ? (
               <p className="mono">
                 Address: {shortAddress(walletAddress)}
                 {datBalance != null && (
@@ -1537,18 +1592,28 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   </>
                 )}
               </p>
+            ) : (
+              <p className="muted small">
+                Link Sage address (step 1) before you can withdraw unlocked DAT.
+              </p>
             )}
-            {accountUnlockedMojos > 0n && (
+            {accountUnlockedMojos > 0n && walletAddress && (
               <div className="row">
                 <button
                   type="button"
                   disabled={busy}
                   onClick={withdrawUnlockedFromAccount}
                 >
-                  Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
+                  2. Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
                   to Sage
                 </button>
               </div>
+            )}
+            {accountUnlockedMojos > 0n && !walletAddress && (
+              <p className="muted small">
+                You have {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked —
+                link Sage first to withdraw it.
+              </p>
             )}
           </>
         )}
@@ -1837,25 +1902,71 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             )}
             {(tableFormat === "sng" || tableFormat === "mtt") && accountUnlockedMojos > 0n && (
               <div className="row">
-                <button type="button" disabled={busy} onClick={withdrawUnlockedFromAccount}>
-                  Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
-                  from SNG play
-                </button>
+                {session && walletAddress ? (
+                  <button type="button" disabled={busy} onClick={withdrawUnlockedFromAccount}>
+                    Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
+                    from SNG play
+                  </button>
+                ) : (
+                  <p className="muted small">
+                    {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked —
+                    open Withdraw DAT (Sage), connect, then link your address before withdrawing.
+                  </p>
+                )}
               </div>
             )}
           </>
         )}
         {withdrawResult && (
           <div className="banner win">
-            Withdrew {formatDatMojos(withdrawResult.stackMojos, datToken?.ticker)} from table
-            {BigInt(withdrawResult.payoutMojos) > 0n && (
-              <>
-                {" "}
-                · payout {formatDatMojos(withdrawResult.payoutMojos, datToken?.ticker)}
-                {withdrawResult.mode === "offer" ? " (on-chain via offer)" : " (ledger)"}
-              </>
-            )}
-            . {withdrawResult.note}
+            <p>
+              Withdrew {formatDatMojos(withdrawResult.stackMojos, datToken?.ticker)}
+              {BigInt(withdrawResult.payoutMojos) > 0n && (
+                <>
+                  {" "}
+                  · payout {formatDatMojos(withdrawResult.payoutMojos, datToken?.ticker)}
+                  {withdrawResult.mode === "offer" ? " (on-chain via offer)" : " (ledger)"}
+                </>
+              )}
+              . {withdrawResult.note}
+            </p>
+            {withdrawResult.mode === "offer" && withdrawResult.offer ? (
+              <div className="withdraw-offer">
+                <p className="muted small">
+                  DAT is in this offer until you accept it in Sage. It will not show as spendable
+                  until then.
+                </p>
+                <textarea
+                  readOnly
+                  rows={4}
+                  value={withdrawResult.offer}
+                  aria-label="Treasury withdraw offer"
+                />
+                <div className="row">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(withdrawResult.offer!);
+                      setStatus("Offer copied — paste it in Sage under Offers → Import.");
+                    }}
+                  >
+                    Copy offer
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !session || !wcConfig}
+                    onClick={() => {
+                      run("Accepting offer in Sage…", async () => {
+                        await acceptWithdrawOffer(withdrawResult);
+                      });
+                    }}
+                  >
+                    Accept in Sage
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </section>

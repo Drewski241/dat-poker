@@ -30,7 +30,11 @@ export const SAGE_REQUIRED_METHODS = [
   "chia_signMessageByAddress",
 ] as const;
 
-/** Optional extras Sage may grant without spend permission. */
+/**
+ * Optional extras after Sage approves.
+ * `chia_takeOffer` is optional so users can accept treasury withdraw offers
+ * (receive DAT). It is never requested as a required method at connect time.
+ */
 export const SAGE_WC_METHODS = [
   "chip0002_connect",
   "chip0002_chainId",
@@ -40,6 +44,7 @@ export const SAGE_WC_METHODS = [
   "chip0002_signMessage",
   "chia_getAddress",
   "chia_signMessageByAddress",
+  "chia_takeOffer",
 ] as const;
 
 export function requiredNamespaces(chainId: string): ProposalTypes.RequiredNamespaces {
