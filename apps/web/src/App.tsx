@@ -1156,6 +1156,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const withdrawUnlockedFromAccount = () => {
     if (!playerId) return;
     run("Withdrawing unlocked DAT…", async () => {
+      if (!session || !walletAddress) {
+        throw new Error("Connect Sage, then Link Sage address, before withdrawing");
+      }
       const unlocked = accountPlaythrough?.unlockedMojos ?? unlockedMojos;
       if (!unlocked || BigInt(unlocked) <= 0n) {
         throw new Error("Play sit-n-go or cash hands to unlock DAT first");
@@ -1562,16 +1565,24 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           </button>
         ) : (
           <>
-            <p className="ok-text">Sage paired</p>
+            <p className="ok-text">
+              {walletAddress ? "Sage paired and linked" : "Sage paired — next: link your address"}
+            </p>
             <div className="row">
-              <button type="button" disabled={busy} className="secondary" onClick={linkSageWallet}>
-                Link Sage address
-              </button>
+              {!walletAddress ? (
+                <button type="button" disabled={busy} onClick={linkSageWallet}>
+                  1. Link Sage address
+                </button>
+              ) : (
+                <button type="button" disabled={busy} className="secondary" onClick={linkSageWallet}>
+                  Re-link Sage address
+                </button>
+              )}
               <button type="button" disabled={busy} className="secondary" onClick={disconnectSage}>
                 Disconnect Sage
               </button>
             </div>
-            {walletAddress && (
+            {walletAddress ? (
               <p className="mono">
                 Address: {shortAddress(walletAddress)}
                 {datBalance != null && (
@@ -1581,18 +1592,28 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   </>
                 )}
               </p>
+            ) : (
+              <p className="muted small">
+                Link Sage address (step 1) before you can withdraw unlocked DAT.
+              </p>
             )}
-            {accountUnlockedMojos > 0n && (
+            {accountUnlockedMojos > 0n && walletAddress && (
               <div className="row">
                 <button
                   type="button"
                   disabled={busy}
                   onClick={withdrawUnlockedFromAccount}
                 >
-                  Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
+                  2. Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
                   to Sage
                 </button>
               </div>
+            )}
+            {accountUnlockedMojos > 0n && !walletAddress && (
+              <p className="muted small">
+                You have {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked —
+                link Sage first to withdraw it.
+              </p>
             )}
           </>
         )}
@@ -1881,10 +1902,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             )}
             {(tableFormat === "sng" || tableFormat === "mtt") && accountUnlockedMojos > 0n && (
               <div className="row">
-                <button type="button" disabled={busy} onClick={withdrawUnlockedFromAccount}>
-                  Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
-                  from SNG play
-                </button>
+                {session && walletAddress ? (
+                  <button type="button" disabled={busy} onClick={withdrawUnlockedFromAccount}>
+                    Withdraw {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked
+                    from SNG play
+                  </button>
+                ) : (
+                  <p className="muted small">
+                    {formatDatMojos(accountUnlockedMojos.toString(), datToken?.ticker)} unlocked —
+                    open Withdraw DAT (Sage), connect, then link your address before withdrawing.
+                  </p>
+                )}
               </div>
             )}
           </>
