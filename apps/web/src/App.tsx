@@ -52,6 +52,7 @@ import {
   restoreSession,
   signRedeemMessage,
   signWithdrawMessage,
+  takeOffer,
   type WcSession,
 } from "./wallet/chia-wallet.js";
 
@@ -264,6 +265,28 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setAccountMojos(acc.balanceMojos);
     setRedeemedToday(acc.redeemedToday);
     setAccountPlaythrough(acc.playthrough ?? null);
+    try {
+      const { pending } = await api.pendingWithdraw();
+      if (pending?.offer) {
+        setWithdrawResult((prev) => {
+          if (prev?.offer) return prev;
+          return {
+            ok: true,
+            withdrawalId: pending.withdrawalId,
+            stackMojos: pending.stackMojos,
+            originalBuyInMojos: pending.stackMojos,
+            payoutMojos: pending.payoutMojos,
+            payoutMode: "full",
+            mode: "offer",
+            offer: pending.offer,
+            feeMojos: pending.feeMojos,
+            note: "Pending treasury offer — accept in Sage or copy/paste the offer string below.",
+          };
+        });
+      }
+    } catch {
+      /* older API without pending endpoint */
+    }
   }, []);
 
   const refreshTable = useCallback(async (id: string) => {
@@ -1040,6 +1063,40 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     });
   };
 
+  const acceptWithdrawOffer = async (result: WithdrawResult) => {
+    if (result.mode !== "offer" || !result.offer) return;
+    if (session && wcConfig) {
+      try {
+        setStatus("Approve the treasury offer in Sage to receive DAT…");
+        await takeOffer(
+          session,
+          wcConfig.projectId,
+          wcConfig.chainId,
+          result.offer,
+          BigInt(result.feeMojos || "0"),
+        );
+        await api.completeWithdraw(result.withdrawalId);
+        setStatus("Sage accepted the offer — DAT should appear in your wallet shortly.");
+        if (datToken?.assetId) {
+          const { balance } = await loadPlayerWallet(
+            session,
+            wcConfig.projectId,
+            wcConfig.chainId,
+            datToken.assetId,
+          );
+          setDatBalance(balance.spendable);
+        }
+        return;
+      } catch (e) {
+        setStatus(
+          `${e instanceof Error ? e.message : String(e)} Copy the offer below and import it in Sage if needed.`,
+        );
+      }
+    } else {
+      setStatus("Copy the offer below and import it in Sage (Offers → Import).");
+    }
+  };
+
   const withdrawToSage = () => {
     if (!tableId || !playerId || !walletAddress) return;
     run("Withdrawing to Sage…", async () => {
@@ -1075,17 +1132,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         };
       }
 
-      setStatus("Cashing out table stack…");
+      setStatus("Requesting treasury withdraw offer…");
       const result = await api.withdraw(tableId, playerId, {
         withdrawProof,
         devAck: datToken?.devBuyInEnabled,
       });
-
-      if (result.mode === "offer" && result.offer) {
-        setStatus(
-          "On-chain Sage takeOffer is disabled on this host so DAT cannot leave your wallet. Stack is in your table account.",
-        );
-      }
 
       setWithdrawResult(result);
       if (result.playthrough) setAccountPlaythrough(result.playthrough);
@@ -1097,16 +1148,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         setHand(null);
         setHandResult(null);
       }
-
-      if (session && wcConfig && datToken?.assetId) {
-        const { balance } = await loadPlayerWallet(
-          session,
-          wcConfig.projectId,
-          wcConfig.chainId,
-          datToken.assetId,
-        );
-        setDatBalance(balance.spendable);
-      }
+      await acceptWithdrawOffer(result);
       await refreshAccount(playerId);
     });
   };
@@ -1141,6 +1183,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           pubkey: signed.pubkey,
         };
       }
+      setStatus("Requesting treasury withdraw offer…");
       const result = await api.withdraw(tableId, playerId, {
         withdrawProof,
         devAck: datToken?.devBuyInEnabled,
@@ -1148,6 +1191,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
       setWithdrawResult(result);
       if (result.playthrough) setAccountPlaythrough(result.playthrough);
+      await acceptWithdrawOffer(result);
       await refreshAccount(playerId);
     });
   };
@@ -1847,15 +1891,54 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         )}
         {withdrawResult && (
           <div className="banner win">
-            Withdrew {formatDatMojos(withdrawResult.stackMojos, datToken?.ticker)} from table
-            {BigInt(withdrawResult.payoutMojos) > 0n && (
-              <>
-                {" "}
-                · payout {formatDatMojos(withdrawResult.payoutMojos, datToken?.ticker)}
-                {withdrawResult.mode === "offer" ? " (on-chain via offer)" : " (ledger)"}
-              </>
-            )}
-            . {withdrawResult.note}
+            <p>
+              Withdrew {formatDatMojos(withdrawResult.stackMojos, datToken?.ticker)}
+              {BigInt(withdrawResult.payoutMojos) > 0n && (
+                <>
+                  {" "}
+                  · payout {formatDatMojos(withdrawResult.payoutMojos, datToken?.ticker)}
+                  {withdrawResult.mode === "offer" ? " (on-chain via offer)" : " (ledger)"}
+                </>
+              )}
+              . {withdrawResult.note}
+            </p>
+            {withdrawResult.mode === "offer" && withdrawResult.offer ? (
+              <div className="withdraw-offer">
+                <p className="muted small">
+                  DAT is in this offer until you accept it in Sage. It will not show as spendable
+                  until then.
+                </p>
+                <textarea
+                  readOnly
+                  rows={4}
+                  value={withdrawResult.offer}
+                  aria-label="Treasury withdraw offer"
+                />
+                <div className="row">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(withdrawResult.offer!);
+                      setStatus("Offer copied — paste it in Sage under Offers → Import.");
+                    }}
+                  >
+                    Copy offer
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !session || !wcConfig}
+                    onClick={() => {
+                      run("Accepting offer in Sage…", async () => {
+                        await acceptWithdrawOffer(withdrawResult);
+                      });
+                    }}
+                  >
+                    Accept in Sage
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </section>

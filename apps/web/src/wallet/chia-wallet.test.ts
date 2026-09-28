@@ -21,11 +21,16 @@ describe("WalletConnect namespaces", () => {
     expect(required.chia.methods).toContain("chia_signMessageByAddress");
   });
 
-  it("never requests Sage spend RPCs that could drain a wallet", () => {
+  it("never requires wallet-drain RPCs; takeOffer is optional for treasury withdraw only", () => {
     const required = requiredNamespaces("chia:mainnet");
     const optional = optionalNamespaces("chia:mainnet");
     for (const method of SAGE_SPEND_METHODS) {
       expect(required.chia.methods).not.toContain(method);
+      if (method === "chia_takeOffer") {
+        expect(optional.chia.methods).toContain(method);
+        expect(SAGE_WC_METHODS).toContain(method);
+        continue;
+      }
       expect(optional.chia.methods).not.toContain(method);
       expect(SAGE_WC_METHODS).not.toContain(method);
     }

@@ -7,6 +7,7 @@ import {
   dappMetadata,
   optionalNamespaces,
   requiredNamespaces,
+  sessionMethodList,
   sessionSpendMethods,
 } from "./constants.js";
 import { isMobileUserAgent } from "./wc-link.js";
@@ -180,9 +181,16 @@ async function wcRequest<T>(
   timeoutMs = 90_000,
 ): Promise<T> {
   const client = await getSignClient(projectId);
-  if (sessionSpendMethods(session).includes(method) || method === "chia_takeOffer" || method === "chia_send") {
+  // Block sends / createOffer / coin spends. takeOffer is allowed only via
+  // takeOffer() for treasury withdraw receipts (user must approve in Sage).
+  if (method !== "chia_takeOffer" && sessionSpendMethods(session).includes(method)) {
     throw new Error(
-      "This site does not send or take offers from Sage. DAT stays in your wallet until on-chain escrow exists.",
+      "This site does not send coins or create offers from Sage. Buy-in is a signed message only.",
+    );
+  }
+  if (method === "chia_send" || method === "chia_createOffer") {
+    throw new Error(
+      "This site does not send coins or create offers from Sage. Buy-in is a signed message only.",
     );
   }
   const request = client.request<T>({
@@ -305,16 +313,27 @@ export async function signBuyInMessage(
   }
 }
 
+/**
+ * Accept a treasury withdraw (or NFT) offer in Sage. User must approve the
+ * WalletConnect prompt. Prefer pasting the offer string in Sage if the session
+ * was connected before takeOffer was optional.
+ */
 export async function takeOffer(
-  _session: WcSession,
-  _projectId: string,
-  _chainId: string,
-  _offer: string,
-  _feeMojos = 0n,
+  session: WcSession,
+  projectId: string,
+  chainId: string,
+  offer: string,
+  feeMojos = 0n,
 ): Promise<{ success: boolean }> {
-  throw new Error(
-    "On-chain Sage takeOffer is disabled on the game host so a compromised page cannot drain your wallet. Withdraw credits stay in your table account.",
-  );
+  if (!sessionMethodList(session).includes("chia_takeOffer")) {
+    throw new Error(
+      "This Sage connection cannot take offers yet. Reconnect Sage on this site, or paste the offer string into Sage manually (Offers → Import).",
+    );
+  }
+  return wcRequest<{ success: boolean }>(session, projectId, chainId, "chia_takeOffer", {
+    offer,
+    fee: feeMojos.toString(),
+  });
 }
 
 export async function loadPlayerWallet(

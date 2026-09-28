@@ -114,10 +114,12 @@ describe("6-max join + daily redeem", () => {
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
     process.env.DAT_ACCOUNTS_PATH = "memory";
     process.env.DAT_LEDGER_PATH = "memory";
+    process.env.DAT_WITHDRAWALS_PATH = "memory";
     process.env.DAT_SCRYPT_N = "4096";
     process.env.DAT_EMAIL_MODE = "memory";
     process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
     process.env.DAT_TERMS_ACCEPTANCE_PATH = "memory";
+    delete process.env.DAT_TREASURY_PAYOUT_URL;
     resetMailOutboxForTests();
     resetTablesForTests();
     resetAccountsForTests();

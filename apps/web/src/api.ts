@@ -539,6 +539,24 @@ export const api = {
       }),
     }),
 
+  pendingWithdraw: () =>
+    request<{
+      pending: {
+        withdrawalId: string;
+        stackMojos: string;
+        payoutMojos: string;
+        offer: string;
+        createdAt: string;
+        feeMojos: string;
+      } | null;
+    }>("/v1/wallet/withdraw/pending"),
+
+  completeWithdraw: (withdrawalId?: string) =>
+    request<{ ok: boolean }>("/v1/wallet/withdraw/complete", {
+      method: "POST",
+      body: JSON.stringify({ withdrawalId }),
+    }),
+
   lobbyPresence: () =>
     request<{ seatedHumans: number; humansInHand: number; tableCount: number }>(
       "/v1/lobby/presence",

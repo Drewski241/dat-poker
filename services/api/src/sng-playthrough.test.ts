@@ -120,6 +120,7 @@ describe("SNG play-through unlocks", () => {
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
     process.env.DAT_ACCOUNTS_PATH = "memory";
     process.env.DAT_LEDGER_PATH = "memory";
+    process.env.DAT_WITHDRAWALS_PATH = "memory";
     process.env.DAT_SCRYPT_N = "4096";
     process.env.DAT_EMAIL_MODE = "memory";
     process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
@@ -127,6 +128,7 @@ describe("SNG play-through unlocks", () => {
     process.env.DAT_ALLOW_DEV_BUYIN = "true";
     process.env.DAT_MIN_BUY_IN_MOJOS = "1000000";
     process.env.DAT_DAILY_REDEEM_MOJOS = "5000000";
+    delete process.env.DAT_TREASURY_PAYOUT_URL;
     resetMailOutboxForTests();
     resetTablesForTests();
     resetAccountsForTests();
