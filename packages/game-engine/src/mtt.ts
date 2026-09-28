@@ -60,6 +60,8 @@ export class MttEvent {
   private readonly pendingRegister: NlheTableEngine[] = [];
   private status: SngStatus = "registering";
   private handNumber = 0;
+  /** Hands dealt per table. Blind pace uses max across tables (not the sum). */
+  private readonly handsByTable = new Map<string, number>();
   private levelIndex = 0;
   private startedAtMs: number | null = null;
   private placements: SngPlacement[] = [];
@@ -205,8 +207,21 @@ export class MttEvent {
       throw new Error("SNG is not running");
     }
     this.requireTable(tableId);
-    this.handNumber += 1;
+    const dealt = (this.handsByTable.get(tableId) ?? 0) + 1;
+    this.handsByTable.set(tableId, dealt);
+    // Match real multi-table pace: blinds follow the furthest table, not sum of all deals.
+    this.handNumber = Math.max(this.handNumber, dealt);
     this.syncBlindClock(nowMs);
+  }
+
+  /** Hands started at this table (for syncing house-only sibling tables). */
+  handsDealtAt(tableId: string): number {
+    this.requireTable(tableId);
+    return this.handsByTable.get(tableId) ?? 0;
+  }
+
+  openTableIds(): string[] {
+    return this.openTables().map((row) => row.tableId);
   }
 
   syncBlindClock(nowMs = Date.now()): void {

@@ -120,4 +120,20 @@ describe("16-player MTT", () => {
     expect(alice).toBeTruthy();
     expect(isHousePlayerId(alice!.playerId)).toBe(false);
   });
+
+  it("tracks hands per table and advances blinds by the furthest table only", () => {
+    const event = MttEvent.create();
+    const [a, b] = event.tableIds();
+    event.seatPlayer(a, "alice", 0);
+    event.fillHouseSeats();
+    event.start();
+    event.onHandStarted(a);
+    event.onHandStarted(a);
+    event.onHandStarted(b);
+    expect(event.handsDealtAt(a)).toBe(2);
+    expect(event.handsDealtAt(b)).toBe(1);
+    expect(event.snapshot(a).handNumber).toBe(2);
+    event.onHandStarted(b);
+    expect(event.snapshot(a).handNumber).toBe(2);
+  });
 });
