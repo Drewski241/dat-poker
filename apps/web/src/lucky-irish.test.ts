@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  BIG_WIN_CYCLE,
   isLuckyIrishWin,
   LUCKY_IRISH_POT_BB,
+  parseBigWinPreviewHash,
   pickBigWinOverlay,
 } from "./lucky-irish.js";
 import type { HandResult } from "./api.js";
@@ -118,13 +120,31 @@ describe("pickBigWinOverlay", () => {
     });
   });
 
-  it("alternates hunter and irish after the first pick", () => {
-    expect(pickBigWinOverlay("irish")).toBe("hunter");
-    expect(pickBigWinOverlay("hunter")).toBe("irish");
+  it("cycles through all eleven overlays in order", () => {
+    for (let i = 0; i < BIG_WIN_CYCLE.length; i++) {
+      const prev = BIG_WIN_CYCLE[i]!;
+      const next = BIG_WIN_CYCLE[(i + 1) % BIG_WIN_CYCLE.length]!;
+      expect(pickBigWinOverlay(prev)).toBe(next);
+    }
   });
 
   it("starts with irish when there is no prior overlay", () => {
     expect(pickBigWinOverlay(null)).toBe("irish");
     expect(pickBigWinOverlay(null)).toBe("hunter");
+  });
+
+  it("parses preview hashes for every overlay", () => {
+    expect(parseBigWinPreviewHash("#lucky")).toBe("irish");
+    expect(parseBigWinPreviewHash("#hunter")).toBe("hunter");
+    expect(parseBigWinPreviewHash("#hero")).toBe("hero");
+    expect(parseBigWinPreviewHash("#big-sloth")).toBe("sloth");
+    expect(parseBigWinPreviewHash("#big-terrier")).toBe("terrier");
+    expect(parseBigWinPreviewHash("#big-owl")).toBe("owl");
+    expect(parseBigWinPreviewHash("#big-vault")).toBe("vault");
+    expect(parseBigWinPreviewHash("#big-fireworks")).toBe("fireworks");
+    expect(parseBigWinPreviewHash("#big-pinata")).toBe("pinata");
+    expect(parseBigWinPreviewHash("#big-ufo")).toBe("ufo");
+    expect(parseBigWinPreviewHash("#big-belt")).toBe("belt");
+    expect(parseBigWinPreviewHash("#nope")).toBeNull();
   });
 });
