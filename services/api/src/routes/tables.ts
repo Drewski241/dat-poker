@@ -43,6 +43,7 @@ import {
   resetHandHistoryForTests,
 } from "../hand-history-store.js";
 import { playHouseIfDue } from "../house-play.js";
+import { advanceSiblingMttHouseTables } from "../mtt-house-advance.js";
 import {
   getMtt16NftPromoMeta,
   loadMtt16NftChallengeStore,
@@ -212,6 +213,7 @@ function maintainTable(
     ensureHouseFunded(table);
     finalizeSngIfNeeded(tableId, table);
   }
+  runMttHouseCatchup(tableId);
   return unseatInactivePlayers(tableId, table, nowMs);
 }
 
@@ -1281,6 +1283,33 @@ export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): vo
   if (mtt.getStatus() === "finished") {
     settleMttPrizes(mtt);
   }
+  runMttHouseCatchup(tableId);
+}
+
+/**
+ * Keep house-only sibling MTT tables on pace with the table a human is playing.
+ * Blind levels use max(hands) across tables, so catch-up does not double-speed blinds.
+ */
+function runMttHouseCatchup(triggerTableId: string): void {
+  const mtt = mttByTable.get(triggerTableId);
+  if (!mtt || mtt.getStatus() !== "running") return;
+  advanceSiblingMttHouseTables(mtt, triggerTableId, {
+    onHandStarted: (siblingId) => {
+      mtt.onHandStarted(siblingId);
+    },
+    onHandComplete: (siblingId) => {
+      const engine = mtt.engineFor(siblingId);
+      if (!engine || engine.isHandInProgress()) return;
+      maybeRecordCompletedHand(siblingId, engine);
+      if (mtt.getStatus() === "running") {
+        mtt.afterHand(siblingId);
+        registerMttTables(mtt);
+      }
+      if (mtt.getStatus() === "finished") {
+        settleMttPrizes(mtt);
+      }
+    },
+  });
 }
 
 export function getSng(tableId: string): SngTournament | undefined {
