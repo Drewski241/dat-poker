@@ -60,8 +60,10 @@ import {
   restoreSession,
   signRedeemMessage,
   signWithdrawMessage,
+  takeOffer,
   type WcSession,
 } from "./wallet/chia-wallet.js";
+import { sessionCanTakeOffer } from "./wallet/constants.js";
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
 const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
@@ -1752,12 +1754,42 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                             .
                           </p>
                           <p className="muted small">
-                            WalletConnect cannot take offers on this site (security). Copy the offer,
-                            then in <strong>your</strong> Sage wallet: Offers → Import → paste → Accept.
+                            Tap <strong>Accept NFT in Sage</strong> — Sage should prompt you to take the
+                            gift offer. If pairing is older (sign-only), disconnect and Connect Sage again
+                            first. Copy/import still works as a fallback.
                           </p>
                           <div className="nft-promo-actions">
                             <button
                               type="button"
+                              disabled={busy || !session || !wcConfig}
+                              onClick={() => {
+                                if (!session || !wcConfig) {
+                                  setError("Connect Sage first, then Accept NFT in Sage.");
+                                  return;
+                                }
+                                if (!sessionCanTakeOffer(session)) {
+                                  setError(
+                                    "This Sage pairing cannot take offers. Disconnect Sage, Connect again (approve takeOffer), then retry.",
+                                  );
+                                  return;
+                                }
+                                run("Waiting for Sage to accept NFT offer…", async () => {
+                                  await takeOffer(
+                                    session,
+                                    wcConfig.projectId,
+                                    wcConfig.chainId,
+                                    mtt16NftReward.offer!,
+                                    BigInt(mtt16NftReward.feeMojos ?? "0"),
+                                  );
+                                  setStatus("Sage accepted the NFT offer — check your wallet NFTs.");
+                                });
+                              }}
+                            >
+                              Accept NFT in Sage
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary"
                               disabled={busy}
                               onClick={() => {
                                 void (async () => {
@@ -1772,7 +1804,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                                 })();
                               }}
                             >
-                              {nftOfferCopied ? "Copied!" : "Copy NFT offer for Sage"}
+                              {nftOfferCopied ? "Copied!" : "Copy offer"}
                             </button>
                           </div>
                           <textarea
@@ -1787,7 +1819,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                       ) : (
                         <>
                           <p className="muted small">
-                            You won the challenge. Request the treasury NFT offer, then import it in Sage.
+                            You won the challenge. Request the treasury NFT offer, then accept it in Sage.
                           </p>
                           {mtt16NftReward.offerError ? (
                             <p className="error small">{mtt16NftReward.offerError}</p>
@@ -1802,7 +1834,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                                   setMtt16NftReward(reward);
                                   setMtt16NftPromo(await api.mtt16NftPromo());
                                   if (reward.offer) {
-                                    setStatus("NFT offer ready — copy it and import in Sage.");
+                                    setStatus("NFT offer ready — tap Accept NFT in Sage.");
                                   } else {
                                     throw new Error(
                                       reward.offerError ||

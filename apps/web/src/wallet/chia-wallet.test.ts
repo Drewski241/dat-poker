@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { mapWalletConnectError } from "./chia-wallet.js";
 import {
+  SAGE_FORBIDDEN_SPEND_METHODS,
   SAGE_REQUIRED_METHODS,
-  SAGE_SPEND_METHODS,
+  SAGE_TAKE_OFFER_METHOD,
   SAGE_WC_METHODS,
   WALLETCONNECT_RELAY_URL,
   dappMetadata,
   optionalNamespaces,
   requiredNamespaces,
+  sessionCanTakeOffer,
+  sessionForbiddenSpendMethods,
   sessionSpendMethods,
 } from "./constants.js";
 import type { WcSession } from "./constants.js";
@@ -21,14 +24,16 @@ describe("WalletConnect namespaces", () => {
     expect(required.chia.methods).toContain("chia_signMessageByAddress");
   });
 
-  it("never requests Sage spend RPCs that could drain a wallet", () => {
+  it("never requires drain RPCs; optional takeOffer is only for NFT gifts", () => {
     const required = requiredNamespaces("chia:mainnet");
     const optional = optionalNamespaces("chia:mainnet");
-    for (const method of SAGE_SPEND_METHODS) {
+    for (const method of SAGE_FORBIDDEN_SPEND_METHODS) {
       expect(required.chia.methods).not.toContain(method);
       expect(optional.chia.methods).not.toContain(method);
       expect(SAGE_WC_METHODS).not.toContain(method);
     }
+    expect(required.chia.methods).not.toContain(SAGE_TAKE_OFFER_METHOD);
+    expect(optional.chia.methods).toContain(SAGE_TAKE_OFFER_METHOD);
   });
 
   it("lists Sage read/sign methods as optional extras", () => {
@@ -45,11 +50,18 @@ describe("WalletConnect namespaces", () => {
     expect(dappMetadata().url).toMatch(/^https?:\/\//);
   });
 
-  it("flags restored sessions that still have spend methods", () => {
-    const session = {
+  it("allows takeOffer sessions but still flags drain methods", () => {
+    const takeOnly = {
       namespaces: { chia: { methods: ["chia_getAddress", "chia_takeOffer"], accounts: [], events: [] } },
     } as unknown as WcSession;
-    expect(sessionSpendMethods(session)).toEqual(["chia_takeOffer"]);
+    expect(sessionSpendMethods(takeOnly)).toEqual(["chia_takeOffer"]);
+    expect(sessionForbiddenSpendMethods(takeOnly)).toEqual([]);
+    expect(sessionCanTakeOffer(takeOnly)).toBe(true);
+
+    const drain = {
+      namespaces: { chia: { methods: ["chia_getAddress", "chia_send"], accounts: [], events: [] } },
+    } as unknown as WcSession;
+    expect(sessionForbiddenSpendMethods(drain)).toEqual(["chia_send"]);
   });
 });
 

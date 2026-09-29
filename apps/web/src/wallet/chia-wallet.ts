@@ -7,7 +7,8 @@ import {
   dappMetadata,
   optionalNamespaces,
   requiredNamespaces,
-  sessionSpendMethods,
+  sessionCanTakeOffer,
+  sessionForbiddenSpendMethods,
 } from "./constants.js";
 import { isMobileUserAgent } from "./wc-link.js";
 
@@ -180,11 +181,12 @@ async function wcRequest<T>(
   timeoutMs = 90_000,
 ): Promise<T> {
   const client = await getSignClient(projectId);
-  if (sessionSpendMethods(session).includes(method) || method === "chia_takeOffer" || method === "chia_send") {
+  if (sessionForbiddenSpendMethods(session).includes(method) || method === "chia_send") {
     throw new Error(
-      "This site does not send or take offers from Sage. DAT stays in your wallet until on-chain escrow exists.",
+      "This site does not send coins or create offers from Sage. DAT stays in your wallet until on-chain escrow exists.",
     );
   }
+  // chia_takeOffer is allowed only via takeOffer() for treasury NFT gift claims.
   const request = client.request<T>({
     topic: session.topic,
     chainId,
@@ -305,16 +307,29 @@ export async function signBuyInMessage(
   }
 }
 
+/**
+ * Ask the paired Sage wallet to take a treasury NFT gift offer.
+ * Requires the session to include optional `chia_takeOffer` (re-pair if missing).
+ */
 export async function takeOffer(
-  _session: WcSession,
-  _projectId: string,
-  _chainId: string,
-  _offer: string,
-  _feeMojos = 0n,
+  session: WcSession,
+  projectId: string,
+  chainId: string,
+  offer: string,
+  feeMojos = 0n,
 ): Promise<{ success: boolean }> {
-  throw new Error(
-    "On-chain Sage takeOffer is disabled on the game host so a compromised page cannot drain your wallet. Withdraw credits stay in your table account.",
-  );
+  if (!offer.trim()) {
+    throw new Error("No NFT offer to accept");
+  }
+  if (!sessionCanTakeOffer(session)) {
+    throw new Error(
+      "This Sage pairing cannot take offers. Disconnect Sage, Connect again, and approve takeOffer when prompted — then retry Accept NFT.",
+    );
+  }
+  return wcRequest<{ success: boolean }>(session, projectId, chainId, "chia_takeOffer", {
+    offer,
+    fee: Number(feeMojos),
+  });
 }
 
 export async function loadPlayerWallet(
@@ -354,15 +369,15 @@ export function restoreSession(projectId: string): Promise<WcSession | undefined
     const keys = client.session.keys;
     if (!keys.length) return undefined;
     const session = client.session.get(keys[keys.length - 1]);
-    const spends = sessionSpendMethods(session);
-    if (spends.length) {
+    const forbidden = sessionForbiddenSpendMethods(session);
+    if (forbidden.length) {
       try {
         await client.disconnect({
           topic: session.topic,
-          reason: { code: 6000, message: "Spend methods are not allowed on DAT Poker beta" },
+          reason: { code: 6000, message: "Drain methods are not allowed on DAT Poker beta" },
         });
       } catch {
-        /* still refuse to reuse a spend-capable session */
+        /* still refuse to reuse a drain-capable session */
       }
       return undefined;
     }
