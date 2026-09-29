@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { TableConfig, TableFormat } from "@dat-poker/shared";
 import {
+  DAT_MTT_DEFAULTS,
   DAT_SNG_DEFAULTS,
   DAT_TABLE_DEFAULTS,
   isHousePlayerId,
@@ -432,10 +433,14 @@ export function registerTableRoutes(app: FastifyInstance): void {
     return mtt16NftChallengePublicView(session?.playerId);
   });
 
-  app.get("/v1/lobby/mtt16-nft-image", async (_req, reply) => {
+  app.get<{ Querystring: { nft?: string } }>("/v1/lobby/mtt16-nft-image", async (req, reply) => {
     const cfg = readMtt16NftChallengeConfig();
     if (!cfg.enabled) {
       return reply.status(404).send({ error: "NFT promo disabled" });
+    }
+    const requested = req.query.nft?.trim();
+    if (requested && requested !== cfg.nftId) {
+      return reply.status(404).send({ error: "NFT image does not match current prize" });
     }
     const meta = await getMtt16NftPromoMeta();
     if (!meta?.imageUrl) {
@@ -448,7 +453,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
       }
       const body = Buffer.from(await upstream.arrayBuffer());
       const type = upstream.headers.get("content-type") ?? "image/png";
-      return reply.header("Cache-Control", "public, max-age=3600").type(type).send(body);
+      return reply
+        .header("Cache-Control", "public, max-age=3600")
+        .header("Vary", "Accept")
+        .type(type)
+        .send(body);
     } catch (e) {
       return reply.status(502).send({ error: (e as Error).message });
     }
@@ -634,6 +643,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
     const joinable = [...mttByTable.values()].find((mtt) => {
       if (mtt.getStatus() === "finished") return false;
+      if (!mtt.canAcceptHuman(playerId)) return false;
       return mtt.firstHouseSeat() !== null;
     });
 
@@ -1175,6 +1185,12 @@ function readFillHouseDefault(): boolean {
   return true;
 }
 
+function readMttMaxHumans(): number {
+  const raw = Number(process.env.DAT_MTT_MAX_HUMANS ?? DAT_MTT_DEFAULTS.maxHumans);
+  if (!Number.isFinite(raw) || raw < 1) return DAT_MTT_DEFAULTS.maxHumans;
+  return Math.min(DAT_MTT_DEFAULTS.fieldSize, Math.floor(raw));
+}
+
 function createSngTable(options?: { maxSeats?: number; fillHouse?: boolean; minHumansToStart?: number }): {
   tableId: string;
   table: NlheTableEngine;
@@ -1205,6 +1221,7 @@ function createMttEvent(): MttEvent {
   const mtt = MttEvent.create({
     fillHouse: readFillHouseDefault(),
     minHumansToStart: 1,
+    maxHumans: readMttMaxHumans(),
   });
   registerMttTables(mtt);
   return mtt;

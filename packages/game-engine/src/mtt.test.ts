@@ -136,4 +136,16 @@ describe("16-player MTT", () => {
     event.onHandStarted(b);
     expect(event.snapshot(a).handNumber).toBe(2);
   });
+
+  it("caps humans at maxHumans and keeps remaining seats as house", () => {
+    const event = MttEvent.create({ maxHumans: 2 });
+    const [a, b] = event.tableIds();
+    event.seatPlayer(a, "alice", 0);
+    event.fillHouseSeats();
+    event.claimHouseSeat(a, "bob");
+    expect(event.enteredHumanCount()).toBe(2);
+    expect(event.canAcceptHuman("carol")).toBe(false);
+    expect(() => event.claimHouseSeat(b, "carol")).toThrow(/maximum of 2 human/);
+    expect(event.snapshot(a).maxHumans).toBe(2);
+  });
 });

@@ -24,6 +24,8 @@ export interface MttOptions {
   startingStackMojos?: bigint;
   fillHouse?: boolean;
   minHumansToStart?: number;
+  /** Max non-house players who may enter this event (default 10). */
+  maxHumans?: number;
   housePolicy?: HousePolicy;
   handsPerLevel?: number;
   levelDurationMs?: number;
@@ -45,6 +47,7 @@ export class MttEvent {
   readonly startingStackMojos: bigint;
   readonly fillHouse: boolean;
   readonly minHumansToStart: number;
+  readonly maxHumans: number;
   readonly housePolicy: HousePolicy;
   readonly fieldSize = DAT_MTT_DEFAULTS.fieldSize;
   readonly startingTableSeats = DAT_MTT_DEFAULTS.startingTableSeats;
@@ -74,6 +77,14 @@ export class MttEvent {
     this.startingStackMojos = options.startingStackMojos ?? DAT_MTT_DEFAULTS.startingStackMojos;
     this.fillHouse = options.fillHouse ?? DAT_MTT_DEFAULTS.fillHouse;
     this.minHumansToStart = options.minHumansToStart ?? DAT_MTT_DEFAULTS.minHumansToStart;
+    const maxHumansRaw = options.maxHumans ?? DAT_MTT_DEFAULTS.maxHumans ?? 10;
+    this.maxHumans = Math.max(
+      1,
+      Math.min(DAT_MTT_DEFAULTS.fieldSize, Math.floor(Number(maxHumansRaw))),
+    );
+    if (!Number.isFinite(this.maxHumans)) {
+      this.maxHumans = 10;
+    }
     this.housePolicy = options.housePolicy ?? DAT_MTT_DEFAULTS.housePolicy;
     this.handsPerLevel = options.handsPerLevel ?? DAT_MTT_DEFAULTS.handsPerLevel;
     this.levelDurationMs = options.levelDurationMs ?? DAT_MTT_DEFAULTS.levelDurationMs;
@@ -149,6 +160,11 @@ export class MttEvent {
     if (this.status === "finished") {
       throw new Error("SNG is finished");
     }
+    if (!this.canAcceptHuman(playerId)) {
+      throw new Error(
+        `This 16-player SNG already has the maximum of ${this.maxHumans} human players`,
+      );
+    }
     const table = this.requireTable(tableId);
     if (table.closed) {
       throw new Error("That table has already moved to the final table");
@@ -175,12 +191,41 @@ export class MttEvent {
   }
 
   seatPlayer(tableId: string, playerId: PlayerId, seatIndex: number): void {
+    if (!isHousePlayerId(playerId) && !this.canAcceptHuman(playerId)) {
+      throw new Error(
+        `This 16-player SNG already has the maximum of ${this.maxHumans} human players`,
+      );
+    }
     const table = this.requireTable(tableId);
     table.engine.seatPlayer(playerId, seatIndex, this.startingStackMojos);
   }
 
   humanCount(): number {
     return this.alivePlayers().filter((p) => !isHousePlayerId(p.playerId)).length;
+  }
+
+  /** Humans who entered this event (alive seats + eliminated), for the beta seat cap. */
+  enteredHumanCount(): number {
+    const ids = new Set<string>();
+    for (const table of this.tables) {
+      for (const seated of table.engine.getSeatedPlayers()) {
+        if (!isHousePlayerId(seated.playerId)) ids.add(seated.playerId);
+      }
+    }
+    for (const row of this.placements) {
+      if (!isHousePlayerId(row.playerId)) ids.add(row.playerId);
+    }
+    return ids.size;
+  }
+
+  canAcceptHuman(playerId?: PlayerId): boolean {
+    if (playerId && !isHousePlayerId(playerId)) {
+      for (const table of this.tables) {
+        if (table.engine.hasPlayer(playerId)) return true;
+      }
+      if (this.placements.some((row) => row.playerId === playerId)) return true;
+    }
+    return this.enteredHumanCount() < this.maxHumans;
   }
 
   canStart(): boolean {
@@ -376,6 +421,7 @@ export class MttEvent {
       }),
       playersRemaining: table.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n).length,
       humanCount: this.humanCount(),
+      maxHumans: this.maxHumans,
       houseSeatsAvailable: table.engine.houseSeats().length,
       placements: [...this.placements],
       kind: "mtt",

@@ -27,6 +27,7 @@ describe("SNG helpers", () => {
     expect(DAT_MTT_DEFAULTS.startingTableSeats).toBe(8);
     expect(DAT_MTT_DEFAULTS.startingTableCount).toBe(2);
     expect(DAT_MTT_DEFAULTS.finalTableSeats).toBe(8);
+    expect(DAT_MTT_DEFAULTS.maxHumans).toBe(10);
     expect(isTournamentFormat("mtt")).toBe(true);
     expect(isHousePlayerId(mttHousePlayerId("table-a", 2))).toBe(true);
   });

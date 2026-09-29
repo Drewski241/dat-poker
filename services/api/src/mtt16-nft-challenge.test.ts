@@ -23,7 +23,7 @@ describe("16-player SNG NFT challenge", () => {
     process.env = env;
   });
 
-  it("tracks wins and awards the first player to reach five", async () => {
+  it("tracks wins and awards the first player to reach the required count", async () => {
     const player = "xch1alice";
     for (let i = 0; i < 4; i += 1) {
       expect(recordMtt16FirstPlaceWin(player, player)).toBe(false);
@@ -65,6 +65,58 @@ describe("16-player SNG NFT challenge", () => {
     }
     expect(mtt16NftChallengePublicView().winnerPlayerId).toBe("xch1alice");
     expect(mtt16NftChallengePublicView("xch1bob").yourWins).toBe(0);
+  });
+
+  it("starts a fresh race when the prize NFT id changes", () => {
+    process.env.DAT_MTT16_NFT_REWARD_ID = "nft1oldprize000000000000000000000000000000000000000000000000";
+    resetMtt16NftChallengeForTests();
+    for (let i = 0; i < 5; i += 1) {
+      recordMtt16FirstPlaceWin("xch1alice", "xch1alice");
+    }
+    expect(mtt16NftChallengePublicView().awarded).toBe(true);
+
+    process.env.DAT_MTT16_NFT_REWARD_ID = "nft13sew37qescuqyxzjvsn3dv232f8aa9xjtfytequa6l5p084svf3s85vxrc";
+    const view = mtt16NftChallengePublicView("xch1alice");
+    expect(view.nftId).toBe("nft13sew37qescuqyxzjvsn3dv232f8aa9xjtfytequa6l5p084svf3s85vxrc");
+    expect(view.awarded).toBe(false);
+    expect(view.yourWins).toBe(0);
+    expect(view.winsRequired).toBe(5);
+    expect(recordMtt16FirstPlaceWin("xch1bob", "xch1bob")).toBe(false);
+    expect(mtt16NftChallengePublicView("xch1bob").yourWins).toBe(1);
+  });
+
+  it("cache-busts the lobby image URL with the current prize nft id", async () => {
+    const nftId = "nft13sew37qescuqyxzjvsn3dv232f8aa9xjtfytequa6l5p084svf3s85vxrc";
+    process.env.DAT_MTT16_NFT_REWARD_ID = nftId;
+    process.env.DAT_MTT16_NFT_WINS_REQUIRED = "20";
+    resetMtt16NftChallengeForTests();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("mintgarden")) {
+        return new Response(JSON.stringify({ data: { thumbnail_uri: "https://cdn.example/bear.png" } }), {
+          status: 200,
+        });
+      }
+      if (url.includes("coinset.org/nft/") && url.endsWith(".json")) {
+        return new Response(
+          JSON.stringify({ data: { description: "New prize bear", series_number: 1, series_total: 1 } }),
+          { status: 200 },
+        );
+      }
+      return new Response("nope", { status: 404 });
+    };
+    try {
+      const { getMtt16NftPromoMeta } = await import("./mtt16-nft-challenge-store.js");
+      await getMtt16NftPromoMeta();
+      const view = mtt16NftChallengePublicView();
+      expect(view.winsRequired).toBe(20);
+      expect(view.description).toBe("New prize bear");
+      expect(view.imageUrl).toBe(`/v1/lobby/mtt16-nft-image?nft=${encodeURIComponent(nftId)}`);
+      expect(view.awarded).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("retries a failed treasury NFT payout once treasury is fixed", async () => {
