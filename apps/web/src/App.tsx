@@ -1826,8 +1826,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                       ) : (
                         <>
                           <p className="muted small">
-                            You won the challenge. Get the treasury offer, then import it in Sage on this
-                            computer (Offers → Import).
+                            You won the challenge. Click the button below to build the treasury{" "}
+                            <code>offer1…</code> string. Then it will appear in this same NFT card so you
+                            can copy it into Sage → Offers → Import.
                           </p>
                           {mtt16NftReward.offerError ? (
                             <p className="error small">{mtt16NftReward.offerError}</p>
@@ -1842,7 +1843,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                                   setMtt16NftReward(reward);
                                   setMtt16NftPromo(await api.mtt16NftPromo());
                                   if (reward.offer) {
-                                    setStatus("NFT offer ready — copy it and Import in Sage.");
+                                    setStatus(
+                                      "NFT offer ready in this card — copy offer1… then Sage → Offers → Import.",
+                                    );
                                   } else {
                                     throw new Error(
                                       reward.offerError ||

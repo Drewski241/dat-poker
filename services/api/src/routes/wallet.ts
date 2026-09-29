@@ -129,8 +129,17 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     if (!result.retried && result.reason === "only the challenge winner can retry") {
       return reply.status(403).send({ error: result.reason });
     }
+    const reward = mtt16NftRewardForPlayer(session.playerId);
+    // Surface treasury failures as 502 so the lobby shows the real error, not a bare Bad Request.
+    if (result.retried && reward.offerError && !reward.offer) {
+      return reply.status(502).send({
+        error: reward.offerError,
+        ...reward,
+        retry: result,
+      });
+    }
     return {
-      ...mtt16NftRewardForPlayer(session.playerId),
+      ...reward,
       retry: result,
     };
   });
