@@ -5,6 +5,7 @@ import {
   mtt16NftRewardForPlayer,
   recordMtt16FirstPlaceWin,
   resetMtt16NftChallengeForTests,
+  retryMtt16NftOffer,
 } from "./mtt16-nft-challenge-store.js";
 
 describe("16-player SNG NFT challenge", () => {
@@ -64,5 +65,36 @@ describe("16-player SNG NFT challenge", () => {
     }
     expect(mtt16NftChallengePublicView().winnerPlayerId).toBe("xch1alice");
     expect(mtt16NftChallengePublicView("xch1bob").yourWins).toBe(0);
+  });
+
+  it("retries a failed treasury NFT payout once treasury is fixed", async () => {
+    const player = "xch1alice";
+    for (let i = 0; i < 5; i += 1) {
+      recordMtt16FirstPlaceWin(player, player);
+    }
+
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ message: "Route POST:/nft-payout not found", statusCode: 404 }), {
+          status: 404,
+        });
+      }
+      return new Response(JSON.stringify({ offer: "offer1retry", feeMojos: "500000000" }), { status: 200 });
+    };
+    try {
+      await flushMtt16NftOfferForTests();
+      expect(mtt16NftRewardForPlayer(player).offerError).toMatch(/404/);
+      expect(mtt16NftRewardForPlayer(player).offer).toBeNull();
+
+      const retry = await retryMtt16NftOffer(player);
+      expect(retry.retried).toBe(true);
+      expect(mtt16NftRewardForPlayer(player).offer).toBe("offer1retry");
+      expect(mtt16NftRewardForPlayer(player).offerError).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

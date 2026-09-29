@@ -237,7 +237,33 @@ async function queueNftOffer(cfg: Mtt16NftChallengeConfig, address: string): Pro
 
 /** Test hook: await pending treasury offer creation. */
 export async function flushMtt16NftOfferForTests(): Promise<void> {
+  await retryMtt16NftOffer();
+}
+
+/**
+ * Re-request the treasury NFT gift offer when a winner exists but no offer was stored
+ * (e.g. treasury was on an older build without POST /nft-payout).
+ */
+export async function retryMtt16NftOffer(playerId?: string | null): Promise<{
+  retried: boolean;
+  reason?: string;
+}> {
+  loadMtt16NftChallengeStore();
   const cfg = readMtt16NftChallengeConfig();
-  if (!state.winnerAddress || state.offer || !cfg.treasuryNftPayoutUrl) return;
+  if (!state.winnerPlayerId || !state.winnerAddress) {
+    return { retried: false, reason: "no winner yet" };
+  }
+  if (playerId && state.winnerPlayerId !== playerId) {
+    return { retried: false, reason: "only the challenge winner can retry" };
+  }
+  if (state.offer) {
+    return { retried: false, reason: "offer already ready" };
+  }
+  if (!cfg.treasuryNftPayoutUrl) {
+    state.offerError = "Treasury NFT payout URL not configured (DAT_TREASURY_NFT_PAYOUT_URL)";
+    persist();
+    return { retried: false, reason: state.offerError };
+  }
   await queueNftOffer(cfg, state.winnerAddress);
+  return { retried: true };
 }
