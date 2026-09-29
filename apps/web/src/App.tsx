@@ -1754,10 +1754,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                             .
                           </p>
                           <p className="muted small">
-                            On desktop, claim by copying the offer into Sage (there is no desktop popup).
-                            Open <strong>Sage → Offers → Import</strong>, paste, then Accept.
-                            WalletConnect “Accept NFT” only alerts the <strong>phone</strong> that
-                            scanned the Connect QR — not this computer.
+                            This <code>offer1…</code> string is <strong>not</strong> the WalletConnect
+                            <code>wc:…</code> link. Claim on desktop:{" "}
+                            <strong>Copy offer1</strong> → Sage → <strong>Offers → Import</strong> →
+                            paste → Accept. That import <em>is</em> the accept step (no second WC popup).
+                            Optional: <strong>Accept via WalletConnect</strong> only if this browser’s
+                            Sage pairing included takeOffer (Disconnect + Connect again after the latest
+                            deploy).
                           </p>
                           <div className="nft-promo-actions">
                             <button
@@ -1769,34 +1772,34 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                                     await navigator.clipboard.writeText(mtt16NftReward.offer!);
                                     setNftOfferCopied(true);
                                     setStatus(
-                                      "Offer copied. In Sage: Offers → Import → paste → Accept.",
+                                      "Copied offer1…. In Sage desktop: Offers → Import → paste → Accept.",
                                     );
                                     window.setTimeout(() => setNftOfferCopied(false), 4000);
                                   } catch {
-                                    setError("Could not copy — select the offer text below and copy manually.");
+                                    setError("Could not copy — select the offer1… text below and copy manually.");
                                   }
                                 })();
                               }}
                             >
-                              {nftOfferCopied ? "Copied — import in Sage" : "Copy offer for Sage Import"}
+                              {nftOfferCopied ? "Copied — Sage Offers → Import" : "Copy offer1 for Sage Import"}
                             </button>
                             <button
                               type="button"
                               className="secondary"
                               disabled={busy || !session || !wcConfig}
-                              title="Sends the request to the phone Sage that paired via QR"
+                              title="Asks the paired desktop Sage (same WC session) to takeOffer"
                               onClick={() => {
                                 if (!session || !wcConfig) {
-                                  setError("Connect Sage on this browser first (optional phone path).");
+                                  setError("Connect Sage in this browser first (paste the wc: URI into Sage).");
                                   return;
                                 }
                                 if (!sessionCanTakeOffer(session)) {
                                   setError(
-                                    "This pairing cannot take offers. Prefer Copy offer → Sage Import on desktop. Or Disconnect Sage, Connect again, then retry.",
+                                    "This Sage pairing has no takeOffer permission. Use Copy offer1 → Offers → Import, or Disconnect Sage and Connect again after redeploy so takeOffer is granted.",
                                   );
                                   return;
                                 }
-                                run("Request sent — check the phone Sage that scanned the QR…", async () => {
+                                run("Waiting for desktop Sage to approve takeOffer…", async () => {
                                   await takeOffer(
                                     session,
                                     wcConfig.projectId,
@@ -1808,7 +1811,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                                 });
                               }}
                             >
-                              Send to phone Sage
+                              Accept via WalletConnect
                             </button>
                           </div>
                           <textarea

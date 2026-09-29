@@ -328,7 +328,8 @@ export async function takeOffer(
   }
   return wcRequest<{ success: boolean }>(session, projectId, chainId, "chia_takeOffer", {
     offer,
-    fee: Number(feeMojos),
+    // Sage WalletConnect expects fee as a mojo string (not a JS number).
+    fee: feeMojos.toString(),
   });
 }
 
