@@ -548,6 +548,13 @@ export const api = {
 
   mtt16NftReward: () => request<Mtt16NftReward>("/v1/wallet/mtt16-nft-reward"),
 
+  retryMtt16NftReward: () =>
+    request<Mtt16NftReward & { retry?: { retried: boolean; reason?: string } }>(
+      "/v1/wallet/mtt16-nft-reward/retry",
+      // Fastify rejects application/json POSTs with an empty body as Bad Request.
+      { method: "POST", body: "{}" },
+    ),
+
   createTable: (body?: { format?: "cash" | "sng"; fillHouse?: boolean; minHumansToStart?: number }) =>
     request<{ tableId: string; config: TableConfigResponse; sng?: SngSnapshot | null }>("/v1/tables", {
       method: "POST",

@@ -20,12 +20,19 @@ import {
 } from "./api.js";
 import { AuthPanel, ChangePasswordForm } from "./AuthPanel.js";
 import { CardRow } from "./components/PlayingCard.js";
-import { LuckyIrishWin } from "./components/LuckyIrishWin.js";
-import { HunterBullseyeWin } from "./components/HunterBullseyeWin.js";
+import { BigWinOverlayHost } from "./components/BigWinOverlayHost.js";
 import { TableRoom } from "./components/TableRoom.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
-import { allInBettingClosed, isCallAllIn, shouldHoldTableForRunout, shouldPlayAllInRunout } from "./all-in-runout.js";
+import {
+  allInBettingClosed,
+  BUST_LOBBY_RETURN_MS,
+  isCallAllIn,
+  LOSS_SOAK_MS,
+  shouldHoldTableForBustExit,
+  shouldHoldTableForRunout,
+  shouldPlayAllInRunout,
+} from "./all-in-runout.js";
 import { sngShouldAutoDeal } from "./sng-auto-deal.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -36,6 +43,7 @@ import {
   turnTimerKey,
 } from "./player-turn-timer.js";
 import {
+  parseBigWinPreviewHash,
   pickBigWinOverlay,
   readStoredBigWinOverlay,
   shouldCelebrateBigWin,
@@ -52,8 +60,10 @@ import {
   restoreSession,
   signRedeemMessage,
   signWithdrawMessage,
+  takeOffer,
   type WcSession,
 } from "./wallet/chia-wallet.js";
+import { sessionCanTakeOffer } from "./wallet/constants.js";
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
 const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
@@ -149,6 +159,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [lobbyTables, setLobbyTables] = useState<LobbyTable[]>([]);
   const [mtt16NftPromo, setMtt16NftPromo] = useState<Mtt16NftPromo | null>(null);
   const [mtt16NftReward, setMtt16NftReward] = useState<Mtt16NftReward | null>(null);
+  const [nftOfferCopied, setNftOfferCopied] = useState(false);
   /** When seated: full-screen table vs lobby (account, withdraw, leave). */
   const [tableFocusMode, setTableFocusMode] = useState(true);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
@@ -170,6 +181,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   });
   const runoutFromBoardLenRef = useRef<number | null>(null);
   const holdTableForRunoutRef = useRef(false);
+  const holdLossSoakRef = useRef(false);
+  const lossSoakTimerRef = useRef<number | null>(null);
+  const bustLobbyTimerRef = useRef<number | null>(null);
+  const bigWinActiveRef = useRef(false);
   const playedRunouts = useRef(new Set<string>());
   const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
   const [handHistoryOpen, setHandHistoryOpen] = useState(false);
@@ -280,13 +295,32 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (t.maxSeats) setTableMaxSeats(t.maxSeats);
     setSng(t.sng ?? null);
     if (t.sng?.status === "finished" && playerId && !t.seats.some((s) => s.playerId === playerId)) {
-      const hold = holdTableForRunoutRef.current || shouldHoldTableForRunout(
+      const runoutPending = shouldHoldTableForRunout(
         { ...liveHandMeta.current, viewerId: playerId },
         t.lastHandResult ?? null,
         runoutFromBoardLenRef.current != null,
         Boolean(t.lastHandResult && playedRunouts.current.has(t.lastHandResult.handId)),
       );
-      if (!hold) setTableFocusMode(false);
+      const hold = shouldHoldTableForBustExit({
+        holdRunout: holdTableForRunoutRef.current,
+        holdLossSoak: holdLossSoakRef.current || bigWinActiveRef.current,
+        runoutPending,
+      });
+      // Finished/bust players stay on the table through the all-in cinema + loss soak
+      // so they can see the outcome before auto-returning to the lobby.
+      if (!hold && bustLobbyTimerRef.current == null) {
+        bustLobbyTimerRef.current = window.setTimeout(() => {
+          bustLobbyTimerRef.current = null;
+          if (
+            !holdTableForRunoutRef.current &&
+            !holdLossSoakRef.current &&
+            !bigWinActiveRef.current &&
+            runoutFromBoardLenRef.current == null
+          ) {
+            setTableFocusMode(false);
+          }
+        }, BUST_LOBBY_RETURN_MS);
+      }
     }
     if (t.smallBlindMojos) {
       try {
@@ -395,15 +429,33 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       return;
     }
     if (!handResult || playedRunouts.current.has(handResult.handId)) return;
-    if (!shouldPlayAllInRunout({ ...liveHandMeta.current, viewerId: playerId }, handResult)) return;
-    holdTableForRunoutRef.current = true;
+    const live = { ...liveHandMeta.current, viewerId: playerId };
+    if (shouldPlayAllInRunout(live, handResult)) {
+      holdTableForRunoutRef.current = true;
+      playedRunouts.current.add(handResult.handId);
+      setRunoutFromBoardLen(
+        typeof handResult.runoutFromBoardLen === "number"
+          ? handResult.runoutFromBoardLen
+          : liveHandMeta.current.boardLen,
+      );
+      return;
+    }
+    // Preemptive all-in hold with no cinema (e.g. fold win) — soak on a loss, else release.
+    if (!holdTableForRunoutRef.current) return;
     playedRunouts.current.add(handResult.handId);
-    setRunoutFromBoardLen(
-      typeof handResult.runoutFromBoardLen === "number"
-        ? handResult.runoutFromBoardLen
-        : liveHandMeta.current.boardLen,
-    );
-  }, [hand, handResult, playerId]);
+    const lost = Boolean(playerId && handResult.winnerId !== playerId);
+    if (lost && (tableFormat === "sng" || tableFormat === "mtt")) {
+      holdTableForRunoutRef.current = false;
+      holdLossSoakRef.current = true;
+      if (lossSoakTimerRef.current != null) window.clearTimeout(lossSoakTimerRef.current);
+      lossSoakTimerRef.current = window.setTimeout(() => {
+        lossSoakTimerRef.current = null;
+        holdLossSoakRef.current = false;
+      }, LOSS_SOAK_MS);
+    } else {
+      holdTableForRunoutRef.current = false;
+    }
+  }, [hand, handResult, playerId, tableFormat]);
 
   useEffect(() => {
     if (hand || handInProgress) {
@@ -898,6 +950,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         p.playerId === playerId ? { ...p, allIn: true, stackMojos: "0" } : p,
       );
       const bettingClosed = allInBettingClosed(nextPlayers);
+      // Hold the table immediately so a finished SNG cannot kick to lobby before the runout arms.
+      holdTableForRunoutRef.current = true;
+      if (bustLobbyTimerRef.current != null) {
+        window.clearTimeout(bustLobbyTimerRef.current);
+        bustLobbyTimerRef.current = null;
+      }
       liveHandMeta.current = {
         handId: hand.handId,
         boardLen: bettingClosed
@@ -1004,6 +1062,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   })();
 
   const leaveTableView = () => {
+    if (lossSoakTimerRef.current != null) {
+      window.clearTimeout(lossSoakTimerRef.current);
+      lossSoakTimerRef.current = null;
+    }
+    if (bustLobbyTimerRef.current != null) {
+      window.clearTimeout(bustLobbyTimerRef.current);
+      bustLobbyTimerRef.current = null;
+    }
+    holdTableForRunoutRef.current = false;
+    holdLossSoakRef.current = false;
+    setRunoutFromBoardLen(null);
     setTableId(null);
     setTableSeats([]);
     setSng(null);
@@ -1264,12 +1333,16 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   ]);
 
   useEffect(() => {
-    if (window.location.hash === "#lucky") {
-      setBigWin("irish");
+    bigWinActiveRef.current = bigWin != null;
+    if (bigWin != null && bustLobbyTimerRef.current != null) {
+      window.clearTimeout(bustLobbyTimerRef.current);
+      bustLobbyTimerRef.current = null;
     }
-    if (window.location.hash === "#hunter") {
-      setBigWin("hunter");
-    }
+  }, [bigWin]);
+
+  useEffect(() => {
+    const bigWinPreview = parseBigWinPreviewHash(window.location.hash);
+    if (bigWinPreview) setBigWin(bigWinPreview);
     if (window.location.hash === "#cards") {
       setCardPreview(true);
     }
@@ -1305,8 +1378,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   return (
     <div className={`app ${atTableRoom ? "app--table-room" : "app--lobby"}`}>
-      {bigWin === "irish" && <LuckyIrishWin onFinished={() => setBigWin(null)} />}
-      {bigWin === "hunter" && <HunterBullseyeWin onFinished={() => setBigWin(null)} />}
+      {bigWin && (
+        <BigWinOverlayHost
+          overlay={bigWin}
+          onFinished={() => {
+            setBigWin(null);
+            bigWinActiveRef.current = false;
+          }}
+        />
+      )}
       {showSlothReminder && (
         <YourTurnSloth secondsLeft={slothPreview ? undefined : actionSecondsLeft} />
       )}
@@ -1358,7 +1438,19 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             canDeal={Boolean(myTableSeat) && sng?.status !== "finished"}
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
-            onOpenLobby={() => setTableFocusMode(false)}
+            onOpenLobby={() => {
+              if (lossSoakTimerRef.current != null) {
+                window.clearTimeout(lossSoakTimerRef.current);
+                lossSoakTimerRef.current = null;
+              }
+              if (bustLobbyTimerRef.current != null) {
+                window.clearTimeout(bustLobbyTimerRef.current);
+                bustLobbyTimerRef.current = null;
+              }
+              holdTableForRunoutRef.current = false;
+              holdLossSoakRef.current = false;
+              setTableFocusMode(false);
+            }}
             handHistoryCount={handHistory.length}
             onOpenHandHistory={() => setHandHistoryOpen(true)}
             playerLabel={playerLabel}
@@ -1376,8 +1468,25 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             sng={tableFormat === "sng" || tableFormat === "mtt" ? sng : null}
             runoutFromBoardLen={runoutFromBoardLen}
             onRunoutFinished={() => {
-              holdTableForRunoutRef.current = false;
               setRunoutFromBoardLen(null);
+              const lost = Boolean(handResult && playerId && handResult.winnerId !== playerId);
+              const tourney = tableFormat === "sng" || tableFormat === "mtt";
+              if (lost && tourney) {
+                // Keep the felt up after the cinema so a busted player can soak in the loss.
+                holdTableForRunoutRef.current = false;
+                holdLossSoakRef.current = true;
+                if (lossSoakTimerRef.current != null) window.clearTimeout(lossSoakTimerRef.current);
+                if (bustLobbyTimerRef.current != null) {
+                  window.clearTimeout(bustLobbyTimerRef.current);
+                  bustLobbyTimerRef.current = null;
+                }
+                lossSoakTimerRef.current = window.setTimeout(() => {
+                  lossSoakTimerRef.current = null;
+                  holdLossSoakRef.current = false;
+                }, LOSS_SOAK_MS);
+              } else {
+                holdTableForRunoutRef.current = false;
+              }
             }}
             playthroughHandsPlayed={handsPlayed}
             playthroughHandsRequired={handsRequired}
@@ -1633,17 +1742,126 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                     </p>
                   ) : null}
                   <p className="muted small nft-promo-id">{mtt16NftPromo.nftId}</p>
-                  {mtt16NftReward?.eligible && mtt16NftReward.offer ? (
-                    <p className="muted small">
-                      Treasury offer ready
-                      {mtt16NftReward.feeMojos && BigInt(mtt16NftReward.feeMojos) > 0n
-                        ? ` (includes ${(Number(mtt16NftReward.feeMojos) / 1e12).toFixed(6)} XCH tx fee)`
-                        : ""}
-                      . Accept in Sage when WalletConnect takeOffer is enabled.
-                    </p>
-                  ) : null}
-                  {mtt16NftReward?.eligible && mtt16NftReward.offerError ? (
-                    <p className="error small">{mtt16NftReward.offerError}</p>
+                  {mtt16NftReward?.eligible ? (
+                    <div className="nft-promo-claim">
+                      {mtt16NftReward.offer ? (
+                        <>
+                          <p className="nft-promo-status">
+                            Your treasury NFT offer is ready
+                            {mtt16NftReward.feeMojos && BigInt(mtt16NftReward.feeMojos) > 0n
+                              ? ` (includes ${(Number(mtt16NftReward.feeMojos) / 1e12).toFixed(6)} XCH tx fee)`
+                              : ""}
+                            .
+                          </p>
+                          <p className="muted small">
+                            This <code>offer1…</code> string is <strong>not</strong> the WalletConnect
+                            <code>wc:…</code> link. Claim on desktop:{" "}
+                            <strong>Copy offer1</strong> → Sage → <strong>Offers → Import</strong> →
+                            paste → Accept. That import <em>is</em> the accept step (no second WC popup).
+                            Optional: <strong>Accept via WalletConnect</strong> only if this browser’s
+                            Sage pairing included takeOffer (Disconnect + Connect again after the latest
+                            deploy).
+                          </p>
+                          <div className="nft-promo-actions">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                void (async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(mtt16NftReward.offer!);
+                                    setNftOfferCopied(true);
+                                    setStatus(
+                                      "Copied offer1…. In Sage desktop: Offers → Import → paste → Accept.",
+                                    );
+                                    window.setTimeout(() => setNftOfferCopied(false), 4000);
+                                  } catch {
+                                    setError("Could not copy — select the offer1… text below and copy manually.");
+                                  }
+                                })();
+                              }}
+                            >
+                              {nftOfferCopied ? "Copied — Sage Offers → Import" : "Copy offer1 for Sage Import"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={busy || !session || !wcConfig}
+                              title="Asks the paired desktop Sage (same WC session) to takeOffer"
+                              onClick={() => {
+                                if (!session || !wcConfig) {
+                                  setError("Connect Sage in this browser first (paste the wc: URI into Sage).");
+                                  return;
+                                }
+                                if (!sessionCanTakeOffer(session)) {
+                                  setError(
+                                    "This Sage pairing has no takeOffer permission. Use Copy offer1 → Offers → Import, or Disconnect Sage and Connect again after redeploy so takeOffer is granted.",
+                                  );
+                                  return;
+                                }
+                                run("Waiting for desktop Sage to approve takeOffer…", async () => {
+                                  await takeOffer(
+                                    session,
+                                    wcConfig.projectId,
+                                    wcConfig.chainId,
+                                    mtt16NftReward.offer!,
+                                    BigInt(mtt16NftReward.feeMojos ?? "0"),
+                                  );
+                                  setStatus("Sage accepted the NFT offer — check your wallet NFTs.");
+                                });
+                              }}
+                            >
+                              Accept via WalletConnect
+                            </button>
+                          </div>
+                          <textarea
+                            className="nft-offer-text"
+                            readOnly
+                            rows={3}
+                            value={mtt16NftReward.offer}
+                            aria-label="Treasury NFT offer string"
+                            onFocus={(e) => e.currentTarget.select()}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <p className="muted small">
+                            You won the challenge. Click the button below to build the treasury{" "}
+                            <code>offer1…</code> string. Then it will appear in this same NFT card so you
+                            can copy it into Sage → Offers → Import.
+                          </p>
+                          {mtt16NftReward.offerError ? (
+                            <p className="error small">{mtt16NftReward.offerError}</p>
+                          ) : null}
+                          <div className="nft-promo-actions">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                run("Requesting NFT offer…", async () => {
+                                  const reward = await api.retryMtt16NftReward();
+                                  setMtt16NftReward(reward);
+                                  setMtt16NftPromo(await api.mtt16NftPromo());
+                                  if (reward.offer) {
+                                    setStatus(
+                                      "NFT offer ready in this card — copy offer1… then Sage → Offers → Import.",
+                                    );
+                                  } else {
+                                    throw new Error(
+                                      reward.offerError ||
+                                        reward.retry?.reason ||
+                                        "Treasury did not return an NFT offer yet",
+                                    );
+                                  }
+                                });
+                              }}
+                            >
+                              {mtt16NftReward.offerError ? "Retry NFT offer" : "Get NFT offer"}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   ) : null}
                 </div>
               </div>

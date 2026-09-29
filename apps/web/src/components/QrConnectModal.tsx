@@ -86,13 +86,21 @@ export function QrConnectModal({ uri, status, error, onClose }: QrConnectModalPr
                 {qrDataUrl ? (
                   <img src={qrDataUrl} alt="WalletConnect QR code" className="qr-img" width={280} height={280} />
                 ) : qrFailed ? (
-                  <p className="muted">QR image failed to render. Copy the link below into Sage.</p>
+                  <p className="muted">QR image failed to render. Copy the wc: link below into Sage desktop.</p>
                 ) : (
                   <div className="wc-pending" role="status">
                     <span className="wc-spinner" aria-hidden="true" />
                     Building QR…
                   </div>
                 )}
+                <p className="muted small">
+                  Desktop: copy the <code>wc:…</code> URI below and paste it into Sage (WalletConnect).
+                  That only pairs the site. NFT claims use a separate <code>offer1…</code> string under
+                  Offers → Import.
+                </p>
+                <button type="button" className="secondary" onClick={() => void copyUri()}>
+                  Copy wc: pairing URI
+                </button>
               </>
             )}
             {mobile && qrDataUrl && (

@@ -28,10 +28,13 @@ export function buildSageNftGiftOfferRequest(params: NftPayoutOfferParams): Reco
     throw new Error("Invalid offer fee");
   }
 
+  // Sage make_offer expects OfferAmount[] sequences (same shape as CAT gifts),
+  // not the older { xch, cats, nfts } map.
   return {
-    offered_assets: { xch: 0, cats: [], nfts: [nftId] },
-    requested_assets: { xch: 0, cats: [], nfts: [] },
+    offered_assets: [{ asset_id: nftId, amount: 1 }],
+    requested_assets: [],
     fee,
+    expires_at_second: null,
     auto_import: false,
     receive_address: receiveAddress,
   };

@@ -140,10 +140,26 @@ export function runoutMatchupLine(
   return [...allInNames, ...otherNames].join(" · ");
 }
 
+/** Extra time after the all-in cinema so a busted SNG player can soak in the loss. */
+export const LOSS_SOAK_MS = 6000;
+
+/** Delay before auto-returning a finished/bust player to the lobby after soak. */
+export const BUST_LOBBY_RETURN_MS = 4500;
+
 export function runoutHoldMs(street: RunoutStreet, lost = false): number {
-  if (street === "allin") return 1800;
-  if (street === "flop") return 2400;
-  if (street === "turn") return 2200;
-  if (street === "river") return 2400;
-  return lost ? 5200 : 3400;
+  if (street === "allin") return lost ? 2200 : 1800;
+  if (street === "flop") return lost ? 2800 : 2400;
+  if (street === "turn") return lost ? 2600 : 2200;
+  if (street === "river") return lost ? 2800 : 2400;
+  // Showdown street: give losers longer to read the hands before anything else happens.
+  return lost ? 7200 : 3400;
+}
+
+/** True when a finished sit-n-go should keep the table up for the loss soak / cinema. */
+export function shouldHoldTableForBustExit(params: {
+  holdRunout: boolean;
+  holdLossSoak: boolean;
+  runoutPending: boolean;
+}): boolean {
+  return params.holdRunout || params.holdLossSoak || params.runoutPending;
 }
