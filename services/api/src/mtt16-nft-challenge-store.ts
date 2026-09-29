@@ -44,7 +44,7 @@ function emptyChallenge(nftId: string | null = null): StoredChallenge {
 let state: StoredChallenge = emptyChallenge();
 let loaded = false;
 
-let cachedMeta: { fetchedAt: number; meta: CoinsetNftMeta | null } | null = null;
+let cachedMeta: { nftId: string; fetchedAt: number; meta: CoinsetNftMeta | null } | null = null;
 const META_TTL_MS = 60 * 60 * 1000;
 
 function storePath(): string | null {
@@ -130,11 +130,15 @@ export async function getMtt16NftPromoMeta(): Promise<CoinsetNftMeta | null> {
   const cfg = readMtt16NftChallengeConfig();
   if (!cfg.enabled) return null;
   const now = Date.now();
-  if (cachedMeta && now - cachedMeta.fetchedAt < META_TTL_MS) {
+  if (
+    cachedMeta &&
+    cachedMeta.nftId === cfg.nftId &&
+    now - cachedMeta.fetchedAt < META_TTL_MS
+  ) {
     return cachedMeta.meta;
   }
   const meta = await fetchCoinsetNftMeta(cfg.nftId);
-  cachedMeta = { fetchedAt: now, meta };
+  cachedMeta = { nftId: cfg.nftId, fetchedAt: now, meta };
   return meta;
 }
 
@@ -160,7 +164,7 @@ export function mtt16NftChallengePublicView(viewerPlayerId?: string | null): {
 } {
   loadMtt16NftChallengeStore();
   const cfg = readMtt16NftChallengeConfig();
-  const meta = cachedMeta?.meta;
+  const meta = cachedMeta?.nftId === cfg.nftId ? cachedMeta.meta : null;
   const yourWins = viewerPlayerId ? (state.winsByPlayer[viewerPlayerId] ?? 0) : 0;
   const leaders = leaderBoard();
   return {
@@ -169,8 +173,13 @@ export function mtt16NftChallengePublicView(viewerPlayerId?: string | null): {
     winsRequired: cfg.winsRequired,
     description: meta?.description ?? null,
     edition: meta?.edition ?? null,
-    /** Same-origin proxy so HTTPS CSP (img-src 'self') can load the Coinset PNG. */
-    imageUrl: meta?.imageUrl ? "/v1/lobby/mtt16-nft-image" : null,
+    /**
+     * Same-origin proxy so HTTPS CSP (img-src 'self') can load the Coinset PNG.
+     * Query includes nft id so browsers do not keep the previous prize image.
+     */
+    imageUrl: meta?.imageUrl
+      ? `/v1/lobby/mtt16-nft-image?nft=${encodeURIComponent(cfg.nftId)}`
+      : null,
     winnerPlayerId: state.winnerPlayerId,
     awarded: Boolean(state.winnerPlayerId),
     yourWins,

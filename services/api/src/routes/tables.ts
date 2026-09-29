@@ -433,10 +433,14 @@ export function registerTableRoutes(app: FastifyInstance): void {
     return mtt16NftChallengePublicView(session?.playerId);
   });
 
-  app.get("/v1/lobby/mtt16-nft-image", async (_req, reply) => {
+  app.get<{ Querystring: { nft?: string } }>("/v1/lobby/mtt16-nft-image", async (req, reply) => {
     const cfg = readMtt16NftChallengeConfig();
     if (!cfg.enabled) {
       return reply.status(404).send({ error: "NFT promo disabled" });
+    }
+    const requested = req.query.nft?.trim();
+    if (requested && requested !== cfg.nftId) {
+      return reply.status(404).send({ error: "NFT image does not match current prize" });
     }
     const meta = await getMtt16NftPromoMeta();
     if (!meta?.imageUrl) {
@@ -449,7 +453,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
       }
       const body = Buffer.from(await upstream.arrayBuffer());
       const type = upstream.headers.get("content-type") ?? "image/png";
-      return reply.header("Cache-Control", "public, max-age=3600").type(type).send(body);
+      return reply
+        .header("Cache-Control", "public, max-age=3600")
+        .header("Vary", "Accept")
+        .type(type)
+        .send(body);
     } catch (e) {
       return reply.status(502).send({ error: (e as Error).message });
     }

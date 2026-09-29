@@ -80,8 +80,43 @@ describe("16-player SNG NFT challenge", () => {
     expect(view.nftId).toBe("nft13sew37qescuqyxzjvsn3dv232f8aa9xjtfytequa6l5p084svf3s85vxrc");
     expect(view.awarded).toBe(false);
     expect(view.yourWins).toBe(0);
+    expect(view.winsRequired).toBe(5);
     expect(recordMtt16FirstPlaceWin("xch1bob", "xch1bob")).toBe(false);
     expect(mtt16NftChallengePublicView("xch1bob").yourWins).toBe(1);
+  });
+
+  it("cache-busts the lobby image URL with the current prize nft id", async () => {
+    const nftId = "nft13sew37qescuqyxzjvsn3dv232f8aa9xjtfytequa6l5p084svf3s85vxrc";
+    process.env.DAT_MTT16_NFT_REWARD_ID = nftId;
+    process.env.DAT_MTT16_NFT_WINS_REQUIRED = "20";
+    resetMtt16NftChallengeForTests();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("mintgarden")) {
+        return new Response(JSON.stringify({ data: { thumbnail_uri: "https://cdn.example/bear.png" } }), {
+          status: 200,
+        });
+      }
+      if (url.includes("coinset.org/nft/") && url.endsWith(".json")) {
+        return new Response(
+          JSON.stringify({ data: { description: "New prize bear", series_number: 1, series_total: 1 } }),
+          { status: 200 },
+        );
+      }
+      return new Response("nope", { status: 404 });
+    };
+    try {
+      const { getMtt16NftPromoMeta } = await import("./mtt16-nft-challenge-store.js");
+      await getMtt16NftPromoMeta();
+      const view = mtt16NftChallengePublicView();
+      expect(view.winsRequired).toBe(20);
+      expect(view.description).toBe("New prize bear");
+      expect(view.imageUrl).toBe(`/v1/lobby/mtt16-nft-image?nft=${encodeURIComponent(nftId)}`);
+      expect(view.awarded).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("retries a failed treasury NFT payout once treasury is fixed", async () => {
