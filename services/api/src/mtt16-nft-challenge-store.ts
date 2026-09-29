@@ -6,7 +6,8 @@ import { requestTreasuryNftOffer } from "./treasury-payout.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const DEFAULT_NFT_ID = "nft1mkl29gyx5z695mgkcmksezphpsnp70drl4dvpajh44z9kap4tgpqjt837h";
+const DEFAULT_NFT_ID = "nft13sew37qescuqyxzjvsn3dv232f8aa9xjtfytequa6l5p084svf3s85vxrc";
+const DEFAULT_WINS_REQUIRED = 20;
 
 export interface Mtt16NftChallengeConfig {
   enabled: boolean;
@@ -16,6 +17,8 @@ export interface Mtt16NftChallengeConfig {
 }
 
 interface StoredChallenge {
+  /** Prize NFT this race is for; changing the configured NFT starts a fresh race. */
+  nftId: string | null;
   winsByPlayer: Record<string, number>;
   winnerPlayerId: string | null;
   winnerAddress: string | null;
@@ -25,15 +28,20 @@ interface StoredChallenge {
   offerError: string | null;
 }
 
-let state: StoredChallenge = {
-  winsByPlayer: {},
-  winnerPlayerId: null,
-  winnerAddress: null,
-  offer: null,
-  offerFeeMojos: null,
-  awardedAt: null,
-  offerError: null,
-};
+function emptyChallenge(nftId: string | null = null): StoredChallenge {
+  return {
+    nftId,
+    winsByPlayer: {},
+    winnerPlayerId: null,
+    winnerAddress: null,
+    offer: null,
+    offerFeeMojos: null,
+    awardedAt: null,
+    offerError: null,
+  };
+}
+
+let state: StoredChallenge = emptyChallenge();
 let loaded = false;
 
 let cachedMeta: { fetchedAt: number; meta: CoinsetNftMeta | null } | null = null;
@@ -54,44 +62,51 @@ function persist(): void {
 }
 
 export function loadMtt16NftChallengeStore(): void {
-  if (loaded) return;
-  loaded = true;
-  const path = storePath();
-  if (!path) return;
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<StoredChallenge>;
-    state = {
-      winsByPlayer: parsed.winsByPlayer ?? {},
-      winnerPlayerId: parsed.winnerPlayerId ?? null,
-      winnerAddress: parsed.winnerAddress ?? null,
-      offer: parsed.offer ?? null,
-      offerFeeMojos: parsed.offerFeeMojos ?? null,
-      awardedAt: parsed.awardedAt ?? null,
-      offerError: parsed.offerError ?? null,
-    };
-  } catch {
-    /* fresh */
+  if (!loaded) {
+    loaded = true;
+    const path = storePath();
+    if (path) {
+      try {
+        const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<StoredChallenge>;
+        state = {
+          nftId: parsed.nftId ?? null,
+          winsByPlayer: parsed.winsByPlayer ?? {},
+          winnerPlayerId: parsed.winnerPlayerId ?? null,
+          winnerAddress: parsed.winnerAddress ?? null,
+          offer: parsed.offer ?? null,
+          offerFeeMojos: parsed.offerFeeMojos ?? null,
+          awardedAt: parsed.awardedAt ?? null,
+          offerError: parsed.offerError ?? null,
+        };
+      } catch {
+        /* fresh */
+      }
+    }
   }
+  syncChallengeToConfiguredNft();
+}
+
+/** When DAT_MTT16_NFT_REWARD_ID changes, start a new race (clear wins / winner / offer). */
+function syncChallengeToConfiguredNft(): void {
+  const cfg = readMtt16NftChallengeConfig();
+  if (!cfg.nftId) return;
+  if (state.nftId === cfg.nftId) return;
+  state = emptyChallenge(cfg.nftId);
+  cachedMeta = null;
+  persist();
 }
 
 export function resetMtt16NftChallengeForTests(): void {
-  state = {
-    winsByPlayer: {},
-    winnerPlayerId: null,
-    winnerAddress: null,
-    offer: null,
-    offerFeeMojos: null,
-    awardedAt: null,
-    offerError: null,
-  };
+  state = emptyChallenge(process.env.DAT_MTT16_NFT_REWARD_ID?.trim() || DEFAULT_NFT_ID);
   cachedMeta = null;
   loaded = true;
 }
 
 export function readMtt16NftChallengeConfig(): Mtt16NftChallengeConfig {
   const nftId = process.env.DAT_MTT16_NFT_REWARD_ID?.trim() || DEFAULT_NFT_ID;
-  const winsRaw = Number(process.env.DAT_MTT16_NFT_WINS_REQUIRED ?? "5");
-  const winsRequired = Number.isFinite(winsRaw) && winsRaw > 0 ? Math.floor(winsRaw) : 5;
+  const winsRaw = Number(process.env.DAT_MTT16_NFT_WINS_REQUIRED ?? String(DEFAULT_WINS_REQUIRED));
+  const winsRequired =
+    Number.isFinite(winsRaw) && winsRaw > 0 ? Math.floor(winsRaw) : DEFAULT_WINS_REQUIRED;
   const disabled = process.env.DAT_MTT16_NFT_CHALLENGE_ENABLED === "false";
   const treasuryNftPayoutUrl = resolveTreasuryNftPayoutUrl();
   return {

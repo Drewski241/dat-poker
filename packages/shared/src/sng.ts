@@ -60,6 +60,8 @@ export const DAT_MTT_DEFAULTS = {
   startingTableSeats: 8,
   startingTableCount: 2,
   finalTableSeats: 8,
+  /** Cap beta humans per event; remaining seats stay house bots. */
+  maxHumans: 10,
   buyInMojos: DAT_SNG_DEFAULTS.buyInMojos,
   startingStackMojos: DAT_SNG_DEFAULTS.startingStackMojos,
   handsPerLevel: DAT_SNG_DEFAULTS.handsPerLevel,

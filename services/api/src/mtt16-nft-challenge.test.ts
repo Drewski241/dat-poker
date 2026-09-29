@@ -23,7 +23,7 @@ describe("16-player SNG NFT challenge", () => {
     process.env = env;
   });
 
-  it("tracks wins and awards the first player to reach five", async () => {
+  it("tracks wins and awards the first player to reach the required count", async () => {
     const player = "xch1alice";
     for (let i = 0; i < 4; i += 1) {
       expect(recordMtt16FirstPlaceWin(player, player)).toBe(false);
@@ -65,6 +65,23 @@ describe("16-player SNG NFT challenge", () => {
     }
     expect(mtt16NftChallengePublicView().winnerPlayerId).toBe("xch1alice");
     expect(mtt16NftChallengePublicView("xch1bob").yourWins).toBe(0);
+  });
+
+  it("starts a fresh race when the prize NFT id changes", () => {
+    process.env.DAT_MTT16_NFT_REWARD_ID = "nft1oldprize000000000000000000000000000000000000000000000000";
+    resetMtt16NftChallengeForTests();
+    for (let i = 0; i < 5; i += 1) {
+      recordMtt16FirstPlaceWin("xch1alice", "xch1alice");
+    }
+    expect(mtt16NftChallengePublicView().awarded).toBe(true);
+
+    process.env.DAT_MTT16_NFT_REWARD_ID = "nft13sew37qescuqyxzjvsn3dv232f8aa9xjtfytequa6l5p084svf3s85vxrc";
+    const view = mtt16NftChallengePublicView("xch1alice");
+    expect(view.nftId).toBe("nft13sew37qescuqyxzjvsn3dv232f8aa9xjtfytequa6l5p084svf3s85vxrc");
+    expect(view.awarded).toBe(false);
+    expect(view.yourWins).toBe(0);
+    expect(recordMtt16FirstPlaceWin("xch1bob", "xch1bob")).toBe(false);
+    expect(mtt16NftChallengePublicView("xch1bob").yourWins).toBe(1);
   });
 
   it("retries a failed treasury NFT payout once treasury is fixed", async () => {

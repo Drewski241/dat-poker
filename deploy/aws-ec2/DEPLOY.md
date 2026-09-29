@@ -46,7 +46,7 @@ Use the **ElasticIp** output as your public URL.
 | HTTPS (WalletConnect) | [enable-https.sh](./enable-https.sh) — [BETA.md § HTTPS](../../docs/BETA.md) |
 | Sage project + DAT asset | [enable-sage.sh](./enable-sage.sh) |
 | Redeploy latest code | `sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh` (see [BETA.md § phone update](../../docs/BETA.md) if `redeploy.sh` was missing) |
-| NFT payouts (5× 16-player wins) | Treasury host: `pnpm dev:treasury`, NFT in treasury wallet; game `.env`: `DAT_TREASURY_PAYOUT_URL` → treasury `:4200/payout` (NFT uses `:4200/nft-payout`) |
+| NFT payouts (20× 16-player wins) | Treasury host: `pnpm dev:treasury`, NFT in treasury wallet; game `.env`: `DAT_TREASURY_PAYOUT_URL` → treasury `:4200/payout` (NFT uses `:4200/nft-payout`) |
 
 ## Verify SNG + NFT promo
 

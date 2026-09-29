@@ -55,6 +55,8 @@ export interface SngSnapshot {
   handsUntilNextLevel: number | null;
   playersRemaining: number;
   humanCount: number;
+  /** MTT only: max humans allowed in the event. */
+  maxHumans?: number;
   houseSeatsAvailable: number;
   placements: SngPlacement[];
   kind?: "sng" | "mtt";

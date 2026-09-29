@@ -77,6 +77,7 @@ describe("16-player MTT join", () => {
         fieldSize: number;
         eventPlayersRemaining: number;
         isFinalTable: boolean;
+        maxHumans?: number;
       };
     };
     expect(body.format).toBe("mtt");
@@ -86,9 +87,43 @@ describe("16-player MTT join", () => {
     expect(body.sng.fieldSize).toBe(16);
     expect(body.sng.eventPlayersRemaining).toBe(16);
     expect(body.sng.isFinalTable).toBe(false);
+    expect(body.sng.maxHumans).toBe(10);
     const event = getMtt(body.tableId);
     expect(event?.tableIds()).toHaveLength(2);
     expect(event?.engines().every((eng) => eng.getActivePlayerCount() === 8)).toBe(true);
+    await app.close();
+  });
+
+  it("opens a new 16-player SNG when an event is at the human cap", async () => {
+    process.env.DAT_MTT_MAX_HUMANS = "1";
+    const app = await buildApp();
+    const alice = issueTestSession("xch1cap-a");
+    const bob = issueTestSession("xch1cap-b");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    tryRedeemDaily(bob.session.playerId, 5_000_000n);
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-mtt",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(first.statusCode).toBe(200);
+    const firstBody = JSON.parse(first.body) as { tableId: string; sng: { eventId: string } };
+    const firstEvent = getMtt(firstBody.tableId)!;
+    expect(firstEvent.enteredHumanCount()).toBe(1);
+    expect(firstEvent.maxHumans).toBe(1);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-mtt",
+      headers: auth(bob.token),
+      payload: { playerId: bob.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(second.statusCode).toBe(200);
+    const secondBody = JSON.parse(second.body) as { tableId: string; sng: { eventId: string } };
+    expect(secondBody.sng.eventId).not.toBe(firstBody.sng.eventId);
+    expect(getMtt(secondBody.tableId)?.enteredHumanCount()).toBe(1);
     await app.close();
   });
 });

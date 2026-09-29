@@ -1695,9 +1695,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             </button>
             <p className="muted small">
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
-              Prize pool is every seat buy-in (you and house bots). Finish 1st, 2nd, or 3rd overall to get paid
-              50% / 30% / 20%. House seats in the money are not paid. Each completed SNG
-              hand unlocks 1 DAT you can withdraw from leftover account chips or prizes.
+              Prize pool is every seat buy-in (you and house bots). Up to 10 humans per 16-player event;
+              empty seats stay house bots. Finish 1st, 2nd, or 3rd overall to get paid 50% / 30% / 20%.
+              House seats in the money are not paid. Each completed SNG hand unlocks 1 DAT you can
+              withdraw from leftover account chips or prizes.
             </p>
             {mtt16NftPromo?.enabled ? (
               <div className="nft-promo">
@@ -1709,10 +1710,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   />
                 ) : null}
                 <div className="nft-promo-copy">
-                  <h3>First to 5 × 16-player SNG wins</h3>
+                  <h3>First to {mtt16NftPromo.winsRequired} × 16-player SNG wins</h3>
                   <p className="muted small">
-                    Treasury NFT prize for the first player to win five 16-player sit-n-go tournaments
-                    (1st place each time).
+                    Treasury NFT prize for the first player to win {mtt16NftPromo.winsRequired}{" "}
+                    16-player sit-n-go tournaments (1st place each time).
                   </p>
                   {mtt16NftPromo.description ? (
                     <p className="nft-promo-desc">{mtt16NftPromo.description}</p>
