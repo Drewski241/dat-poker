@@ -622,6 +622,33 @@ button.secondary {
   margin-bottom: 0;
 }
 
+.nft-promo-claim {
+  margin-top: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.nft-promo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.nft-offer-text {
+  width: 100%;
+  max-width: 36rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  resize: vertical;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8eef5;
+  padding: 0.5rem 0.6rem;
+}
+
 .lobby {
   margin-top: 1rem;
 }

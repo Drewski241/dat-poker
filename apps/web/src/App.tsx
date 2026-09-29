@@ -157,6 +157,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [lobbyTables, setLobbyTables] = useState<LobbyTable[]>([]);
   const [mtt16NftPromo, setMtt16NftPromo] = useState<Mtt16NftPromo | null>(null);
   const [mtt16NftReward, setMtt16NftReward] = useState<Mtt16NftReward | null>(null);
+  const [nftOfferCopied, setNftOfferCopied] = useState(false);
   /** When seated: full-screen table vs lobby (account, withdraw, leave). */
   const [tableFocusMode, setTableFocusMode] = useState(true);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
@@ -1739,17 +1740,85 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                     </p>
                   ) : null}
                   <p className="muted small nft-promo-id">{mtt16NftPromo.nftId}</p>
-                  {mtt16NftReward?.eligible && mtt16NftReward.offer ? (
-                    <p className="muted small">
-                      Treasury offer ready
-                      {mtt16NftReward.feeMojos && BigInt(mtt16NftReward.feeMojos) > 0n
-                        ? ` (includes ${(Number(mtt16NftReward.feeMojos) / 1e12).toFixed(6)} XCH tx fee)`
-                        : ""}
-                      . Accept in Sage when WalletConnect takeOffer is enabled.
-                    </p>
-                  ) : null}
-                  {mtt16NftReward?.eligible && mtt16NftReward.offerError ? (
-                    <p className="error small">{mtt16NftReward.offerError}</p>
+                  {mtt16NftReward?.eligible ? (
+                    <div className="nft-promo-claim">
+                      {mtt16NftReward.offer ? (
+                        <>
+                          <p className="nft-promo-status">
+                            Your treasury NFT offer is ready
+                            {mtt16NftReward.feeMojos && BigInt(mtt16NftReward.feeMojos) > 0n
+                              ? ` (includes ${(Number(mtt16NftReward.feeMojos) / 1e12).toFixed(6)} XCH tx fee)`
+                              : ""}
+                            .
+                          </p>
+                          <p className="muted small">
+                            WalletConnect cannot take offers on this site (security). Copy the offer,
+                            then in <strong>your</strong> Sage wallet: Offers → Import → paste → Accept.
+                          </p>
+                          <div className="nft-promo-actions">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                void (async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(mtt16NftReward.offer!);
+                                    setNftOfferCopied(true);
+                                    setStatus("NFT offer copied — import it in Sage (Offers → Import).");
+                                    window.setTimeout(() => setNftOfferCopied(false), 4000);
+                                  } catch {
+                                    setError("Could not copy offer — select it from the text box below.");
+                                  }
+                                })();
+                              }}
+                            >
+                              {nftOfferCopied ? "Copied!" : "Copy NFT offer for Sage"}
+                            </button>
+                          </div>
+                          <textarea
+                            className="nft-offer-text"
+                            readOnly
+                            rows={3}
+                            value={mtt16NftReward.offer}
+                            aria-label="Treasury NFT offer string"
+                            onFocus={(e) => e.currentTarget.select()}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <p className="muted small">
+                            You won the challenge. Request the treasury NFT offer, then import it in Sage.
+                          </p>
+                          {mtt16NftReward.offerError ? (
+                            <p className="error small">{mtt16NftReward.offerError}</p>
+                          ) : null}
+                          <div className="nft-promo-actions">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                run("Requesting NFT offer…", async () => {
+                                  const reward = await api.retryMtt16NftReward();
+                                  setMtt16NftReward(reward);
+                                  setMtt16NftPromo(await api.mtt16NftPromo());
+                                  if (reward.offer) {
+                                    setStatus("NFT offer ready — copy it and import in Sage.");
+                                  } else {
+                                    throw new Error(
+                                      reward.offerError ||
+                                        reward.retry?.reason ||
+                                        "Treasury did not return an NFT offer yet",
+                                    );
+                                  }
+                                });
+                              }}
+                            >
+                              {mtt16NftReward.offerError ? "Retry NFT offer" : "Get NFT offer"}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   ) : null}
                 </div>
               </div>
