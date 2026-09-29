@@ -1754,26 +1754,49 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                             .
                           </p>
                           <p className="muted small">
-                            Tap <strong>Accept NFT in Sage</strong> — Sage should prompt you to take the
-                            gift offer. If pairing is older (sign-only), disconnect and Connect Sage again
-                            first. Copy/import still works as a fallback.
+                            On desktop, claim by copying the offer into Sage (there is no desktop popup).
+                            Open <strong>Sage → Offers → Import</strong>, paste, then Accept.
+                            WalletConnect “Accept NFT” only alerts the <strong>phone</strong> that
+                            scanned the Connect QR — not this computer.
                           </p>
                           <div className="nft-promo-actions">
                             <button
                               type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                void (async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(mtt16NftReward.offer!);
+                                    setNftOfferCopied(true);
+                                    setStatus(
+                                      "Offer copied. In Sage: Offers → Import → paste → Accept.",
+                                    );
+                                    window.setTimeout(() => setNftOfferCopied(false), 4000);
+                                  } catch {
+                                    setError("Could not copy — select the offer text below and copy manually.");
+                                  }
+                                })();
+                              }}
+                            >
+                              {nftOfferCopied ? "Copied — import in Sage" : "Copy offer for Sage Import"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary"
                               disabled={busy || !session || !wcConfig}
+                              title="Sends the request to the phone Sage that paired via QR"
                               onClick={() => {
                                 if (!session || !wcConfig) {
-                                  setError("Connect Sage first, then Accept NFT in Sage.");
+                                  setError("Connect Sage on this browser first (optional phone path).");
                                   return;
                                 }
                                 if (!sessionCanTakeOffer(session)) {
                                   setError(
-                                    "This Sage pairing cannot take offers. Disconnect Sage, Connect again (approve takeOffer), then retry.",
+                                    "This pairing cannot take offers. Prefer Copy offer → Sage Import on desktop. Or Disconnect Sage, Connect again, then retry.",
                                   );
                                   return;
                                 }
-                                run("Waiting for Sage to accept NFT offer…", async () => {
+                                run("Request sent — check the phone Sage that scanned the QR…", async () => {
                                   await takeOffer(
                                     session,
                                     wcConfig.projectId,
@@ -1785,26 +1808,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                                 });
                               }}
                             >
-                              Accept NFT in Sage
-                            </button>
-                            <button
-                              type="button"
-                              className="secondary"
-                              disabled={busy}
-                              onClick={() => {
-                                void (async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(mtt16NftReward.offer!);
-                                    setNftOfferCopied(true);
-                                    setStatus("NFT offer copied — import it in Sage (Offers → Import).");
-                                    window.setTimeout(() => setNftOfferCopied(false), 4000);
-                                  } catch {
-                                    setError("Could not copy offer — select it from the text box below.");
-                                  }
-                                })();
-                              }}
-                            >
-                              {nftOfferCopied ? "Copied!" : "Copy offer"}
+                              Send to phone Sage
                             </button>
                           </div>
                           <textarea
@@ -1819,7 +1823,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                       ) : (
                         <>
                           <p className="muted small">
-                            You won the challenge. Request the treasury NFT offer, then accept it in Sage.
+                            You won the challenge. Get the treasury offer, then import it in Sage on this
+                            computer (Offers → Import).
                           </p>
                           {mtt16NftReward.offerError ? (
                             <p className="error small">{mtt16NftReward.offerError}</p>
@@ -1834,7 +1839,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                                   setMtt16NftReward(reward);
                                   setMtt16NftPromo(await api.mtt16NftPromo());
                                   if (reward.offer) {
-                                    setStatus("NFT offer ready — tap Accept NFT in Sage.");
+                                    setStatus("NFT offer ready — copy it and Import in Sage.");
                                   } else {
                                     throw new Error(
                                       reward.offerError ||
