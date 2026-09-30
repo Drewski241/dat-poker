@@ -2463,6 +2463,13 @@ html.play-table-screen body {
   margin-right: 0.2rem;
 }
 
+.table-room-role-chips-seatnum {
+  margin-right: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.15rem;
+}
+
 .table-room-blind-chip {
   display: inline-flex;
   align-items: center;

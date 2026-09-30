@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DatTokenInfo, HandResult, HandState, PlayerAction, SngSnapshot, TableSeat } from "../api.js";
 import { computeNlheBetRange, formatDatAmount, formatDatMojos } from "@dat-poker/shared";
 import { formatHandCategory } from "../all-in-runout.js";
+import { nextHandBlindSeats, occupiedSeatIndexes } from "../next-hand-blinds.js";
 import { AllInRunout } from "./AllInRunout.js";
 import { BetSlider } from "./BetSlider.js";
 import { CardRow, PlayingCard } from "./PlayingCard.js";
@@ -133,6 +134,14 @@ export function TableRoom({
   const showDeal = !hand && !canRebuy && canDeal && !runoutPlaying;
   const showBetweenFooter = !hand && (showDeal || canRebuy) && !runoutPlaying;
   const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
+  const nextBlinds = useMemo(() => {
+    if (hand) return null;
+    return nextHandBlindSeats({
+      dealerButtonSeat,
+      occupiedSeats: occupiedSeatIndexes(tableSeats),
+      maxSeats,
+    });
+  }, [hand, dealerButtonSeat, tableSeats, maxSeats]);
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const opponents = (hand?.players.filter((p) => p.playerId !== playerId) ?? []).slice().sort((a, b) => {
@@ -229,16 +238,40 @@ export function TableRoom({
         <div className="table-room-seats" aria-label="Seats">
           {Array.from({ length: maxSeats }, (_, i) => {
             const seated = tableSeats.find((s) => s.seatIndex === i);
-            const isDealer = buttonSeatIndex === i;
+            const isDealer = (nextBlinds?.dealerSeat ?? buttonSeatIndex) === i;
+            const isSb = nextBlinds?.smallBlindSeat === i;
+            const isBb = nextBlinds?.bigBlindSeat === i;
+            const roleBits: string[] = [];
+            if (isDealer) roleBits.push("dealer");
+            if (isSb) roleBits.push("SB");
+            if (isBb) roleBits.push("BB");
+            const roleLabel =
+              roleBits.length > 0
+                ? `${roleBits.join(" · ")} (next)`
+                : seatPositionLabel(i, hand, dealerButtonSeat).replace(/^ · /, "");
             return (
               <div
                 key={i}
                 className={`table-room-seat ${seated ? "occupied" : "empty"}${isDealer ? " table-room-seat-dealer" : ""}`}
               >
                 <span className="table-room-seat-num">
-                  {isDealer ? (
-                    <span className="table-room-dealer-chip" title="Dealer button">
-                      D
+                  {isDealer || isSb || isBb ? (
+                    <span className="table-room-role-chips table-room-role-chips-seatnum" aria-hidden="true">
+                      {isDealer ? (
+                        <span className="table-room-dealer-chip" title="Dealer button (next hand)">
+                          D
+                        </span>
+                      ) : null}
+                      {isSb ? (
+                        <span className="table-room-blind-chip table-room-blind-chip-sb" title="Small blind (next hand)">
+                          SB
+                        </span>
+                      ) : null}
+                      {isBb ? (
+                        <span className="table-room-blind-chip table-room-blind-chip-bb" title="Big blind (next hand)">
+                          BB
+                        </span>
+                      ) : null}
                     </span>
                   ) : (
                     i + 1
@@ -252,10 +285,7 @@ export function TableRoom({
                     <span className="table-room-seat-stack">
                       {formatDatMojos(seated.stackMojos, datToken?.ticker)}
                     </span>
-                    <span className="table-room-seat-role">
-                      {seatPositionLabel(i, hand, dealerButtonSeat).replace(/^ · /, "") ||
-                        (isDealer ? "dealer (next)" : "")}
-                    </span>
+                    <span className="table-room-seat-role">{roleLabel}</span>
                   </>
                 ) : (
                   <span className="table-room-seat-empty">Empty</span>

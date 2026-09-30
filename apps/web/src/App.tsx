@@ -34,6 +34,7 @@ import {
   shouldPlayAllInRunout,
 } from "./all-in-runout.js";
 import { sngShouldAutoDeal } from "./sng-auto-deal.js";
+import { nextHandBlindSeats, occupiedSeatIndexes } from "./next-hand-blinds.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
   actionSecondsRemaining,
@@ -85,6 +86,8 @@ function seatPositionLabel(
   seatIndex: number,
   hand: HandState | null,
   dealerButtonSeat: number | null,
+  occupiedSeats: number[] = [],
+  maxSeats = 6,
 ): string {
   if (hand) {
     const roles: string[] = [];
@@ -93,8 +96,16 @@ function seatPositionLabel(
     if (hand.bigBlindSeat === seatIndex) roles.push("BB");
     return roles.length > 0 ? ` · ${roles.join(" · ")}` : "";
   }
-  if (dealerButtonSeat === seatIndex) return " · dealer (next hand)";
-  return "";
+  const next = nextHandBlindSeats({ dealerButtonSeat, occupiedSeats, maxSeats });
+  if (!next) {
+    if (dealerButtonSeat === seatIndex) return " · dealer (next hand)";
+    return "";
+  }
+  const roles: string[] = [];
+  if (next.dealerSeat === seatIndex) roles.push("dealer");
+  if (next.smallBlindSeat === seatIndex) roles.push("SB");
+  if (next.bigBlindSeat === seatIndex) roles.push("BB");
+  return roles.length > 0 ? ` · ${roles.join(" · ")} (next)` : "";
 }
 
 function playerLabel(id: string, youId: string | null, display?: string): string {
@@ -2027,13 +2038,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <ol className="seat-list">
               {Array.from({ length: tableMaxSeats }, (_, i) => {
                 const seated = tableSeats.find((s) => s.seatIndex === i);
-                const isDealer = (hand?.dealerSeat ?? dealerButtonSeat) === i;
+                const occupied = occupiedSeatIndexes(tableSeats);
+                const next = !hand
+                  ? nextHandBlindSeats({
+                      dealerButtonSeat,
+                      occupiedSeats: occupied,
+                      maxSeats: tableMaxSeats,
+                    })
+                  : null;
+                const isDealer = (hand?.dealerSeat ?? next?.dealerSeat ?? dealerButtonSeat) === i;
                 return (
                   <li key={i} className={isDealer ? "seat-list-dealer" : undefined}>
                     Seat {i + 1}
-                    {isDealer ? " (D)" : ""}:{" "}
+                    {isDealer ? " (D)" : ""}
+                    {!hand && next?.smallBlindSeat === i ? " (SB)" : ""}
+                    {!hand && next?.bigBlindSeat === i ? " (BB)" : ""}:{" "}
                     {seated
-                      ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}${seatPositionLabel(i, hand, dealerButtonSeat)}`
+                      ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}${seatPositionLabel(i, hand, dealerButtonSeat, occupied, tableMaxSeats)}`
                       : "empty"}
                   </li>
                 );
