@@ -784,13 +784,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       const buyIn = datToken?.minBuyInMojos ?? "1000000";
       const account = BigInt(accountMojos ?? "0");
       const sage = BigInt(datBalance ?? "0");
-      if (account < BigInt(buyIn) && sage < BigInt(buyIn) && !datToken?.devBuyInEnabled) {
-        throw new Error(`Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`);
+      if (account < BigInt(buyIn) && sage < BigInt(buyIn)) {
+        if (account > 0n) {
+          throw new Error(
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to buy in`,
+          );
+        }
+        if (!datToken?.devBuyInEnabled) {
+          throw new Error(
+            `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`,
+          );
+        }
       }
 
       setStatus("Joining 6-max table…");
       const joined = await api.joinTable(playerId, buyIn, {
-        devAck: datToken?.devBuyInEnabled,
+        // Free mint only for truly empty ledgers — never top up a short account.
+        devAck: Boolean(datToken?.devBuyInEnabled && account === 0n && sage === 0n),
       });
       setTableId(joined.tableId);
       setTableFormat("cash");
@@ -840,10 +850,24 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setError(null);
     try {
       if (!playerId) throw new Error("Create an account or sign in first");
+      const ticker = datToken?.ticker ?? "DAT";
       const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      const account = BigInt(accountMojos ?? "0");
+      if (account < BigInt(buyIn)) {
+        if (account > 0n) {
+          throw new Error(
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to buy in`,
+          );
+        }
+        if (!datToken?.devBuyInEnabled) {
+          throw new Error(
+            `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`,
+          );
+        }
+      }
       setStatus("Joining 16-player sit-n-go…");
       const joined = await api.joinMtt(playerId, buyIn, {
-        devAck: datToken?.devBuyInEnabled,
+        devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
       });
       setTableId(joined.tableId);
       setTableFormat("mtt");
@@ -868,10 +892,24 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setError(null);
     try {
       if (!playerId) throw new Error("Create an account or sign in first");
+      const ticker = datToken?.ticker ?? "DAT";
       const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      const account = BigInt(accountMojos ?? "0");
+      if (account < BigInt(buyIn)) {
+        if (account > 0n) {
+          throw new Error(
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to buy in`,
+          );
+        }
+        if (!datToken?.devBuyInEnabled) {
+          throw new Error(
+            `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`,
+          );
+        }
+      }
       setStatus("Joining 9-max sit-n-go…");
       const joined = await api.joinSng(playerId, buyIn, {
-        devAck: datToken?.devBuyInEnabled,
+        devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
       });
       setTableId(joined.tableId);
       setTableFormat("sng");
@@ -896,10 +934,24 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setError(null);
     try {
       if (!playerId) throw new Error("Create an account or sign in first");
+      const ticker = datToken?.ticker ?? "DAT";
       const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      const account = BigInt(accountMojos ?? "0");
+      if (account < BigInt(buyIn)) {
+        if (account > 0n) {
+          throw new Error(
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to buy in`,
+          );
+        }
+        if (!datToken?.devBuyInEnabled) {
+          throw new Error(
+            `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`,
+          );
+        }
+      }
       setStatus("Taking a house seat…");
       const claimed = await api.claimHouse(openTable.tableId, playerId, buyIn, {
-        devAck: datToken?.devBuyInEnabled,
+        devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
       });
       setTableId(openTable.tableId);
       setTableFormat(claimed.format === "mtt" ? "mtt" : "sng");
@@ -922,14 +974,22 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const rebuyAtTable = () => {
     if (!tableId || !playerId) return;
     run("Buying in…", async () => {
+      const ticker = datToken?.ticker ?? "DAT";
       const account = BigInt(accountMojos ?? "0");
-      if (account < BigInt(minBuyInMojos) && !datToken?.devBuyInEnabled) {
-        throw new Error(
-          `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", datToken?.ticker ?? "DAT")} in Lobby, then buy in`,
-        );
+      if (account < BigInt(minBuyInMojos)) {
+        if (account > 0n) {
+          throw new Error(
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(minBuyInMojos, ticker)} to buy in`,
+          );
+        }
+        if (!datToken?.devBuyInEnabled) {
+          throw new Error(
+            `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} in Lobby, then buy in`,
+          );
+        }
       }
       const rebought = await api.rebuyTable(tableId, playerId, minBuyInMojos, {
-        devAck: datToken?.devBuyInEnabled,
+        devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
       });
       setHand(rebought.hand);
       setTableSeats(rebought.seats);
