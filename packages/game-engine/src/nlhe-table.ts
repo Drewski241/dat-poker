@@ -648,32 +648,43 @@ export class NlheTableEngine {
     }
   }
 
-  /** Refund chips matched by no live opponent (e.g. all-in for more than a short stack can cover). */
+  /**
+   * Refund only truly uncalled chips: the amount a player put in above the
+   * highest contribution from any other player. Multiway side pots must keep
+   * intermediate stack levels intact (do NOT collapse everyone to the shortest).
+   */
   private reconcileMatchedContributions(h: TableHandState): void {
-    const live = this.activePlayers(h);
-    if (live.length < 2) return;
-    let minBet = live[0]!.totalBetHandMojos;
-    for (const p of live.slice(1)) {
-      if (p.totalBetHandMojos < minBet) minBet = p.totalBetHandMojos;
-    }
-    for (const p of live) {
-      const excess = p.totalBetHandMojos - minBet;
+    const snapshot = h.players.map((p) => ({
+      player: p,
+      bet: p.totalBetHandMojos,
+    }));
+
+    for (const { player, bet } of snapshot) {
+      if (bet <= 0n) continue;
+      let maxOther = 0n;
+      for (const other of snapshot) {
+        if (other.player.playerId === player.playerId) continue;
+        if (other.bet > maxOther) maxOther = other.bet;
+      }
+      const excess = bet - maxOther;
       if (excess <= 0n) continue;
-      p.totalBetHandMojos = minBet;
-      if (p.betThisStreetMojos > excess) {
-        p.betThisStreetMojos -= excess;
+
+      player.totalBetHandMojos = bet - excess;
+      if (player.betThisStreetMojos > excess) {
+        player.betThisStreetMojos -= excess;
       } else {
-        p.betThisStreetMojos = 0n;
+        player.betThisStreetMojos = 0n;
       }
-      p.stackMojos += excess;
+      player.stackMojos += excess;
       h.potMojos -= excess;
-      this.stacks.set(p.playerId, p.stackMojos);
+      this.stacks.set(player.playerId, player.stackMojos);
     }
-    if (h.currentBetMojos > minBet) {
-      let maxStreet = 0n;
-      for (const p of live) {
-        if (p.betThisStreetMojos > maxStreet) maxStreet = p.betThisStreetMojos;
-      }
+
+    let maxStreet = 0n;
+    for (const p of this.activePlayers(h)) {
+      if (p.betThisStreetMojos > maxStreet) maxStreet = p.betThisStreetMojos;
+    }
+    if (h.currentBetMojos > maxStreet) {
       h.currentBetMojos = maxStreet;
     }
   }
