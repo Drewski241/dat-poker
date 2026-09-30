@@ -47,6 +47,7 @@ import {
   pickBigWinOverlay,
   readStoredBigWinOverlay,
   shouldCelebrateBigWin,
+  shouldDeferBigWinForRunout,
   type BigWinOverlay,
 } from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
@@ -930,6 +931,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
     if (runoutFromBoardLenRef.current != null) return;
+    if (bigWinActiveRef.current) return;
     run("Dealing hand…", async () => {
       setHandResult(null);
       const dealt = await api.goHand(tableId, playerId);
@@ -1021,6 +1023,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     busy,
     stackIsZero: tableStackIsZero,
     runoutPlaying: runoutFromBoardLen != null,
+    celebrationPlaying: bigWin != null,
     eliminated: sngEliminated,
     pauseDeals: Boolean(sng?.pauseDeals),
   });
@@ -1346,9 +1349,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       if (!result || !playerId) return;
       if (!shouldCelebrateBigWin({ playerId, result, bigBlindMojos })) return;
       if (celebratedHandId.current === result.handId) return;
-      // Wait for the all-in cinema to finish so "you won" does not fire mid-runout.
-      if (runoutFromBoardLenRef.current != null) return;
       celebratedHandId.current = result.handId;
+      bigWinActiveRef.current = true;
       const overlay = pickBigWinOverlay(lastBigWin.current);
       lastBigWin.current = overlay;
       setBigWin(overlay);
@@ -1369,14 +1371,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   useEffect(() => {
     if (!handResult || !playerId) return;
-    // While an all-in runout is queued or playing, hold the celebration.
-    if (runoutFromBoardLen != null) return;
+    const willPlayRunout = shouldPlayAllInRunout(
+      { ...liveHandMeta.current, viewerId: playerId },
+      handResult,
+    );
+    // Contested all-in: wait for river cinema, then onRunoutFinished celebrates.
     if (
-      shouldPlayAllInRunout(
-        { ...liveHandMeta.current, viewerId: playerId },
-        handResult,
-      ) &&
-      !playedRunouts.current.has(handResult.handId)
+      shouldDeferBigWinForRunout({
+        result: handResult,
+        runoutPlaying: runoutFromBoardLen != null,
+        willPlayRunout,
+      })
     ) {
       return;
     }
@@ -1457,7 +1462,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onSendAction={sendAction}
             onStartHand={startHandFlow}
             canRebuy={canRebuyAtTable}
-            canDeal={Boolean(myTableSeat) && sng?.status !== "finished"}
+            canDeal={Boolean(myTableSeat) && sng?.status !== "finished" && bigWin == null}
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => {
@@ -1510,7 +1515,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               } else {
                 holdTableForRunoutRef.current = false;
               }
-              // Celebrate only after the board has finished running out.
+              // After river + showdown cinema — then the big-win graphic, before next hand.
               tryCelebrateBigWin(handResult);
             }}
             playthroughHandsPlayed={handsPlayed}

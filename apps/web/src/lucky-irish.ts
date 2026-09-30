@@ -22,9 +22,17 @@ function parsePotMojos(result: HandResult): bigint | null {
   }
 }
 
-/** Won a large pot (by big-blind size), including fold wins with no hand shown. */
+/** Won a large pot (by big-blind size). Fold/uncalled pots use a separate gate. */
 export function isBigPotCelebration(potMojos: bigint, bigBlindMojos: bigint): boolean {
   return bigBlindMojos > 0n && potMojos >= bigBlindMojos * LUCKY_IRISH_POT_BB;
+}
+
+/** Someone was all-in and the hand went to showdown (a call, not an uncalled shove). */
+export function isContestedAllInShowdown(result: HandResult): boolean {
+  if (result.reason !== "showdown") return false;
+  if ((result.allInPlayerIds?.length ?? 0) > 0) return true;
+  if (typeof result.runoutFromBoardLen === "number") return true;
+  return Boolean(result.shown?.some((row) => row.allIn));
 }
 
 /** Won at showdown with trips or better. */
@@ -37,7 +45,10 @@ export function isHighRankingShowdownCelebration(
   return Boolean(shown && LUCKY_IRISH_CATEGORIES.has(shown.category));
 }
 
-/** Show the big-win overlay only for a large pot or a strong made hand at showdown. */
+/**
+ * Big-win overlay: large contested all-in pots, or a strong made hand at showdown.
+ * Uncalled all-ins (fold wins) never celebrate — wait for a call and the river.
+ */
 export function shouldCelebrateBigWin(params: {
   playerId: string | null | undefined;
   result: HandResult | null | undefined;
@@ -50,10 +61,20 @@ export function shouldCelebrateBigWin(params: {
   const pot = parsePotMojos(result);
   if (pot == null) return false;
 
-  return (
-    isBigPotCelebration(pot, bigBlindMojos) ||
-    isHighRankingShowdownCelebration(playerId, result)
-  );
+  if (isHighRankingShowdownCelebration(playerId, result)) return true;
+
+  return isContestedAllInShowdown(result) && isBigPotCelebration(pot, bigBlindMojos);
+}
+
+/** Hold celebration until the all-in cinema (through river / hands) is done. */
+export function shouldDeferBigWinForRunout(params: {
+  result: HandResult | null | undefined;
+  runoutPlaying: boolean;
+  willPlayRunout: boolean;
+}): boolean {
+  if (params.runoutPlaying) return true;
+  if (!params.result) return false;
+  return params.willPlayRunout;
 }
 
 /** @deprecated Use {@link shouldCelebrateBigWin}. */
