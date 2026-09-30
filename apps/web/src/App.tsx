@@ -86,10 +86,11 @@ function seatPositionLabel(
   dealerButtonSeat: number | null,
 ): string {
   if (hand) {
-    if (hand.dealerSeat === seatIndex) return " · dealer";
-    if (hand.smallBlindSeat === seatIndex) return " · small blind";
-    if (hand.bigBlindSeat === seatIndex) return " · big blind";
-    return "";
+    const roles: string[] = [];
+    if (hand.dealerSeat === seatIndex) roles.push("dealer");
+    if (hand.smallBlindSeat === seatIndex) roles.push("SB");
+    if (hand.bigBlindSeat === seatIndex) roles.push("BB");
+    return roles.length > 0 ? ` · ${roles.join(" · ")}` : "";
   }
   if (dealerButtonSeat === seatIndex) return " · dealer (next hand)";
   return "";
@@ -1340,6 +1341,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   }, [bigWin]);
 
+  const tryCelebrateBigWin = useCallback(
+    (result: HandResult | null | undefined) => {
+      if (!result || !playerId) return;
+      if (!shouldCelebrateBigWin({ playerId, result, bigBlindMojos })) return;
+      if (celebratedHandId.current === result.handId) return;
+      // Wait for the all-in cinema to finish so "you won" does not fire mid-runout.
+      if (runoutFromBoardLenRef.current != null) return;
+      celebratedHandId.current = result.handId;
+      const overlay = pickBigWinOverlay(lastBigWin.current);
+      lastBigWin.current = overlay;
+      setBigWin(overlay);
+    },
+    [playerId, bigBlindMojos],
+  );
+
   useEffect(() => {
     const bigWinPreview = parseBigWinPreviewHash(window.location.hash);
     if (bigWinPreview) setBigWin(bigWinPreview);
@@ -1353,13 +1369,19 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   useEffect(() => {
     if (!handResult || !playerId) return;
-    if (!shouldCelebrateBigWin({ playerId, result: handResult, bigBlindMojos })) return;
-    if (celebratedHandId.current === handResult.handId) return;
-    celebratedHandId.current = handResult.handId;
-    const overlay = pickBigWinOverlay(lastBigWin.current);
-    lastBigWin.current = overlay;
-    setBigWin(overlay);
-  }, [handResult, playerId, bigBlindMojos]);
+    // While an all-in runout is queued or playing, hold the celebration.
+    if (runoutFromBoardLen != null) return;
+    if (
+      shouldPlayAllInRunout(
+        { ...liveHandMeta.current, viewerId: playerId },
+        handResult,
+      ) &&
+      !playedRunouts.current.has(handResult.handId)
+    ) {
+      return;
+    }
+    tryCelebrateBigWin(handResult);
+  }, [handResult, playerId, bigBlindMojos, runoutFromBoardLen, tryCelebrateBigWin]);
 
   useEffect(() => {
     if (!atTableRoom) return;
@@ -1468,6 +1490,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             sng={tableFormat === "sng" || tableFormat === "mtt" ? sng : null}
             runoutFromBoardLen={runoutFromBoardLen}
             onRunoutFinished={() => {
+              runoutFromBoardLenRef.current = null;
               setRunoutFromBoardLen(null);
               const lost = Boolean(handResult && playerId && handResult.winnerId !== playerId);
               const tourney = tableFormat === "sng" || tableFormat === "mtt";
@@ -1487,6 +1510,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               } else {
                 holdTableForRunoutRef.current = false;
               }
+              // Celebrate only after the board has finished running out.
+              tryCelebrateBigWin(handResult);
             }}
             playthroughHandsPlayed={handsPlayed}
             playthroughHandsRequired={handsRequired}

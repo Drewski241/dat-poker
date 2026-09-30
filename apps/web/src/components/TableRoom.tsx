@@ -253,7 +253,8 @@ export function TableRoom({
                       {formatDatMojos(seated.stackMojos, datToken?.ticker)}
                     </span>
                     <span className="table-room-seat-role">
-                      {seatPositionLabel(i, hand, dealerButtonSeat).replace(/^ · /, "")}
+                      {seatPositionLabel(i, hand, dealerButtonSeat).replace(/^ · /, "") ||
+                        (isDealer ? "dealer (next)" : "")}
                     </span>
                   </>
                 ) : (
@@ -341,8 +342,19 @@ export function TableRoom({
                 <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
                 <span className="hand-blinds-line">
                   {" "}
-                  · {formatDatAmount(smallBlindMojos)}/{formatDatAmount(bigBlindMojos)} · D
-                  {hand.dealerSeat + 1} SB{hand.smallBlindSeat + 1} BB{hand.bigBlindSeat + 1}
+                  · blinds {formatDatAmount(smallBlindMojos)}/{formatDatAmount(bigBlindMojos)}
+                  {" · "}
+                  <span className="hand-blind-who" title="Dealer button">
+                    D seat {hand.dealerSeat + 1}
+                  </span>
+                  {" · "}
+                  <span className="hand-blind-who hand-blind-who-sb" title="Small blind">
+                    SB seat {hand.smallBlindSeat + 1}
+                  </span>
+                  {" · "}
+                  <span className="hand-blind-who hand-blind-who-bb" title="Big blind">
+                    BB seat {hand.bigBlindSeat + 1}
+                  </span>
                 </span>
               </p>
               {actorName && (
@@ -384,11 +396,7 @@ export function TableRoom({
                   >
                     <div className="table-room-opponent-meta">
                       <strong>
-                        {hand.dealerSeat === p.seatIndex && (
-                          <span className="table-room-dealer-chip table-room-dealer-chip-inline" title="Dealer">
-                            D{" "}
-                          </span>
-                        )}
+                        <SeatRoleChips hand={hand} seatIndex={p.seatIndex} />
                         {playerLabel(
                           p.playerId,
                           playerId,
@@ -411,11 +419,7 @@ export function TableRoom({
               <div className={`table-room-hero ${isMyAction ? "your-turn" : ""}`}>
                 <div className="table-room-hero-meta">
                   <strong>
-                    {hand.dealerSeat === me.seatIndex && (
-                      <span className="table-room-dealer-chip table-room-dealer-chip-inline" title="Dealer">
-                        D{" "}
-                      </span>
-                    )}
+                    <SeatRoleChips hand={hand} seatIndex={me.seatIndex} />
                     You
                   </strong>
                   {isMyAction ? <span className="to-act-badge">Betting</span> : null}
@@ -533,5 +537,43 @@ export function TableRoom({
         </footer>
       )}
     </div>
+  );
+}
+
+function SeatRoleChips({ hand, seatIndex }: { hand: HandState; seatIndex: number }) {
+  const chips: Array<{ key: string; label: string; title: string; className: string }> = [];
+  if (hand.dealerSeat === seatIndex) {
+    chips.push({
+      key: "d",
+      label: "D",
+      title: "Dealer button",
+      className: "table-room-dealer-chip table-room-dealer-chip-inline",
+    });
+  }
+  if (hand.smallBlindSeat === seatIndex) {
+    chips.push({
+      key: "sb",
+      label: "SB",
+      title: "Small blind",
+      className: "table-room-blind-chip table-room-blind-chip-sb table-room-dealer-chip-inline",
+    });
+  }
+  if (hand.bigBlindSeat === seatIndex) {
+    chips.push({
+      key: "bb",
+      label: "BB",
+      title: "Big blind",
+      className: "table-room-blind-chip table-room-blind-chip-bb table-room-dealer-chip-inline",
+    });
+  }
+  if (chips.length === 0) return null;
+  return (
+    <span className="table-room-role-chips" aria-label={chips.map((c) => c.title).join(", ")}>
+      {chips.map((c) => (
+        <span key={c.key} className={c.className} title={c.title}>
+          {c.label}
+        </span>
+      ))}{" "}
+    </span>
   );
 }

@@ -2456,6 +2456,50 @@ html.play-table-screen body {
   margin-right: 0.15rem;
 }
 
+.table-room-role-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-right: 0.2rem;
+}
+
+.table-room-blind-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.1rem;
+  padding: 0 0.2rem;
+  border-radius: 0.35rem;
+  font-size: 0.55rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.table-room-blind-chip-sb {
+  background: #7eb8d4;
+  color: #061018;
+}
+
+.table-room-blind-chip-bb {
+  background: #d4896a;
+  color: #1a0c06;
+}
+
+.hand-blind-who {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.hand-blind-who-sb {
+  color: #9fd0e8;
+}
+
+.hand-blind-who-bb {
+  color: #e8b39a;
+}
+
 .seat-list-dealer {
   color: var(--text);
   font-weight: 600;
