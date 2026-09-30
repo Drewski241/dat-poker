@@ -202,10 +202,9 @@ function facingBet(
   const huge = price >= 0.55;
 
   if (view.opponentsAllIn) {
-    if (strength >= 0.32 || cheap) {
-      return { action: "call", amountMojos: 0n };
-    }
-    return { action: "fold", amountMojos: 0n };
+    // House always matches an all-in when chips remain — short stacks still
+    // only put in what they have (engine side pots / reconcile handle the rest).
+    return { action: "call", amountMojos: 0n };
   }
 
   if (view.street === "preflop") {

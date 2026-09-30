@@ -43,6 +43,18 @@ describe("house strategy", () => {
     expect(chooseHouseAction(v, () => 0.5)).toEqual({ action: "check", amountMojos: 0n });
   });
 
+  it("calls an all-in shove even with junk (house always matches)", () => {
+    const v = view({
+      street: "river",
+      holeCards: cards("7h", "2d"),
+      board: cards("Tc", "9s", "3h", "Kd", "Ac"),
+      currentBetMojos: 60_000n,
+      potMojos: 50_000n,
+      opponentsAllIn: true,
+    });
+    expect(chooseHouseAction(v, () => 0.5)).toEqual({ action: "call", amountMojos: 0n });
+  });
+
   it("folds junk on the river facing a large bet", () => {
     const v = view({
       street: "river",
