@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextHandBlindSeats, occupiedSeatIndexes } from "./next-hand-blinds.js";
+import { nextHandBlindSeats, occupiedSeatIndexes, seatsClockwiseFromDealer } from "./next-hand-blinds.js";
 
 describe("nextHandBlindSeats", () => {
   it("heads-up: dealer is SB, other seat is BB", () => {
@@ -42,5 +42,15 @@ describe("occupiedSeatIndexes", () => {
         { seatIndex: 2, stackMojos: "500" },
       ]),
     ).toEqual([0, 2]);
+  });
+});
+
+describe("seatsClockwiseFromDealer", () => {
+  it("starts at the dealer and walks ascending seat numbers around the ring", () => {
+    expect(seatsClockwiseFromDealer([0, 1, 2, 4], 1)).toEqual([1, 2, 4, 0]);
+  });
+
+  it("heads-up starts at dealer then the other seat", () => {
+    expect(seatsClockwiseFromDealer([0, 3], 3)).toEqual([3, 0]);
   });
 });

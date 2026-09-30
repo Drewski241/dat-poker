@@ -56,3 +56,20 @@ export function nextHandBlindSeats(params: {
 
   return { dealerSeat, smallBlindSeat, bigBlindSeat };
 }
+
+/**
+ * Seat order around the table for the between-hands view:
+ * dealer, then clockwise (SB, BB, then remaining seats ascending around the ring).
+ */
+export function seatsClockwiseFromDealer(
+  occupiedSeats: number[],
+  dealerSeat: number | null,
+): number[] {
+  const seats = [...new Set(occupiedSeats)].sort((a, b) => a - b);
+  if (seats.length === 0) return [];
+  const start =
+    dealerSeat != null && seats.includes(dealerSeat) ? dealerSeat : seats[0]!;
+  const idx = seats.indexOf(start);
+  if (idx < 0) return seats;
+  return [...seats.slice(idx), ...seats.slice(0, idx)];
+}
