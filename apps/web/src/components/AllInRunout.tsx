@@ -45,7 +45,7 @@ export function AllInRunout({
     result,
   );
   const viewerAllIn = allInIds.includes(playerId);
-  const lost = viewerAllIn && result.winnerId !== playerId;
+  const lost = viewerAllIn && !result.isChop && result.winnerId !== playerId;
   const allInHands = runoutHandsToShow(result.shown, allInIds);
   const labelFor = (id: string) => playerLabel(id, playerId, seatDisplay(id));
   const matchup = runoutMatchupLine(
@@ -127,10 +127,25 @@ export function AllInRunout({
       )}
       {revealOutcome && (
         <p className="all-in-runout-winner">
-          {lost ? "You lost · " : ""}
-          {playerLabel(result.winnerId, playerId, seatDisplay(result.winnerId))}
-          {result.winnerId === playerId ? " win " : " wins "}
-          {formatDatMojos(result.potMojos, datToken?.ticker)}
+          {result.isChop ? (
+            <>
+              Chop · pot {formatDatMojos(result.totalPotMojos ?? result.potMojos, datToken?.ticker)}
+              {(() => {
+                const you = result.participants?.find((p) => p.playerId === playerId);
+                const share = you?.awardedMojos ?? (result.winnerId === playerId ? result.potMojos : null);
+                return share != null && BigInt(share) > 0n
+                  ? ` · you got ${formatDatMojos(share, datToken?.ticker)}`
+                  : "";
+              })()}
+            </>
+          ) : (
+            <>
+              {lost ? "You lost · " : ""}
+              {playerLabel(result.winnerId, playerId, seatDisplay(result.winnerId))}
+              {result.winnerId === playerId ? " win " : " wins "}
+              {formatDatMojos(result.potMojos, datToken?.ticker)}
+            </>
+          )}
         </p>
       )}
       <button type="button" className="all-in-runout-skip" onClick={finish}>

@@ -75,7 +75,12 @@ export interface HandState {
 export interface HandResult {
   handId: string;
   winnerId: string;
+  /** Award to winnerId (one share on a chop — not always the full pot). */
   potMojos: string;
+  /** Full pot after uncalled refunds. */
+  totalPotMojos?: string;
+  /** True when two or more players received a positive award. */
+  isChop?: boolean;
   reason: "fold" | "showdown";
   board?: { rank: string; suit: string }[];
   shown?: {
@@ -90,6 +95,7 @@ export interface HandResult {
     playerId: string;
     totalBetHandMojos: string;
     stackBeforePayoutMojos: string;
+    awardedMojos?: string;
   }[];
 }
 
@@ -98,6 +104,8 @@ export interface HandHistoryEntry {
   completedAtMs: number;
   winnerId: string;
   potMojos: string;
+  totalPotMojos?: string;
+  isChop?: boolean;
   reason: "fold" | "showdown";
   board?: { rank: string; suit: string }[];
   shown?: HandResult["shown"];

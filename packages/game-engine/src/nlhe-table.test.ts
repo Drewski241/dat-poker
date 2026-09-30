@@ -115,6 +115,58 @@ describe("NlheTableEngine", () => {
     expect(result?.board).toHaveLength(5);
   });
 
+  it("marks a tied showdown as a chop and pays each player their share", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 50n,
+      bigBlindMojos: 100n,
+      minBuyInMojos: 1_000n,
+      maxBuyInMojos: 50_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("alice", 0, 5_000n);
+    table.seatPlayer("bob", 1, 5_000n);
+    table.startHand("hand-chop");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const dealt = (
+      table as unknown as {
+        hand: {
+          players: { playerId: string; holeCards: ReturnType<typeof parseCard>[] }[];
+          deck: ReturnType<typeof parseCard>[];
+          deckIndex: number;
+        } | null;
+      }
+    ).hand!;
+    // Same made hand at showdown (trip deuces, Ace kicker) → chop.
+    for (const p of dealt.players) {
+      if (p.playerId === "alice") p.holeCards = [parseCard("Ah"), parseCard("Kd")];
+      else p.holeCards = [parseCard("Ac"), parseCard("Ks")];
+    }
+    dealt.deck = ["2h", "2d", "2c", "7s", "8h"].map(parseCard);
+    dealt.deckIndex = 0;
+
+    for (let guard = 0; guard < 8; guard++) {
+      const state = table.getHandState();
+      if (!state || state.actionSeat == null) break;
+      const actor = state.players.find((p) => p.seatIndex === state.actionSeat && !p.folded);
+      if (!actor || actor.allIn) break;
+      table.applyAction(actor.playerId, "all-in");
+    }
+    table.advanceHandIfIdle();
+    expect(table.isHandInProgress()).toBe(false);
+
+    const result = table.getLastHandResult();
+    expect(result?.reason).toBe("showdown");
+    expect(result?.isChop).toBe(true);
+    expect(result?.totalPotMojos).toBe(10_000n);
+    expect(result?.potMojos).toBe(5_000n);
+    expect(table.getPlayerStack("alice")).toBe(5_000n);
+    expect(table.getPlayerStack("bob")).toBe(5_000n);
+  });
+
   it("caps showdown winnings at the short stack (main and side pots)", () => {
     const tiny: TableConfig = {
       ...config,

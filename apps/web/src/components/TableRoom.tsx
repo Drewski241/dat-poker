@@ -332,22 +332,41 @@ export function TableRoom({
             {handResult && runoutFromBoardLen == null && (
               <div
                 className={
-                  handResult.winnerId === playerId
+                  handResult.isChop || handResult.winnerId === playerId
                     ? "table-room-result table-room-result-win"
                     : "table-room-result"
                 }
               >
                 <p className="table-room-result-line">
-                  <strong>
-                    {playerLabel(
-                      handResult.winnerId,
-                      playerId,
-                      tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress,
-                    )}
-                  </strong>
-                  {handResult.winnerId === playerId ? " win " : " wins "}
-                  {formatDatMojos(handResult.potMojos, datToken?.ticker)}
-                  {handResult.reason === "showdown" ? " · showdown" : " · fold"}
+                  {handResult.isChop ? (
+                    <strong>
+                      Chop · pot{" "}
+                      {formatDatMojos(handResult.totalPotMojos ?? handResult.potMojos, datToken?.ticker)}
+                      {(() => {
+                        const you = handResult.participants?.find((p) => p.playerId === playerId);
+                        const share =
+                          you?.awardedMojos ??
+                          (handResult.winnerId === playerId ? handResult.potMojos : null);
+                        return share != null && BigInt(share) > 0n
+                          ? ` · you got ${formatDatMojos(share, datToken?.ticker)}`
+                          : "";
+                      })()}
+                      {handResult.reason === "showdown" ? " · showdown" : " · fold"}
+                    </strong>
+                  ) : (
+                    <>
+                      <strong>
+                        {playerLabel(
+                          handResult.winnerId,
+                          playerId,
+                          tableSeats.find((s) => s.playerId === handResult.winnerId)?.displayAddress,
+                        )}
+                      </strong>
+                      {handResult.winnerId === playerId ? " win " : " wins "}
+                      {formatDatMojos(handResult.potMojos, datToken?.ticker)}
+                      {handResult.reason === "showdown" ? " · showdown" : " · fold"}
+                    </>
+                  )}
                 </p>
                 {handResult.reason === "showdown" && (handResult.board?.length ?? 0) > 0 && (
                   <CardRow cards={handResult.board!} size="sm" />
