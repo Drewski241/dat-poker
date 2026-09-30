@@ -33,7 +33,7 @@ import {
   shouldHoldTableForRunout,
   shouldPlayAllInRunout,
 } from "./all-in-runout.js";
-import { sngShouldAutoDeal } from "./sng-auto-deal.js";
+import { shouldAutoDealNextHand } from "./sng-auto-deal.js";
 import { nextHandBlindSeats, occupiedSeatIndexes } from "./next-hand-blinds.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -201,6 +201,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const playedRunouts = useRef(new Set<string>());
   const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
   const [handHistoryOpen, setHandHistoryOpen] = useState(false);
+  /** Cash tables auto-deal; Sit out pauses until the player sits back in. */
+  const [cashSittingOut, setCashSittingOut] = useState(false);
   const [bigWin, setBigWin] = useState<BigWinOverlay | null>(null);
   const celebratedHandId = useRef<string | null>(null);
   const lastBigWin = useRef<BigWinOverlay | null>(readStoredBigWinOverlay());
@@ -792,6 +794,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
       setTableId(joined.tableId);
       setTableFormat("cash");
+      setCashSittingOut(false);
       setTableMaxSeats(joined.maxSeats ?? 6);
       setSng(null);
       setTableFocusMode(true);
@@ -1025,11 +1028,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       (sng?.status === "finished" || mySngPlace) &&
       !sng?.relocatedToTableId,
   );
-  const sngCanAutoDeal = sngShouldAutoDeal({
+  const sngCanAutoDeal = shouldAutoDealNextHand({
     atTableRoom,
     tableFormat,
     sngStatus: sng?.status,
     seated: Boolean(myTableSeat),
+    occupiedSeats: tableSeats.length,
     handLive: Boolean(hand || handInProgress),
     busy,
     stackIsZero: tableStackIsZero,
@@ -1037,6 +1041,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     celebrationPlaying: bigWin != null,
     eliminated: sngEliminated,
     pauseDeals: Boolean(sng?.pauseDeals),
+    sittingOut: tableFormat === "cash" && cashSittingOut,
   });
 
   useEffect(() => {
@@ -1094,6 +1099,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setHand(null);
     setHandResult(null);
     setTableFormat("cash");
+    setCashSittingOut(false);
     setTableMaxSeats(6);
     setTableFocusMode(true);
     if (playerId) void refreshAccount(playerId);
@@ -1474,6 +1480,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onStartHand={startHandFlow}
             canRebuy={canRebuyAtTable}
             canDeal={Boolean(myTableSeat) && sng?.status !== "finished" && bigWin == null}
+            autoDeal={tableFormat === "cash"}
+            sittingOut={cashSittingOut}
+            onToggleSitOut={
+              tableFormat === "cash" ? () => setCashSittingOut((v) => !v) : undefined
+            }
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => {

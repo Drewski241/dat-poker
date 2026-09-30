@@ -60,6 +60,10 @@ type Props = {
   onStartHand: () => void;
   canRebuy: boolean;
   canDeal?: boolean;
+  /** Cash: hide manual Deal/New hand — hands auto-continue. */
+  autoDeal?: boolean;
+  sittingOut?: boolean;
+  onToggleSitOut?: () => void;
   onRebuy: () => void;
   rebuyLabel: string;
   onOpenLobby: () => void;
@@ -102,6 +106,9 @@ export function TableRoom({
   onStartHand,
   canRebuy,
   canDeal = true,
+  autoDeal = false,
+  sittingOut = false,
+  onToggleSitOut,
   onRebuy,
   rebuyLabel,
   onOpenLobby,
@@ -131,8 +138,12 @@ export function TableRoom({
 
   const canStepToLobby = !hand && !handInProgress;
   const runoutPlaying = Boolean(handResult && runoutFromBoardLen != null && onRunoutFinished);
-  const showDeal = !hand && !canRebuy && canDeal && !runoutPlaying;
-  const showBetweenFooter = !hand && (showDeal || canRebuy) && !runoutPlaying;
+  const showDeal = !hand && !canRebuy && canDeal && !runoutPlaying && !autoDeal;
+  const showSitOutControls = Boolean(autoDeal && onToggleSitOut && !canRebuy && !runoutPlaying);
+  const showBetweenFooter =
+    !hand &&
+    !runoutPlaying &&
+    (showDeal || canRebuy || (showSitOutControls && sittingOut) || (autoDeal && !sittingOut && !canRebuy));
   const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
   const nextBlinds = useMemo(() => {
     if (hand) return null;
@@ -228,6 +239,21 @@ export function TableRoom({
           >
             Hand history{handHistoryCount > 0 ? ` (${handHistoryCount})` : ""}
           </button>
+          {showSitOutControls ? (
+            <button
+              type="button"
+              className={`secondary table-room-sitout-btn${sittingOut ? " is-sitting-out" : ""}`}
+              disabled={busy}
+              title={
+                sittingOut
+                  ? "Resume auto-deal for the next hand"
+                  : "Stay seated but pause new hands"
+              }
+              onClick={onToggleSitOut}
+            >
+              {sittingOut ? "Sit in" : "Sit out"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="secondary table-room-lobby-btn"
@@ -523,6 +549,16 @@ export function TableRoom({
               Buy in again ({rebuyLabel})
             </button>
           )}
+          {sittingOut && showSitOutControls && !canRebuy ? (
+            <button
+              type="button"
+              className="table-room-deal-btn"
+              disabled={busy}
+              onClick={onToggleSitOut}
+            >
+              Sit in · deal next hand
+            </button>
+          ) : null}
           {showDeal && (
             <button
               type="button"
@@ -537,6 +573,11 @@ export function TableRoom({
               {handResult ? "New hand" : "Deal hand"}
             </button>
           )}
+          {!showDeal && autoDeal && !sittingOut && !canRebuy ? (
+            <p className="muted small table-room-autodeal-hint" role="status">
+              Next hand dealing…
+            </p>
+          ) : null}
         </footer>
       )}
       {hand && isMyAction && (

@@ -2432,6 +2432,11 @@ html.play-table-screen body {
   flex-shrink: 0;
 }
 
+.table-room-sitout-btn.is-sitting-out {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .table-room-seat-dealer {
   outline: 2px solid #e8c547;
   box-shadow: 0 0 0 1px rgba(232, 197, 71, 0.35);
@@ -2995,6 +3000,12 @@ html.play-table-screen body {
   flex-direction: column;
   gap: 0.35rem;
   z-index: 6;
+}
+
+.table-room-autodeal-hint {
+  margin: 0;
+  text-align: center;
+  padding: 0.35rem 0.5rem;
 }
 
 .table-room-result {
