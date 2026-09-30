@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DatTokenInfo, HandResult, HandState, PlayerAction, SngSnapshot, TableSeat } from "../api.js";
 import { computeNlheBetRange, formatDatAmount, formatDatMojos } from "@dat-poker/shared";
 import { formatHandCategory } from "../all-in-runout.js";
-import { nextHandBlindSeats, occupiedSeatIndexes, seatsClockwiseFromDealer } from "../next-hand-blinds.js";
+import { nextHandBlindSeats, occupiedSeatIndexes, seatAngleRadians, seatsInTableOrder } from "../next-hand-blinds.js";
 import { AllInRunout } from "./AllInRunout.js";
 import { BetSlider } from "./BetSlider.js";
 import { CardRow, PlayingCard } from "./PlayingCard.js";
@@ -60,6 +60,10 @@ type Props = {
   onStartHand: () => void;
   canRebuy: boolean;
   canDeal?: boolean;
+  /** Cash: hide manual Deal/New hand — hands auto-continue. */
+  autoDeal?: boolean;
+  sittingOut?: boolean;
+  onToggleSitOut?: () => void;
   onRebuy: () => void;
   rebuyLabel: string;
   onOpenLobby: () => void;
@@ -102,6 +106,9 @@ export function TableRoom({
   onStartHand,
   canRebuy,
   canDeal = true,
+  autoDeal = false,
+  sittingOut = false,
+  onToggleSitOut,
   onRebuy,
   rebuyLabel,
   onOpenLobby,
@@ -131,8 +138,12 @@ export function TableRoom({
 
   const canStepToLobby = !hand && !handInProgress;
   const runoutPlaying = Boolean(handResult && runoutFromBoardLen != null && onRunoutFinished);
-  const showDeal = !hand && !canRebuy && canDeal && !runoutPlaying;
-  const showBetweenFooter = !hand && (showDeal || canRebuy) && !runoutPlaying;
+  const showDeal = !hand && !canRebuy && canDeal && !runoutPlaying && !autoDeal;
+  const showSitOutControls = Boolean(autoDeal && onToggleSitOut && !canRebuy && !runoutPlaying);
+  const showBetweenFooter =
+    !hand &&
+    !runoutPlaying &&
+    (showDeal || canRebuy || (showSitOutControls && sittingOut) || (autoDeal && !sittingOut && !canRebuy));
   const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
   const nextBlinds = useMemo(() => {
     if (hand) return null;
@@ -144,10 +155,8 @@ export function TableRoom({
   }, [hand, dealerButtonSeat, tableSeats, maxSeats]);
   const circleSeatOrder = useMemo(() => {
     if (hand) return [];
-    const occupied = occupiedSeatIndexes(tableSeats);
-    const dealer = nextBlinds?.dealerSeat ?? dealerButtonSeat;
-    return seatsClockwiseFromDealer(occupied, dealer);
-  }, [hand, tableSeats, nextBlinds?.dealerSeat, dealerButtonSeat]);
+    return seatsInTableOrder(occupiedSeatIndexes(tableSeats));
+  }, [hand, tableSeats]);
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const opponents = (hand?.players.filter((p) => p.playerId !== playerId) ?? []).slice().sort((a, b) => {
@@ -228,6 +237,21 @@ export function TableRoom({
           >
             Hand history{handHistoryCount > 0 ? ` (${handHistoryCount})` : ""}
           </button>
+          {showSitOutControls ? (
+            <button
+              type="button"
+              className={`secondary table-room-sitout-btn${sittingOut ? " is-sitting-out" : ""}`}
+              disabled={busy}
+              title={
+                sittingOut
+                  ? "Resume auto-deal for the next hand"
+                  : "Stay seated but pause new hands"
+              }
+              onClick={onToggleSitOut}
+            >
+              {sittingOut ? "Sit in" : "Sit out"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="secondary table-room-lobby-btn"
@@ -247,10 +271,9 @@ export function TableRoom({
             {(circleSeatOrder.length > 0
               ? circleSeatOrder
               : Array.from({ length: maxSeats }, (_, i) => i)
-            ).map((seatIndex, orderIndex, order) => {
-              const n = order.length;
-              // Dealer at top; walk clockwise (SB, BB, then ascending around the ring).
-              const angle = (orderIndex / n) * 2 * Math.PI - Math.PI / 2;
+            ).map((seatIndex) => {
+              // Fixed seat positions on the table; only D/SB/BB chips move each hand.
+              const angle = seatAngleRadians(seatIndex, maxSeats);
               const left = 50 + Math.cos(angle) * 42;
               const top = 50 + Math.sin(angle) * 38;
               const seated = tableSeats.find((s) => s.seatIndex === seatIndex);
@@ -523,6 +546,16 @@ export function TableRoom({
               Buy in again ({rebuyLabel})
             </button>
           )}
+          {sittingOut && showSitOutControls && !canRebuy ? (
+            <button
+              type="button"
+              className="table-room-deal-btn"
+              disabled={busy}
+              onClick={onToggleSitOut}
+            >
+              Sit in · deal next hand
+            </button>
+          ) : null}
           {showDeal && (
             <button
               type="button"
@@ -537,6 +570,11 @@ export function TableRoom({
               {handResult ? "New hand" : "Deal hand"}
             </button>
           )}
+          {!showDeal && autoDeal && !sittingOut && !canRebuy ? (
+            <p className="muted small table-room-autodeal-hint" role="status">
+              Next hand dealing…
+            </p>
+          ) : null}
         </footer>
       )}
       {hand && isMyAction && (

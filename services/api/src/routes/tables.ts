@@ -5,6 +5,7 @@ import {
   DAT_MTT_DEFAULTS,
   DAT_SNG_DEFAULTS,
   DAT_TABLE_DEFAULTS,
+  formatDatMojos,
   isHousePlayerId,
   isTournamentFormat,
   playthroughHandsRequired,
@@ -367,6 +368,15 @@ function takeBuyInFromAccountOrProof(params: {
     return { error: null, usedAccount: true, addedFreshMojos };
   }
 
+  // Partial account balance must never fall through to a free full buy-in mint.
+  if (account > 0n && account < params.buyInMojos) {
+    return {
+      error: `Not enough DAT in your account — have ${formatDatMojos(account)}, need ${formatDatMojos(params.buyInMojos)} to buy in`,
+      usedAccount: false,
+      addedFreshMojos: 0n,
+    };
+  }
+
   if (!dat.devBuyInEnabled) {
     if (!dat.assetId) {
       return { error: "DAT token not configured", usedAccount: false, addedFreshMojos: 0n };
@@ -398,16 +408,25 @@ function takeBuyInFromAccountOrProof(params: {
         };
       }
     }
-  } else if (!params.devAck && dat.assetId && params.buyInProof) {
-    const proofError = validateBuyInProof(params.buyInProof, {
-      tableId: params.tableId,
-      seatIndex: params.seatIndex,
-      buyInMojos: params.buyInMojos.toString(),
-      playerId: params.playerId,
-      address: params.displayAddress,
-    });
-    if (proofError) {
-      return { error: proofError, usedAccount: false, addedFreshMojos: 0n };
+  } else if (!params.devAck) {
+    // Empty account + dev buy-in still allowed with explicit ack; otherwise require redeem/proof.
+    if (dat.assetId && params.buyInProof) {
+      const proofError = validateBuyInProof(params.buyInProof, {
+        tableId: params.tableId,
+        seatIndex: params.seatIndex,
+        buyInMojos: params.buyInMojos.toString(),
+        playerId: params.playerId,
+        address: params.displayAddress,
+      });
+      if (proofError) {
+        return { error: proofError, usedAccount: false, addedFreshMojos: 0n };
+      }
+    } else {
+      return {
+        error: "Redeem daily DAT or provide a wallet buy-in proof",
+        usedAccount: false,
+        addedFreshMojos: 0n,
+      };
     }
   }
 

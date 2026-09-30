@@ -413,6 +413,30 @@ describe("6-max join + daily redeem", () => {
     await app.close();
   });
 
+  it("refuses a free full buy-in when the account has some DAT but less than the minimum", async () => {
+    const app = await buildApp();
+    const created = await registerAndLogin(app, "shortstack", "password1");
+    const headers = auth(created.token);
+    const { creditAccount } = await import("./account-store.js");
+    creditAccount(created.playerId, 240_000n); // 240 DAT — below 1000 DAT min buy-in
+
+    const join = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join",
+      headers,
+      payload: { playerId: created.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(join.statusCode).toBe(400);
+    const body = JSON.parse(join.body) as { error?: string };
+    expect(body.error).toMatch(/Not enough DAT in your account/i);
+    expect(body.error).toMatch(/240 DAT/);
+    expect(body.error).toMatch(/1000 DAT/);
+
+    const { getAccountBalance } = await import("./account-store.js");
+    expect(getAccountBalance(created.playerId)).toBe(240_000n);
+    await app.close();
+  });
+
   it("keeps the account playerId when Sage is linked for withdraw", async () => {
     const app = await buildApp();
     const created = await registerAndLogin(app, "sagewait", "password1");

@@ -58,14 +58,29 @@ export function nextHandBlindSeats(params: {
 }
 
 /**
- * Seat order around the table for the between-hands view:
- * dealer, then clockwise (SB, BB, then remaining seats ascending around the ring).
+ * Fixed ring order by ascending seat index (players stay put; D/SB/BB labels move).
  */
+export function seatsInTableOrder(occupiedSeats: number[]): number[] {
+  return [...new Set(occupiedSeats)].sort((a, b) => a - b);
+}
+
+/**
+ * Angle on the between-hands ellipse for a seat index.
+ * Seat 0 is at the top; higher seats walk clockwise. Positions are stable
+ * across hands so only role chips move with the button.
+ */
+export function seatAngleRadians(seatIndex: number, maxSeats: number): number {
+  const n = Math.max(1, maxSeats);
+  const i = ((seatIndex % n) + n) % n;
+  return (i / n) * 2 * Math.PI - Math.PI / 2;
+}
+
+/** @deprecated Prefer seatsInTableOrder — dealer-relative order moved players each hand. */
 export function seatsClockwiseFromDealer(
   occupiedSeats: number[],
   dealerSeat: number | null,
 ): number[] {
-  const seats = [...new Set(occupiedSeats)].sort((a, b) => a - b);
+  const seats = seatsInTableOrder(occupiedSeats);
   if (seats.length === 0) return [];
   const start =
     dealerSeat != null && seats.includes(dealerSeat) ? dealerSeat : seats[0]!;
