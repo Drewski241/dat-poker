@@ -143,16 +143,117 @@ describe("NlheTableEngine", () => {
     expect(shortStack + deepStack).toBe(3000n);
 
     const result = table.getLastHandResult()!;
-    expect(result.potMojos).toBe(table.getPlayerStack(result.winnerId));
+    // Headline pot is the matched/contested amount (uncalled chips are refunded).
+    expect(result.potMojos).toBe(2000n);
     if (result.winnerId === "short") {
       expect(shortStack).toBe(2000n);
       expect(deepStack).toBe(1000n);
-      expect(result.potMojos).toBe(2000n);
     } else {
       expect(deepStack).toBe(3000n);
       expect(shortStack).toBe(0n);
-      expect(result.potMojos).toBe(3000n);
     }
+  });
+
+  it("refunds uncalled chips when a deep shove meets a short house stack", () => {
+    const shortCfg: TableConfig = {
+      ...config,
+      smallBlindMojos: 5_000n,
+      bigBlindMojos: 10_000n,
+      minBuyInMojos: 50_000n,
+      maxBuyInMojos: 5_000_000n,
+    };
+    const table = new NlheTableEngine(shortCfg);
+    const humanStack = 1_000_000n;
+    const houseStack = 100_000n;
+    table.seatPlayer("alice", 0, humanStack);
+    table.seatPlayer("dat-poker:house", 1, houseStack);
+
+    table.startHand("hand-short-cover");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("dat-poker:house", generateServerSeed());
+    table.revealAndDeal();
+
+    const hand = table.getHandState()!;
+    const firstActor = hand.players.find((p) => p.seatIndex === hand.actionSeat)!;
+    if (firstActor.playerId === "alice") {
+      table.applyAction("alice", "all-in");
+      table.applyAction("dat-poker:house", "call");
+    } else {
+      table.applyAction("dat-poker:house", "check");
+      table.applyAction("alice", "all-in");
+      table.applyAction("dat-poker:house", "call");
+    }
+
+    expect(table.getHandState()).toBeNull();
+    const aliceFinal = table.getPlayerStack("alice") ?? 0n;
+    const houseFinal = table.getPlayerStack("dat-poker:house") ?? 0n;
+    expect(aliceFinal + houseFinal).toBe(humanStack + houseStack);
+    expect(aliceFinal).toBeGreaterThanOrEqual(humanStack - houseStack);
+    expect(aliceFinal).toBeLessThanOrEqual(humanStack + houseStack);
+  });
+
+  it("deals a short-for-blind stack all-in and settles a side pot", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 5_000n,
+      bigBlindMojos: 10_000n,
+      minBuyInMojos: 1_000n,
+      maxBuyInMojos: 50_000_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("short", 0, 3_000n);
+    table.seatPlayer("deep", 1, 100_000n);
+    table.startHand("hand-short-blind");
+    table.submitPlayerSeed("short", generateServerSeed());
+    table.submitPlayerSeed("deep", generateServerSeed());
+    table.revealAndDeal();
+
+    let state = table.getHandState()!;
+    const short = state.players.find((p) => p.playerId === "short")!;
+    expect(short.allIn).toBe(true);
+    expect(short.totalBetHandMojos).toBe(3_000n);
+    expect(short.stackMojos).toBe(0n);
+
+    // BB still has the option to act when the SB is already short all-in.
+    table.advanceHandIfIdle();
+    state = table.getHandState()!;
+    expect(state).not.toBeNull();
+    const actor = state.players.find((p) => p.seatIndex === state.actionSeat && !p.folded)!;
+    expect(actor.playerId).toBe("deep");
+    table.applyAction("deep", "check");
+    table.advanceHandIfIdle();
+
+    expect(table.isHandInProgress()).toBe(false);
+    const shortFinal = table.getPlayerStack("short")!;
+    const deepFinal = table.getPlayerStack("deep")!;
+    expect(shortFinal + deepFinal).toBe(103_000n);
+    expect(shortFinal === 0n || shortFinal === 6_000n).toBe(true);
+  });
+
+  it("skips zero-stack seats on the next deal without confiscating leftover chips", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 50n,
+      bigBlindMojos: 100n,
+      minBuyInMojos: 100n,
+      maxBuyInMojos: 50_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("alice", 0, 5_000n);
+    table.seatPlayer("bob", 1, 5_000n);
+    table.seatPlayer("broke", 2, 100n);
+    const internal = table as unknown as { stacks: Map<string, bigint> };
+    internal.stacks.set("broke", 0n);
+
+    table.startHand("hand-skip-broke");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    expect(() => table.submitPlayerSeed("broke", generateServerSeed())).toThrow(/not in hand/i);
+    table.revealAndDeal();
+    const hand = table.getHandState()!;
+    expect(hand.players.map((p) => p.playerId).sort()).toEqual(["alice", "bob"]);
+    expect(table.hasPlayer("broke")).toBe(true);
+    expect(table.getPlayerStack("broke")).toBe(0n);
   });
 
   it("marks a player all-in when a raise consumes their entire stack", () => {
