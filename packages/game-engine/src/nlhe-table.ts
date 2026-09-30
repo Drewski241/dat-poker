@@ -25,12 +25,19 @@ export interface HandResultParticipant {
   totalBetHandMojos: bigint;
   /** Table stack immediately before the pot is paid to the winner. */
   stackBeforePayoutMojos: bigint;
+  /** Chips awarded from the pot to this player (0 if they did not win a share). */
+  awardedMojos: bigint;
 }
 
 export interface HandResult {
   handId: HandId;
   winnerId: PlayerId;
+  /** Chips awarded to `winnerId` (one share on a chop — not always the full pot). */
   potMojos: bigint;
+  /** Full pot after uncalled refunds (sum of all awards). */
+  totalPotMojos: bigint;
+  /** True when two or more players received a positive award (split pot). */
+  isChop: boolean;
   reason: "fold" | "showdown";
   board: Card[];
   shown: ShownHand[];
@@ -778,10 +785,9 @@ export class NlheTableEngine {
 
   private runShowdown(h: TableHandState): void {
     h.street = "showdown";
-    // Idempotent if already reconciled when betting closed.
     this.reconcileMatchedContributions(h);
     const live = this.activePlayers(h);
-    const participants = h.players.map((p) => ({
+    const participantsBase = h.players.map((p) => ({
       playerId: p.playerId,
       totalBetHandMojos: p.totalBetHandMojos,
       stackBeforePayoutMojos: p.stackMojos,
@@ -797,10 +803,18 @@ export class NlheTableEngine {
     }
 
     const potMojos = awardedByPlayer.get(primaryWinnerId) ?? 0n;
+    const totalPotMojos = [...awardedByPlayer.values()].reduce((a, b) => a + b, 0n);
+    const isChop = [...awardedByPlayer.values()].filter((v) => v > 0n).length > 1;
+    const participants = participantsBase.map((p) => ({
+      ...p,
+      awardedMojos: awardedByPlayer.get(p.playerId) ?? 0n,
+    }));
     this.lastHandResult = {
       handId: h.handId,
       winnerId: primaryWinnerId,
       potMojos,
+      totalPotMojos,
+      isChop,
       reason: "showdown",
       board: [...h.board],
       shown: this.showdownHandsToReveal(h, live, awardedByPlayer),
@@ -818,7 +832,7 @@ export class NlheTableEngine {
     // shove vs a short caller does not inflate the fold-win pot.
     this.reconcileMatchedContributions(h);
     const live = this.activePlayers(h);
-    const participants = h.players.map((p) => ({
+    const participantsBase = h.players.map((p) => ({
       playerId: p.playerId,
       totalBetHandMojos: p.totalBetHandMojos,
       stackBeforePayoutMojos: p.stackMojos,
@@ -834,10 +848,18 @@ export class NlheTableEngine {
     }
 
     const potMojos = awardedByPlayer.get(primaryWinnerId) ?? 0n;
+    const totalPotMojos = [...awardedByPlayer.values()].reduce((a, b) => a + b, 0n);
+    const isChop = [...awardedByPlayer.values()].filter((v) => v > 0n).length > 1;
+    const participants = participantsBase.map((p) => ({
+      ...p,
+      awardedMojos: awardedByPlayer.get(p.playerId) ?? 0n,
+    }));
     this.lastHandResult = {
       handId: h.handId,
       winnerId: primaryWinnerId,
       potMojos,
+      totalPotMojos,
+      isChop,
       reason: "fold",
       board: [...h.board],
       shown: [],

@@ -5,6 +5,8 @@ export interface HandHistoryEntry {
   completedAtMs: number;
   winnerId: string;
   potMojos: string;
+  totalPotMojos: string;
+  isChop: boolean;
   reason: "fold" | "showdown";
   board: HandResult["board"];
   shown: HandResult["shown"];
@@ -45,6 +47,8 @@ export function recordHandHistoryIfNew(tableId: string, table: NlheTableEngine):
     completedAtMs: Date.now(),
     winnerId: result.winnerId,
     potMojos: result.potMojos.toString(),
+    totalPotMojos: result.totalPotMojos.toString(),
+    isChop: result.isChop,
     reason: result.reason,
     board: result.board,
     shown: result.shown,
