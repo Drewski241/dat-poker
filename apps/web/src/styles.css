@@ -2612,19 +2612,6 @@ html.play-table-screen body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
 }
 
-.table-room-seats-empty-strip {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.25rem;
-  flex-shrink: 0;
-}
-
-.table-room-seat-open {
-  min-width: 4.5rem;
-  flex: 0 1 auto;
-}
-
 .table-room-seat {
   background: var(--panel);
   border-radius: 6px;

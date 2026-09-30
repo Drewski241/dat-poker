@@ -148,12 +148,6 @@ export function TableRoom({
     const dealer = nextBlinds?.dealerSeat ?? dealerButtonSeat;
     return seatsClockwiseFromDealer(occupied, dealer);
   }, [hand, tableSeats, nextBlinds?.dealerSeat, dealerButtonSeat]);
-  const openSeatIndexes = useMemo(() => {
-    if (hand) return [];
-    return Array.from({ length: maxSeats }, (_, i) => i).filter(
-      (i) => !tableSeats.some((s) => s.seatIndex === i),
-    );
-  }, [hand, maxSeats, tableSeats]);
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const opponents = (hand?.players.filter((p) => p.playerId !== playerId) ?? []).slice().sort((a, b) => {
@@ -318,16 +312,6 @@ export function TableRoom({
               );
             })}
           </div>
-          {circleSeatOrder.length > 0 && openSeatIndexes.length > 0 ? (
-            <div className="table-room-seats-empty-strip" aria-label="Open seats">
-              {openSeatIndexes.map((i) => (
-                <div key={i} className="table-room-seat empty table-room-seat-open">
-                  <span className="table-room-seat-num">{i + 1}</span>
-                  <span className="table-room-seat-empty">Empty</span>
-                </div>
-              ))}
-            </div>
-          ) : null}
         </div>
       )}
 
