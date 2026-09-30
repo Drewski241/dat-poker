@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DatTokenInfo, HandResult, HandState, PlayerAction, SngSnapshot, TableSeat } from "../api.js";
 import { computeNlheBetRange, formatDatAmount, formatDatMojos } from "@dat-poker/shared";
 import { formatHandCategory } from "../all-in-runout.js";
-import { nextHandBlindSeats, occupiedSeatIndexes, seatsClockwiseFromDealer } from "../next-hand-blinds.js";
+import { nextHandBlindSeats, occupiedSeatIndexes, seatAngleRadians, seatsInTableOrder } from "../next-hand-blinds.js";
 import { AllInRunout } from "./AllInRunout.js";
 import { BetSlider } from "./BetSlider.js";
 import { CardRow, PlayingCard } from "./PlayingCard.js";
@@ -155,10 +155,8 @@ export function TableRoom({
   }, [hand, dealerButtonSeat, tableSeats, maxSeats]);
   const circleSeatOrder = useMemo(() => {
     if (hand) return [];
-    const occupied = occupiedSeatIndexes(tableSeats);
-    const dealer = nextBlinds?.dealerSeat ?? dealerButtonSeat;
-    return seatsClockwiseFromDealer(occupied, dealer);
-  }, [hand, tableSeats, nextBlinds?.dealerSeat, dealerButtonSeat]);
+    return seatsInTableOrder(occupiedSeatIndexes(tableSeats));
+  }, [hand, tableSeats]);
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const opponents = (hand?.players.filter((p) => p.playerId !== playerId) ?? []).slice().sort((a, b) => {
@@ -273,10 +271,9 @@ export function TableRoom({
             {(circleSeatOrder.length > 0
               ? circleSeatOrder
               : Array.from({ length: maxSeats }, (_, i) => i)
-            ).map((seatIndex, orderIndex, order) => {
-              const n = order.length;
-              // Dealer at top; walk clockwise (SB, BB, then ascending around the ring).
-              const angle = (orderIndex / n) * 2 * Math.PI - Math.PI / 2;
+            ).map((seatIndex) => {
+              // Fixed seat positions on the table; only D/SB/BB chips move each hand.
+              const angle = seatAngleRadians(seatIndex, maxSeats);
               const left = 50 + Math.cos(angle) * 42;
               const top = 50 + Math.sin(angle) * 38;
               const seated = tableSeats.find((s) => s.seatIndex === seatIndex);
