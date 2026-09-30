@@ -43,7 +43,7 @@ describe("house strategy", () => {
     expect(chooseHouseAction(v, () => 0.5)).toEqual({ action: "check", amountMojos: 0n });
   });
 
-  it("calls an all-in shove even with junk (house always matches)", () => {
+  it("folds junk to a large all-in shove", () => {
     const v = view({
       street: "river",
       holeCards: cards("7h", "2d"),
@@ -52,7 +52,51 @@ describe("house strategy", () => {
       potMojos: 50_000n,
       opponentsAllIn: true,
     });
-    expect(chooseHouseAction(v, () => 0.5)).toEqual({ action: "call", amountMojos: 0n });
+    expect(estimateHouseStrength(v)).toBeLessThan(0.32);
+    expect(chooseHouseAction(v, () => 0.5).action).toBe("fold");
+  });
+
+  it("calls an all-in when getting a great price with a live hand", () => {
+    const v = view({
+      street: "flop",
+      holeCards: cards("Ah", "Kh"),
+      board: cards("Qc", "Jd", "2s"),
+      currentBetMojos: 12_000n,
+      betThisStreetMojos: 0n,
+      potMojos: 80_000n,
+      opponentsAllIn: true,
+      headsUp: true,
+    });
+    expect(chooseHouseAction(v, () => 0.5).action).toBe("call");
+  });
+
+  it("snaps off an all-in with a strong made hand", () => {
+    const v = view({
+      street: "river",
+      holeCards: cards("Kh", "Kd"),
+      board: cards("Kc", "2s", "2h", "9c", "3d"),
+      currentBetMojos: 100_000n,
+      potMojos: 80_000n,
+      opponentsAllIn: true,
+      headsUp: true,
+    });
+    expect(chooseHouseAction(v, () => 0.5).action).toBe("call");
+  });
+
+  it("is tighter multiway than heads-up facing the same all-in", () => {
+    const base = {
+      street: "turn" as const,
+      holeCards: cards("Jh", "Td"),
+      board: cards("9c", "8s", "2h", "Ad"),
+      currentBetMojos: 40_000n,
+      potMojos: 45_000n,
+      opponentsAllIn: true,
+    };
+    const hu = view({ ...base, headsUp: true });
+    const multi = view({ ...base, headsUp: false });
+    // Borderline open-ender / gutshot texture: HU may continue; multiway should fold more.
+    expect(chooseHouseAction(multi, () => 0.5).action).toBe("fold");
+    expect(["call", "fold"]).toContain(chooseHouseAction(hu, () => 0.5).action);
   });
 
   it("folds junk on the river facing a large bet", () => {

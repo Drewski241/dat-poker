@@ -202,9 +202,7 @@ function facingBet(
   const huge = price >= 0.55;
 
   if (view.opponentsAllIn) {
-    // House always matches an all-in when chips remain — short stacks still
-    // only put in what they have (engine side pots / reconcile handle the rest).
-    return { action: "call", amountMojos: 0n };
+    return facingAllInCall(view, toCall, strength, roll);
   }
 
   if (view.street === "preflop") {
@@ -259,6 +257,51 @@ function facingBet(
     return { action: "call", amountMojos: 0n };
   }
   return { action: "fold", amountMojos: 0n };
+}
+
+/**
+ * Facing an all-in: call or fold only (never raise). Uses pot odds + hand
+ * strength so short prices get called wider and huge shoves need a real hand.
+ * Multiway seats play tighter than heads-up.
+ */
+function facingAllInCall(
+  view: HouseView,
+  toCall: bigint,
+  strength: number,
+  roll: () => number,
+): HouseChoice {
+  const call: HouseChoice = { action: "call", amountMojos: 0n };
+  const fold: HouseChoice = { action: "fold", amountMojos: 0n };
+  if (toCall <= 0n) return { action: "check", amountMojos: 0n };
+
+  const potWithCall = view.potMojos + toCall;
+  const price = ratio(toCall, potWithCall);
+  const stackCommit = ratio(toCall, view.stackMojos + toCall);
+
+  // Rough equity needed ≈ price; ask for a bit more so we are not calling stations.
+  let need = 0.38;
+  if (price <= 0.12) need = 0.2;
+  else if (price <= 0.2) need = 0.26;
+  else if (price <= 0.3) need = 0.34;
+  else if (price <= 0.4) need = 0.42;
+  else if (price <= 0.5) need = 0.5;
+  else if (price <= 0.62) need = 0.58;
+  else need = 0.68;
+
+  if (!view.headsUp) need += 0.1;
+  if (stackCommit >= 0.75) need += 0.06;
+  if (view.street === "preflop") need += 0.04;
+
+  if (strength >= need + 0.12) return call;
+  if (strength >= need) {
+    // Borderline: call most of the time, still fold some.
+    return roll() < 0.72 ? call : fold;
+  }
+  if (strength >= need - 0.08 && price <= 0.28 && roll() < 0.22) {
+    // Occasional light call with a draw / weak showdown when getting a price.
+    return call;
+  }
+  return fold;
 }
 
 function checkedTo(view: HouseView, strength: number, roll: () => number): HouseChoice | null {
