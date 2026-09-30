@@ -346,8 +346,11 @@ export class NlheTableEngine {
   }
 
   startHand(handId: HandId): { commitHash: string } {
-    if (this.seats.size < 2) {
-      throw new Error("Need at least 2 players");
+    const seated = [...this.seats.entries()]
+      .filter(([, playerId]) => (this.stacks.get(playerId) ?? 0n) > 0n)
+      .sort((a, b) => a[0] - b[0]);
+    if (seated.length < 2) {
+      throw new Error("Need at least 2 players with chips");
     }
     if (this.hand) {
       throw new Error("Hand already in progress");
@@ -357,10 +360,14 @@ export class NlheTableEngine {
     this.allInRunoutFrom = null;
     const serverSeed = generateServerSeed();
     const { commitHash } = createCommit(serverSeed);
-    const seated = [...this.seats.entries()].sort((a, b) => a[0] - b[0]);
     const occupiedSeats = seated.map(([seatIndex]) => seatIndex);
-    if (this.buttonSeat == null || !this.seats.has(this.buttonSeat)) {
-      this.buttonSeat = occupiedSeats[0];
+    if (this.buttonSeat == null || !occupiedSeats.includes(this.buttonSeat)) {
+      // Prefer current button if still seated with chips; otherwise first occupied.
+      if (this.buttonSeat != null && this.seats.has(this.buttonSeat)) {
+        this.buttonSeat = this.nextOccupiedSeatClockwise(occupiedSeats, this.buttonSeat);
+      } else {
+        this.buttonSeat = occupiedSeats[0];
+      }
     }
     const dealerSeat = this.buttonSeat;
 
@@ -593,6 +600,7 @@ export class NlheTableEngine {
       h.players.length === 2
         ? sbSeat
         : this.nextOccupiedSeatClockwise(seats, bbSeat);
+    this.noteAllInRunout(h);
   }
 
   private charge(player: PlayerHandState, h: TableHandState, amount: bigint): void {
@@ -637,6 +645,47 @@ export class NlheTableEngine {
     if (this.allInRunoutFrom != null) return;
     if (this.noFurtherBetting(h)) {
       this.allInRunoutFrom = h.board.length;
+    }
+  }
+
+  /**
+   * Refund only truly uncalled chips: the amount a player put in above the
+   * highest contribution from any other player. Multiway side pots must keep
+   * intermediate stack levels intact (do NOT collapse everyone to the shortest).
+   */
+  private reconcileMatchedContributions(h: TableHandState): void {
+    const snapshot = h.players.map((p) => ({
+      player: p,
+      bet: p.totalBetHandMojos,
+    }));
+
+    for (const { player, bet } of snapshot) {
+      if (bet <= 0n) continue;
+      let maxOther = 0n;
+      for (const other of snapshot) {
+        if (other.player.playerId === player.playerId) continue;
+        if (other.bet > maxOther) maxOther = other.bet;
+      }
+      const excess = bet - maxOther;
+      if (excess <= 0n) continue;
+
+      player.totalBetHandMojos = bet - excess;
+      if (player.betThisStreetMojos > excess) {
+        player.betThisStreetMojos -= excess;
+      } else {
+        player.betThisStreetMojos = 0n;
+      }
+      player.stackMojos += excess;
+      h.potMojos -= excess;
+      this.stacks.set(player.playerId, player.stackMojos);
+    }
+
+    let maxStreet = 0n;
+    for (const p of this.activePlayers(h)) {
+      if (p.betThisStreetMojos > maxStreet) maxStreet = p.betThisStreetMojos;
+    }
+    if (h.currentBetMojos > maxStreet) {
+      h.currentBetMojos = maxStreet;
     }
   }
 
@@ -709,6 +758,9 @@ export class NlheTableEngine {
     }
 
     if (this.playersWhoCanBet(h).length === 0 || this.noFurtherBetting(h)) {
+      // Betting is closed for this hand — refund unmatched chips so the pot
+      // shown during the runout matches what can actually be won.
+      this.reconcileMatchedContributions(h);
       h.actionSeat = null;
       h.seq++;
       this.noteAllInRunout(h);
@@ -726,6 +778,8 @@ export class NlheTableEngine {
 
   private runShowdown(h: TableHandState): void {
     h.street = "showdown";
+    // Idempotent if already reconciled when betting closed.
+    this.reconcileMatchedContributions(h);
     const live = this.activePlayers(h);
     const participants = h.players.map((p) => ({
       playerId: p.playerId,
@@ -760,6 +814,9 @@ export class NlheTableEngine {
   }
 
   private awardToWinner(h: TableHandState): void {
+    // Return uncalled all-in / raise chips before side-pot settlement so a deep
+    // shove vs a short caller does not inflate the fold-win pot.
+    this.reconcileMatchedContributions(h);
     const live = this.activePlayers(h);
     const participants = h.players.map((p) => ({
       playerId: p.playerId,

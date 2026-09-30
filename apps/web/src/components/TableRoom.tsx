@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DatTokenInfo, HandResult, HandState, PlayerAction, SngSnapshot, TableSeat } from "../api.js";
 import { computeNlheBetRange, formatDatAmount, formatDatMojos } from "@dat-poker/shared";
 import { formatHandCategory } from "../all-in-runout.js";
+import { nextHandBlindSeats, occupiedSeatIndexes, seatsClockwiseFromDealer } from "../next-hand-blinds.js";
 import { AllInRunout } from "./AllInRunout.js";
 import { BetSlider } from "./BetSlider.js";
 import { CardRow, PlayingCard } from "./PlayingCard.js";
@@ -133,6 +134,20 @@ export function TableRoom({
   const showDeal = !hand && !canRebuy && canDeal && !runoutPlaying;
   const showBetweenFooter = !hand && (showDeal || canRebuy) && !runoutPlaying;
   const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
+  const nextBlinds = useMemo(() => {
+    if (hand) return null;
+    return nextHandBlindSeats({
+      dealerButtonSeat,
+      occupiedSeats: occupiedSeatIndexes(tableSeats),
+      maxSeats,
+    });
+  }, [hand, dealerButtonSeat, tableSeats, maxSeats]);
+  const circleSeatOrder = useMemo(() => {
+    if (hand) return [];
+    const occupied = occupiedSeatIndexes(tableSeats);
+    const dealer = nextBlinds?.dealerSeat ?? dealerButtonSeat;
+    return seatsClockwiseFromDealer(occupied, dealer);
+  }, [hand, tableSeats, nextBlinds?.dealerSeat, dealerButtonSeat]);
 
   const me = hand?.players.find((p) => p.playerId === playerId);
   const opponents = (hand?.players.filter((p) => p.playerId !== playerId) ?? []).slice().sort((a, b) => {
@@ -226,42 +241,77 @@ export function TableRoom({
       </header>
 
       {!hand && !runoutPlaying && (
-        <div className="table-room-seats" aria-label="Seats">
-          {Array.from({ length: maxSeats }, (_, i) => {
-            const seated = tableSeats.find((s) => s.seatIndex === i);
-            const isDealer = buttonSeatIndex === i;
-            return (
-              <div
-                key={i}
-                className={`table-room-seat ${seated ? "occupied" : "empty"}${isDealer ? " table-room-seat-dealer" : ""}`}
-              >
-                <span className="table-room-seat-num">
-                  {isDealer ? (
-                    <span className="table-room-dealer-chip" title="Dealer button">
-                      D
-                    </span>
+        <div className="table-room-seats" aria-label="Seats around the table">
+          <div className="table-room-seats-circle" role="list">
+            <div className="table-room-seats-felt" aria-hidden="true" />
+            {(circleSeatOrder.length > 0
+              ? circleSeatOrder
+              : Array.from({ length: maxSeats }, (_, i) => i)
+            ).map((seatIndex, orderIndex, order) => {
+              const n = order.length;
+              // Dealer at top; walk clockwise (SB, BB, then ascending around the ring).
+              const angle = (orderIndex / n) * 2 * Math.PI - Math.PI / 2;
+              const left = 50 + Math.cos(angle) * 42;
+              const top = 50 + Math.sin(angle) * 38;
+              const seated = tableSeats.find((s) => s.seatIndex === seatIndex);
+              const isDealer = (nextBlinds?.dealerSeat ?? buttonSeatIndex) === seatIndex;
+              const isSb = nextBlinds?.smallBlindSeat === seatIndex;
+              const isBb = nextBlinds?.bigBlindSeat === seatIndex;
+              const roleBits: string[] = [];
+              if (isDealer) roleBits.push("dealer");
+              if (isSb) roleBits.push("SB");
+              if (isBb) roleBits.push("BB");
+              const roleLabel =
+                roleBits.length > 0
+                  ? `${roleBits.join(" · ")} (next)`
+                  : seatPositionLabel(seatIndex, hand, dealerButtonSeat).replace(/^ · /, "");
+              return (
+                <div
+                  key={seatIndex}
+                  role="listitem"
+                  className={`table-room-seat table-room-seat-on-circle ${seated ? "occupied" : "empty"}${isDealer ? " table-room-seat-dealer" : ""}`}
+                  style={{ left: `${left}%`, top: `${top}%` }}
+                >
+                  <span className="table-room-seat-num">
+                    {isDealer || isSb || isBb ? (
+                      <span className="table-room-role-chips table-room-role-chips-seatnum" aria-hidden="true">
+                        {isDealer ? (
+                          <span className="table-room-dealer-chip" title="Dealer button (next hand)">
+                            D
+                          </span>
+                        ) : null}
+                        {isSb ? (
+                          <span className="table-room-blind-chip table-room-blind-chip-sb" title="Small blind (next hand)">
+                            SB
+                          </span>
+                        ) : null}
+                        {isBb ? (
+                          <span className="table-room-blind-chip table-room-blind-chip-bb" title="Big blind (next hand)">
+                            BB
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : (
+                      seatIndex + 1
+                    )}
+                  </span>
+                  {seated ? (
+                    <>
+                      <span className="table-room-seat-name">
+                        {playerLabel(seated.playerId, playerId, seated.displayAddress)}
+                      </span>
+                      <span className="table-room-seat-stack">
+                        {formatDatMojos(seated.stackMojos, datToken?.ticker)}
+                      </span>
+                      <span className="table-room-seat-role">{roleLabel}</span>
+                    </>
                   ) : (
-                    i + 1
+                    <span className="table-room-seat-empty">Empty</span>
                   )}
-                </span>
-                {seated ? (
-                  <>
-                    <span className="table-room-seat-name">
-                      {playerLabel(seated.playerId, playerId, seated.displayAddress)}
-                    </span>
-                    <span className="table-room-seat-stack">
-                      {formatDatMojos(seated.stackMojos, datToken?.ticker)}
-                    </span>
-                    <span className="table-room-seat-role">
-                      {seatPositionLabel(i, hand, dealerButtonSeat).replace(/^ · /, "")}
-                    </span>
-                  </>
-                ) : (
-                  <span className="table-room-seat-empty">Empty</span>
-                )}
-              </div>
-            );
-          })}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -341,8 +391,19 @@ export function TableRoom({
                 <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
                 <span className="hand-blinds-line">
                   {" "}
-                  · {formatDatAmount(smallBlindMojos)}/{formatDatAmount(bigBlindMojos)} · D
-                  {hand.dealerSeat + 1} SB{hand.smallBlindSeat + 1} BB{hand.bigBlindSeat + 1}
+                  · blinds {formatDatAmount(smallBlindMojos)}/{formatDatAmount(bigBlindMojos)}
+                  {" · "}
+                  <span className="hand-blind-who" title="Dealer button">
+                    D seat {hand.dealerSeat + 1}
+                  </span>
+                  {" · "}
+                  <span className="hand-blind-who hand-blind-who-sb" title="Small blind">
+                    SB seat {hand.smallBlindSeat + 1}
+                  </span>
+                  {" · "}
+                  <span className="hand-blind-who hand-blind-who-bb" title="Big blind">
+                    BB seat {hand.bigBlindSeat + 1}
+                  </span>
                 </span>
               </p>
               {actorName && (
@@ -384,11 +445,7 @@ export function TableRoom({
                   >
                     <div className="table-room-opponent-meta">
                       <strong>
-                        {hand.dealerSeat === p.seatIndex && (
-                          <span className="table-room-dealer-chip table-room-dealer-chip-inline" title="Dealer">
-                            D{" "}
-                          </span>
-                        )}
+                        <SeatRoleChips hand={hand} seatIndex={p.seatIndex} />
                         {playerLabel(
                           p.playerId,
                           playerId,
@@ -411,11 +468,7 @@ export function TableRoom({
               <div className={`table-room-hero ${isMyAction ? "your-turn" : ""}`}>
                 <div className="table-room-hero-meta">
                   <strong>
-                    {hand.dealerSeat === me.seatIndex && (
-                      <span className="table-room-dealer-chip table-room-dealer-chip-inline" title="Dealer">
-                        D{" "}
-                      </span>
-                    )}
+                    <SeatRoleChips hand={hand} seatIndex={me.seatIndex} />
                     You
                   </strong>
                   {isMyAction ? <span className="to-act-badge">Betting</span> : null}
@@ -533,5 +586,43 @@ export function TableRoom({
         </footer>
       )}
     </div>
+  );
+}
+
+function SeatRoleChips({ hand, seatIndex }: { hand: HandState; seatIndex: number }) {
+  const chips: Array<{ key: string; label: string; title: string; className: string }> = [];
+  if (hand.dealerSeat === seatIndex) {
+    chips.push({
+      key: "d",
+      label: "D",
+      title: "Dealer button",
+      className: "table-room-dealer-chip table-room-dealer-chip-inline",
+    });
+  }
+  if (hand.smallBlindSeat === seatIndex) {
+    chips.push({
+      key: "sb",
+      label: "SB",
+      title: "Small blind",
+      className: "table-room-blind-chip table-room-blind-chip-sb table-room-dealer-chip-inline",
+    });
+  }
+  if (hand.bigBlindSeat === seatIndex) {
+    chips.push({
+      key: "bb",
+      label: "BB",
+      title: "Big blind",
+      className: "table-room-blind-chip table-room-blind-chip-bb table-room-dealer-chip-inline",
+    });
+  }
+  if (chips.length === 0) return null;
+  return (
+    <span className="table-room-role-chips" aria-label={chips.map((c) => c.title).join(", ")}>
+      {chips.map((c) => (
+        <span key={c.key} className={c.className} title={c.title}>
+          {c.label}
+        </span>
+      ))}{" "}
+    </span>
   );
 }

@@ -7,6 +7,7 @@ export function sngShouldAutoDeal(input: {
   busy: boolean;
   stackIsZero: boolean;
   runoutPlaying: boolean;
+  celebrationPlaying?: boolean;
   eliminated: boolean;
   pauseDeals?: boolean;
 }): boolean {
@@ -19,6 +20,7 @@ export function sngShouldAutoDeal(input: {
       !input.busy &&
       !input.stackIsZero &&
       !input.runoutPlaying &&
+      !input.celebrationPlaying &&
       !input.eliminated &&
       !input.pauseDeals,
   );

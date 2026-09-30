@@ -18,9 +18,10 @@ describe("sngShouldAutoDeal", () => {
     expect(sngShouldAutoDeal(ready)).toBe(true);
   });
 
-  it("waits during a live hand or runout", () => {
+  it("waits during a live hand, runout, or big-win celebration", () => {
     expect(sngShouldAutoDeal({ ...ready, handLive: true })).toBe(false);
     expect(sngShouldAutoDeal({ ...ready, runoutPlaying: true })).toBe(false);
+    expect(sngShouldAutoDeal({ ...ready, celebrationPlaying: true })).toBe(false);
   });
 
   it("does not deal from the lobby or after elimination", () => {

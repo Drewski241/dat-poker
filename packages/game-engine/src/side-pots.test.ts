@@ -17,6 +17,18 @@ describe("buildSidePots", () => {
       eligiblePlayerIds: ["deep"],
     });
   });
+
+  it("keeps three stack layers for a deep shove covering mid and short", () => {
+    const pots = buildSidePots([
+      { playerId: "short", totalBetHandMojos: 1000n },
+      { playerId: "mid", totalBetHandMojos: 3000n },
+      { playerId: "deep", totalBetHandMojos: 3000n }, // after uncalled refund above mid
+    ]);
+    expect(pots).toEqual([
+      { amountMojos: 3000n, eligiblePlayerIds: ["short", "mid", "deep"] },
+      { amountMojos: 4000n, eligiblePlayerIds: ["mid", "deep"] },
+    ]);
+  });
 });
 
 describe("splitPotEvenly", () => {

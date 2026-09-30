@@ -2456,6 +2456,57 @@ html.play-table-screen body {
   margin-right: 0.15rem;
 }
 
+.table-room-role-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-right: 0.2rem;
+}
+
+.table-room-role-chips-seatnum {
+  margin-right: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.15rem;
+}
+
+.table-room-blind-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.1rem;
+  padding: 0 0.2rem;
+  border-radius: 0.35rem;
+  font-size: 0.55rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.table-room-blind-chip-sb {
+  background: #7eb8d4;
+  color: #061018;
+}
+
+.table-room-blind-chip-bb {
+  background: #d4896a;
+  color: #1a0c06;
+}
+
+.hand-blind-who {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.hand-blind-who-sb {
+  color: #9fd0e8;
+}
+
+.hand-blind-who-bb {
+  color: #e8b39a;
+}
+
 .seat-list-dealer {
   color: var(--text);
   font-weight: 600;
@@ -2515,14 +2566,50 @@ html.play-table-screen body {
 }
 
 .table-room-between-hands .table-room-seats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   grid-area: seats;
   align-self: stretch;
   min-height: 0;
   max-height: none;
-  overflow: auto;
+  overflow: hidden;
+}
+
+.table-room-seats-circle {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: clamp(11rem, 38vh, 18rem);
+  max-height: 42vh;
+  aspect-ratio: 1.55 / 1;
+  margin: 0 auto;
+}
+
+.table-room-seats-felt {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58%;
+  height: 48%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 50% 42%, #2f9a58 0%, #1a6b3a 55%, #0e3f22 100%);
+  box-shadow:
+    inset 0 0 0 5px #c9a227,
+    inset 0 0 0 8px #5c4810,
+    0 0 18px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.table-room-seat-on-circle {
+  position: absolute;
+  width: min(7.5rem, 28%);
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
 }
 
 .table-room-seat {

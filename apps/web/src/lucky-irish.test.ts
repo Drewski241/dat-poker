@@ -5,6 +5,7 @@ import {
   LUCKY_IRISH_POT_BB,
   parseBigWinPreviewHash,
   pickBigWinOverlay,
+  shouldDeferBigWinForRunout,
 } from "./lucky-irish.js";
 import type { HandResult } from "./api.js";
 
@@ -33,7 +34,23 @@ describe("isLuckyIrishWin", () => {
     ).toBe(true);
   });
 
-  it("fires when you win a pot of 100 big blinds or more", () => {
+  it("fires when you win a contested all-in pot of 100 big blinds or more", () => {
+    expect(
+      isLuckyIrishWin({
+        playerId: "you",
+        bigBlindMojos: bb,
+        result: result({
+          winnerId: "you",
+          potMojos: (bb * LUCKY_IRISH_POT_BB).toString(),
+          reason: "showdown",
+          allInPlayerIds: ["you"],
+          runoutFromBoardLen: 0,
+        }),
+      }),
+    ).toBe(true);
+  });
+
+  it("does not fire when you shove and nobody calls (fold win)", () => {
     expect(
       isLuckyIrishWin({
         playerId: "you",
@@ -42,9 +59,10 @@ describe("isLuckyIrishWin", () => {
           winnerId: "you",
           potMojos: (bb * LUCKY_IRISH_POT_BB).toString(),
           reason: "fold",
+          allInPlayerIds: ["you"],
         }),
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("does not fire for a routine 50 big blind pot with a pair", () => {
@@ -101,6 +119,32 @@ describe("isLuckyIrishWin", () => {
           potMojos: "15000",
           shown: [{ playerId: "you", holeCards: [], category: "pair" }],
         }),
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldDeferBigWinForRunout", () => {
+  it("defers while the cinema is playing or about to play", () => {
+    expect(
+      shouldDeferBigWinForRunout({
+        result: result({ winnerId: "you", potMojos: "1", allInPlayerIds: ["you"] }),
+        runoutPlaying: true,
+        willPlayRunout: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldDeferBigWinForRunout({
+        result: result({ winnerId: "you", potMojos: "1", allInPlayerIds: ["you"] }),
+        runoutPlaying: false,
+        willPlayRunout: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldDeferBigWinForRunout({
+        result: result({ winnerId: "you", potMojos: "1" }),
+        runoutPlaying: false,
+        willPlayRunout: false,
       }),
     ).toBe(false);
   });

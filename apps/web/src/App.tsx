@@ -34,6 +34,7 @@ import {
   shouldPlayAllInRunout,
 } from "./all-in-runout.js";
 import { sngShouldAutoDeal } from "./sng-auto-deal.js";
+import { nextHandBlindSeats, occupiedSeatIndexes } from "./next-hand-blinds.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
   actionSecondsRemaining,
@@ -47,6 +48,7 @@ import {
   pickBigWinOverlay,
   readStoredBigWinOverlay,
   shouldCelebrateBigWin,
+  shouldDeferBigWinForRunout,
   type BigWinOverlay,
 } from "./lucky-irish.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
@@ -84,15 +86,26 @@ function seatPositionLabel(
   seatIndex: number,
   hand: HandState | null,
   dealerButtonSeat: number | null,
+  occupiedSeats: number[] = [],
+  maxSeats = 6,
 ): string {
   if (hand) {
-    if (hand.dealerSeat === seatIndex) return " · dealer";
-    if (hand.smallBlindSeat === seatIndex) return " · small blind";
-    if (hand.bigBlindSeat === seatIndex) return " · big blind";
+    const roles: string[] = [];
+    if (hand.dealerSeat === seatIndex) roles.push("dealer");
+    if (hand.smallBlindSeat === seatIndex) roles.push("SB");
+    if (hand.bigBlindSeat === seatIndex) roles.push("BB");
+    return roles.length > 0 ? ` · ${roles.join(" · ")}` : "";
+  }
+  const next = nextHandBlindSeats({ dealerButtonSeat, occupiedSeats, maxSeats });
+  if (!next) {
+    if (dealerButtonSeat === seatIndex) return " · dealer (next hand)";
     return "";
   }
-  if (dealerButtonSeat === seatIndex) return " · dealer (next hand)";
-  return "";
+  const roles: string[] = [];
+  if (next.dealerSeat === seatIndex) roles.push("dealer");
+  if (next.smallBlindSeat === seatIndex) roles.push("SB");
+  if (next.bigBlindSeat === seatIndex) roles.push("BB");
+  return roles.length > 0 ? ` · ${roles.join(" · ")} (next)` : "";
 }
 
 function playerLabel(id: string, youId: string | null, display?: string): string {
@@ -929,6 +942,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
     if (runoutFromBoardLenRef.current != null) return;
+    if (bigWinActiveRef.current) return;
     run("Dealing hand…", async () => {
       setHandResult(null);
       const dealt = await api.goHand(tableId, playerId);
@@ -1020,6 +1034,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     busy,
     stackIsZero: tableStackIsZero,
     runoutPlaying: runoutFromBoardLen != null,
+    celebrationPlaying: bigWin != null,
     eliminated: sngEliminated,
     pauseDeals: Boolean(sng?.pauseDeals),
   });
@@ -1340,6 +1355,20 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   }, [bigWin]);
 
+  const tryCelebrateBigWin = useCallback(
+    (result: HandResult | null | undefined) => {
+      if (!result || !playerId) return;
+      if (!shouldCelebrateBigWin({ playerId, result, bigBlindMojos })) return;
+      if (celebratedHandId.current === result.handId) return;
+      celebratedHandId.current = result.handId;
+      bigWinActiveRef.current = true;
+      const overlay = pickBigWinOverlay(lastBigWin.current);
+      lastBigWin.current = overlay;
+      setBigWin(overlay);
+    },
+    [playerId, bigBlindMojos],
+  );
+
   useEffect(() => {
     const bigWinPreview = parseBigWinPreviewHash(window.location.hash);
     if (bigWinPreview) setBigWin(bigWinPreview);
@@ -1353,13 +1382,22 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   useEffect(() => {
     if (!handResult || !playerId) return;
-    if (!shouldCelebrateBigWin({ playerId, result: handResult, bigBlindMojos })) return;
-    if (celebratedHandId.current === handResult.handId) return;
-    celebratedHandId.current = handResult.handId;
-    const overlay = pickBigWinOverlay(lastBigWin.current);
-    lastBigWin.current = overlay;
-    setBigWin(overlay);
-  }, [handResult, playerId, bigBlindMojos]);
+    const willPlayRunout = shouldPlayAllInRunout(
+      { ...liveHandMeta.current, viewerId: playerId },
+      handResult,
+    );
+    // Contested all-in: wait for river cinema, then onRunoutFinished celebrates.
+    if (
+      shouldDeferBigWinForRunout({
+        result: handResult,
+        runoutPlaying: runoutFromBoardLen != null,
+        willPlayRunout,
+      })
+    ) {
+      return;
+    }
+    tryCelebrateBigWin(handResult);
+  }, [handResult, playerId, bigBlindMojos, runoutFromBoardLen, tryCelebrateBigWin]);
 
   useEffect(() => {
     if (!atTableRoom) return;
@@ -1435,7 +1473,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onSendAction={sendAction}
             onStartHand={startHandFlow}
             canRebuy={canRebuyAtTable}
-            canDeal={Boolean(myTableSeat) && sng?.status !== "finished"}
+            canDeal={Boolean(myTableSeat) && sng?.status !== "finished" && bigWin == null}
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => {
@@ -1468,6 +1506,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             sng={tableFormat === "sng" || tableFormat === "mtt" ? sng : null}
             runoutFromBoardLen={runoutFromBoardLen}
             onRunoutFinished={() => {
+              runoutFromBoardLenRef.current = null;
               setRunoutFromBoardLen(null);
               const lost = Boolean(handResult && playerId && handResult.winnerId !== playerId);
               const tourney = tableFormat === "sng" || tableFormat === "mtt";
@@ -1487,6 +1526,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               } else {
                 holdTableForRunoutRef.current = false;
               }
+              // After river + showdown cinema — then the big-win graphic, before next hand.
+              tryCelebrateBigWin(handResult);
             }}
             playthroughHandsPlayed={handsPlayed}
             playthroughHandsRequired={handsRequired}
@@ -1997,13 +2038,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             <ol className="seat-list">
               {Array.from({ length: tableMaxSeats }, (_, i) => {
                 const seated = tableSeats.find((s) => s.seatIndex === i);
-                const isDealer = (hand?.dealerSeat ?? dealerButtonSeat) === i;
+                const occupied = occupiedSeatIndexes(tableSeats);
+                const next = !hand
+                  ? nextHandBlindSeats({
+                      dealerButtonSeat,
+                      occupiedSeats: occupied,
+                      maxSeats: tableMaxSeats,
+                    })
+                  : null;
+                const isDealer = (hand?.dealerSeat ?? next?.dealerSeat ?? dealerButtonSeat) === i;
                 return (
                   <li key={i} className={isDealer ? "seat-list-dealer" : undefined}>
                     Seat {i + 1}
-                    {isDealer ? " (D)" : ""}:{" "}
+                    {isDealer ? " (D)" : ""}
+                    {!hand && next?.smallBlindSeat === i ? " (SB)" : ""}
+                    {!hand && next?.bigBlindSeat === i ? " (BB)" : ""}:{" "}
                     {seated
-                      ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}${seatPositionLabel(i, hand, dealerButtonSeat)}`
+                      ? `${playerLabel(seated.playerId, playerId, seated.displayAddress)} · ${formatDatMojos(seated.stackMojos, datToken?.ticker)}${seatPositionLabel(i, hand, dealerButtonSeat, occupied, tableMaxSeats)}`
                       : "empty"}
                   </li>
                 );
