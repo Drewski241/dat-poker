@@ -182,9 +182,10 @@ In Session Manager:
 sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh
 ```
 
-(`up.sh` fetches `cursor/mtt16-nft20-max-humans-d380` by default and runs
-`redeploy.sh`, or downloads `redeploy.sh` from GitHub if your checkout is still
-old. Override with `DAT_POKER_REPO_REF=…` when deploying another branch.)
+(`up.sh` fetches `cursor/player-feedback-fixes-dc28` by default — MTT16 NFT
+challenge tip plus player-feedback fixes — and runs `redeploy.sh`, or downloads
+`redeploy.sh` from GitHub if your checkout is still old. Override with
+`DAT_POKER_REPO_REF=…` when deploying another branch.)
 
 Use `main` after the feature PR merges:
 
@@ -220,7 +221,7 @@ cd /opt/dat-poker
 ```
 
 ```bash
-export R=cursor/mtt16-nft20-max-humans-d380
+export R=cursor/player-feedback-fixes-dc28
 ```
 
 ```bash
