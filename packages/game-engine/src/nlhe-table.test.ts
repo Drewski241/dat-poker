@@ -167,6 +167,107 @@ describe("NlheTableEngine", () => {
     expect(table.getPlayerStack("bob")).toBe(5_000n);
   });
 
+  /**
+   * Player-feedback screenshot: two consecutive HU hands (newest first was
+   * pair-of-9s win for 9840; older hand labeled "won 4920" with stacks
+   * you 4920 / house 9080). Confirms the 9s-vs-3s hand is the full win, and
+   * the older "won 4920" line is a board chop — not a sole-winner underpay.
+   */
+  it("pays full pot for 9s vs 3s and chops equal board on the prior HU stacks", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 20n,
+      bigBlindMojos: 40n,
+      minBuyInMojos: 1_000n,
+      maxBuyInMojos: 50_000n,
+    };
+
+    type Dealt = {
+      players: { playerId: string; holeCards: ReturnType<typeof parseCard>[] }[];
+      deck: ReturnType<typeof parseCard>[];
+      deckIndex: number;
+    };
+    const forceDeal = (
+      table: NlheTableEngine,
+      holes: Record<string, [string, string]>,
+      board: string[],
+    ) => {
+      const dealt = (table as unknown as { hand: Dealt | null }).hand!;
+      for (const p of dealt.players) {
+        const h = holes[p.playerId];
+        if (h) p.holeCards = [parseCard(h[0]), parseCard(h[1])];
+      }
+      dealt.deck = board.map(parseCard);
+      dealt.deckIndex = 0;
+    };
+    const shoveOut = (table: NlheTableEngine) => {
+      for (let guard = 0; guard < 8; guard++) {
+        const state = table.getHandState();
+        if (!state || state.actionSeat == null) break;
+        const actor = state.players.find((p) => p.seatIndex === state.actionSeat && !p.folded);
+        if (!actor || actor.allIn) break;
+        table.applyAction(actor.playerId, "all-in");
+      }
+      table.advanceHandIfIdle();
+    };
+
+    // HAND B (older): board pair of sixes, both miss → chop / get money back.
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("you", 0, 4_920n);
+    table.seatPlayer("house", 1, 9_080n);
+    table.startHand("b2d3c365-hand");
+    table.submitPlayerSeed("you", generateServerSeed());
+    table.submitPlayerSeed("house", generateServerSeed());
+    table.revealAndDeal();
+    forceDeal(
+      table,
+      { you: ["2c", "3d"], house: ["2d", "4c"] },
+      ["7h", "6h", "Kh", "As", "6d"],
+    );
+    shoveOut(table);
+    const chop = table.getLastHandResult();
+    expect(chop?.reason).toBe("showdown");
+    expect(chop?.isChop).toBe(true);
+    expect(chop?.totalPotMojos).toBe(9_840n);
+    expect(chop?.potMojos).toBe(4_920n); // primary share only — old UI said "You won 4920"
+    expect(table.getPlayerStack("you")).toBe(4_920n);
+    expect(table.getPlayerStack("house")).toBe(9_080n);
+    const youChop = chop!.participants.find((p) => p.playerId === "you")!;
+    const houseChop = chop!.participants.find((p) => p.playerId === "house")!;
+    expect(youChop.awardedMojos).toBe(4_920n);
+    expect(houseChop.awardedMojos).toBe(4_920n);
+    // stackAfter (as hand-history-store reads seated stacks) is post-award.
+    expect(table.getPlayerStack("you")).toBe(youChop.stackBeforePayoutMojos + youChop.awardedMojos);
+    expect(table.getPlayerStack("house")).toBe(
+      houseChop.stackBeforePayoutMojos + houseChop.awardedMojos,
+    );
+
+    // HAND A (newer): 9♣A♦ vs 3♦K♠ on J♥3♣7♣9♥T♦ → sole win, doubles to 9840.
+    table.startHand("8c149471-hand");
+    table.submitPlayerSeed("you", generateServerSeed());
+    table.submitPlayerSeed("house", generateServerSeed());
+    table.revealAndDeal();
+    forceDeal(
+      table,
+      { you: ["9c", "Ad"], house: ["3d", "Ks"] },
+      ["Jh", "3c", "7c", "9h", "Td"],
+    );
+    shoveOut(table);
+    const win = table.getLastHandResult();
+    expect(win?.reason).toBe("showdown");
+    expect(win?.isChop).toBe(false);
+    expect(win?.winnerId).toBe("you");
+    expect(win?.potMojos).toBe(9_840n);
+    expect(win?.totalPotMojos).toBe(9_840n);
+    expect(table.getPlayerStack("you")).toBe(9_840n);
+    expect(table.getPlayerStack("house")).toBe(4_160n);
+    const youWin = win!.participants.find((p) => p.playerId === "you")!;
+    const houseWin = win!.participants.find((p) => p.playerId === "house")!;
+    expect(youWin.awardedMojos).toBe(9_840n);
+    expect(houseWin.awardedMojos).toBe(0n);
+    expect(table.getPlayerStack("you")).toBe(youWin.stackBeforePayoutMojos + youWin.awardedMojos);
+  });
+
   it("caps showdown winnings at the short stack (main and side pots)", () => {
     const tiny: TableConfig = {
       ...config,
