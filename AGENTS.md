@@ -13,7 +13,7 @@ DAT POKER is a **pnpm monorepo** (Node.js ≥ 20, pnpm 9.15 via `packageManager`
 | REST API (`@dat-poker/api`) | `pnpm dev:api` | `http://localhost:4000` |
 | WebSocket gateway (`@dat-poker/gateway`) | `pnpm dev:gateway` | `ws://localhost:4100/ws` |
 
-Libraries under `packages/*` are built/tested via workspace filters; there is no web client in-repo yet.
+Libraries under `packages/*` are built/tested via workspace filters (including `@dat-poker/tournament-engine` for SNG/MTT seating). Web client: `pnpm dev:web`.
 
 ### Environment
 
@@ -44,6 +44,10 @@ TABLE=$(curl -s -X POST http://localhost:4000/v1/tables -H 'content-type: applic
 ```
 
 See `packages/game-engine/src/nlhe-table.test.ts` for the expected sequence (two players, seeds, deal, fold).
+
+**Tournament smoke (MTT seating / reseating):**
+
+See [docs/TOURNAMENTS.md](./docs/TOURNAMENTS.md). Create via `POST /v1/tournaments`, register-batch, start, then eliminate to drive table breaks and final table.
 
 **WebSocket smoke:**
 

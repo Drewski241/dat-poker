@@ -97,8 +97,9 @@ flowchart TB
 | Component | Status |
 |-----------|--------|
 | `packages/game-engine` | MVP NLHE + evaluator |
+| `packages/tournament-engine` | SNG/MTT seating, balancer, final table |
 | `packages/chia-bridge` | Lobby HTTP adapter + settlement hashes |
-| `services/api` | Table CRUD, variants |
+| `services/api` | Table + tournament CRUD, variants |
 | `services/gateway` | WS scaffold |
 | Postgres / Redis / Kafka | Planned |
 | Mobile / Web UI | Planned |

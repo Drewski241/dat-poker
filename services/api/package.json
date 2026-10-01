@@ -15,6 +15,7 @@
     "@dat-poker/chia-bridge": "workspace:*",
     "@dat-poker/game-engine": "workspace:*",
     "@dat-poker/shared": "workspace:*",
+    "@dat-poker/tournament-engine": "workspace:*",
     "@fastify/cors": "^11.0.1",
     "dotenv": "^16.5.0",
     "fastify": "^5.4.0"

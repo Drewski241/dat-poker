@@ -21,7 +21,7 @@
 ## Phase 2 — Multi-variant
 
 - [ ] PLO4 / PLO5 engines
-- [ ] SNG + MTT schedulers
+- [x] SNG + MTT schedulers (seating, elimination reseating, final table)
 - [ ] Calpoker route through chia-gaming native flow
 - [ ] Rake accounting + ledger
 
