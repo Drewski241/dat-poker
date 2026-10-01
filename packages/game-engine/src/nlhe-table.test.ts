@@ -89,4 +89,24 @@ describe("NlheTableEngine", () => {
     table.startHand("hand-4");
     expect(() => table.cashOutPlayer("alice")).toThrow(/active hand/i);
   });
+
+  it("seats tournament players and updates blinds", () => {
+    const mttConfig: TableConfig = {
+      ...config,
+      format: "mtt",
+      maxSeats: 8,
+      minBuyInMojos: 1_500_000n,
+      maxBuyInMojos: 1_500_000n,
+      smallBlindMojos: 10_000n,
+      bigBlindMojos: 20_000n,
+    };
+    const table = new NlheTableEngine(mttConfig);
+    table.seatTournamentPlayer("alice", 0, 1_200_000n);
+    table.seatTournamentPlayer("bob", 3, 900_000n);
+    expect(table.getActivePlayerCount()).toBe(2);
+    expect(table.getPlayerStack("alice")).toBe(1_200_000n);
+
+    table.updateBlinds(25_000n, 50_000n);
+    expect(table.getConfig().bigBlindMojos).toBe(50_000n);
+  });
 });

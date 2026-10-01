@@ -72,6 +72,54 @@ export class NlheTableEngine {
     this.stacks.set(playerId, buyInMojos);
   }
 
+  /**
+   * Seat a player with an arbitrary tournament chip stack (no cash buy-in band).
+   * Used when reseating MTT/SNG players between tables.
+   */
+  seatTournamentPlayer(playerId: PlayerId, seatIndex: number, stackMojos: bigint): void {
+    if (this.config.format === "cash") {
+      throw new Error("seatTournamentPlayer is only valid on sng/mtt tables");
+    }
+    if (seatIndex < 0 || seatIndex >= this.config.maxSeats) {
+      throw new Error("Invalid seat");
+    }
+    if (this.seats.has(seatIndex)) {
+      throw new Error("Seat taken");
+    }
+    if (this.hand) {
+      throw new Error("Cannot reseat during an active hand");
+    }
+    if (stackMojos <= 0n) {
+      throw new Error("Tournament stack must be positive");
+    }
+    for (const seatedId of this.seats.values()) {
+      if (seatedId === playerId) {
+        throw new Error("Player already seated");
+      }
+    }
+    this.seats.set(seatIndex, playerId);
+    this.stacks.set(playerId, stackMojos);
+  }
+
+  /** Update blinds for the next hand (tournament level changes). */
+  updateBlinds(smallBlindMojos: bigint, bigBlindMojos: bigint): void {
+    if (smallBlindMojos <= 0n || bigBlindMojos <= 0n) {
+      throw new Error("Blinds must be positive");
+    }
+    if (smallBlindMojos > bigBlindMojos) {
+      throw new Error("Small blind cannot exceed big blind");
+    }
+    this.config = {
+      ...this.config,
+      smallBlindMojos,
+      bigBlindMojos,
+    };
+  }
+
+  getConfig(): TableConfig {
+    return { ...this.config };
+  }
+
   getActivePlayerCount(): number {
     return this.seats.size;
   }
