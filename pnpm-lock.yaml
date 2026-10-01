@@ -83,6 +83,22 @@ importers:
         specifier: ^3.2.4
         version: 3.2.6(@types/node@22.19.19)(tsx@4.22.4)
 
+  packages/tournament-engine:
+    dependencies:
+      '@dat-poker/game-engine':
+        specifier: workspace:*
+        version: link:../game-engine
+      '@dat-poker/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/node@22.19.19)(tsx@4.22.4)
+
   services/api:
     dependencies:
       '@dat-poker/chia-bridge':
@@ -94,6 +110,9 @@ importers:
       '@dat-poker/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@dat-poker/tournament-engine':
+        specifier: workspace:*
+        version: link:../../packages/tournament-engine
       '@fastify/cors':
         specifier: ^11.0.1
         version: 11.2.0
