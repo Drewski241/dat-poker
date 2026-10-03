@@ -28,8 +28,11 @@ export interface TournamentConfig {
   variant: PokerVariant;
   /** Seats per table. MTT default is 8. */
   maxSeats: number;
-  /** Soft cap on registrations; omit or set high for large fields. */
-  maxEntries: number;
+  /**
+   * Registration cap. `null` = unlimited (seat everyone who registers).
+   * SNGs always use a finite cap ≤ maxSeats.
+   */
+  maxEntries: number | null;
   /** Minimum registrations before the tournament can start. */
   minEntries: number;
   buyInMojos: bigint;
@@ -69,6 +72,8 @@ export interface TournamentSnapshot {
   format: Extract<TableFormat, "sng" | "mtt">;
   status: TournamentStatus;
   maxSeats: number;
+  /** `null` when registration is uncapped. */
+  maxEntries: number | null;
   registeredCount: number;
   activeCount: number;
   eliminatedCount: number;
@@ -77,8 +82,29 @@ export interface TournamentSnapshot {
   smallBlindMojos: bigint;
   bigBlindMojos: bigint;
   anteMojos: bigint;
-  players: TournamentPlayerSnapshot[];
-  tables: TournamentTableSnapshot[];
+  /** Omitted when snapshot is summary-only (large fields). */
+  players?: TournamentPlayerSnapshot[];
+  /** Omitted when snapshot is summary-only (large fields). */
+  tables?: TournamentTableSnapshot[];
+  winnerId: PlayerId | null;
+}
+
+/** Lightweight tournament view for lobbies / 100k+ fields. */
+export interface TournamentSummary {
+  id: TournamentId;
+  name: string;
+  format: Extract<TableFormat, "sng" | "mtt">;
+  status: TournamentStatus;
+  maxSeats: number;
+  maxEntries: number | null;
+  registeredCount: number;
+  activeCount: number;
+  eliminatedCount: number;
+  tableCount: number;
+  currentLevel: number;
+  smallBlindMojos: bigint;
+  bigBlindMojos: bigint;
+  anteMojos: bigint;
   winnerId: PlayerId | null;
 }
 

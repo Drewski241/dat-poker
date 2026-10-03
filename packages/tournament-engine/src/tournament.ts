@@ -9,6 +9,7 @@ import type {
   TournamentPlayerStatus,
   TournamentSnapshot,
   TournamentStatus,
+  TournamentSummary,
   TournamentTableSnapshot,
 } from "@dat-poker/shared";
 import type { TableConfig } from "@dat-poker/shared";
@@ -35,6 +36,7 @@ interface InternalTable {
   closed: boolean;
   isFinalTable: boolean;
   seats: Map<number, PlayerId>;
+  /** Lazily materialized — seating maps are authoritative until a hand needs an engine. */
   engine: NlheTableEngine | null;
 }
 
@@ -42,7 +44,11 @@ export interface CreateTournamentInput {
   name: string;
   format?: "sng" | "mtt";
   maxSeats?: number;
-  maxEntries?: number;
+  /**
+   * Registration cap. Omit or pass `null` for MTT = unlimited (host everyone who registers).
+   * SNG defaults to `maxSeats`.
+   */
+  maxEntries?: number | null;
   minEntries?: number;
   buyInMojos?: bigint;
   startingStackMojos?: bigint;
@@ -62,19 +68,34 @@ export interface StartResult {
   moves: SeatMove[];
   tableCount: number;
   status: TournamentStatus;
+  /** True when per-player initial seat moves were omitted to keep large fields cheap. */
+  movesTruncated: boolean;
+}
+
+export interface SnapshotOptions {
+  /** Include full player + table seat lists (default true below FULL_DETAIL_PLAYER_CAP). */
+  detail?: boolean;
 }
 
 const DEFAULT_BUY_IN = 10_000n; // 10 DAT
 const DEFAULT_STARTING_STACK = 1_500_000n; // 1,500 DAT chips (tournament chips, not cash)
+
+/** Above this, start() skips returning 1:1 initial seat moves. */
+const INITIAL_MOVE_DETAIL_CAP = 2_000;
+/** Above this, getSnapshot() defaults to summary-only unless detail:true. */
+const FULL_DETAIL_PLAYER_CAP = 5_000;
 
 export class TournamentEngine {
   private readonly config: TournamentConfig;
   private status: TournamentStatus = "registering";
   private players = new Map<PlayerId, InternalPlayer>();
   private tables: InternalTable[] = [];
+  private tablesById = new Map<TableId, InternalTable>();
   private currentLevel = 0;
   private winnerId: PlayerId | null = null;
   private nextFinishPosition: number | null = null;
+  private activeCount = 0;
+  private eliminatedCount = 0;
 
   constructor(input: CreateTournamentInput) {
     const format = input.format ?? "mtt";
@@ -82,10 +103,30 @@ export class TournamentEngine {
     if (maxSeats < 2 || maxSeats > 10) {
       throw new Error("maxSeats must be between 2 and 10");
     }
-    const maxEntries =
-      input.maxEntries ?? (format === "sng" ? maxSeats : 10_000);
+
+    let maxEntries: number | null;
+    if (format === "sng") {
+      maxEntries = input.maxEntries ?? maxSeats;
+      if (maxEntries === null) {
+        throw new Error("SNG maxEntries cannot be unlimited");
+      }
+      if (maxEntries > maxSeats) {
+        throw new Error("SNG maxEntries cannot exceed maxSeats");
+      }
+    } else {
+      // MTT: omit / null => unlimited registrations
+      maxEntries = input.maxEntries === undefined ? null : input.maxEntries;
+      if (maxEntries !== null && maxEntries < 2) {
+        throw new Error("MTT maxEntries must be at least 2, or null for unlimited");
+      }
+    }
+
     const minEntries =
-      input.minEntries ?? (format === "sng" ? maxSeats : Math.min(2, maxEntries));
+      input.minEntries ?? (format === "sng" ? maxSeats : 2);
+    if (maxEntries !== null && minEntries > maxEntries) {
+      throw new Error("minEntries cannot exceed maxEntries");
+    }
+
     const buyInMojos = input.buyInMojos ?? DEFAULT_BUY_IN;
     const startingStackMojos = input.startingStackMojos ?? DEFAULT_STARTING_STACK;
     const blindLevels =
@@ -94,9 +135,6 @@ export class TournamentEngine {
 
     if (blindLevels.length === 0) {
       throw new Error("At least one blind level is required");
-    }
-    if (format === "sng" && maxEntries > maxSeats) {
-      throw new Error("SNG maxEntries cannot exceed maxSeats");
     }
 
     this.config = {
@@ -125,6 +163,11 @@ export class TournamentEngine {
     return this.status;
   }
 
+  /** `null` means uncapped — seat every registrant. */
+  isRegistrationUnlimited(): boolean {
+    return this.config.maxEntries === null;
+  }
+
   registerPlayer(playerId: PlayerId): void {
     if (this.status !== "registering") {
       throw new Error("Registration is closed");
@@ -132,7 +175,10 @@ export class TournamentEngine {
     if (this.players.has(playerId)) {
       throw new Error("Player already registered");
     }
-    if (this.players.size >= this.config.maxEntries) {
+    if (
+      this.config.maxEntries !== null &&
+      this.players.size >= this.config.maxEntries
+    ) {
       throw new Error("Tournament is full");
     }
     this.players.set(playerId, {
@@ -156,13 +202,13 @@ export class TournamentEngine {
   }
 
   getActiveCount(): number {
-    return [...this.players.values()].filter((p) => p.status === "active").length;
+    return this.activeCount;
   }
 
   /**
-   * Seat all registered players across tables and open play.
-   * For SNGs this is a single table; for MTTs it creates as many 8-max
-   * tables as needed (thousands of players → hundreds of tables).
+   * Seat all registered players across as many 8-max tables as needed.
+   * Table engines are created lazily on first hand access so 100k+ fields
+   * only pay for seating maps until play starts on each table.
    */
   start(): StartResult {
     if (this.status !== "registering") {
@@ -178,39 +224,46 @@ export class TournamentEngine {
     const playerIds = [...this.players.keys()];
     const tableCount = tablesNeeded(playerIds.length, this.config.maxSeats);
     const groups = assignPlayersToTables(playerIds, tableCount, this.config.maxSeats);
+    const recordMoves = playerIds.length <= INITIAL_MOVE_DETAIL_CAP;
     const moves: SeatMove[] = [];
-    const level = this.currentBlindLevel();
 
-    this.tables = groups.map((group) => {
+    this.tables = [];
+    this.tablesById.clear();
+
+    for (const group of groups) {
       const tableId = randomUUID();
       const seats = new Map<number, PlayerId>();
-      const engine = this.createTableEngine(tableId, level);
 
       group.forEach((playerId, seatIndex) => {
         seats.set(seatIndex, playerId);
-        engine.seatPlayer(playerId, seatIndex, this.config.startingStackMojos);
         const player = this.players.get(playerId)!;
         player.status = "active";
         player.tableId = tableId;
         player.seatIndex = seatIndex;
         player.stackMojos = this.config.startingStackMojos;
-        moves.push({
-          playerId,
-          from: null,
-          to: { tableId, seatIndex },
-          reason: "initial_seat",
-        });
+        if (recordMoves) {
+          moves.push({
+            playerId,
+            from: null,
+            to: { tableId, seatIndex },
+            reason: "initial_seat",
+          });
+        }
       });
 
-      return {
+      const table: InternalTable = {
         tableId,
         closed: false,
         isFinalTable: tableCount === 1,
         seats,
-        engine,
+        engine: null,
       };
-    });
+      this.tables.push(table);
+      this.tablesById.set(tableId, table);
+    }
 
+    this.activeCount = playerIds.length;
+    this.eliminatedCount = 0;
     this.nextFinishPosition = this.players.size;
     this.status = tableCount === 1 ? "final_table" : "running";
 
@@ -218,6 +271,7 @@ export class TournamentEngine {
       moves,
       tableCount,
       status: this.status,
+      movesTruncated: !recordMoves,
     };
   }
 
@@ -239,8 +293,7 @@ export class TournamentEngine {
         ? { tableId: player.tableId, seatIndex: player.seatIndex }
         : null;
 
-    // Remove from table + engine
-    const table = this.tables.find((t) => t.tableId === player.tableId);
+    const table = player.tableId ? this.tablesById.get(player.tableId) : undefined;
     if (table) {
       if (player.seatIndex !== null) {
         table.seats.delete(player.seatIndex);
@@ -249,7 +302,7 @@ export class TournamentEngine {
         try {
           table.engine.cashOutPlayer(playerId);
         } catch {
-          // Player may already be unseated from engine after a prior sync.
+          // already unseated
         }
       }
     }
@@ -261,6 +314,8 @@ export class TournamentEngine {
     player.tableId = null;
     player.seatIndex = null;
     player.stackMojos = 0n;
+    this.activeCount -= 1;
+    this.eliminatedCount += 1;
 
     const elimMove: SeatMove = {
       playerId,
@@ -269,15 +324,13 @@ export class TournamentEngine {
       reason: "elimination",
     };
 
-    const active = this.activePlayersInternal();
-    if (active.length <= 1) {
-      const winner = active[0] ?? null;
+    if (this.activeCount <= 1) {
+      const winner = this.activePlayersInternal()[0] ?? null;
       if (winner) {
         winner.finishPosition = 1;
         this.winnerId = winner.playerId;
       }
       this.status = "completed";
-      // Close tables
       for (const t of this.tables) {
         t.closed = true;
         t.isFinalTable = false;
@@ -291,20 +344,18 @@ export class TournamentEngine {
       };
     }
 
-    const balance = this.applyRebalance(active);
-    const moves = [elimMove, ...balance.moves];
+    const balance = this.applyRebalance(this.activePlayersInternal());
     return {
       playerId,
       finishPosition,
-      moves,
+      moves: [elimMove, ...balance.moves],
       status: this.status,
       winnerId: null,
     };
   }
 
   /**
-   * Sync chip stacks from table engines and eliminate anyone at 0.
-   * Call after each hand completes on any tournament table.
+   * Sync chip stacks from materialized table engines and eliminate anyone at 0.
    */
   syncEliminationsFromStacks(): EliminateResult[] {
     const results: EliminateResult[] = [];
@@ -336,16 +387,51 @@ export class TournamentEngine {
     return level;
   }
 
+  /**
+   * Materialize (if needed) and return the NLHE engine for a live table.
+   * Safe to call for any open table in a 100k-player field — only that table
+   * pays the engine cost.
+   */
   getTableEngine(tableId: TableId): NlheTableEngine | undefined {
-    return this.tables.find((t) => t.tableId === tableId && !t.closed)?.engine ?? undefined;
+    const table = this.tablesById.get(tableId);
+    if (!table || table.closed) return undefined;
+    return this.ensureTableEngine(table);
   }
 
   listOpenTableIds(): TableId[] {
     return this.tables.filter((t) => !t.closed).map((t) => t.tableId);
   }
 
-  getSnapshot(): TournamentSnapshot {
+  getSummary(): TournamentSummary {
     const level = this.currentBlindLevel();
+    return {
+      id: this.config.id,
+      name: this.config.name,
+      format: this.config.format,
+      status: this.status,
+      maxSeats: this.config.maxSeats,
+      maxEntries: this.config.maxEntries,
+      registeredCount: this.players.size,
+      activeCount: this.activeCount,
+      eliminatedCount: this.eliminatedCount,
+      tableCount: this.tables.filter((t) => !t.closed).length,
+      currentLevel: this.currentLevel,
+      smallBlindMojos: level.smallBlindMojos,
+      bigBlindMojos: level.bigBlindMojos,
+      anteMojos: level.anteMojos,
+      winnerId: this.winnerId,
+    };
+  }
+
+  getSnapshot(options: SnapshotOptions = {}): TournamentSnapshot {
+    const wantDetail =
+      options.detail ?? this.players.size <= FULL_DETAIL_PLAYER_CAP;
+    const summary = this.getSummary();
+
+    if (!wantDetail) {
+      return { ...summary };
+    }
+
     const players: TournamentPlayerSnapshot[] = [...this.players.values()].map((p) => ({
       playerId: p.playerId,
       status: p.status,
@@ -368,24 +454,7 @@ export class TournamentEngine {
         })),
     }));
 
-    return {
-      id: this.config.id,
-      name: this.config.name,
-      format: this.config.format,
-      status: this.status,
-      maxSeats: this.config.maxSeats,
-      registeredCount: this.players.size,
-      activeCount: players.filter((p) => p.status === "active").length,
-      eliminatedCount: players.filter((p) => p.status === "eliminated").length,
-      tableCount: tables.filter((t) => !t.closed).length,
-      currentLevel: this.currentLevel,
-      smallBlindMojos: level.smallBlindMojos,
-      bigBlindMojos: level.bigBlindMojos,
-      anteMojos: level.anteMojos,
-      players,
-      tables,
-      winnerId: this.winnerId,
-    };
+    return { ...summary, players, tables };
   }
 
   private currentBlindLevel(): BlindLevel {
@@ -404,12 +473,24 @@ export class TournamentEngine {
       maxSeats: this.config.maxSeats,
       smallBlindMojos: level.smallBlindMojos,
       bigBlindMojos: level.bigBlindMojos,
-      // Tournament chips are fixed starting stacks — allow exact seating.
       minBuyInMojos: this.config.startingStackMojos,
       maxBuyInMojos: this.config.startingStackMojos,
       rakeBps: 0,
     };
     return new NlheTableEngine(config);
+  }
+
+  private ensureTableEngine(table: InternalTable): NlheTableEngine {
+    if (table.engine) return table.engine;
+    const level = this.currentBlindLevel();
+    const engine = this.createTableEngine(table.tableId, level);
+    for (const [seatIndex, playerId] of table.seats) {
+      const stack = this.players.get(playerId)?.stackMojos ?? this.config.startingStackMojos;
+      if (stack <= 0n) continue;
+      engine.seatTournamentPlayer(playerId, seatIndex, stack);
+    }
+    table.engine = engine;
+    return engine;
   }
 
   private applyRebalance(active: InternalPlayer[]): { moves: SeatMove[] } {
@@ -434,34 +515,31 @@ export class TournamentEngine {
       () => randomUUID(),
     );
 
-    // Apply structural table changes
-    const byId = new Map(this.tables.map((t) => [t.tableId, t]));
     for (const next of result.tables) {
-      let table = byId.get(next.tableId);
+      let table = this.tablesById.get(next.tableId);
       if (!table) {
-        const level = this.currentBlindLevel();
         table = {
           tableId: next.tableId,
           closed: next.closed,
           isFinalTable: next.isFinalTable,
           seats: new Map(),
-          engine: this.createTableEngine(next.tableId, level),
+          engine: null,
         };
         this.tables.push(table);
-        byId.set(table.tableId, table);
+        this.tablesById.set(table.tableId, table);
       }
       table.closed = next.closed;
       table.isFinalTable = next.isFinalTable;
       table.seats = new Map(next.seats);
     }
 
-    // Apply moves onto engines + player records
+    // Sync only engines that already exist (lazy) — seating maps stay authoritative.
     for (const move of result.moves) {
       const player = this.players.get(move.playerId);
       if (!player) continue;
 
       if (move.from) {
-        const fromTable = byId.get(move.from.tableId);
+        const fromTable = this.tablesById.get(move.from.tableId);
         if (fromTable?.engine && !fromTable.engine.isHandInProgress()) {
           try {
             fromTable.engine.cashOutPlayer(move.playerId);
@@ -472,46 +550,34 @@ export class TournamentEngine {
       }
 
       if (move.to) {
-        const toTable = byId.get(move.to.tableId);
-        if (!toTable) continue;
-        if (!toTable.engine) {
-          toTable.engine = this.createTableEngine(toTable.tableId, this.currentBlindLevel());
+        const toTable = this.tablesById.get(move.to.tableId);
+        if (toTable?.engine) {
+          const already = toTable.engine
+            .getSeatedPlayers()
+            .some((s) => s.playerId === move.playerId);
+          if (!already && player.stackMojos > 0n) {
+            toTable.engine.seatTournamentPlayer(
+              move.playerId,
+              move.to.seatIndex,
+              player.stackMojos,
+            );
+          }
         }
-        // Ensure engine seating matches (seat may already be set if we rebuilt seats map first)
-        const already = toTable.engine
-          .getSeatedPlayers()
-          .some((s) => s.playerId === move.playerId);
-        if (!already) {
-          // Temporarily widen buy-in band for mid-tournament stack sizes
-          toTable.engine.seatTournamentPlayer(
-            move.playerId,
-            move.to.seatIndex,
-            player.stackMojos,
-          );
-        }
-        player.tableId = move.to.tableId;
-        player.seatIndex = move.to.seatIndex;
-      } else {
-        player.tableId = null;
-        player.seatIndex = null;
       }
     }
 
-    // Refresh player seat pointers from canonical table maps
-    for (const p of this.players.values()) {
-      if (p.status !== "active") continue;
-      let found = false;
-      for (const table of this.tables) {
-        if (table.closed) continue;
-        for (const [seatIndex, pid] of table.seats) {
-          if (pid === p.playerId) {
-            p.tableId = table.tableId;
-            p.seatIndex = seatIndex;
-            found = true;
-            break;
-          }
-        }
-        if (found) break;
+    // Rebuild seat pointers from canonical maps (O(active seats)).
+    for (const p of active) {
+      p.tableId = null;
+      p.seatIndex = null;
+    }
+    for (const table of this.tables) {
+      if (table.closed) continue;
+      for (const [seatIndex, pid] of table.seats) {
+        const p = this.players.get(pid);
+        if (!p || p.status !== "active") continue;
+        p.tableId = table.tableId;
+        p.seatIndex = seatIndex;
       }
     }
 
