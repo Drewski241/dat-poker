@@ -13,7 +13,7 @@ DAT POKER is a **pnpm monorepo** (Node.js ≥ 20, pnpm 9.15 via `packageManager`
 | REST API (`@dat-poker/api`) | `pnpm dev:api` | `http://localhost:4000` |
 | WebSocket gateway (`@dat-poker/gateway`) | `pnpm dev:gateway` | `ws://localhost:4100/ws` |
 
-Libraries under `packages/*` are built/tested via workspace filters; there is no web client in-repo yet.
+Libraries under `packages/*` are built/tested via workspace filters (including `@dat-poker/tournament-engine` for SNG/MTT seating). Web client: `pnpm dev:web`.
 
 ### Environment
 
@@ -45,6 +45,10 @@ TABLE=$(curl -s -X POST http://localhost:4000/v1/tables -H 'content-type: applic
 
 See `packages/game-engine/src/nlhe-table.test.ts` for the expected sequence (two players, seeds, deal, fold).
 
+**Tournament smoke (MTT seating / reseating):**
+
+See [docs/TOURNAMENTS.md](./docs/TOURNAMENTS.md). Create via `POST /v1/tournaments`, register-batch, start, then eliminate to drive table breaks and final table.
+
 **WebSocket smoke:**
 
 Connect to `ws://localhost:4100/ws`, wait for `connected`, send `{"type":"ping"}`, then `{"type":"subscribe","tableId":"<id>"}`.
@@ -52,5 +56,6 @@ Connect to `ws://localhost:4100/ws`, wait for `connected`, send `{"type":"ping"}
 ### Gotchas
 
 - Buy-in amounts are **CAT mojos** (1000 mojos = 1 DAT). Default min buy-in is `1000000` (1000 DAT). Do not use XCH-scale values like `2000000000000`.
-- In-memory table state: restarting `pnpm dev:api` clears all tables.
+- In-memory table state: restarting `pnpm dev:api` clears cash tables; tournaments persist when `DATABASE_URL` points at Postgres.
 - `DAT_ALLOW_DEV_BUYIN=true` in `.env.example` allows dev buy-ins without a configured `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
+- Tournament bot sims (no beta testers): `pnpm sim:tournament -- --players 16 --seed 1` — see [docs/TOURNAMENTS.md](./docs/TOURNAMENTS.md).

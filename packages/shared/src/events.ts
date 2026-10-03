@@ -8,7 +8,12 @@ export type GameEventType =
   | "street.dealt"
   | "action.posted"
   | "pot.awarded"
-  | "hand.settled";
+  | "hand.settled"
+  | "tournament.started"
+  | "tournament.player_eliminated"
+  | "tournament.reseat"
+  | "tournament.final_table"
+  | "tournament.completed";
 
 export interface BaseGameEvent {
   type: GameEventType;

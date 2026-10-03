@@ -72,6 +72,54 @@ export class NlheTableEngine {
     this.stacks.set(playerId, buyInMojos);
   }
 
+  /**
+   * Seat a player with an arbitrary tournament chip stack (no cash buy-in band).
+   * Used when reseating MTT/SNG players between tables.
+   */
+  seatTournamentPlayer(playerId: PlayerId, seatIndex: number, stackMojos: bigint): void {
+    if (this.config.format === "cash") {
+      throw new Error("seatTournamentPlayer is only valid on sng/mtt tables");
+    }
+    if (seatIndex < 0 || seatIndex >= this.config.maxSeats) {
+      throw new Error("Invalid seat");
+    }
+    if (this.seats.has(seatIndex)) {
+      throw new Error("Seat taken");
+    }
+    if (this.hand) {
+      throw new Error("Cannot reseat during an active hand");
+    }
+    if (stackMojos <= 0n) {
+      throw new Error("Tournament stack must be positive");
+    }
+    for (const seatedId of this.seats.values()) {
+      if (seatedId === playerId) {
+        throw new Error("Player already seated");
+      }
+    }
+    this.seats.set(seatIndex, playerId);
+    this.stacks.set(playerId, stackMojos);
+  }
+
+  /** Update blinds for the next hand (tournament level changes). */
+  updateBlinds(smallBlindMojos: bigint, bigBlindMojos: bigint): void {
+    if (smallBlindMojos <= 0n || bigBlindMojos <= 0n) {
+      throw new Error("Blinds must be positive");
+    }
+    if (smallBlindMojos > bigBlindMojos) {
+      throw new Error("Small blind cannot exceed big blind");
+    }
+    this.config = {
+      ...this.config,
+      smallBlindMojos,
+      bigBlindMojos,
+    };
+  }
+
+  getConfig(): TableConfig {
+    return { ...this.config };
+  }
+
   getActivePlayerCount(): number {
     return this.seats.size;
   }
@@ -274,6 +322,33 @@ export class NlheTableEngine {
     return this.lastHandResult ? structuredClone(this.lastHandResult) : null;
   }
 
+  /**
+   * Emergency end for stuck hands (bots / recovery). Awards the pot to the
+   * best remaining non-folded player, or the largest stack if all folded.
+   */
+  forceCompleteHand(): void {
+    const h = this.hand;
+    if (!h) return;
+    const live = this.activePlayers(h);
+    const winner =
+      live[0] ??
+      [...h.players].sort((a, b) => Number(b.stackMojos - a.stackMojos))[0];
+    if (!winner) {
+      this.hand = null;
+      return;
+    }
+    winner.stackMojos += h.potMojos;
+    this.stacks.set(winner.playerId, winner.stackMojos);
+    this.lastHandResult = {
+      handId: h.handId,
+      winnerId: winner.playerId,
+      potMojos: h.potMojos,
+      reason: "fold",
+    };
+    h.potMojos = 0n;
+    this.hand = null;
+  }
+
   private requireHand(): TableHandState {
     if (!this.hand) throw new Error("No active hand");
     return this.hand;
@@ -364,7 +439,18 @@ export class NlheTableEngine {
     for (let i = 0; i < count; i++) {
       h.board.push(this.draw(h));
     }
-    h.actionSeat = h.dealerSeat;
+    // First to act is the first live player at/after the dealer button.
+    const ordered = [...h.players].sort((a, b) => a.seatIndex - b.seatIndex);
+    const dealerIdx = ordered.findIndex((p) => p.seatIndex === h.dealerSeat);
+    const start = dealerIdx === -1 ? 0 : dealerIdx;
+    h.actionSeat = null;
+    for (let i = 0; i < ordered.length; i++) {
+      const cand = ordered[(start + i) % ordered.length]!;
+      if (!cand.folded && !cand.allIn) {
+        h.actionSeat = cand.seatIndex;
+        break;
+      }
+    }
     h.seq++;
   }
 

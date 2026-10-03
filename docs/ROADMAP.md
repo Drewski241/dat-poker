@@ -21,7 +21,12 @@
 ## Phase 2 — Multi-variant
 
 - [ ] PLO4 / PLO5 engines
-- [ ] SNG + MTT schedulers
+- [x] SNG + MTT schedulers (seating, elimination reseating, final table)
+- [x] Prize pools + ICM equities
+- [x] Late registration + re-entries
+- [x] Hand-for-hand bubble / final-table sync
+- [x] Tournament persistence (memory + Postgres snapshots)
+- [x] Bot simulator for tester-free MTT runs (`pnpm sim:tournament`)
 - [ ] Calpoker route through chia-gaming native flow
 - [ ] Rake accounting + ledger
 

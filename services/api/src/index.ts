@@ -10,6 +10,7 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerTournamentRoutes, initTournamentStore } from "./routes/tournaments.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -39,10 +40,14 @@ async function main(): Promise<void> {
     return serializeForJson(payload);
   });
 
+  await initTournamentStore();
+  app.log.info(`Tournament persistence: ${process.env.DATABASE_URL ? "postgres (or fallback)" : "memory"}`);
+
   registerHealthRoutes(app, chiaClient);
   registerWalletRoutes(app, chiaClient);
   registerTableRoutes(app);
   registerHandRoutes(app);
+  registerTournamentRoutes(app);
 
   app.get("/v1/variants", async () => ({
     variants: POKER_VARIANTS,
