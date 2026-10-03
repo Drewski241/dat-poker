@@ -10,7 +10,7 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
-import { registerTournamentRoutes } from "./routes/tournaments.js";
+import { registerTournamentRoutes, initTournamentStore } from "./routes/tournaments.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -39,6 +39,9 @@ async function main(): Promise<void> {
     if (payload === undefined || payload === null) return payload;
     return serializeForJson(payload);
   });
+
+  await initTournamentStore();
+  app.log.info(`Tournament persistence: ${process.env.DATABASE_URL ? "postgres (or fallback)" : "memory"}`);
 
   registerHealthRoutes(app, chiaClient);
   registerWalletRoutes(app, chiaClient);

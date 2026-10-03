@@ -11,64 +11,68 @@ DAT POKER seats tournament fields on top of the same NLHE table engine used for 
 
 Default table size is **8-max**. A 100,000-player MTT → **12,500** tables.
 
-## Unlimited registration
+## Testing without beta testers
 
-MTT `maxEntries` defaults to `null` (uncapped). Everyone who registers gets a seat when the tournament starts.
-
-```json
-{ "name": "Sunday Million", "format": "mtt", "maxSeats": 8 }
-```
-
-Optional hard cap: `"maxEntries": 50000`. SNGs always use a finite cap ≤ `maxSeats`.
-
-## Lifecycle
-
-1. `POST /v1/tournaments` — create (`format`, `maxSeats`, optional `maxEntries`, buy-in, starting stack)
-2. `POST /v1/tournaments/:id/register` or `register-batch` — enroll players (no upper bound when uncapped)
-3. `POST /v1/tournaments/:id/start` — even seating across tables (engines created **lazily** per table)
-4. Play hands via `GET/POST .../tables/:tableId` (same commit-reveal flow as cash once an engine is materialized)
-5. `POST /v1/tournaments/:id/eliminate` — bust a player; **rebalances**, breaks short tables, collapses to a **final table** when ≤ `maxSeats` remain
-6. Last player standing → `completed`
-
-Large fields return **summaries** by default (`GET /v1/tournaments/:id`). Pass `?detail=1` only when you need full seat lists.
-
-## Seating & reseating rules
-
-- Initial seat: distribute so every table has the same count ±1, none over `maxSeats`
-- After each elimination: if remaining players fit on fewer tables, **break** the shortest table and move survivors into open seats
-- While multiple tables remain, keep counts balanced (max − min ≤ 1)
-- When remaining ≤ `maxSeats`, merge onto one **final table**
-
-## Scale notes (100k+)
-
-| Concern | Current behavior |
-|---------|------------------|
-| Registration + seating maps | Single process; validated at 100k players / 12.5k tables |
-| Live hand engines | **Lazy** — only tables that are playing hold an `NlheTableEngine` |
-| Concurrent play at 100k | Needs game **shards** + Redis/Postgres (see [SCALING.md](./SCALING.md)); seating control plane is ready |
-
-Package: `@dat-poker/tournament-engine` (`TournamentEngine`, `rebalanceTables`, seating helpers).
-
-## Smoke (API)
+Use the **bot simulator** — it registers N bots, plays real NLHE hands (commit-reveal + actions), eliminates, rebalances, and pays the prize pool:
 
 ```bash
-# Unlimited MTT (omit maxEntries)
-T=$(curl -s -X POST http://localhost:4000/v1/tournaments \
-  -H 'content-type: application/json' \
-  -d '{"name":"Demo MTT","format":"mtt","maxSeats":8,"minEntries":24}')
-TID=$(echo "$T" | jq -r .tournamentId)
+# 16-bot MTT end-to-end
+pnpm sim:tournament -- --players 16 --seed 1 --style random
 
-# Register p0..p23
-curl -s -X POST http://localhost:4000/v1/tournaments/$TID/register-batch \
-  -H 'content-type: application/json' \
-  -d '{"playerIds":["p0","p1","p2","p3","p4","p5","p6","p7","p8","p9","p10","p11","p12","p13","p14","p15","p16","p17","p18","p19","p20","p21","p22","p23"]}'
-
-curl -s -X POST http://localhost:4000/v1/tournaments/$TID/start | jq '{status, tableCount, summary}'
-
-# Bust down toward final table
-for i in $(seq 0 15); do
-  curl -s -X POST http://localhost:4000/v1/tournaments/$TID/eliminate \
-    -H 'content-type: application/json' \
-    -d "{\"playerId\":\"p$i\"}" | jq '{finishPosition, status: .snapshot.status, tables: .snapshot.tableCount}'
-done
+# Quiet unit coverage (CI)
+pnpm --filter @dat-poker/tournament-engine test
 ```
+
+Bots support `passive` | `loose` | `random` styles. This is the primary way to validate seating, hand-for-hand, payouts, and late-reg before any human soft launch.
+
+## Prize pools & ICM
+
+- Each entry contributes `buyIn − fee` (`feeBps`, default 5%) to the prize pool
+- Paid places scale with field size; ladder percentages sum to 100%
+- `GET /v1/tournaments/:id/icm` returns live Malmuth–Harville equity for active stacks
+- Finish positions lock cash prizes from the ladder
+
+## Late registration & re-entries
+
+| Option | Default (MTT) | Meaning |
+|--------|---------------|---------|
+| `lateRegThroughLevel` | `3` | Late reg open through this blind level (`-1` = closed at start) |
+| `reentryAllowed` | `true` | Busts may buy back in while late reg is open |
+| `maxReentries` | `1` | Cap per player |
+
+`POST /v1/tournaments/:id/register` works pre-start and during late reg.  
+`POST /v1/tournaments/:id/reenter` buys back an eliminated player.
+
+## Hand-for-hand
+
+When the field hits the **bubble** (`active == paidPlaces + 1`) or **final table**, tables must finish the current hand before any deals the next.  
+`POST .../tables/:tableId/hand-complete` reports in; `canDeal` on the table GET reflects the barrier.
+
+## Persistence
+
+| Mode | When |
+|------|------|
+| **Memory** | Default (no `DATABASE_URL`, or Postgres unreachable) |
+| **Postgres** | `DATABASE_URL` set — auto-migrates `tournaments` JSONB snapshots |
+
+```bash
+# Optional local Postgres
+docker compose -f docker/docker-compose.yml up -d postgres
+# DATABASE_URL=postgres://dat_poker:dat_poker@localhost:5432/dat_poker
+```
+
+## Unlimited registration
+
+MTT `maxEntries` defaults to `null` (uncapped). Optional hard cap: `"maxEntries": 50000`.
+
+## Lifecycle API
+
+1. `POST /v1/tournaments` — create (fees, late reg, re-entries, seats…)
+2. `POST .../register` or `register-batch`
+3. `POST .../start` — seat + build prize pool
+4. Play hands; `.../hand-complete` under hand-for-hand
+5. `POST .../eliminate` / auto via stack sync; `.../reenter` while late reg open
+6. `POST .../blind-up` — may close late reg and enable bubble sync
+7. Last player → `completed` with payouts
+
+Package: `@dat-poker/tournament-engine`.

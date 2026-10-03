@@ -10,7 +10,11 @@ export type TournamentStatus =
   | "completed"
   | "cancelled";
 
-export type TournamentPlayerStatus = "registered" | "active" | "eliminated";
+export type TournamentPlayerStatus =
+  | "registered"
+  | "active"
+  | "eliminated"
+  | "waiting_seat"; // late reg / re-entry pending seat
 
 export interface BlindLevel {
   level: number;
@@ -39,6 +43,17 @@ export interface TournamentConfig {
   startingStackMojos: bigint;
   /** Blind schedule; level 0 is used at start. */
   blindLevels: BlindLevel[];
+  /** Rake/fee in basis points taken from each entry (0–10000). */
+  feeBps: number;
+  /**
+   * Late registration stays open through this blind level index (inclusive).
+   * `-1` = closed once started; default `3` for MTT, `-1` for SNG.
+   */
+  lateRegThroughLevel: number;
+  /** Allow busted players to buy back in while late reg is open. */
+  reentryAllowed: boolean;
+  /** Max re-entries per player (0 = none). Ignored if reentryAllowed is false. */
+  maxReentries: number;
 }
 
 export interface TournamentSeat {
@@ -53,6 +68,10 @@ export interface TournamentPlayerSnapshot {
   tableId: TableId | null;
   seatIndex: number | null;
   finishPosition: number | null;
+  /** Cash prize locked in at elimination / win (0 if still playing / unpaid). */
+  prizeMojos: bigint;
+  entriesUsed: number;
+  reentriesUsed: number;
 }
 
 export interface TournamentTableSnapshot {
@@ -64,6 +83,12 @@ export interface TournamentTableSnapshot {
     playerId: PlayerId;
     stackMojos: bigint;
   }>;
+}
+
+export interface PayoutLadderRow {
+  place: number;
+  pct: number;
+  amountMojos: bigint;
 }
 
 export interface TournamentSnapshot {
@@ -82,6 +107,17 @@ export interface TournamentSnapshot {
   smallBlindMojos: bigint;
   bigBlindMojos: bigint;
   anteMojos: bigint;
+  lateRegOpen: boolean;
+  prizePoolMojos: bigint;
+  paidPlaces: number;
+  payoutLadder?: PayoutLadderRow[];
+  handForHand?: {
+    active: boolean;
+    reason: string | null;
+    waitingOn: string[];
+    completed: string[];
+    wave: number;
+  };
   /** Omitted when snapshot is summary-only (large fields). */
   players?: TournamentPlayerSnapshot[];
   /** Omitted when snapshot is summary-only (large fields). */
@@ -105,6 +141,10 @@ export interface TournamentSummary {
   smallBlindMojos: bigint;
   bigBlindMojos: bigint;
   anteMojos: bigint;
+  lateRegOpen: boolean;
+  prizePoolMojos: bigint;
+  paidPlaces: number;
+  handForHandActive: boolean;
   winnerId: PlayerId | null;
 }
 
@@ -113,5 +153,12 @@ export interface SeatMove {
   playerId: PlayerId;
   from: TournamentSeat | null;
   to: TournamentSeat | null;
-  reason: "initial_seat" | "balance" | "table_break" | "final_table" | "elimination";
+  reason:
+    | "initial_seat"
+    | "balance"
+    | "table_break"
+    | "final_table"
+    | "elimination"
+    | "late_reg"
+    | "reentry";
 }

@@ -1,34 +1,70 @@
 import type { FastifyInstance } from "fastify";
-import { TournamentEngine } from "@dat-poker/tournament-engine";
+import {
+  createTournamentStore,
+  TournamentEngine,
+  type TournamentStore,
+} from "@dat-poker/tournament-engine";
 
 const tournaments = new Map<string, TournamentEngine>();
+let store: TournamentStore = {
+  async save() {},
+  async load() {
+    return null;
+  },
+  async listIds() {
+    return [];
+  },
+  async delete() {},
+};
+let storeKind: "memory" | "postgres" = "memory";
+
+async function persist(tournament: TournamentEngine): Promise<void> {
+  await store.save(tournament.exportState());
+}
 
 export function getTournament(id: string): TournamentEngine | undefined {
   return tournaments.get(id);
 }
 
+export async function initTournamentStore(): Promise<void> {
+  const created = await createTournamentStore(process.env.DATABASE_URL);
+  store = created.store;
+  storeKind = created.kind;
+  // Hydrate in-memory map from store
+  for (const id of await store.listIds()) {
+    const raw = await store.load(id);
+    if (raw) {
+      tournaments.set(id, TournamentEngine.fromExportedState(raw));
+    }
+  }
+}
+
 function parseMaxEntries(
   raw: number | null | undefined,
 ): number | null | undefined {
-  // undefined → engine default (MTT unlimited / SNG = maxSeats)
-  // null → explicit unlimited
-  // number → hard cap
   if (raw === undefined) return undefined;
   if (raw === null) return null;
   return raw;
 }
 
 export function registerTournamentRoutes(app: FastifyInstance): void {
+  app.get("/v1/tournaments/meta", async () => ({
+    persistence: storeKind,
+  }));
+
   app.post<{
     Body: {
       name?: string;
       format?: "sng" | "mtt";
       maxSeats?: number;
-      /** Cap registrations, or `null` for unlimited MTT fields. */
       maxEntries?: number | null;
       minEntries?: number;
       buyInMojos?: string;
       startingStackMojos?: string;
+      feeBps?: number;
+      lateRegThroughLevel?: number;
+      reentryAllowed?: boolean;
+      maxReentries?: number;
     };
   }>("/v1/tournaments", async (req) => {
     const tournament = new TournamentEngine({
@@ -41,13 +77,19 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
       startingStackMojos: req.body.startingStackMojos
         ? BigInt(req.body.startingStackMojos)
         : undefined,
+      feeBps: req.body.feeBps,
+      lateRegThroughLevel: req.body.lateRegThroughLevel,
+      reentryAllowed: req.body.reentryAllowed,
+      maxReentries: req.body.maxReentries,
     });
     tournaments.set(tournament.getId(), tournament);
+    await persist(tournament);
     return {
       tournamentId: tournament.getId(),
       config: tournament.getConfig(),
       status: tournament.getStatus(),
       registrationUnlimited: tournament.isRegistrationUnlimited(),
+      persistence: storeKind,
     };
   });
 
@@ -65,9 +107,13 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
         maxSeats: snap.maxSeats,
         maxEntries: snap.maxEntries,
         registrationUnlimited: snap.maxEntries === null,
+        lateRegOpen: snap.lateRegOpen,
+        prizePoolMojos: snap.prizePoolMojos,
+        paidPlaces: snap.paidPlaces,
+        handForHandActive: snap.handForHandActive,
       };
     });
-    return { tournaments: list };
+    return { tournaments: list, persistence: storeKind };
   });
 
   app.get<{
@@ -83,6 +129,17 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
     return tournament.getSnapshot({ detail });
   });
 
+  app.get<{ Params: { tournamentId: string } }>(
+    "/v1/tournaments/:tournamentId/icm",
+    async (req, reply) => {
+      const tournament = tournaments.get(req.params.tournamentId);
+      if (!tournament) {
+        return reply.status(404).send({ error: "Tournament not found" });
+      }
+      return { icm: tournament.computeLiveIcm() };
+    },
+  );
+
   app.post<{
     Params: { tournamentId: string };
     Body: { playerId: string };
@@ -92,10 +149,13 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
       return reply.status(404).send({ error: "Tournament not found" });
     }
     try {
-      tournament.registerPlayer(req.body.playerId);
+      const result = tournament.registerPlayer(req.body.playerId);
+      await persist(tournament);
       return {
         ok: true,
+        ...result,
         registeredCount: tournament.getRegisteredCount(),
+        prizePoolMojos: tournament.getPrizePoolMojos(),
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -113,10 +173,29 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
     const playerIds = req.body.playerIds ?? [];
     try {
       tournament.registerPlayers(playerIds);
+      await persist(tournament);
       return {
         ok: true,
         registeredCount: tournament.getRegisteredCount(),
+        prizePoolMojos: tournament.getPrizePoolMojos(),
       };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Params: { tournamentId: string };
+    Body: { playerId: string };
+  }>("/v1/tournaments/:tournamentId/reenter", async (req, reply) => {
+    const tournament = tournaments.get(req.params.tournamentId);
+    if (!tournament) {
+      return reply.status(404).send({ error: "Tournament not found" });
+    }
+    try {
+      const result = tournament.reenter(req.body.playerId);
+      await persist(tournament);
+      return { ok: true, ...result, prizePoolMojos: tournament.getPrizePoolMojos() };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
     }
@@ -131,6 +210,7 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
       }
       try {
         const result = tournament.start();
+        await persist(tournament);
         return {
           ok: true,
           ...result,
@@ -152,6 +232,7 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
     }
     try {
       const result = tournament.eliminatePlayer(req.body.playerId);
+      await persist(tournament);
       const summary = tournament.getSummary();
       return {
         ok: true,
@@ -161,6 +242,8 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
           activeCount: summary.activeCount,
           tableCount: summary.tableCount,
           winnerId: summary.winnerId,
+          prizePoolMojos: summary.prizePoolMojos,
+          handForHandActive: summary.handForHandActive,
         },
       };
     } catch (e) {
@@ -179,9 +262,31 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
         return reply.status(400).send({ error: "Tournament is not running" });
       }
       const level = tournament.advanceBlindLevel();
-      return { ok: true, level };
+      await persist(tournament);
+      return {
+        ok: true,
+        level,
+        lateRegOpen: tournament.isLateRegOpen(),
+        handForHand: tournament.getHandForHandState(),
+      };
     },
   );
+
+  app.post<{
+    Params: { tournamentId: string; tableId: string };
+  }>("/v1/tournaments/:tournamentId/tables/:tableId/hand-complete", async (req, reply) => {
+    const tournament = tournaments.get(req.params.tournamentId);
+    if (!tournament) {
+      return reply.status(404).send({ error: "Tournament not found" });
+    }
+    try {
+      const result = tournament.reportHandComplete(req.params.tableId);
+      await persist(tournament);
+      return { ok: true, ...result };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
 
   app.get<{ Params: { tournamentId: string; tableId: string } }>(
     "/v1/tournaments/:tournamentId/tables/:tableId",
@@ -197,6 +302,7 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
       return {
         tournamentId: req.params.tournamentId,
         tableId: req.params.tableId,
+        canDeal: tournament.canDealNextHand(req.params.tableId),
         players: engine.getActivePlayerCount(),
         handInProgress: engine.isHandInProgress(),
         seats: engine.getSeatedPlayers(),

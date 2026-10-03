@@ -13,12 +13,16 @@ describe("TournamentEngine", () => {
       maxSeats: 8,
       maxEntries: 8,
       minEntries: 8,
+      lateRegThroughLevel: -1,
+      reentryAllowed: false,
+      feeBps: 0,
     });
 
     t.registerPlayers(playerIds(8));
     const started = t.start();
     expect(started.tableCount).toBe(1);
     expect(started.status).toBe("final_table");
+    expect(started.prizePool.prizePoolMojos).toBeGreaterThan(0n);
     expect(t.getSnapshot().tables?.[0]?.seats).toHaveLength(8);
 
     for (let i = 0; i < 7; i++) {
@@ -28,6 +32,9 @@ describe("TournamentEngine", () => {
     expect(t.getStatus()).toBe("completed");
     expect(t.getSnapshot().winnerId).toBe("p7");
     expect(t.getSnapshot().players?.find((p) => p.playerId === "p7")?.finishPosition).toBe(1);
+    expect(t.getSnapshot().players?.find((p) => p.playerId === "p7")?.prizeMojos).toBeGreaterThan(
+      0n,
+    );
   });
 
   it("defaults MTT registration to unlimited", () => {
@@ -46,6 +53,8 @@ describe("TournamentEngine", () => {
       maxSeats: 8,
       maxEntries: null,
       minEntries: 2,
+      lateRegThroughLevel: -1,
+      reentryAllowed: false,
     });
 
     t.registerPlayers(playerIds(entries));
@@ -70,6 +79,8 @@ describe("TournamentEngine", () => {
       maxSeats: 8,
       maxEntries: 24,
       minEntries: 24,
+      lateRegThroughLevel: -1,
+      reentryAllowed: false,
     });
     t.registerPlayers(playerIds(24));
     t.start();
@@ -84,6 +95,7 @@ describe("TournamentEngine", () => {
     expect(snap.status).toBe("final_table");
     expect(snap.activeCount).toBe(8);
     expect(snap.tableCount).toBe(1);
+    expect(snap.handForHand?.active).toBe(true);
     expect(snap.tables?.filter((x) => !x.closed)).toHaveLength(1);
     expect(snap.tables?.find((x) => !x.closed)?.isFinalTable).toBe(true);
     expect(snap.tables?.find((x) => !x.closed)?.seats).toHaveLength(8);
@@ -96,6 +108,8 @@ describe("TournamentEngine", () => {
       maxSeats: 8,
       maxEntries: 20,
       minEntries: 20,
+      lateRegThroughLevel: -1,
+      reentryAllowed: false,
     });
     t.registerPlayers(playerIds(20));
     t.start();
@@ -119,6 +133,8 @@ describe("TournamentEngine", () => {
       maxSeats: 8,
       maxEntries: null,
       minEntries: 2,
+      lateRegThroughLevel: -1,
+      reentryAllowed: false,
     });
     const ids = playerIds(entries);
     const t0 = Date.now();
@@ -134,20 +150,18 @@ describe("TournamentEngine", () => {
     const summary = t.getSummary();
     expect(summary.tableCount).toBe(12_500);
     expect(summary.maxEntries).toBeNull();
+    expect(summary.prizePoolMojos).toBeGreaterThan(0n);
 
-    // Full detail omitted by default at this scale
     const snap = t.getSnapshot();
     expect(snap.players).toBeUndefined();
     expect(snap.tables).toBeUndefined();
 
-    // Lazy: first table engine materializes on demand
     const tableId = t.listOpenTableIds()[0]!;
     const engine = t.getTableEngine(tableId);
     expect(engine).toBeDefined();
     expect(engine!.getActivePlayerCount()).toBeGreaterThanOrEqual(7);
     expect(engine!.getActivePlayerCount()).toBeLessThanOrEqual(8);
 
-    // Should complete seating well under a minute even in CI
     expect(elapsed).toBeLessThan(60_000);
   });
 
@@ -158,10 +172,11 @@ describe("TournamentEngine", () => {
       maxSeats: 8,
       maxEntries: 16,
       minEntries: 16,
+      lateRegThroughLevel: -1,
+      reentryAllowed: false,
     });
     t.registerPlayers(playerIds(16));
     t.start();
-    // Materialize engines before blind-up so they receive the update
     for (const tableId of t.listOpenTableIds()) {
       t.getTableEngine(tableId);
     }
@@ -172,5 +187,25 @@ describe("TournamentEngine", () => {
       const engine = t.getTableEngine(tableId);
       expect(engine?.getConfig().bigBlindMojos).toBe(level.bigBlindMojos);
     }
+  });
+
+  it("exposes live ICM on the final table", () => {
+    const t = new TournamentEngine({
+      name: "ICM FT",
+      format: "sng",
+      maxSeats: 3,
+      maxEntries: 3,
+      minEntries: 3,
+      lateRegThroughLevel: -1,
+      reentryAllowed: false,
+      feeBps: 0,
+      buyInMojos: 1_000n,
+    });
+    t.registerPlayers(["a", "b", "c"]);
+    t.start();
+    const icm = t.computeLiveIcm();
+    expect(icm).toHaveLength(3);
+    const sum = icm.reduce((a, r) => a + r.equityMojos, 0n);
+    expect(sum).toBe(t.getPrizePoolMojos());
   });
 });

@@ -56,5 +56,6 @@ Connect to `ws://localhost:4100/ws`, wait for `connected`, send `{"type":"ping"}
 ### Gotchas
 
 - Buy-in amounts are **CAT mojos** (1000 mojos = 1 DAT). Default min buy-in is `1000000` (1000 DAT). Do not use XCH-scale values like `2000000000000`.
-- In-memory table state: restarting `pnpm dev:api` clears all tables.
+- In-memory table state: restarting `pnpm dev:api` clears cash tables; tournaments persist when `DATABASE_URL` points at Postgres.
 - `DAT_ALLOW_DEV_BUYIN=true` in `.env.example` allows dev buy-ins without a configured `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
+- Tournament bot sims (no beta testers): `pnpm sim:tournament -- --players 16 --seed 1` — see [docs/TOURNAMENTS.md](./docs/TOURNAMENTS.md).

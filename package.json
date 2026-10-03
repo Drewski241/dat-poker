@@ -18,6 +18,7 @@
     "treasury:check": "pnpm --filter @dat-poker/treasury-payout^... build && pnpm --filter @dat-poker/treasury-payout check:setup",
     "treasury:start": "pnpm --filter @dat-poker/treasury-payout^... build && pnpm --filter @dat-poker/treasury-payout start",
     "dev:web": "pnpm --filter @dat-poker/web^... build && pnpm --filter @dat-poker/web dev",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "sim:tournament": "pnpm --filter @dat-poker/tournament-engine^... build && pnpm --filter @dat-poker/tournament-engine sim"
   }
 }
