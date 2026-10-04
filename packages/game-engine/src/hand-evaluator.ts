@@ -178,3 +178,95 @@ export function evaluateBestHand(cards: Card[]): EvaluatedHand {
 export function compareHands(a: EvaluatedHand, b: EvaluatedHand): number {
   return a.score - b.score;
 }
+
+const RANK_WORD: Record<number, string> = {
+  14: "Ace",
+  13: "King",
+  12: "Queen",
+  11: "Jack",
+  10: "10",
+  9: "9",
+  8: "8",
+  7: "7",
+  6: "6",
+  5: "5",
+  4: "4",
+  3: "3",
+  2: "2",
+};
+
+function rankWord(value: number): string {
+  return RANK_WORD[value] ?? String(value);
+}
+
+function rankWordPlural(value: number): string {
+  if (value === 14) return "Aces";
+  if (value === 13) return "Kings";
+  if (value === 12) return "Queens";
+  if (value === 11) return "Jacks";
+  return `${rankWord(value)}s`;
+}
+
+function describeEvaluated(ev: EvaluatedHand): string {
+  switch (ev.category) {
+    case "high_card":
+      return `${rankWord(ev.kickers[0])} high`;
+    case "pair":
+      return `pair of ${rankWordPlural(ev.kickers[0])}`;
+    case "two_pair":
+      return `two pair, ${rankWordPlural(ev.kickers[0])} and ${rankWordPlural(ev.kickers[1])}`;
+    case "three_kind":
+      return `three of a kind, ${rankWordPlural(ev.kickers[0])}`;
+    case "straight":
+      return `${rankWord(ev.kickers[0])}-high straight`;
+    case "flush":
+      return `${rankWord(ev.kickers[0])}-high flush`;
+    case "full_house":
+      return `full house, ${rankWordPlural(ev.kickers[0])} full of ${rankWordPlural(ev.kickers[1])}`;
+    case "four_kind":
+      return `four of a kind, ${rankWordPlural(ev.kickers[0])}`;
+    case "straight_flush":
+      return ev.kickers[0] === 14 ? "royal flush" : `${rankWord(ev.kickers[0])}-high straight flush`;
+  }
+}
+
+function describePartial(cards: Card[]): string {
+  const counts = rankCounts(cards);
+  const byCount = [...counts.entries()].sort(
+    (a, b) => b[1] - a[1] || rankValue(b[0]) - rankValue(a[0]),
+  );
+  const maxCount = byCount[0][1];
+
+  if (maxCount === 4) {
+    return `four of a kind, ${rankWordPlural(rankValue(byCount[0][0]))}`;
+  }
+  if (maxCount === 3) {
+    return `three of a kind, ${rankWordPlural(rankValue(byCount[0][0]))}`;
+  }
+  if (maxCount === 2 && byCount[1]?.[1] === 2) {
+    return `two pair, ${rankWordPlural(rankValue(byCount[0][0]))} and ${rankWordPlural(rankValue(byCount[1][0]))}`;
+  }
+  if (maxCount === 2) {
+    return `pair of ${rankWordPlural(rankValue(byCount[0][0]))}`;
+  }
+
+  const sorted = [...cards].sort((a, b) => rankValue(b.rank) - rankValue(a.rank));
+  if (cards.length === 2) {
+    const combo = `${rankWord(rankValue(sorted[0].rank))}-${rankWord(rankValue(sorted[1].rank))}`;
+    return sorted[0].suit === sorted[1].suit ? `${combo} suited` : combo;
+  }
+  return `${rankWord(rankValue(sorted[0].rank))} high`;
+}
+
+/**
+ * Player-facing made-hand label from the cards currently showing.
+ * 2–4 cards: pair / trips / two pair / unpaired combo (preflop suited).
+ * 5–7 cards: best five-card poker hand.
+ */
+export function describeBestMadeHand(cards: Card[]): string | null {
+  if (cards.length === 0) return null;
+  if (cards.length >= 5) {
+    return describeEvaluated(evaluateBestHand(cards));
+  }
+  return describePartial(cards);
+}
