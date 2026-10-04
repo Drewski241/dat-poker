@@ -171,6 +171,7 @@ export interface TableSeat {
   playerId: string;
   seatIndex: number;
   stackMojos: string;
+  sittingOut?: boolean;
   displayAddress?: string;
   handsPlayed?: number;
   handsRequired?: number;
@@ -718,6 +719,20 @@ export const api = {
     request<{ ok: boolean; playerId: string }>(`/v1/tables/${tableId}/seat-house`, {
       method: "POST",
       body: JSON.stringify({ buyInMojos }),
+    }),
+
+  setSitOut: (tableId: string, playerId: string, sittingOut: boolean) =>
+    request<{
+      ok: boolean;
+      sittingOut: boolean;
+      tableId: string;
+      handInProgress: boolean;
+      seats: TableSeat[];
+      hand: HandState | null;
+      sng?: SngSnapshot | null;
+    }>(`/v1/tables/${tableId}/sit-out`, {
+      method: "POST",
+      body: JSON.stringify({ playerId, sittingOut }),
     }),
 
   rebuyTable: (

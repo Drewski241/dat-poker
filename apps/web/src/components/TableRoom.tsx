@@ -139,7 +139,7 @@ export function TableRoom({
   const canStepToLobby = !hand && !handInProgress;
   const runoutPlaying = Boolean(handResult && runoutFromBoardLen != null && onRunoutFinished);
   const showDeal = !hand && !canRebuy && canDeal && !runoutPlaying && !autoDeal;
-  const showSitOutControls = Boolean(autoDeal && onToggleSitOut && !canRebuy && !runoutPlaying);
+  const showSitOutControls = Boolean(onToggleSitOut && !canRebuy && !runoutPlaying);
   const showBetweenFooter =
     !hand &&
     !runoutPlaying &&

@@ -45,6 +45,7 @@ import {
   resetHandHistoryForTests,
 } from "../hand-history-store.js";
 import { playHouseIfDue } from "../house-play.js";
+import { playHumansIfDue, resetHumanTurnClockForTests } from "../human-play.js";
 import { advanceSiblingMttHouseTables } from "../mtt-house-advance.js";
 import {
   getMtt16NftPromoMeta,
@@ -203,6 +204,9 @@ function maintainTable(
           ? hand.players.find((p) => p.seatIndex === hand.actionSeat)
           : undefined;
       if (actor && isHousePlayerId(actor.playerId)) {
+        playHouseIfDue(table);
+      } else if (actor && !isHousePlayerId(actor.playerId)) {
+        playHumansIfDue(tableId, table, nowMs);
         playHouseIfDue(table);
       } else if (actor?.allIn) {
         table.advanceHandIfIdle();
@@ -1103,6 +1107,44 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return reply.status(400).send({ error: (e as Error).message });
     }
   });
+
+  app.post<{
+    Params: { tableId: string };
+    Body: { playerId?: string; sittingOut: boolean };
+  }>("/v1/tables/:tableId/sit-out", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    const table = tables.get(req.params.tableId);
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+    if (!table.hasPlayer(session.playerId)) {
+      return reply.status(403).send({ error: "You are not seated at this table" });
+    }
+    try {
+      if (req.body.sittingOut) {
+        if (table.isHandInProgress()) {
+          table.markTimedOutSittingOut(session.playerId);
+        } else {
+          table.setSittingOut(session.playerId, true);
+        }
+      } else {
+        table.setSittingOut(session.playerId, false);
+      }
+      touchPlayerActivity(session.playerId);
+      const maintenance = maintainTable(req.params.tableId, table, session.playerId);
+      return {
+        ok: true,
+        sittingOut: table.isSittingOut(session.playerId),
+        ...tableSnapshot(req.params.tableId, table, session.playerId, maintenance),
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
 }
 
 export function getTableEngine(tableId: string): NlheTableEngine | undefined {
@@ -1196,6 +1238,7 @@ export function resetTablesForTests(): void {
   mtt16WinRecorded.clear();
   playerLabels.clear();
   resetHandHistoryForTests();
+  resetHumanTurnClockForTests();
 }
 
 function readFillHouseDefault(): boolean {

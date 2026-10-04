@@ -1061,6 +1061,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   };
 
   const myTableSeat = tableSeats.find((s) => s.playerId === playerId);
+  const mySittingOut =
+    tableFormat === "cash" ? cashSittingOut : Boolean(myTableSeat?.sittingOut);
   const tableStackMojos = myTableSeat?.stackMojos ?? null;
   const tableStackIsZero =
     tableStackMojos != null && (() => {
@@ -1101,7 +1103,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     celebrationPlaying: bigWin != null,
     eliminated: sngEliminated,
     pauseDeals: Boolean(sng?.pauseDeals),
-    sittingOut: tableFormat === "cash" && cashSittingOut,
+    sittingOut: mySittingOut,
   });
 
   useEffect(() => {
@@ -1372,13 +1374,21 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       const h = handForTimerRef.current;
       const pid = playerIdForTimerRef.current;
       if (!h || !pid) return;
-      sendActionRef.current(autoActionOnTimeout(h, pid));
+      const action = autoActionOnTimeout(h, pid);
+      sendActionRef.current(action);
+      if (tableFormat === "cash") {
+        setCashSittingOut(true);
+      }
+      const tid = tableId;
+      if (tid) {
+        void api.setSitOut(tid, pid, true).catch(() => {});
+      }
     }, PLAYER_ACTION_LIMIT_MS);
     return () => {
       window.clearInterval(tick);
       window.clearTimeout(actionTimer);
     };
-  }, [isMyAction, hand?.handId, hand?.actionSeat, hand?.street, hand?.currentBetMojos]);
+  }, [isMyAction, hand?.handId, hand?.actionSeat, hand?.street, hand?.currentBetMojos, tableFormat, tableId]);
 
   useEffect(() => {
     const base = isBeta ? "DAT Poker beta" : "DAT Poker";
@@ -1541,9 +1551,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             canRebuy={canRebuyAtTable}
             canDeal={Boolean(myTableSeat) && sng?.status !== "finished" && bigWin == null}
             autoDeal={tableFormat === "cash"}
-            sittingOut={cashSittingOut}
+            sittingOut={mySittingOut}
             onToggleSitOut={
-              tableFormat === "cash" ? () => setCashSittingOut((v) => !v) : undefined
+              tableId && playerId && myTableSeat
+                ? () => {
+                    const next = !mySittingOut;
+                    run(next ? "Sitting out…" : "Sitting in…", async () => {
+                      if (tableFormat === "cash") {
+                        setCashSittingOut(next);
+                      }
+                      const res = await api.setSitOut(tableId, playerId, next);
+                      setHand(res.hand);
+                      setTableSeats(res.seats);
+                      setHandInProgress(res.handInProgress);
+                      if (res.sng !== undefined) setSng(res.sng);
+                    });
+                  }
+                : undefined
             }
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}

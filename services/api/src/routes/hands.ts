@@ -16,6 +16,7 @@ import {
 } from "./tables.js";
 import { touchPlayerActivity } from "../player-activity.js";
 import { playHouseIfDue } from "../house-play.js";
+import { playHumansIfDue } from "../human-play.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { requirePlayer, sessionMatchesClaim, type PlayerSession } from "../player-session.js";
 
@@ -103,10 +104,12 @@ export function registerHandRoutes(app: FastifyInstance): void {
         const handId = randomUUID();
         const { commitHash } = table.startHand(handId);
         for (const seated of table.getSeatedPlayers()) {
-        table.submitPlayerSeed(seated.playerId, generateServerSeed());
-      }
+          if (seated.sittingOut) continue;
+          table.submitPlayerSeed(seated.playerId, generateServerSeed());
+        }
       table.revealAndDeal();
       table.advanceHandIfIdle();
+      playHumansIfDue(req.params.tableId, table);
       playHouseIfDue(table);
       persistTablePlaythrough(table);
       maybeRecordCompletedHand(req.params.tableId, table);
@@ -173,6 +176,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
       table.applyAction(session.playerId, req.body.action, amount);
       table.advanceHandIfIdle();
+      playHumansIfDue(req.params.tableId, table);
       playHouseIfDue(table);
       persistTablePlaythrough(table);
       if (!table.isHandInProgress()) {

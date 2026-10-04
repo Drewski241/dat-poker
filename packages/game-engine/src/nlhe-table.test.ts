@@ -717,6 +717,21 @@ describe("NlheTableEngine", () => {
     expect(() => table.cashOutPlayer("alice")).toThrow(/active hand/i);
   });
 
+  it("excludes sitting-out players from the next hand", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.setSittingOut("bob", true);
+    expect(() => table.startHand("hand-sit")).toThrow(/2 active players/i);
+
+    table.seatPlayer("dat-poker:house", 2, 5_000_000_000_000n);
+    table.startHand("hand-sit-house");
+    expect(table.getHandState()?.players.map((p) => p.playerId).sort()).toEqual([
+      "alice",
+      "dat-poker:house",
+    ]);
+  });
+
   it("seats six-max with three players and awards a fold", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

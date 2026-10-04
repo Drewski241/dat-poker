@@ -93,6 +93,8 @@ export class NlheTableEngine {
   private allInRunoutFrom: number | null = null;
   /** Dealer button seat between hands; moves one occupied seat clockwise after each hand. */
   private buttonSeat: number | null = null;
+  /** Seated players skipping hands until they sit back in (auto-fold when dealt in mid-hand). */
+  private sittingOut = new Set<PlayerId>();
 
   constructor(config: TableConfig) {
     this.config = config;
@@ -110,9 +112,37 @@ export class NlheTableEngine {
     }
     this.seats.set(seatIndex, playerId);
     this.stacks.set(playerId, buyInMojos);
+    this.sittingOut.delete(playerId);
     if (!this.handsPlayed.has(playerId)) {
       this.handsPlayed.set(playerId, 0);
     }
+  }
+
+  /** Voluntary sit-out between hands, or sit back in anytime. */
+  setSittingOut(playerId: PlayerId, sittingOut: boolean): void {
+    if (!this.stacks.has(playerId)) {
+      throw new Error("Player not seated");
+    }
+    if (sittingOut && this.hand) {
+      throw new Error("Cannot sit out voluntarily during an active hand");
+    }
+    if (sittingOut) {
+      this.sittingOut.add(playerId);
+    } else {
+      this.sittingOut.delete(playerId);
+    }
+  }
+
+  /** Mark a player sitting out after an action timer expires (allowed during a hand). */
+  markTimedOutSittingOut(playerId: PlayerId): void {
+    if (!this.stacks.has(playerId)) {
+      throw new Error("Player not seated");
+    }
+    this.sittingOut.add(playerId);
+  }
+
+  isSittingOut(playerId: PlayerId): boolean {
+    return this.sittingOut.has(playerId);
   }
 
   rebuyStack(playerId: PlayerId, buyInMojos: bigint): void {
@@ -205,6 +235,7 @@ export class NlheTableEngine {
     }
     this.seats.set(seatIndex, playerId);
     this.stacks.set(playerId, stackMojos);
+    this.sittingOut.delete(playerId);
     if (!this.handsPlayed.has(playerId)) {
       this.handsPlayed.set(playerId, 0);
     }
@@ -272,14 +303,27 @@ export class NlheTableEngine {
     return this.stacks.get(playerId) ?? null;
   }
 
-  getSeatedPlayers(): { playerId: PlayerId; seatIndex: number; stackMojos: bigint }[] {
+  getSeatedPlayers(): {
+    playerId: PlayerId;
+    seatIndex: number;
+    stackMojos: bigint;
+    sittingOut: boolean;
+  }[] {
     return [...this.seats.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([seatIndex, playerId]) => ({
         playerId,
         seatIndex,
         stackMojos: this.getPlayerStack(playerId) ?? 0n,
+        sittingOut: this.sittingOut.has(playerId),
       }));
+  }
+
+  /** Seated players eligible to be dealt into the next hand. */
+  activeSeatedPlayers(): { playerId: PlayerId; seatIndex: number; stackMojos: bigint }[] {
+    return this.getSeatedPlayers()
+      .filter((s) => !s.sittingOut && s.stackMojos > 0n)
+      .map(({ playerId, seatIndex, stackMojos }) => ({ playerId, seatIndex, stackMojos }));
   }
 
   cashOutPlayer(playerId: PlayerId): { stackMojos: bigint; seatIndex: number } {
@@ -303,6 +347,7 @@ export class NlheTableEngine {
     this.seats.delete(seatIndex);
     this.stacks.delete(playerId);
     this.handsPlayed.delete(playerId);
+    this.sittingOut.delete(playerId);
     return { stackMojos, seatIndex };
   }
 
@@ -353,11 +398,11 @@ export class NlheTableEngine {
   }
 
   startHand(handId: HandId): { commitHash: string } {
-    const seated = [...this.seats.entries()]
-      .filter(([, playerId]) => (this.stacks.get(playerId) ?? 0n) > 0n)
-      .sort((a, b) => a[0] - b[0]);
+    const seated = this.activeSeatedPlayers().map(
+      (s) => [s.seatIndex, s.playerId] as const,
+    );
     if (seated.length < 2) {
-      throw new Error("Need at least 2 players with chips");
+      throw new Error("Need at least 2 active players");
     }
     if (this.hand) {
       throw new Error("Hand already in progress");

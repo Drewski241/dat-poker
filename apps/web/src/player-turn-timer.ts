@@ -1,8 +1,9 @@
-/** How long the player has to act on their turn. */
-export const PLAYER_ACTION_LIMIT_MS = 30_000;
+import {
+  PLAYER_ACTION_LIMIT_MS,
+  SLOTH_APPEAR_DELAY_MS,
+} from "@dat-poker/shared";
 
-/** Sloth reminder appears after this delay (still within the action limit). */
-export const SLOTH_APPEAR_DELAY_MS = 15_000;
+export { PLAYER_ACTION_LIMIT_MS, SLOTH_APPEAR_DELAY_MS };
 
 export function actionSecondsRemaining(elapsedMs: number): number {
   return Math.max(0, Math.ceil((PLAYER_ACTION_LIMIT_MS - elapsedMs) / 1000));
