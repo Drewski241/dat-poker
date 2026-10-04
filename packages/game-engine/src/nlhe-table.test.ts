@@ -445,6 +445,9 @@ describe("NlheTableEngine", () => {
     expect(table.isHandInProgress()).toBe(false);
 
     expect(table.getLastHandResult()?.winnerId).toBe("deep");
+    const layered = table.getLastHandResult()!;
+    expect(layered.isChop).toBe(false);
+    expect([...new Set(layered.participants.filter((p) => p.awardedMojos > 0n).map((p) => p.playerId))].length).toBe(1);
     expect(table.getPlayerStack("short")).toBe(0n);
     expect(table.getPlayerStack("mid")).toBe(0n);
     // Deep risked only up to mid (3k); uncalled 7k returned + won both pots.

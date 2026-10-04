@@ -59,4 +59,33 @@ describe("formatHandOutcomeLine", () => {
       }),
     ).toBe("You won 9.84 DAT · showdown");
   });
+
+  it("does not call a side-pot hand a chop when two players are paid but isChop is false", () => {
+    expect(
+      formatHandOutcomeLine({
+        playerId: "you",
+        winnerLabel: "You",
+        ticker: "DAT",
+        hand: {
+          winnerId: "you",
+          potMojos: "780000",
+          totalPotMojos: "1260000",
+          isChop: false,
+          reason: "showdown",
+          participants: [
+            {
+              playerId: "you",
+              stackBeforePayoutMojos: "0",
+              stackAfterMojos: "780000",
+            },
+            {
+              playerId: "house-7",
+              stackBeforePayoutMojos: "5780000",
+              stackAfterMojos: "6260000",
+            },
+          ],
+        },
+      }),
+    ).toBe("You won 780 DAT · showdown");
+  });
 });
