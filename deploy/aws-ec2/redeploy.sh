@@ -14,7 +14,7 @@ if [[ -z "${WEB_ROOT:-}" ]]; then
     WEB_ROOT="/usr/share/nginx/html"
   fi
 fi
-REPO_REF="${DAT_POKER_REPO_REF:-cursor/player-feedback-fixes-dc28}"
+REPO_REF="${DAT_POKER_REPO_REF:-cursor/beta-chop-mtt-b297}"
 
 cd "$INSTALL_ROOT"
 export CI=true

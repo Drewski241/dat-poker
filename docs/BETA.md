@@ -176,18 +176,20 @@ security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
 
 ## Redeploy after you push code
 
-In Session Manager:
+**Branch on the beta host:** `cursor/beta-chop-mtt-b297` — 16-player MTT / final
+table, true chop labels (not side-pot mislabels), SNG sit-out + server turn
+timeout, cash auto-deal, MTT16 NFT lobby promo.
+
+**Laptop (Session Manager, one line):**
 
 ```bash
 sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh
 ```
 
-(`up.sh` fetches `cursor/player-feedback-fixes-dc28` by default — MTT16 NFT
-challenge tip plus player-feedback fixes — and runs `redeploy.sh`, or downloads
-`redeploy.sh` from GitHub if your checkout is still old. Override with
-`DAT_POKER_REPO_REF=…` when deploying another branch.)
+(`up.sh` fetches `cursor/beta-chop-mtt-b297` by default. Override with
+`DAT_POKER_REPO_REF=…` if needed.)
 
-Use `main` after the feature PR merges:
+Use `main` only after those features merge:
 
 ```bash
 sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/up.sh
@@ -195,6 +197,55 @@ sudo DAT_POKER_REPO_REF=main bash /opt/dat-poker/deploy/aws-ec2/up.sh
 
 Restarting the API clears open tables; account DAT and play-through unlocks
 stay in `data/ledger.json`.
+
+### Phone redeploy (Session Manager — type one line, Enter, wait)
+
+Same branch as above. Short variable name so you can type on a phone keyboard.
+
+**Step A — go to the app directory**
+
+```bash
+cd /opt/dat-poker
+```
+
+**Step B — set branch (copy from laptop if you can; otherwise type carefully)**
+
+```bash
+export R=cursor/beta-chop-mtt-b297
+```
+
+**Step C — download that branch**
+
+```bash
+sudo git fetch --depth 1 origin $R
+```
+
+**Step D — switch to it**
+
+```bash
+sudo git checkout -f FETCH_HEAD
+```
+
+**Step E — rebuild (several minutes; last line must say `beta redeploy ok`)**
+
+```bash
+sudo bash deploy/aws-ec2/up.sh
+```
+
+**Step F — sanity check**
+
+```bash
+curl -s http://127.0.0.1/health
+```
+
+You want `"status":"ok"`. Optional MTT promo:
+
+```bash
+curl -s http://127.0.0.1/v1/lobby/mtt16-nft-promo
+```
+
+After the host has run step E once with this branch, later phone updates are
+only **Step A** + **Step E** (`up.sh` already knows `cursor/beta-chop-mtt-b297`).
 
 ### Update from your phone (Session Manager, no copy-paste)
 
@@ -221,7 +272,7 @@ cd /opt/dat-poker
 ```
 
 ```bash
-export R=cursor/player-feedback-fixes-dc28
+export R=cursor/beta-chop-mtt-b297
 ```
 
 ```bash

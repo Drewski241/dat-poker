@@ -19,8 +19,8 @@ Parameters:
 
   RepoRef:
     Type: String
-    Default: cursor/fix-sng-prize-pool-d148
-    Description: Git branch to deploy (use main after PR #20 merges).
+    Default: cursor/beta-chop-mtt-b297
+    Description: Git branch — 16-player MTT, chop pot labels, SNG sit-out server pace.
 
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
