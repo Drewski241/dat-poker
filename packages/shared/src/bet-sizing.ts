@@ -11,8 +11,11 @@ export function computeNlheBetRange(params: {
   currentBetMojos: bigint;
   myBetThisStreetMojos: bigint;
   myStackMojos: bigint;
+  /** Last bet/raise increment on this street; defaults to BB. */
+  lastRaiseIncrementMojos?: bigint;
 }): NlheBetRange {
   const { bigBlindMojos, currentBetMojos, myBetThisStreetMojos, myStackMojos } = params;
+  const lastRaiseIncrementMojos = params.lastRaiseIncrementMojos ?? bigBlindMojos;
   const maxRaiseTo = myBetThisStreetMojos + myStackMojos;
 
   if (myStackMojos <= 0n || maxRaiseTo <= 0n) {
@@ -34,7 +37,7 @@ export function computeNlheBetRange(params: {
     };
   }
 
-  const minRaiseToRaw = currentBetMojos + bigBlindMojos;
+  const minRaiseToRaw = currentBetMojos + lastRaiseIncrementMojos;
   const minRaiseTo = minRaiseToRaw > maxRaiseTo ? maxRaiseTo : minRaiseToRaw;
 
   return {
@@ -51,4 +54,21 @@ export function snapRaiseTo(raw: bigint, min: bigint, max: bigint, step: bigint)
   if (raw >= max) return max;
   const steps = (raw - min) / step;
   return min + steps * step;
+}
+
+/** Quick bet chips: 1×–4× BB, clipped to the legal raise-to range. */
+export function betSizePresets(
+  bigBlindMojos: bigint,
+  minRaiseTo: bigint,
+  maxRaiseTo: bigint,
+): bigint[] {
+  if (bigBlindMojos <= 0n) return [];
+  const presets: bigint[] = [];
+  for (const n of [1n, 2n, 3n, 4n]) {
+    const amount = bigBlindMojos * n;
+    if (amount >= minRaiseTo && amount <= maxRaiseTo) {
+      presets.push(amount);
+    }
+  }
+  return presets;
 }
