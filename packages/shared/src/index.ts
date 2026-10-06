@@ -4,3 +4,4 @@ export * from "./events.js";
 export * from "./dat-units.js";
 export * from "./bet-sizing.js";
 export * from "./tournament.js";
+export * from "./house.js";

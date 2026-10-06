@@ -9,6 +9,7 @@ import {
   readDatTokenConfig,
   validateBuyInProof,
 } from "../wallet-config.js";
+import { getTournamentTableEngine } from "./tournaments.js";
 
 const tables = new Map<string, NlheTableEngine>();
 const HOUSE_PLAYER_ID = "dat-poker:house";
@@ -50,7 +51,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
   });
 
   app.get<{ Params: { tableId: string } }>("/v1/tables/:tableId", async (req, reply) => {
-    const table = tables.get(req.params.tableId);
+    const table = getTableEngine(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
@@ -156,6 +157,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
   });
 }
+
+/** Resolve cash or tournament table engines for hand routes. */
 export function getTableEngine(tableId: string): NlheTableEngine | undefined {
-  return tables.get(tableId);
+  return tables.get(tableId) ?? getTournamentTableEngine(tableId);
 }
