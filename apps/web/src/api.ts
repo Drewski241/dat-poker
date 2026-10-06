@@ -190,6 +190,7 @@ export interface SngSnapshot {
   status: "registering" | "running" | "finished";
   maxSeats: number;
   buyInMojos: string;
+  startingStackMojos?: string;
   prizePoolMojos: string;
   payouts?: { place: number; bps: number; prizeMojos: string }[];
   handNumber: number;
@@ -207,6 +208,7 @@ export interface SngSnapshot {
   handsUntilNextLevel?: number | null;
   playersRemaining: number;
   humanCount: number;
+  maxHumans?: number;
   houseSeatsAvailable: number;
   placements: { playerId: string; place: number; prizeMojos: string }[];
   kind?: "sng" | "mtt";
