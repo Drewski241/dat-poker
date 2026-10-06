@@ -148,4 +148,18 @@ describe("16-player MTT", () => {
     expect(() => event.claimHouseSeat(b, "carol")).toThrow(/maximum of 2 human/);
     expect(event.snapshot(a).maxHumans).toBe(2);
   });
+
+  it("builds a 500-player field across 8-max tables", () => {
+    const event = MttEvent.create({ fieldSize: 500, maxHumans: 500 });
+    expect(event.fieldSize).toBe(500);
+    expect(event.tableIds()).toHaveLength(63);
+    const seats = event.engines().reduce((n, eng) => n + eng.getMaxSeats(), 0);
+    expect(seats).toBe(500);
+    event.seatPlayer(event.tableIds()[0]!, "alice", 0);
+    event.fillHouseSeats();
+    expect(event.canStart()).toBe(true);
+    event.start();
+    expect(event.getStatus()).toBe("running");
+    expect(event.snapshot(event.tableIds()[0]!).eventPlayersRemaining).toBe(500);
+  });
 });

@@ -24,8 +24,12 @@ export interface MttOptions {
   startingStackMojos?: bigint;
   fillHouse?: boolean;
   minHumansToStart?: number;
-  /** Max non-house players who may enter this event (default 10). */
+  /** Max non-house players who may enter this event. */
   maxHumans?: number;
+  /** Total seats in the field (default 16). Use 500 for the large MTT. */
+  fieldSize?: number;
+  startingTableSeats?: number;
+  finalTableSeats?: number;
   housePolicy?: HousePolicy;
   handsPerLevel?: number;
   levelDurationMs?: number;
@@ -49,10 +53,10 @@ export class MttEvent {
   readonly minHumansToStart: number;
   readonly maxHumans: number;
   readonly housePolicy: HousePolicy;
-  readonly fieldSize = DAT_MTT_DEFAULTS.fieldSize;
-  readonly startingTableSeats = DAT_MTT_DEFAULTS.startingTableSeats;
-  readonly startingTableCount = DAT_MTT_DEFAULTS.startingTableCount;
-  readonly finalTableSeats = DAT_MTT_DEFAULTS.finalTableSeats;
+  readonly fieldSize: number;
+  readonly startingTableSeats: number;
+  readonly startingTableCount: number;
+  readonly finalTableSeats: number;
   private readonly blindLevels: SngBlindLevel[];
   private readonly payoutShares: SngPayoutShare[];
   private readonly handsPerLevel: number;
@@ -73,26 +77,49 @@ export class MttEvent {
 
   constructor(eventId: string, options: MttOptions = {}) {
     this.eventId = eventId;
+    this.fieldSize = Math.max(
+      2,
+      Math.floor(options.fieldSize ?? DAT_MTT_DEFAULTS.fieldSize),
+    );
+    this.startingTableSeats = Math.max(
+      2,
+      Math.min(10, Math.floor(options.startingTableSeats ?? DAT_MTT_DEFAULTS.startingTableSeats)),
+    );
+    this.finalTableSeats = Math.max(
+      2,
+      Math.min(
+        this.startingTableSeats,
+        Math.floor(options.finalTableSeats ?? DAT_MTT_DEFAULTS.finalTableSeats),
+      ),
+    );
     this.buyInMojos = options.buyInMojos ?? DAT_MTT_DEFAULTS.buyInMojos;
     this.startingStackMojos = options.startingStackMojos ?? DAT_MTT_DEFAULTS.startingStackMojos;
     this.fillHouse = options.fillHouse ?? DAT_MTT_DEFAULTS.fillHouse;
     this.minHumansToStart = options.minHumansToStart ?? DAT_MTT_DEFAULTS.minHumansToStart;
-    const maxHumansRaw = options.maxHumans ?? DAT_MTT_DEFAULTS.maxHumans ?? 10;
-    this.maxHumans = Math.max(
-      1,
-      Math.min(DAT_MTT_DEFAULTS.fieldSize, Math.floor(Number(maxHumansRaw))),
-    );
+    const defaultMaxHumans =
+      this.fieldSize >= 500
+        ? this.fieldSize
+        : (DAT_MTT_DEFAULTS.maxHumans ?? 10);
+    const maxHumansRaw = options.maxHumans ?? defaultMaxHumans;
+    this.maxHumans = Math.max(1, Math.min(this.fieldSize, Math.floor(Number(maxHumansRaw))));
     if (!Number.isFinite(this.maxHumans)) {
-      this.maxHumans = 10;
+      this.maxHumans = Math.min(this.fieldSize, 10);
     }
     this.housePolicy = options.housePolicy ?? DAT_MTT_DEFAULTS.housePolicy;
     this.handsPerLevel = options.handsPerLevel ?? DAT_MTT_DEFAULTS.handsPerLevel;
     this.levelDurationMs = options.levelDurationMs ?? DAT_MTT_DEFAULTS.levelDurationMs;
     this.blindLevels = options.blindLevels ?? [...DAT_MTT_DEFAULTS.blindLevels];
     this.payoutShares = options.payouts ?? defaultSngPayouts(this.fieldSize);
-    for (let i = 0; i < this.startingTableCount; i += 1) {
-      this.tables.push(this.makeTable(`Table ${i + 1}`, this.startingTableSeats, false));
+
+    let remaining = this.fieldSize;
+    let tableIndex = 0;
+    while (remaining > 0) {
+      const seats = Math.min(this.startingTableSeats, remaining);
+      tableIndex += 1;
+      this.tables.push(this.makeTable(`Table ${tableIndex}`, seats, false));
+      remaining -= seats;
     }
+    this.startingTableCount = this.tables.length;
   }
 
   static create(options: MttOptions = {}): MttEvent {
@@ -162,7 +189,7 @@ export class MttEvent {
     }
     if (!this.canAcceptHuman(playerId)) {
       throw new Error(
-        `This 16-player SNG already has the maximum of ${this.maxHumans} human players`,
+        `This ${this.fieldSize}-player tournament already has the maximum of ${this.maxHumans} human players`,
       );
     }
     const table = this.requireTable(tableId);
@@ -181,11 +208,17 @@ export class MttEvent {
     return null;
   }
 
-  firstHouseSeat(): { tableId: string; seatIndex: number } | null {
+  firstHouseSeat(): { tableId: string; seatIndex: number; stackMojos: bigint } | null {
     for (const table of this.openTables()) {
       if (table.engine.isHandInProgress()) continue;
       const house = table.engine.houseSeats()[0];
-      if (house) return { tableId: table.tableId, seatIndex: house.seatIndex };
+      if (house) {
+        return {
+          tableId: table.tableId,
+          seatIndex: house.seatIndex,
+          stackMojos: house.stackMojos,
+        };
+      }
     }
     return null;
   }
@@ -193,7 +226,7 @@ export class MttEvent {
   seatPlayer(tableId: string, playerId: PlayerId, seatIndex: number): void {
     if (!isHousePlayerId(playerId) && !this.canAcceptHuman(playerId)) {
       throw new Error(
-        `This 16-player SNG already has the maximum of ${this.maxHumans} human players`,
+        `This ${this.fieldSize}-player tournament already has the maximum of ${this.maxHumans} human players`,
       );
     }
     const table = this.requireTable(tableId);
@@ -230,7 +263,11 @@ export class MttEvent {
 
   canStart(): boolean {
     if (this.status !== "registering") return false;
-    if (this.openTables().some((row) => row.engine.getActivePlayerCount() < this.startingTableSeats)) {
+    if (
+      this.openTables().some(
+        (row) => row.engine.getActivePlayerCount() < row.engine.getMaxSeats(),
+      )
+    ) {
       return false;
     }
     return this.humanCount() >= this.minHumansToStart;
@@ -239,7 +276,7 @@ export class MttEvent {
   start(nowMs = Date.now()): void {
     if (!this.canStart()) {
       throw new Error(
-        `16-player SNG not ready (need ${this.startingTableCount} tables of ${this.startingTableSeats} and ${this.minHumansToStart} human)`,
+        `${this.fieldSize}-player tournament not ready (need full tables and ${this.minHumansToStart} human)`,
       );
     }
     this.status = "running";

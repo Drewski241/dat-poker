@@ -182,8 +182,8 @@ In Session Manager:
 sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh
 ```
 
-(`up.sh` fetches `cursor/player-feedback-fixes-dc28` by default — MTT16 NFT
-challenge tip plus player-feedback fixes — and runs `redeploy.sh`, or downloads
+(`up.sh` fetches `cursor/tournament-500-lobby-b5b9` by default — 500-player MTT
+lobby + late-reg house claim by chip stack. It runs `redeploy.sh`, or downloads
 `redeploy.sh` from GitHub if your checkout is still old. Override with
 `DAT_POKER_REPO_REF=…` when deploying another branch.)
 
@@ -221,7 +221,7 @@ cd /opt/dat-poker
 ```
 
 ```bash
-export R=cursor/player-feedback-fixes-dc28
+export R=cursor/tournament-500-lobby-b5b9
 ```
 
 ```bash

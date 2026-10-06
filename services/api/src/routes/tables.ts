@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { TableConfig, TableFormat } from "@dat-poker/shared";
 import {
+  DAT_MTT_500_DEFAULTS,
   DAT_MTT_DEFAULTS,
   DAT_SNG_DEFAULTS,
   DAT_TABLE_DEFAULTS,
@@ -236,6 +237,16 @@ function tableSnapshot(
     format: table.getConfig().format,
     sng: tournamentSnapshot(tableId, viewerId),
     houseSeatsAvailable: table.houseSeats().length,
+    /** Cheapest live house stack — late-reg claim cost for that seat. */
+    cheapestHouseStackMojos: (() => {
+      const houses = table.houseSeats();
+      if (houses.length === 0) return null;
+      let min = houses[0]!.stackMojos;
+      for (const h of houses) {
+        if (h.stackMojos < min) min = h.stackMojos;
+      }
+      return min.toString();
+    })(),
     full:
       table.houseSeats().length === 0 &&
       table.getActivePlayerCount() >= table.getMaxSeats(),
@@ -561,13 +572,15 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
     if (joinable) {
       const [tableId, sng] = joinable;
-      const house = sng.engine.houseSeats()[0];
+      const house = sng.engine.houseSeats()[0]!;
+      // Late join: pay the house seat's live chip stack from the player account.
+      const claimCost = house.stackMojos;
       const buyIn = takeBuyInFromAccountOrProof({
         tableId,
         playerId,
         displayAddress: session.displayAddress,
         seatIndex: house.seatIndex,
-        buyInMojos,
+        buyInMojos: claimCost,
         buyInProof: req.body.buyInProof,
         devAck: req.body.devAck,
       });
@@ -582,10 +595,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
         return {
           ok: true,
           joinedExisting: true,
+          claimCostMojos: claimCost.toString(),
           ...tableSnapshot(tableId, sng.engine, playerId, maintenance),
         };
       } catch (e) {
-        if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+        if (buyIn.usedAccount) creditAccount(playerId, claimCost);
         if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
         return reply.status(400).send({ error: (e as Error).message });
       }
@@ -661,6 +675,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
 
     const joinable = [...mttByTable.values()].find((mtt) => {
+      if (mtt.fieldSize >= 500) return false;
       if (mtt.getStatus() === "finished") return false;
       if (!mtt.canAcceptHuman(playerId)) return false;
       return mtt.firstHouseSeat() !== null;
@@ -668,12 +683,13 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
     if (joinable) {
       const house = joinable.firstHouseSeat()!;
+      const claimCost = house.stackMojos;
       const buyIn = takeBuyInFromAccountOrProof({
         tableId: house.tableId,
         playerId,
         displayAddress: session.displayAddress,
         seatIndex: house.seatIndex,
-        buyInMojos,
+        buyInMojos: claimCost,
         buyInProof: req.body.buyInProof,
         devAck: req.body.devAck,
       });
@@ -689,10 +705,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
         return {
           ok: true,
           joinedExisting: true,
+          claimCostMojos: claimCost.toString(),
           ...tableSnapshot(house.tableId, table, playerId, maintenance),
         };
       } catch (e) {
-        if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+        if (buyIn.usedAccount) creditAccount(playerId, claimCost);
         if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
         return reply.status(400).send({ error: (e as Error).message });
       }
@@ -702,6 +719,133 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const open = created.firstOpenSeat();
     if (!open) {
       return reply.status(500).send({ error: "Could not open a 16-player SNG" });
+    }
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: open.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: open.seatIndex,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      for (const tableId of created.tableIds()) {
+        tables.delete(tableId);
+        mttByTable.delete(tableId);
+      }
+      return reply.status(400).send({ error: buyIn.error });
+    }
+    try {
+      created.seatPlayer(open.tableId, playerId, open.seatIndex);
+      created.engineFor(open.tableId)?.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      autoFillAndStartMtt(created);
+      const table = tables.get(open.tableId)!;
+      const maintenance = maintainTable(open.tableId, table, playerId);
+      return {
+        ok: true,
+        joinedExisting: false,
+        ...tableSnapshot(open.tableId, table, playerId, maintenance),
+      };
+    } catch (e) {
+      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+      if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+      for (const tableId of created.tableIds()) {
+        tables.delete(tableId);
+        mttByTable.delete(tableId);
+      }
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  /**
+   * Join (or late-reg into) the 500-player multi-table. Early buy-in is 1000 DAT;
+   * late reg claims a house seat and debits that seat's live chip stack.
+   */
+  app.post<{
+    Body: {
+      playerId?: string;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+    };
+  }>("/v1/tables/join-mtt-500", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many join requests from this network" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
+
+    const existing = findPlayerTable(playerId);
+    if (existing) {
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(existing.tableId, existing.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: true,
+        ...tableSnapshot(existing.tableId, existing.table, playerId, maintenance),
+      };
+    }
+
+    const dat = readDatTokenConfig();
+    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+
+    const joinable = [...mttByTable.values()].find((mtt) => {
+      if (mtt.fieldSize < 500) return false;
+      if (mtt.getStatus() === "finished") return false;
+      if (!mtt.canAcceptHuman(playerId)) return false;
+      return mtt.firstHouseSeat() !== null;
+    });
+
+    if (joinable) {
+      const house = joinable.firstHouseSeat()!;
+      const claimCost = house.stackMojos;
+      const buyIn = takeBuyInFromAccountOrProof({
+        tableId: house.tableId,
+        playerId,
+        displayAddress: session.displayAddress,
+        seatIndex: house.seatIndex,
+        buyInMojos: claimCost,
+        buyInProof: req.body.buyInProof,
+        devAck: req.body.devAck,
+      });
+      if (buyIn.error) {
+        return reply.status(400).send({ error: buyIn.error });
+      }
+      try {
+        joinable.claimHouseSeat(house.tableId, playerId, house.seatIndex);
+        joinable.engineFor(house.tableId)?.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+        touchPlayerActivity(playerId);
+        const table = tables.get(house.tableId)!;
+        const maintenance = maintainTable(house.tableId, table, playerId);
+        return {
+          ok: true,
+          joinedExisting: true,
+          claimCostMojos: claimCost.toString(),
+          ...tableSnapshot(house.tableId, table, playerId, maintenance),
+        };
+      } catch (e) {
+        if (buyIn.usedAccount) creditAccount(playerId, claimCost);
+        if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+        return reply.status(400).send({ error: (e as Error).message });
+      }
+    }
+
+    const created = createMttEvent({
+      fieldSize: DAT_MTT_500_DEFAULTS.fieldSize,
+      startingTableSeats: DAT_MTT_500_DEFAULTS.startingTableSeats,
+      finalTableSeats: DAT_MTT_500_DEFAULTS.finalTableSeats,
+      maxHumans: DAT_MTT_500_DEFAULTS.maxHumans,
+    });
+    const open = created.firstOpenSeat();
+    if (!open) {
+      return reply.status(500).send({ error: "Could not open a 500-player tournament" });
     }
     const buyIn = takeBuyInFromAccountOrProof({
       tableId: open.tableId,
@@ -769,14 +913,17 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
     rememberLabel(playerId, session.displayAddress);
     const previewSeat = req.body.seatIndex ?? table.houseSeats()[0]?.seatIndex ?? 0;
+    const houseTarget =
+      table.houseSeats().find((h) => h.seatIndex === previewSeat) ?? table.houseSeats()[0];
     const dat = readDatTokenConfig();
-    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+    // Late reg / claim: account must cover this house seat's live chip stack.
+    const claimCost = houseTarget?.stackMojos ?? BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
     const buyIn = takeBuyInFromAccountOrProof({
       tableId: req.params.tableId,
       playerId,
       displayAddress: session.displayAddress,
       seatIndex: previewSeat,
-      buyInMojos,
+      buyInMojos: claimCost,
       buyInProof: req.body.buyInProof,
       devAck: req.body.devAck,
     });
@@ -797,10 +944,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
         replacedPlayerId: claimed.replacedPlayerId,
         seatIndex: claimed.seatIndex,
         stackMojos: claimed.stackMojos,
+        claimCostMojos: claimCost.toString(),
         ...tableSnapshot(req.params.tableId, table, playerId, maintenance),
       };
     } catch (e) {
-      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+      if (buyIn.usedAccount) creditAccount(playerId, claimCost);
       if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
       return reply.status(400).send({ error: (e as Error).message });
     }
@@ -1236,11 +1384,23 @@ function registerMttTables(mtt: MttEvent): void {
   }
 }
 
-function createMttEvent(): MttEvent {
+function createMttEvent(options?: {
+  fieldSize?: number;
+  startingTableSeats?: number;
+  finalTableSeats?: number;
+  maxHumans?: number;
+}): MttEvent {
+  const fieldSize = options?.fieldSize ?? DAT_MTT_DEFAULTS.fieldSize;
+  const maxHumans =
+    options?.maxHumans ??
+    (fieldSize >= 500 ? fieldSize : readMttMaxHumans());
   const mtt = MttEvent.create({
     fillHouse: readFillHouseDefault(),
     minHumansToStart: 1,
-    maxHumans: readMttMaxHumans(),
+    fieldSize,
+    startingTableSeats: options?.startingTableSeats,
+    finalTableSeats: options?.finalTableSeats,
+    maxHumans,
   });
   registerMttTables(mtt);
   return mtt;

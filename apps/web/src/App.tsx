@@ -886,6 +886,48 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   };
 
+  const joinMtt500 = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!playerId) throw new Error("Create an account or sign in first");
+      const ticker = datToken?.ticker ?? "DAT";
+      const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      const account = BigInt(accountMojos ?? "0");
+      if (account < BigInt(buyIn)) {
+        if (account > 0n) {
+          throw new Error(
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to buy in`,
+          );
+        }
+        if (!datToken?.devBuyInEnabled) {
+          throw new Error(
+            `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`,
+          );
+        }
+      }
+      setStatus("Joining 500-player tournament…");
+      const joined = await api.joinMtt500(playerId, buyIn, {
+        devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
+      });
+      setTableId(joined.tableId);
+      setTableFormat("mtt");
+      setTableMaxSeats(joined.maxSeats ?? 8);
+      setSng(joined.sng ?? null);
+      setTableFocusMode(true);
+      setTableSeats(joined.seats);
+      setHand(joined.hand);
+      setHandInProgress(joined.handInProgress);
+      await refreshAccount(playerId);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
   const joinSng = async () => {
     if (busy) return;
     setBusy(true);
@@ -935,12 +977,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     try {
       if (!playerId) throw new Error("Create an account or sign in first");
       const ticker = datToken?.ticker ?? "DAT";
-      const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      // Late reg: pay the house seat's live chip stack (fallback to table buy-in).
+      const buyIn =
+        openTable.cheapestHouseStackMojos ??
+        openTable.sng?.startingStackMojos ??
+        datToken?.minBuyInMojos ??
+        "1000000";
       const account = BigInt(accountMojos ?? "0");
       if (account < BigInt(buyIn)) {
         if (account > 0n) {
           throw new Error(
-            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to buy in`,
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to take that house seat`,
           );
         }
         if (!datToken?.devBuyInEnabled) {
@@ -949,7 +996,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           );
         }
       }
-      setStatus("Taking a house seat…");
+      setStatus(
+        `Taking house seat (${formatDatMojos(buyIn, ticker)} from account)…`,
+      );
       const claimed = await api.claimHouse(openTable.tableId, playerId, buyIn, {
         devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
       });
@@ -1805,12 +1854,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
               16-player SNG
             </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinMtt500()}
+            >
+              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; join
+              500-player tournament
+            </button>
             <p className="muted small">
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
               Prize pool is every seat buy-in (you and house bots). Up to 10 humans per 16-player event;
-              empty seats stay house bots. Finish 1st, 2nd, or 3rd overall to get paid 50% / 30% / 20%.
-              House seats in the money are not paid. Each completed SNG hand unlocks 1 DAT you can
-              withdraw from leftover account chips or prizes.
+              empty seats stay house bots. The 500-player MTT fills the field with house bots — late
+              joiners take a house seat and must have that seat&apos;s chip stack in their account
+              (e.g. 2500 DAT if the house has 2500). Finish 1st, 2nd, or 3rd overall to get paid
+              50% / 30% / 20%. House seats in the money are not paid. Each completed SNG hand unlocks
+              1 DAT you can withdraw from leftover account chips or prizes.
             </p>
             {mtt16NftPromo?.enabled ? (
               <div className="nft-promo">
@@ -2000,7 +2060,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                             {row.sng?.isFinalTable
                               ? "Final Table"
                               : row.sng?.kind === "mtt"
-                                ? (row.sng.tableLabel ?? "16-max")
+                                ? (row.sng.fieldSize != null && row.sng.fieldSize >= 500
+                                    ? `${row.sng.tableLabel ?? "Table"} · 500-max`
+                                    : (row.sng.tableLabel ?? "16-max"))
                                 : "9-max"}
                             {" · "}
                             {humans} human{humans === 1 ? "" : "s"}
@@ -2009,6 +2071,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                               : ""}
                             {" · "}
                             {full ? "full" : `${house} house`}
+                            {!full && row.cheapestHouseStackMojos
+                              ? ` (claim from ${formatDatMojos(row.cheapestHouseStackMojos, datToken?.ticker)})`
+                              : ""}
                             {row.sng?.buyInMojos
                               ? ` · buy-in ${formatDatMojos(row.sng.buyInMojos, datToken?.ticker)}`
                               : ""}

@@ -258,6 +258,8 @@ export interface LobbyTable {
   humans?: number;
   humanCount?: number;
   houseSeatsAvailable?: number;
+  /** Late-reg claim cost for the cheapest house seat (mojos). */
+  cheapestHouseStackMojos?: string | null;
   humanPlayerIds?: string[];
   full?: boolean;
   maxSeats?: number;
@@ -613,7 +615,34 @@ export const api = {
       hand: HandState | null;
       lastHandResult: HandResult | null;
       sng?: SngSnapshot | null;
+      claimCostMojos?: string;
     }>("/v1/tables/join-mtt", {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        buyInMojos,
+        ...options,
+      }),
+    }),
+
+  joinMtt500: (
+    playerId: string,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      maxSeats: number;
+      format?: string;
+      humans?: number;
+      handInProgress: boolean;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+      claimCostMojos?: string;
+    }>("/v1/tables/join-mtt-500", {
       method: "POST",
       body: JSON.stringify({
         playerId,

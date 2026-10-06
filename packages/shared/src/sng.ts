@@ -72,6 +72,25 @@ export const DAT_MTT_DEFAULTS = {
   blindLevels: DAT_SNG_DEFAULTS.blindLevels,
 } as const;
 
+/**
+ * 500-player multi-table: 8-max tables (62×8 + 1×4), house-filled, late reg
+ * by claiming a house seat for that seat's live chip stack.
+ */
+export const DAT_MTT_500_DEFAULTS = {
+  fieldSize: 500,
+  startingTableSeats: 8,
+  finalTableSeats: 8,
+  maxHumans: 500,
+  buyInMojos: DAT_SNG_DEFAULTS.buyInMojos,
+  startingStackMojos: DAT_SNG_DEFAULTS.startingStackMojos,
+  handsPerLevel: DAT_SNG_DEFAULTS.handsPerLevel,
+  levelDurationMs: DAT_SNG_DEFAULTS.levelDurationMs,
+  fillHouse: true,
+  minHumansToStart: 1,
+  housePolicy: "mixed" as HousePolicy,
+  blindLevels: DAT_SNG_DEFAULTS.blindLevels,
+} as const;
+
 export function mttHousePlayerId(tableId: string, seatIndex: number): string {
   return `${HOUSE_PLAYER_PREFIX}${tableId}:${seatIndex}`;
 }
