@@ -33,6 +33,12 @@ import {
   shouldHoldTableForRunout,
   shouldPlayAllInRunout,
 } from "./all-in-runout.js";
+import {
+  AUTO_DEAL_AFTER_RESULT_MS,
+  AUTO_DEAL_DELAY_MS,
+  betweenHandsStatusMessage,
+  TOURNAMENT_WAIT_TICK_MS,
+} from "./between-hands-status.js";
 import { shouldAutoDealNextHand } from "./sng-auto-deal.js";
 import { nextHandBlindSeats, occupiedSeatIndexes } from "./next-hand-blinds.js";
 import { describeLiveHand } from "./live-hand.js";
@@ -833,7 +839,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       const humans = joined.humans;
       setStatus(
         humans >= 2
-          ? "Seated with another player. Deal when everyone is ready."
+          ? "Seated with another player. Next hand starts automatically."
           : "Seated vs house. Another human can take an empty seat.",
       );
     } catch (e) {
@@ -1106,14 +1112,53 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     sittingOut: mySittingOut,
   });
 
+  const tableAutoDeal = tableFormat === "cash" || tableFormat === "sng" || tableFormat === "mtt";
+  const tourneyWaiting = Boolean(
+    (tableFormat === "sng" || tableFormat === "mtt") &&
+      sng &&
+      !hand &&
+      !handInProgress &&
+      !mySittingOut &&
+      (sng.status === "registering" || sng.pauseDeals),
+  );
+
+  const [betweenHandsNowMs, setBetweenHandsNowMs] = useState(() => Date.now());
+  const [autoDealAtMs, setAutoDealAtMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!atTableRoom) return;
+    const id = window.setInterval(() => setBetweenHandsNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [atTableRoom]);
+
+  useEffect(() => {
+    if (!tourneyWaiting) return;
+    const bump = () => setAutoDealAtMs(Date.now() + AUTO_DEAL_DELAY_MS);
+    bump();
+    const id = window.setInterval(bump, TOURNAMENT_WAIT_TICK_MS);
+    return () => window.clearInterval(id);
+  }, [tourneyWaiting, sng?.status, sng?.pauseDeals, sng?.pendingFinalTable]);
+
   useEffect(() => {
     if (!sngCanAutoDeal) return;
-    const delay = handResult ? 1600 : 400;
+    const delay = handResult ? AUTO_DEAL_AFTER_RESULT_MS : AUTO_DEAL_DELAY_MS;
+    setAutoDealAtMs(Date.now() + delay);
     const id = window.setTimeout(() => {
       startHandFlowRef.current();
     }, delay);
     return () => window.clearTimeout(id);
   }, [sngCanAutoDeal, handResult]);
+
+  const betweenHandsMessage = betweenHandsStatusMessage({
+    nowMs: betweenHandsNowMs,
+    tableFormat,
+    autoDeal: tableAutoDeal,
+    autoDealAtMs,
+    sng,
+    sittingOut: mySittingOut,
+    busy,
+    canAutoDeal: sngCanAutoDeal,
+  });
   const handsPlayed = Math.max(myTableSeat?.handsPlayed ?? 0, accountPlaythrough?.handsPlayed ?? 0);
   const handsRequired = Math.max(myTableSeat?.handsRequired ?? 0, accountPlaythrough?.handsRequired ?? 0);
   const playthroughRemaining = handsRequired > 0 ? Math.max(0, handsRequired - handsPlayed) : 0;
@@ -1550,7 +1595,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onStartHand={startHandFlow}
             canRebuy={canRebuyAtTable}
             canDeal={Boolean(myTableSeat) && sng?.status !== "finished" && bigWin == null}
-            autoDeal={tableFormat === "cash"}
+            autoDeal={tableAutoDeal}
+            betweenHandsMessage={betweenHandsMessage}
             sittingOut={mySittingOut}
             onToggleSitOut={
               tableId && playerId && myTableSeat

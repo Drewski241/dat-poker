@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DatTokenInfo, HandResult, HandState, PlayerAction, SngSnapshot, TableSeat } from "../api.js";
 import { computeNlheBetRange, formatDatAmount, formatDatMojos } from "@dat-poker/shared";
 import { formatHandCategory } from "../all-in-runout.js";
+import { mttFieldLabel } from "../between-hands-status.js";
 import { nextHandBlindSeats, occupiedSeatIndexes, seatAngleRadians, seatsInTableOrder } from "../next-hand-blinds.js";
 import { AllInRunout } from "./AllInRunout.js";
 import { BetSlider } from "./BetSlider.js";
@@ -60,8 +61,9 @@ type Props = {
   onStartHand: () => void;
   canRebuy: boolean;
   canDeal?: boolean;
-  /** Cash: hide manual Deal/New hand — hands auto-continue. */
+  /** Hide manual Deal/New hand — server/client auto-deal between hands. */
   autoDeal?: boolean;
+  betweenHandsMessage?: string | null;
   sittingOut?: boolean;
   onToggleSitOut?: () => void;
   onRebuy: () => void;
@@ -107,6 +109,7 @@ export function TableRoom({
   canRebuy,
   canDeal = true,
   autoDeal = false,
+  betweenHandsMessage = null,
   sittingOut = false,
   onToggleSitOut,
   onRebuy,
@@ -143,7 +146,11 @@ export function TableRoom({
   const showBetweenFooter =
     !hand &&
     !runoutPlaying &&
-    (showDeal || canRebuy || (showSitOutControls && sittingOut) || (autoDeal && !sittingOut && !canRebuy));
+    (showDeal ||
+      canRebuy ||
+      (showSitOutControls && sittingOut) ||
+      (autoDeal && !sittingOut && !canRebuy) ||
+      Boolean(betweenHandsMessage));
   const buttonSeatIndex = hand?.dealerSeat ?? dealerButtonSeat;
   const nextBlinds = useMemo(() => {
     if (hand) return null;
@@ -200,7 +207,7 @@ export function TableRoom({
           {sng && (
             <p className="table-room-sng-payouts">
               {sng.kind === "mtt"
-                ? `${sng.eventPlayersRemaining ?? sng.playersRemaining} left in the 16-player SNG`
+                ? `${sng.eventPlayersRemaining ?? sng.playersRemaining} left in the ${mttFieldLabel(sng)}`
                 : `${sng.playersRemaining}/${sng.maxSeats} left`}
               {sng.kind === "mtt" && !sng.isFinalTable && sng.otherTablePlayers != null
                 ? ` · ${sng.otherTablePlayers} at the other table`
@@ -570,9 +577,9 @@ export function TableRoom({
               {handResult ? "New hand" : "Deal hand"}
             </button>
           )}
-          {!showDeal && autoDeal && !sittingOut && !canRebuy ? (
+          {!showDeal && betweenHandsMessage ? (
             <p className="muted small table-room-autodeal-hint" role="status">
-              Next hand dealing…
+              {betweenHandsMessage}
             </p>
           ) : null}
         </footer>
