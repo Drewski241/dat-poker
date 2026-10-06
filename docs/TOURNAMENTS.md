@@ -69,10 +69,28 @@ MTT `maxEntries` defaults to `null` (uncapped). Optional hard cap: `"maxEntries"
 
 1. `POST /v1/tournaments` — create (fees, late reg, re-entries, seats…)
 2. `POST .../register` or `register-batch`
-3. `POST .../start` — seat + build prize pool
-4. Play hands; `.../hand-complete` under hand-for-hand
-5. `POST .../eliminate` / auto via stack sync; `.../reenter` while late reg open
-6. `POST .../blind-up` — may close late reg and enable bubble sync
-7. Last player → `completed` with payouts
+3. `POST .../fill-house` — optional house bots to pad the field
+4. `POST .../start` — seat + build prize pool
+5. Play hands on tournament `tableId` via `/v1/tables/:tableId/hands/*` (house auto-acts)
+6. Hand end auto-syncs eliminations + hand-for-hand; `.../hand-complete` still available
+7. `POST .../eliminate` / `.../reenter` while late reg open
+8. `POST .../blind-up` — may close late reg and enable bubble sync
+9. Last player → `completed` with payouts (house finishers get `prizeMojos: 0`)
+
+### Playable SNG (human + house)
+
+One-shot start for a single human against house-filled seats:
+
+```bash
+curl -s -X POST http://localhost:4000/v1/tournaments/playable-sng \
+  -H 'content-type: application/json' \
+  -d '{"playerId":"alice","maxSeats":8}'
+# → { tournamentId, tableId, seats, … }
+
+# Then the usual hand flow on that tableId:
+# POST /v1/tables/:tableId/hands/start
+# POST /v1/tables/:tableId/hands/seed  {"playerId":"alice"}  # house seeds + auto-deal
+# POST /v1/tables/:tableId/hands/action {"playerId":"alice","action":"fold"}
+```
 
 Package: `@dat-poker/tournament-engine`.

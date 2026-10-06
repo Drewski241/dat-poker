@@ -59,3 +59,4 @@ Connect to `ws://localhost:4100/ws`, wait for `connected`, send `{"type":"ping"}
 - In-memory table state: restarting `pnpm dev:api` clears cash tables; tournaments persist when `DATABASE_URL` points at Postgres.
 - `DAT_ALLOW_DEV_BUYIN=true` in `.env.example` allows dev buy-ins without a configured `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
 - Tournament bot sims (no beta testers): `pnpm sim:tournament -- --players 16 --seed 1` — see [docs/TOURNAMENTS.md](./docs/TOURNAMENTS.md).
+- Playable human+house SNG: `POST /v1/tournaments/playable-sng` then hand routes on the returned `tableId` (house auto-seeds/acts).

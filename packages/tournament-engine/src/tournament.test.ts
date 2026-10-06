@@ -208,4 +208,37 @@ describe("TournamentEngine", () => {
     const sum = icm.reduce((a, r) => a + r.equityMojos, 0n);
     expect(sum).toBe(t.getPrizePoolMojos());
   });
+
+  it("fills remaining SNG seats with house bots that never cash", () => {
+    const t = new TournamentEngine({
+      name: "House SNG",
+      format: "sng",
+      maxSeats: 4,
+      maxEntries: 4,
+      minEntries: 2,
+      lateRegThroughLevel: -1,
+      reentryAllowed: false,
+      feeBps: 0,
+      buyInMojos: 1_000n,
+    });
+    t.registerPlayer("alice");
+    const filled = t.fillHouseSeats();
+    expect(filled.added).toBe(3);
+    expect(t.getRegisteredCount()).toBe(4);
+    t.start();
+    expect(t.listOpenTableIds()).toHaveLength(1);
+
+    // Bust house first — they get finish places but 0 prize
+    const houseIds = filled.houseIds;
+    for (const id of houseIds.slice(0, 2)) {
+      const r = t.eliminatePlayer(id);
+      expect(r.prizeMojos).toBe(0n);
+    }
+    t.eliminatePlayer(houseIds[2]!);
+    expect(t.getStatus()).toBe("completed");
+    expect(t.getSnapshot().winnerId).toBe("alice");
+    const alice = t.getSnapshot({ detail: true }).players?.find((p) => p.playerId === "alice");
+    expect(alice?.finishPosition).toBe(1);
+    expect(alice?.prizeMojos).toBeGreaterThan(0n);
+  });
 });

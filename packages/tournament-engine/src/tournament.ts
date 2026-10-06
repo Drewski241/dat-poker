@@ -13,6 +13,7 @@ import type {
   TournamentTableSnapshot,
 } from "@dat-poker/shared";
 import type { TableConfig } from "@dat-poker/shared";
+import { houseSeatPlayerId, isHousePlayerId } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
 import {
   rebalanceTables,
@@ -232,6 +233,32 @@ export class TournamentEngine {
     for (const id of playerIds) {
       this.registerPlayer(id);
     }
+  }
+
+  /**
+   * Register house bots until `targetEntries` (default: maxSeats for SNG,
+   * or current humans + enough for minEntries). Call before `start()`.
+   */
+  fillHouseSeats(targetEntries?: number): { added: number; houseIds: PlayerId[] } {
+    if (this.status !== "registering") {
+      throw new Error("Can only fill house seats during registration");
+    }
+    const cap =
+      this.config.maxEntries ??
+      Math.max(this.config.minEntries, this.players.size + this.config.maxSeats);
+    const target = Math.min(
+      targetEntries ?? (this.config.format === "sng" ? this.config.maxSeats : this.config.minEntries),
+      cap,
+    );
+    const houseIds: PlayerId[] = [];
+    let seat = 0;
+    while (this.players.size < target) {
+      const id = houseSeatPlayerId(seat++);
+      if (this.players.has(id)) continue;
+      this.registerPlayer(id);
+      houseIds.push(id);
+    }
+    return { added: houseIds.length, houseIds };
   }
 
   /** Buy back in after a bust while late reg is open. */
@@ -960,7 +987,10 @@ export class TournamentEngine {
       .length;
     const pos = this.players.size - placed;
     player.finishPosition = pos;
-    player.prizeMojos = prizeForPlace(this.payoutLadder, pos);
+    // House bots never cash — prize stays in the pool for humans.
+    player.prizeMojos = isHousePlayerId(player.playerId)
+      ? 0n
+      : prizeForPlace(this.payoutLadder, pos);
     return pos;
   }
 
@@ -1012,7 +1042,9 @@ export class TournamentEngine {
 
   private completeWithWinner(winner: InternalPlayer): void {
     winner.finishPosition = 1;
-    winner.prizeMojos = prizeForPlace(this.payoutLadder, 1);
+    winner.prizeMojos = isHousePlayerId(winner.playerId)
+      ? 0n
+      : prizeForPlace(this.payoutLadder, 1);
     this.winnerId = winner.playerId;
     this.status = "completed";
     this.h4h.disable();
