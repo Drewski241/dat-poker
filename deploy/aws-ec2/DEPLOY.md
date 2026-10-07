@@ -39,13 +39,38 @@ aws cloudformation describe-stacks --stack-name dat-poker-beta \
 
 Use the **ElasticIp** output as your public URL.
 
+## Quick redeploy (Session Manager terminal — not AWS search)
+
+Open **EC2 → Instances → select beta host → Connect → Session Manager**. Run
+**one command per line**; wait for the prompt between lines.
+
+```bash
+ls /opt/dat-poker
+```
+
+If that directory exists:
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/pull-16sng-mtt-ui.sh
+```
+
+Wait for **`beta redeploy ok`**. If `pull-16sng-mtt-ui.sh` is not found yet:
+
+```bash
+cd /opt/dat-poker
+export R=cursor/mtt500-and-16sng-ui-380b
+sudo git fetch --depth 1 origin $R
+sudo git checkout -f FETCH_HEAD
+sudo bash deploy/aws-ec2/up.sh
+```
+
 ## After the box is up
 
 | Step | Command / doc |
 |------|----------------|
 | HTTPS (WalletConnect) | [enable-https.sh](./enable-https.sh) — [BETA.md § HTTPS](../../docs/BETA.md) |
 | Sage project + DAT asset | [enable-sage.sh](./enable-sage.sh) |
-| Redeploy latest code | `sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh` (see [BETA.md § phone update](../../docs/BETA.md) if `redeploy.sh` was missing) |
+| Redeploy latest code | `sudo bash /opt/dat-poker/deploy/aws-ec2/pull-16sng-mtt-ui.sh` or [BETA.md § phone update](../../docs/BETA.md) |
 | NFT payouts (20× 16-player wins) | Treasury host: `pnpm dev:treasury`, NFT in treasury wallet; game `.env`: `DAT_TREASURY_PAYOUT_URL` → treasury `:4200/payout` (NFT uses `:4200/nft-payout`) |
 
 ## Verify SNG + NFT promo

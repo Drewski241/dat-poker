@@ -176,18 +176,24 @@ security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
 
 ## Redeploy after you push code
 
-**Branch on the beta host:** `cursor/beta-chop-mtt-b297` — 16-player MTT / final
-table, true chop labels (not side-pot mislabels), SNG sit-out + server turn
-timeout, cash auto-deal, MTT16 NFT lobby promo.
+**Branch on the beta host:** `cursor/mtt500-and-16sng-ui-380b` — separate
+**16-player sit-n-go** (`join-mtt16`) and **500-player MTT** (`join-mtt`), plus
+prior beta fixes (chop labels, SNG sit-out, cash auto-deal, MTT16 NFT promo).
 
-**Laptop (Session Manager, one line):**
+**Not in the AWS search box:** redeploy commands run in **Session Manager**
+(EC2 → your instance → Connect → Session Manager). They are shell commands, not
+IAM policies or file names to look up in the console.
+
+**Laptop (Session Manager — easiest):**
 
 ```bash
-sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh
+sudo bash /opt/dat-poker/deploy/aws-ec2/pull-16sng-mtt-ui.sh
 ```
 
-(`up.sh` fetches `cursor/beta-chop-mtt-b297` by default. Override with
-`DAT_POKER_REPO_REF=…` if needed.)
+If that file is not on the box yet, use the **phone redeploy** steps below
+(fetch branch once, then `sudo bash deploy/aws-ec2/up.sh`).
+
+(`up.sh` fetches `cursor/mtt500-and-16sng-ui-380b` by default.)
 
 Use `main` only after those features merge:
 
@@ -245,7 +251,21 @@ curl -s http://127.0.0.1/v1/lobby/mtt16-nft-promo
 ```
 
 After the host has run step E once with this branch, later phone updates are
-only **Step A** + **Step E** (`up.sh` already knows `cursor/beta-chop-mtt-b297`).
+only **Step A** + **Step E** (`up.sh` defaults to `cursor/mtt500-and-16sng-ui-380b`).
+
+**If a one-liner with `DAT_POKER_REPO_REF=…` fails**, use `sudo bash -c '…'` so
+the variable is set inside root’s shell:
+
+```bash
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/mtt500-and-16sng-ui-380b; bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh'
+```
+
+**If `/opt/dat-poker/deploy/...` is missing**, pipe the script from GitHub
+(still requires `/opt/dat-poker` git checkout from bootstrap):
+
+```bash
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/mtt500-and-16sng-ui-380b; curl -fsSL https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/mtt500-and-16sng-ui-380b/deploy/aws-ec2/redeploy.sh | bash'
+```
 
 ### Update from your phone (Session Manager, no copy-paste)
 
