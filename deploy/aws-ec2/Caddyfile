@@ -24,6 +24,9 @@
     reverse_proxy 127.0.0.1:4000
   }
 
+  @spaEntry path /index.html
+  header @spaEntry Cache-Control "no-cache, no-store, must-revalidate"
+
   handle {
     root * /usr/share/nginx/html
     try_files {path} /index.html
