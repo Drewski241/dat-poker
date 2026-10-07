@@ -1007,7 +1007,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     () => mttEvents.find((ev) => ev.eventId === mttBrowseEventId) ?? null,
     [mttEvents, mttBrowseEventId],
   );
-  const defaultMttLabel = mttEvents[0]?.label ?? "16-player MTT";
+  const configuredMttLabel = datToken?.mttFieldSize
+    ? `${datToken.mttFieldSize}-player MTT`
+    : "16-player MTT";
+  const defaultMttLabel = mttEvents[0]?.label ?? configuredMttLabel;
+  const mttMaxHumans = datToken?.mttMaxHumans ?? 10;
 
   const rebuyAtTable = () => {
     if (!tableId || !playerId) return;
@@ -1900,19 +1904,19 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             </button>
             <button
               type="button"
-              className="secondary"
+              className="secondary mtt-join-primary"
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
               onClick={() => void joinMtt()}
             >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; join{" "}
-              {defaultMttLabel}
+              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} — join{" "}
+              {configuredMttLabel}
             </button>
             <p className="muted small">
-              Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
-              Prize pool is every seat buy-in (you and house bots). Up to 10 humans per 16-player event;
-              empty seats stay house bots. Finish 1st, 2nd, or 3rd overall to get paid 50% / 30% / 20%.
-              House seats in the money are not paid. Each completed SNG hand unlocks 1 DAT you can
-              withdraw from leftover account chips or prizes.
+              <strong>{configuredMttLabel}</strong> — buy-in{" "}
+              {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}. One tournament,
+              many tables (browse from Active tournaments below). Up to {mttMaxHumans} humans in the field;
+              other seats are house bots. Pays 1st–3rd overall 50% / 30% / 20%. 9-max SNG is separate
+              (button above). Each completed tournament hand unlocks 1 DAT from account or prizes.
             </p>
             {mtt16NftPromo?.enabled ? (
               <div className="nft-promo">

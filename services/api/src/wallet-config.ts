@@ -1,5 +1,6 @@
 import { resolveDatDailyRedeemMojos, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { verifyChip0002Signature } from "./chip0002.js";
+import { readMttFieldSize, readMttMaxHumans } from "./mtt-env.js";
 
 export interface DatTokenConfig {
   assetId: string | null;
@@ -8,6 +9,8 @@ export interface DatTokenConfig {
   dailyRedeemMojos: string;
   devBuyInEnabled: boolean;
   buyInReady: boolean;
+  mttFieldSize: number;
+  mttMaxHumans: number;
 }
 
 export function readDatTokenConfig(): DatTokenConfig {
@@ -15,6 +18,8 @@ export function readDatTokenConfig(): DatTokenConfig {
   const devBuyInEnabled = process.env.DAT_ALLOW_DEV_BUYIN === "true";
   const minBuyInMojos = resolveDatMinBuyInMojos(process.env.DAT_MIN_BUY_IN_MOJOS).toString();
   const dailyRedeemMojos = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS).toString();
+  const mttFieldSize = readMttFieldSize();
+  const mttMaxHumans = readMttMaxHumans();
   return {
     assetId: assetId ?? null,
     ticker: process.env.DAT_GOVERNANCE_TOKEN_TICKER ?? "DAT",
@@ -22,6 +27,8 @@ export function readDatTokenConfig(): DatTokenConfig {
     dailyRedeemMojos,
     devBuyInEnabled,
     buyInReady: Boolean(assetId) || devBuyInEnabled,
+    mttFieldSize,
+    mttMaxHumans,
   };
 }
 

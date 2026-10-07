@@ -25,6 +25,7 @@ import {
 } from "../account-store.js";
 import { recordBuyIn, clearBuyIn } from "../buy-in-store.js";
 import { HOUSE_PLAYER_ID } from "../house-id.js";
+import { readMttFieldSize, readMttMaxHumans } from "../mtt-env.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { allowIpBucket } from "../ip-rate-limit.js";
 import { readPlayerSession, requirePlayer, sessionMatchesClaim } from "../player-session.js";
@@ -1253,21 +1254,6 @@ function readFillHouseDefault(): boolean {
   const raw = process.env.DAT_SNG_FILL_HOUSE?.trim().toLowerCase();
   if (raw === "false" || raw === "0") return false;
   return true;
-}
-
-function readMttFieldSize(): number {
-  const raw = Number(process.env.DAT_MTT_FIELD_SIZE ?? DAT_MTT_DEFAULTS.fieldSize);
-  if (!Number.isFinite(raw) || raw < DAT_MTT_DEFAULTS.startingTableSeats) {
-    return DAT_MTT_DEFAULTS.fieldSize;
-  }
-  return Math.min(10_000, Math.floor(raw));
-}
-
-function readMttMaxHumans(): number {
-  const fieldSize = readMttFieldSize();
-  const raw = Number(process.env.DAT_MTT_MAX_HUMANS ?? DAT_MTT_DEFAULTS.maxHumans);
-  if (!Number.isFinite(raw) || raw < 1) return DAT_MTT_DEFAULTS.maxHumans;
-  return Math.min(fieldSize, Math.floor(raw));
 }
 
 function createSngTable(options?: { maxSeats?: number; fillHouse?: boolean; minHumansToStart?: number }): {

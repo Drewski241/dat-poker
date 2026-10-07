@@ -129,6 +129,8 @@ export interface DatTokenInfo {
   dailyRedeemMojos?: string;
   devBuyInEnabled: boolean;
   buyInReady: boolean;
+  mttFieldSize?: number;
+  mttMaxHumans?: number;
 }
 
 export interface BuyInProof {
