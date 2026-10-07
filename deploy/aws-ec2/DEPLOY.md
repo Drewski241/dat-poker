@@ -4,8 +4,8 @@ This kit deploys the **web client + REST API** on one Amazon Linux 2023 EC2
 instance (nginx on `:80`, API on `:4000`). Treasury Sage and
 `pnpm dev:treasury` stay on a **separate** machine ([docs/TREASURY.md](../../docs/TREASURY.md)).
 
-**Current beta branch (16-player MTT, chop pots, SNG sit-out server pace, cash auto-deal):**
-`cursor/beta-chop-mtt-b297` (alias of the same tip as `cursor/fix-sng-sit-out-stuck-b297`).
+**Current beta branch (16-player SNG + 500-player MTT, chop pots, SNG sit-out pace, cash auto-deal):**
+`cursor/mtt500-and-16sng-ui-380b` (or set `DAT_POKER_REPO_REF` on redeploy).
 
 ## Option A — EC2 console (recommended)
 
@@ -31,7 +31,7 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     InstanceType=t3.small \
-    RepoRef=cursor/beta-chop-mtt-b297
+    RepoRef=cursor/mtt500-and-16sng-ui-380b
 
 aws cloudformation describe-stacks --stack-name dat-poker-beta \
   --query 'Stacks[0].Outputs'
@@ -51,9 +51,13 @@ Use the **ElasticIp** output as your public URL.
 ## Verify SNG + NFT promo
 
 ```bash
-curl -s "http://127.0.0.1/v1/lobby/mtt16-nft-promo" | jq .
 curl -s "http://127.0.0.1/health" | jq .
+curl -s "http://127.0.0.1/v1/lobby/mtt16-nft-promo" | jq .
 ```
+
+After the 16-player SNG / 500 MTT split, `/health` should include
+`lobby.mtt16Sng: true`, `lobby.mttFieldSize: 500`, and `lobby.mtt16FieldSize: 16`
+when `DAT_POKER_STAGE=beta`.
 
 ## Tear down
 

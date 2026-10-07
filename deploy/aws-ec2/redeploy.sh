@@ -14,14 +14,20 @@ if [[ -z "${WEB_ROOT:-}" ]]; then
     WEB_ROOT="/usr/share/nginx/html"
   fi
 fi
-REPO_REF="${DAT_POKER_REPO_REF:-cursor/beta-chop-mtt-b297}"
+REPO_REF="${DAT_POKER_REPO_REF:-cursor/mtt500-and-16sng-ui-380b}"
 
 cd "$INSTALL_ROOT"
 ENV_FILE="$INSTALL_ROOT/.env"
 if [[ -f "$ENV_FILE" ]]; then
   grep -q '^DAT_POKER_STAGE=' "$ENV_FILE" || echo 'DAT_POKER_STAGE=beta' >> "$ENV_FILE"
   grep -q '^DAT_MTT_FIELD_SIZE=' "$ENV_FILE" || echo 'DAT_MTT_FIELD_SIZE=500' >> "$ENV_FILE"
+  if grep -q '^DAT_POKER_REPO_REF=' "$ENV_FILE"; then
+    sed -i "s|^DAT_POKER_REPO_REF=.*|DAT_POKER_REPO_REF=${REPO_REF}|" "$ENV_FILE"
+  else
+    echo "DAT_POKER_REPO_REF=${REPO_REF}" >> "$ENV_FILE"
+  fi
 fi
+export DAT_POKER_REPO_REF="$REPO_REF"
 export CI=true
 export DAT_POKER_STAGE="${DAT_POKER_STAGE:-beta}"
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=512}"
@@ -47,15 +53,19 @@ pnpm --filter @dat-poker/web build
 
 rm -rf "${WEB_ROOT:?}/"*
 cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
-if grep -rq "start 16-player SNG" "$WEB_ROOT" 2>/dev/null; then
-  echo "ERROR: web bundle still contains pre-MTT lobby strings — build did not update" >&2
+if grep -rq "16-player MTT" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: lobby still mislabels 16-player as MTT — fetch a newer branch" >&2
+  exit 1
+fi
+if ! grep -rq "join-mtt16" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: join-mtt16 client missing from web dist" >&2
   exit 1
 fi
 if ! grep -rq "Join tournament" "$WEB_ROOT" 2>/dev/null; then
-  echo "ERROR: expected Join tournament CTA missing from web dist" >&2
+  echo "ERROR: expected large-MTT Join tournament CTA missing from web dist" >&2
   exit 1
 fi
-echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (MTT lobby OK)"
+echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (16-player SNG + large MTT lobby OK)"
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 mkdir -p "$INSTALL_ROOT/data/feedback"
 if [[ ! -f "$INSTALL_ROOT/data/accounts.json" ]]; then

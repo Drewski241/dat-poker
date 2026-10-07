@@ -211,7 +211,7 @@ cd /opt/dat-poker
 **Step B — set branch (copy from laptop if you can; otherwise type carefully)**
 
 ```bash
-export R=cursor/beta-chop-mtt-b297
+export R=cursor/mtt500-and-16sng-ui-380b
 ```
 
 **Step C — download that branch**
@@ -272,7 +272,7 @@ cd /opt/dat-poker
 ```
 
 ```bash
-export R=cursor/beta-chop-mtt-b297
+export R=cursor/mtt500-and-16sng-ui-380b
 ```
 
 ```bash
