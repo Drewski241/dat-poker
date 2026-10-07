@@ -21,3 +21,17 @@ export function readMttMaxHumans(): number {
   if (!Number.isFinite(raw) || raw < 1) return DAT_MTT_DEFAULTS.maxHumans;
   return Math.min(fieldSize, Math.floor(raw));
 }
+
+/** 16-player sit-n-go (two 8-max tables, then final) — separate from the large MTT field. */
+export function readMtt16FieldSize(): number {
+  return DAT_MTT_DEFAULTS.fieldSize;
+}
+
+export function readMtt16MaxHumans(): number {
+  const fieldSize = readMtt16FieldSize();
+  const raw = Number(
+    process.env.DAT_MTT16_MAX_HUMANS ?? process.env.DAT_MTT_MAX_HUMANS ?? DAT_MTT_DEFAULTS.maxHumans,
+  );
+  if (!Number.isFinite(raw) || raw < 1) return DAT_MTT_DEFAULTS.maxHumans;
+  return Math.min(fieldSize, Math.floor(raw));
+}

@@ -25,7 +25,12 @@ import {
 } from "../account-store.js";
 import { recordBuyIn, clearBuyIn } from "../buy-in-store.js";
 import { HOUSE_PLAYER_ID } from "../house-id.js";
-import { readMttFieldSize, readMttMaxHumans } from "../mtt-env.js";
+import {
+  readMtt16FieldSize,
+  readMtt16MaxHumans,
+  readMttFieldSize,
+  readMttMaxHumans,
+} from "../mtt-env.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { allowIpBucket } from "../ip-rate-limit.js";
 import { readPlayerSession, requirePlayer, sessionMatchesClaim } from "../player-session.js";
@@ -640,15 +645,20 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
   });
 
-  app.post<{
-    Body: {
-      playerId?: string;
-      buyInMojos?: string;
-      buyInProof?: BuyInProof;
-      devAck?: boolean;
-    };
-  }>("/v1/tables/join-mtt", async (req, reply) => {
-    const session = requirePlayer(req, reply);
+  type JoinMttBody = {
+    playerId?: string;
+    buyInMojos?: string;
+    buyInProof?: BuyInProof;
+    devAck?: boolean;
+  };
+
+  async function handleJoinMtt(
+    req: { body: JoinMttBody; ip: string },
+    reply: Parameters<typeof requirePlayer>[1],
+    fieldSize: number,
+    maxHumans: number,
+  ) {
+    const session = requirePlayer(req as never, reply);
     if (!session) return;
     if (!sessionMatchesClaim(session, req.body.playerId)) {
       return reply.status(403).send({ error: "playerId does not match the signed-in account" });
@@ -673,11 +683,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const dat = readDatTokenConfig();
     const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
 
-    const joinable = [...mttByTable.values()].find((mtt) => {
-      if (mtt.getStatus() === "finished") return false;
-      if (!mtt.canAcceptHuman(playerId)) return false;
-      return mtt.firstHouseSeat() !== null;
-    });
+    const joinable = findJoinableMttEvent(playerId, fieldSize);
 
     if (joinable) {
       const house = joinable.firstHouseSeat()!;
@@ -711,10 +717,10 @@ export function registerTableRoutes(app: FastifyInstance): void {
       }
     }
 
-    const created = createMttEvent();
+    const created = createMttEvent({ fieldSize, maxHumans });
     const open = created.firstOpenSeat();
     if (!open) {
-      return reply.status(500).send({ error: "Could not open a 16-player SNG" });
+      return reply.status(500).send({ error: openMttEventLabel(fieldSize) });
     }
     const buyIn = takeBuyInFromAccountOrProof({
       tableId: open.tableId,
@@ -726,10 +732,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       devAck: req.body.devAck,
     });
     if (buyIn.error) {
-      for (const tableId of created.tableIds()) {
-        tables.delete(tableId);
-        mttByTable.delete(tableId);
-      }
+      teardownMttEvent(created);
       return reply.status(400).send({ error: buyIn.error });
     }
     try {
@@ -747,13 +750,18 @@ export function registerTableRoutes(app: FastifyInstance): void {
     } catch (e) {
       if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
       if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
-      for (const tableId of created.tableIds()) {
-        tables.delete(tableId);
-        mttByTable.delete(tableId);
-      }
+      teardownMttEvent(created);
       return reply.status(400).send({ error: (e as Error).message });
     }
-  });
+  }
+
+  app.post<{ Body: JoinMttBody }>("/v1/tables/join-mtt16", async (req, reply) =>
+    handleJoinMtt(req, reply, readMtt16FieldSize(), readMtt16MaxHumans()),
+  );
+
+  app.post<{ Body: JoinMttBody }>("/v1/tables/join-mtt", async (req, reply) =>
+    handleJoinMtt(req, reply, readMttFieldSize(), readMttMaxHumans()),
+  );
 
   app.post<{
     Params: { tableId: string };
@@ -1282,15 +1290,50 @@ function registerMttTables(mtt: MttEvent): void {
   }
 }
 
-function createMttEvent(): MttEvent {
+function createMttEvent(options?: { fieldSize: number; maxHumans: number }): MttEvent {
+  const fieldSize = options?.fieldSize ?? readMttFieldSize();
+  const maxHumans = options?.maxHumans ?? readMttMaxHumans();
   const mtt = MttEvent.create({
-    fieldSize: readMttFieldSize(),
+    fieldSize,
     fillHouse: readFillHouseDefault(),
     minHumansToStart: 1,
-    maxHumans: readMttMaxHumans(),
+    maxHumans,
   });
   registerMttTables(mtt);
   return mtt;
+}
+
+function uniqueMttEvents(): MttEvent[] {
+  const seen = new Set<string>();
+  const out: MttEvent[] = [];
+  for (const mtt of mttByTable.values()) {
+    if (seen.has(mtt.eventId)) continue;
+    seen.add(mtt.eventId);
+    out.push(mtt);
+  }
+  return out;
+}
+
+function findJoinableMttEvent(playerId: string, fieldSize: number): MttEvent | undefined {
+  return uniqueMttEvents().find((mtt) => {
+    if (mtt.fieldSize !== fieldSize) return false;
+    if (mtt.getStatus() === "finished") return false;
+    if (!mtt.canAcceptHuman(playerId)) return false;
+    return mtt.firstHouseSeat() !== null;
+  });
+}
+
+function teardownMttEvent(mtt: MttEvent): void {
+  for (const tableId of mtt.tableIds()) {
+    tables.delete(tableId);
+    mttByTable.delete(tableId);
+  }
+}
+
+function openMttEventLabel(fieldSize: number): string {
+  return fieldSize === DAT_MTT_DEFAULTS.fieldSize
+    ? "Could not open a 16-player sit-n-go"
+    : `Could not open a ${fieldSize}-player MTT`;
 }
 
 function autoFillAndStartMtt(mtt: MttEvent): void {
@@ -1333,6 +1376,7 @@ function settleMttPrizes(mtt: MttEvent): void {
     creditAccount(row.playerId, row.prizeMojos);
     mtt.markPrizePaid(row.playerId);
   }
+  if (mtt.fieldSize !== DAT_MTT_DEFAULTS.fieldSize) return;
   if (mtt16WinRecorded.has(mtt.eventId)) return;
   mtt16WinRecorded.add(mtt.eventId);
   const tableId = mtt.tableIds()[0];

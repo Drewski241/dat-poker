@@ -37,7 +37,7 @@ function auth(token: string) {
   return { authorization: `Bearer ${token}` };
 }
 
-describe("16-player MTT join", () => {
+describe("16-player sit-n-go join", () => {
   beforeEach(() => {
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
     process.env.DAT_ACCOUNTS_PATH = "memory";
@@ -62,7 +62,7 @@ describe("16-player MTT join", () => {
     tryRedeemDaily(alice.session.playerId, 5_000_000n);
     const joined = await app.inject({
       method: "POST",
-      url: "/v1/tables/join-mtt",
+      url: "/v1/tables/join-mtt16",
       headers: auth(alice.token),
       payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
     });
@@ -104,7 +104,7 @@ describe("16-player MTT join", () => {
 
     const first = await app.inject({
       method: "POST",
-      url: "/v1/tables/join-mtt",
+      url: "/v1/tables/join-mtt16",
       headers: auth(alice.token),
       payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
     });
@@ -116,7 +116,7 @@ describe("16-player MTT join", () => {
 
     const second = await app.inject({
       method: "POST",
-      url: "/v1/tables/join-mtt",
+      url: "/v1/tables/join-mtt16",
       headers: auth(bob.token),
       payload: { playerId: bob.session.playerId, buyInMojos: "1000000", devAck: true },
     });
@@ -124,6 +124,24 @@ describe("16-player MTT join", () => {
     const secondBody = JSON.parse(second.body) as { tableId: string; sng: { eventId: string } };
     expect(secondBody.sng.eventId).not.toBe(firstBody.sng.eventId);
     expect(getMtt(secondBody.tableId)?.enteredHumanCount()).toBe(1);
+    await app.close();
+  });
+
+  it("join-mtt uses the configured large field (500 on beta stage)", async () => {
+    process.env.DAT_POKER_STAGE = "beta";
+    delete process.env.DAT_MTT_FIELD_SIZE;
+    const app = await buildApp();
+    const alice = issueTestSession("xch1bigmtt");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    const joined = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-mtt",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(joined.statusCode).toBe(200);
+    const body = JSON.parse(joined.body) as { sng: { fieldSize: number } };
+    expect(body.sng.fieldSize).toBe(500);
     await app.close();
   });
 });

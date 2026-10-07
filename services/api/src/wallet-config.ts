@@ -1,6 +1,11 @@
 import { resolveDatDailyRedeemMojos, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { verifyChip0002Signature } from "./chip0002.js";
-import { readMttFieldSize, readMttMaxHumans } from "./mtt-env.js";
+import {
+  readMtt16FieldSize,
+  readMtt16MaxHumans,
+  readMttFieldSize,
+  readMttMaxHumans,
+} from "./mtt-env.js";
 
 export interface DatTokenConfig {
   assetId: string | null;
@@ -11,6 +16,9 @@ export interface DatTokenConfig {
   buyInReady: boolean;
   mttFieldSize: number;
   mttMaxHumans: number;
+  /** Fixed 16-player sit-n-go field (two 8-max tables + final). */
+  mtt16FieldSize: number;
+  mtt16MaxHumans: number;
 }
 
 export function readDatTokenConfig(): DatTokenConfig {
@@ -29,6 +37,8 @@ export function readDatTokenConfig(): DatTokenConfig {
     buyInReady: Boolean(assetId) || devBuyInEnabled,
     mttFieldSize,
     mttMaxHumans,
+    mtt16FieldSize: readMtt16FieldSize(),
+    mtt16MaxHumans: readMtt16MaxHumans(),
   };
 }
 

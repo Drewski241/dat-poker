@@ -53,5 +53,6 @@ describe("betweenHandsStatusMessage", () => {
 describe("mttFieldLabel", () => {
   it("uses fieldSize when present", () => {
     expect(mttFieldLabel({ fieldSize: 500, maxSeats: 8 } as never)).toBe("500-player MTT");
+    expect(mttFieldLabel({ fieldSize: 16, maxSeats: 8 } as never)).toBe("16-player SNG");
   });
 });

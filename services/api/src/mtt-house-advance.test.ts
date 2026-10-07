@@ -68,7 +68,7 @@ describe("MTT house-only sibling pace", () => {
     tryRedeemDaily(alice.session.playerId, 5_000_000n);
     const joined = await app.inject({
       method: "POST",
-      url: "/v1/tables/join-mtt",
+      url: "/v1/tables/join-mtt16",
       headers: auth(alice.token),
       payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
     });
@@ -115,7 +115,7 @@ describe("MTT house-only sibling pace", () => {
     tryRedeemDaily(bob.session.playerId, 5_000_000n);
     const joined = await app.inject({
       method: "POST",
-      url: "/v1/tables/join-mtt",
+      url: "/v1/tables/join-mtt16",
       headers: auth(alice.token),
       payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
     });
@@ -150,7 +150,7 @@ describe("MTT house-only sibling pace", () => {
     tryRedeemDaily(alice.session.playerId, 5_000_000n);
     const joined = await app.inject({
       method: "POST",
-      url: "/v1/tables/join-mtt",
+      url: "/v1/tables/join-mtt16",
       headers: auth(alice.token),
       payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
     });

@@ -131,6 +131,8 @@ export interface DatTokenInfo {
   buyInReady: boolean;
   mttFieldSize?: number;
   mttMaxHumans?: number;
+  mtt16FieldSize?: number;
+  mtt16MaxHumans?: number;
 }
 
 export interface BuyInProof {
@@ -267,7 +269,16 @@ export interface LobbyTable {
 }
 
 export const api = {
-  health: () => request<{ status: string }>("/health"),
+  health: () =>
+    request<{
+      status: string;
+      buildRef?: string | null;
+      lobby?: {
+        mtt16Sng?: boolean;
+        mttFieldSize?: number;
+        mtt16FieldSize?: number;
+      };
+    }>("/health"),
 
   walletConfig: () =>
     request<{
@@ -592,6 +603,31 @@ export const api = {
       lastHandResult: HandResult | null;
       sng?: SngSnapshot | null;
     }>("/v1/tables/join-sng", {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        buyInMojos,
+        ...options,
+      }),
+    }),
+
+  joinMtt16: (
+    playerId: string,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      maxSeats: number;
+      format?: string;
+      humans?: number;
+      handInProgress: boolean;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+    }>("/v1/tables/join-mtt16", {
       method: "POST",
       body: JSON.stringify({
         playerId,

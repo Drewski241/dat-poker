@@ -14,6 +14,7 @@ function formatCountdown(ms: number): string {
 
 export function mttFieldLabel(sng: SngSnapshot): string {
   const size = sng.fieldSize ?? sng.maxSeats;
+  if (size === 16) return "16-player SNG";
   return `${size}-player MTT`;
 }
 
