@@ -75,6 +75,27 @@ export interface ClearMttRedrawPauseOptions {
  * While deals are paused for table balance / final-table formation, finish any
  * idle house-only hands blocking maintain() and sync the blind clock.
  */
+function finishOrAbortHouseOnlyHand(
+  engine: NlheTableEngine,
+  options: ClearMttRedrawPauseOptions,
+  tableId: string,
+): void {
+  if (!engine.isHandInProgress() || tableHasLivingHuman(engine)) return;
+  const random = options.random ?? Math.random;
+  for (let burst = 0; burst < MAX_HOUSE_ACTION_BURSTS; burst += 1) {
+    if (!engine.isHandInProgress()) break;
+    const finished = completeHouseOnlyHand(engine, undefined, random);
+    if (finished) {
+      options.onHandComplete(tableId);
+      return;
+    }
+  }
+  if (engine.isHandInProgress()) {
+    engine.abortHandRefundBets();
+    options.onHandComplete(tableId);
+  }
+}
+
 export function clearMttRedrawPause(
   mtt: MttEvent,
   triggerTableId: string,
@@ -84,18 +105,28 @@ export function clearMttRedrawPause(
   if (!mtt.hasTable(triggerTableId)) return;
   if (!mtt.shouldPauseDeals(triggerTableId)) return;
 
-  const random = options.random ?? Math.random;
   for (const tableId of mtt.openTableIds()) {
     const engine = mtt.engineFor(tableId);
-    if (!engine?.isHandInProgress() || tableHasLivingHuman(engine)) continue;
-    for (let burst = 0; burst < MAX_HOUSE_ACTION_BURSTS; burst += 1) {
-      if (!engine.isHandInProgress()) break;
-      const finished = completeHouseOnlyHand(engine, undefined, random);
-      if (!finished) break;
-      options.onHandComplete(tableId);
-    }
+    if (!engine) continue;
+    finishOrAbortHouseOnlyHand(engine, options, tableId);
   }
   mtt.syncBlindClock();
+}
+
+/** Drop orphan house-only hands that block redraw (even before the human table has dealt). */
+export function healOrphanHouseHands(
+  mtt: MttEvent,
+  triggerTableId: string,
+  options: ClearMttRedrawPauseOptions,
+): void {
+  if (mtt.getStatus() !== "running") return;
+  if (!mtt.hasTable(triggerTableId)) return;
+  for (const tableId of mtt.openTableIds()) {
+    if (tableId === triggerTableId) continue;
+    const engine = mtt.engineFor(tableId);
+    if (!engine) continue;
+    finishOrAbortHouseOnlyHand(engine, options, tableId);
+  }
 }
 
 /**
@@ -111,7 +142,13 @@ export function advanceSiblingMttHouseTables(
   if (!mtt.hasTable(triggerTableId)) return 0;
 
   const targetHands = mtt.handsDealtAt(triggerTableId);
-  if (targetHands <= 0) return 0;
+  if (targetHands <= 0) {
+    healOrphanHouseHands(mtt, triggerTableId, {
+      random: options.random,
+      onHandComplete: options.onHandComplete,
+    });
+    return 0;
+  }
 
   const maxHands = options.maxHands ?? MAX_CATCHUP_HANDS_PER_CALL;
   const random = options.random ?? Math.random;

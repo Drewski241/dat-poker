@@ -24,6 +24,7 @@ import { BigWinOverlayHost } from "./components/BigWinOverlayHost.js";
 import { TableRoom } from "./components/TableRoom.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
+import { mttRedrawBlocked } from "./mtt-field-display.js";
 import {
   allInBettingClosed,
   BUST_LOBBY_RETURN_MS,
@@ -294,6 +295,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (t.format) setTableFormat(t.format);
     if (t.maxSeats) setTableMaxSeats(t.maxSeats);
     setSng(t.sng ?? null);
+    if (t.sng && !mttRedrawBlocked(t.sng, null)) {
+      setError((prev) => (prev?.includes("Waiting to redraw") ? null : prev));
+    }
     if (t.sng?.status === "finished" && playerId && !t.seats.some((s) => s.playerId === playerId)) {
       const runoutPending = shouldHoldTableForRunout(
         { ...liveHandMeta.current, viewerId: playerId },
@@ -926,26 +930,6 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     });
   };
 
-  const startHandFlow = () => {
-    if (!tableId || !playerId) return;
-    if (runoutFromBoardLenRef.current != null) return;
-    if (sng?.pauseDeals) {
-      setError(null);
-      setStatus("Waiting to redraw tables — syncing the other table…");
-      return;
-    }
-    run("Dealing hand…", async () => {
-      setHandResult(null);
-      const dealt = await api.goHand(tableId, playerId);
-      setHand(dealt.hand);
-      if (dealt.lastHandResult) setHandResult(dealt.lastHandResult);
-      if (dealt.playthrough) setAccountPlaythrough(dealt.playthrough);
-      await refreshTable(tableId);
-    });
-  };
-  const startHandFlowRef = useRef(startHandFlow);
-  startHandFlowRef.current = startHandFlow;
-
   const sendAction = (action: PlayerAction, amountMojos?: string) => {
     if (!tableId || !playerId) return;
     const me = hand?.players.find((p) => p.playerId === playerId);
@@ -1008,6 +992,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       datToken?.buyInReady &&
       tableStackIsZero,
   );
+  const tournamentRedrawBlocked = mttRedrawBlocked(sng, error);
   const mySngPlace = sng?.placements.find((row) => row.playerId === playerId);
   const sngEliminated = Boolean(
     (tableFormat === "sng" || tableFormat === "mtt") &&
@@ -1026,8 +1011,40 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     stackIsZero: tableStackIsZero,
     runoutPlaying: runoutFromBoardLen != null,
     eliminated: sngEliminated,
-    pauseDeals: Boolean(sng?.pauseDeals),
+    pauseDeals: tournamentRedrawBlocked,
   });
+
+  const startHandFlow = () => {
+    if (!tableId || !playerId) return;
+    if (runoutFromBoardLenRef.current != null) return;
+    if (tournamentRedrawBlocked) {
+      setError(null);
+      setStatus(
+        sng?.status === "registering"
+          ? "Filling seats — the SNG starts when both tables are full."
+          : "Waiting to redraw tables — syncing the other table…",
+      );
+      return;
+    }
+    run("Dealing hand…", async () => {
+      setHandResult(null);
+      const dealt = await api.goHand(tableId, playerId);
+      setHand(dealt.hand);
+      if (dealt.lastHandResult) setHandResult(dealt.lastHandResult);
+      if (dealt.playthrough) setAccountPlaythrough(dealt.playthrough);
+      await refreshTable(tableId);
+    });
+  };
+  const startHandFlowRef = useRef(startHandFlow);
+  startHandFlowRef.current = startHandFlow;
+
+  useEffect(() => {
+    if (!tableId || !tournamentRedrawBlocked) return;
+    const id = window.setInterval(() => {
+      void refreshTable(tableId);
+    }, 1200);
+    return () => window.clearInterval(id);
+  }, [tableId, tournamentRedrawBlocked, refreshTable]);
 
   useEffect(() => {
     if (!sngCanAutoDeal) return;
@@ -1415,7 +1432,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       {atTableRoom ? (
         <>
           {error &&
-            !(sng?.pauseDeals && error.includes("Waiting to redraw")) && (
+            !(tournamentRedrawBlocked && error?.includes("Waiting to redraw")) && (
               <div className="banner error table-room-banner">{error}</div>
             )}
           {status && <div className="banner info table-room-banner">{status}</div>}
@@ -1443,7 +1460,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onSendAction={sendAction}
             onStartHand={startHandFlow}
             canRebuy={canRebuyAtTable}
-            canDeal={Boolean(myTableSeat) && sng?.status !== "finished" && !sng?.pauseDeals}
+            canDeal={
+              Boolean(myTableSeat) &&
+              sng?.status === "running" &&
+              !tournamentRedrawBlocked
+            }
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => {

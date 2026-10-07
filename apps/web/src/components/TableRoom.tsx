@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { DatTokenInfo, HandResult, HandState, PlayerAction, SngSnapshot, TableSeat } from "../api.js";
 import { computeNlheBetRange, formatDatAmount, formatDatMojos } from "@dat-poker/shared";
 import { formatHandCategory } from "../all-in-runout.js";
+import { mttFieldCounts } from "../mtt-field-display.js";
 import { AllInRunout } from "./AllInRunout.js";
 import { BetSlider } from "./BetSlider.js";
 import { CardRow, PlayingCard } from "./PlayingCard.js";
@@ -140,6 +141,8 @@ export function TableRoom({
     const bAct = hand && hand.actionSeat === b.seatIndex && !b.folded ? 0 : 1;
     return aAct - bAct;
   });
+  const mttCounts =
+    sng?.kind === "mtt" ? mttFieldCounts(sng) : null;
   const actorName = actionSeatPlayer
     ? playerLabel(
         actionSeatPlayer.playerId,
@@ -173,19 +176,26 @@ export function TableRoom({
             Blinds {formatDatAmount(smallBlindMojos)}/{formatDatAmount(bigBlindMojos)}
             {sng ? ` · ${sngBlindClockLine(sng, nowMs)}` : ""}
           </p>
-          {sng?.pauseDeals && !hand && !runoutPlaying && (
+          {sng &&
+            (sng.pauseDeals || sng.pendingFinalTable || sng.status === "registering") &&
+            !hand &&
+            !runoutPlaying && (
             <p className="table-room-redraw-wait" role="status">
-              Waiting to redraw tables — the other table is catching up. This usually clears in a few
-              seconds.
+              {sng.status === "registering"
+                ? "Filling both tables — the SNG starts automatically when every seat is taken."
+                : "Waiting to redraw tables — syncing the other table. Deal will unlock when this clears."}
             </p>
           )}
           {sng && (
             <p className="table-room-sng-payouts">
               {sng.kind === "mtt"
-                ? `${sng.eventPlayersRemaining ?? sng.playersRemaining} left in the 16-player SNG`
+                ? `${mttCounts?.inField ?? sng.playersRemaining}/${sng.fieldSize ?? 16} in the field`
                 : `${sng.playersRemaining}/${sng.maxSeats} left`}
-              {sng.kind === "mtt" && !sng.isFinalTable && sng.otherTablePlayers != null
-                ? ` · ${sng.otherTablePlayers} at the other table`
+              {sng.kind === "mtt" &&
+              !sng.isFinalTable &&
+              mttCounts?.atOtherTable != null &&
+              mttCounts.atOtherTable > 0
+                ? ` · ${mttCounts.atOtherTable} at the other table`
                 : ""}
               {sng.pendingFinalTable
                 ? " · final table after this hand"

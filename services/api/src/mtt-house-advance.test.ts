@@ -17,6 +17,7 @@ import {
   advanceSiblingMttHouseTables,
   clearMttRedrawPause,
   completeHouseOnlyHand,
+  healOrphanHouseHands,
   tableHasLivingHuman,
 } from "./mtt-house-advance.js";
 import { MttEvent } from "@dat-poker/game-engine";
@@ -210,6 +211,24 @@ describe("MTT house-only sibling pace", () => {
   it("completeHouseOnlyHand refuses tables with a living human", () => {
     // Covered indirectly above; keep a direct guard for the helper.
     expect(typeof completeHouseOnlyHand).toBe("function");
+  });
+
+  it("healOrphanHouseHands aborts a stuck house hand before the human table has dealt", () => {
+    const event = MttEvent.create();
+    const [a, b] = event.tableIds();
+    event.seatPlayer(a, "alice", 0);
+    event.fillHouseSeats();
+    event.start();
+    event.engineFor(b)!.startHand("orphan");
+    expect(event.engineFor(b)!.isHandInProgress()).toBe(true);
+    expect(event.handsDealtAt(a)).toBe(0);
+
+    healOrphanHouseHands(event, a, {
+      random: () => 0.5,
+      onHandComplete: (id) => event.afterHand(id),
+    });
+
+    expect(event.engineFor(b)!.isHandInProgress()).toBe(false);
   });
 
   it("clearMttRedrawPause finishes a blocking house hand so the final table can form", () => {
