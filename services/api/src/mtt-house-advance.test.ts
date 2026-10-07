@@ -15,9 +15,11 @@ import { resetIpRateLimitsForTests } from "./ip-rate-limit.js";
 import { isHousePlayerId } from "./house-id.js";
 import {
   advanceSiblingMttHouseTables,
+  clearMttRedrawPause,
   completeHouseOnlyHand,
   tableHasLivingHuman,
 } from "./mtt-house-advance.js";
+import { MttEvent } from "@dat-poker/game-engine";
 
 async function buildApp() {
   const app = Fastify();
@@ -208,5 +210,34 @@ describe("MTT house-only sibling pace", () => {
   it("completeHouseOnlyHand refuses tables with a living human", () => {
     // Covered indirectly above; keep a direct guard for the helper.
     expect(typeof completeHouseOnlyHand).toBe("function");
+  });
+
+  it("clearMttRedrawPause finishes a blocking house hand so the final table can form", () => {
+    const event = MttEvent.create({
+      blindLevels: [{ smallBlindMojos: 10n, bigBlindMojos: 20n }],
+    });
+    const [a, b] = event.tableIds();
+    event.seatPlayer(a, "alice", 0);
+    event.fillHouseSeats();
+    event.start();
+    for (const row of event.engineFor(a)!.getSeatedPlayers().filter((p) => p.playerId !== "alice").slice(0, 4)) {
+      event.engineFor(a)!.setPlayerStack(row.playerId, 0n);
+    }
+    for (const row of event.engineFor(b)!.getSeatedPlayers().slice(0, 4)) {
+      event.engineFor(b)!.setPlayerStack(row.playerId, 0n);
+    }
+    event.engineFor(b)!.startHand("hold-final");
+    event.afterHand(a);
+    expect(event.shouldPauseDeals(a)).toBe(true);
+
+    clearMttRedrawPause(event, a, {
+      random: () => 0.5,
+      onHandComplete: (id) => {
+        event.afterHand(id);
+      },
+    });
+
+    expect(event.shouldPauseDeals(a)).toBe(false);
+    expect(event.relocatedTo(a)).toBeTruthy();
   });
 });

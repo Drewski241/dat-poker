@@ -4,8 +4,8 @@ This kit deploys the **web client + REST API** on one Amazon Linux 2023 EC2
 instance (nginx on `:80`, API on `:4000`). Treasury Sage and
 `pnpm dev:treasury` stay on a **separate** machine ([docs/TREASURY.md](../../docs/TREASURY.md)).
 
-**Branch with 9/16-player SNG, prize-pool fix, and NFT lobby promo:**
-`cursor/fix-sng-prize-pool-d148` (switch `RepoRef` to `main` after that PR merges).
+**Branch with 16-player MTT redraw fixes, house table pace, and NFT lobby promo:**
+`cursor/phone-friendly-aws-redeploy-debb` (switch `RepoRef` to `main` after that PR merges).
 
 ## Option A — EC2 console (recommended)
 
@@ -31,7 +31,7 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     InstanceType=t3.small \
-    RepoRef=cursor/fix-sng-prize-pool-d148
+    RepoRef=cursor/phone-friendly-aws-redeploy-debb
 
 aws cloudformation describe-stacks --stack-name dat-poker-beta \
   --query 'Stacks[0].Outputs'

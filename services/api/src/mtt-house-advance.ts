@@ -66,6 +66,38 @@ export interface AdvanceSiblingOptions {
   onHandStarted: (tableId: string) => void;
 }
 
+export interface ClearMttRedrawPauseOptions {
+  random?: () => number;
+  onHandComplete: (tableId: string) => void;
+}
+
+/**
+ * While deals are paused for table balance / final-table formation, finish any
+ * idle house-only hands blocking maintain() and sync the blind clock.
+ */
+export function clearMttRedrawPause(
+  mtt: MttEvent,
+  triggerTableId: string,
+  options: ClearMttRedrawPauseOptions,
+): void {
+  if (mtt.getStatus() !== "running") return;
+  if (!mtt.hasTable(triggerTableId)) return;
+  if (!mtt.shouldPauseDeals(triggerTableId)) return;
+
+  const random = options.random ?? Math.random;
+  for (const tableId of mtt.openTableIds()) {
+    const engine = mtt.engineFor(tableId);
+    if (!engine?.isHandInProgress() || tableHasLivingHuman(engine)) continue;
+    for (let burst = 0; burst < MAX_HOUSE_ACTION_BURSTS; burst += 1) {
+      if (!engine.isHandInProgress()) break;
+      const finished = completeHouseOnlyHand(engine, undefined, random);
+      if (!finished) break;
+      options.onHandComplete(tableId);
+    }
+  }
+  mtt.syncBlindClock();
+}
+
 /**
  * When a human (or any trigger table) advances, deal/play house-only sibling
  * tables until their hand count catches up — same pace, no idle starting stacks.

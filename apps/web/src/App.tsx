@@ -929,6 +929,11 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
     if (runoutFromBoardLenRef.current != null) return;
+    if (sng?.pauseDeals) {
+      setError(null);
+      setStatus("Waiting to redraw tables — syncing the other table…");
+      return;
+    }
     run("Dealing hand…", async () => {
       setHandResult(null);
       const dealt = await api.goHand(tableId, playerId);
@@ -1409,7 +1414,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       )}
       {atTableRoom ? (
         <>
-          {error && <div className="banner error table-room-banner">{error}</div>}
+          {error &&
+            !(sng?.pauseDeals && error.includes("Waiting to redraw")) && (
+              <div className="banner error table-room-banner">{error}</div>
+            )}
           {status && <div className="banner info table-room-banner">{status}</div>}
           <TableRoom
             datToken={datToken}
@@ -1435,7 +1443,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             onSendAction={sendAction}
             onStartHand={startHandFlow}
             canRebuy={canRebuyAtTable}
-            canDeal={Boolean(myTableSeat) && sng?.status !== "finished"}
+            canDeal={Boolean(myTableSeat) && sng?.status !== "finished" && !sng?.pauseDeals}
             onRebuy={rebuyAtTable}
             rebuyLabel={formatDatMojos(minBuyInMojos, datToken?.ticker)}
             onOpenLobby={() => {

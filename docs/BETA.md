@@ -182,7 +182,7 @@ In Session Manager:
 sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh
 ```
 
-(`up.sh` fetches `cursor/mtt16-nft20-max-humans-d380` by default and runs
+(`up.sh` fetches `cursor/phone-friendly-aws-redeploy-debb` by default and runs
 `redeploy.sh`, or downloads `redeploy.sh` from GitHub if your checkout is still
 old. Override with `DAT_POKER_REPO_REF=…` when deploying another branch.)
 
@@ -199,6 +199,15 @@ stay in `data/ledger.json`.
 
 On a phone you usually **cannot paste** into the AWS terminal. Type **one line
 at a time**, press Enter, wait for the prompt, then the next line.
+
+**Shortest update (when `/opt/dat-poker` already exists and `up.sh` is on disk):**
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh
+```
+
+If that fails with `No such file`, use the fetch steps below (branch
+`cursor/phone-friendly-aws-redeploy-debb`).
 
 **Step 0 — why “no such file”?**
 
@@ -220,7 +229,7 @@ cd /opt/dat-poker
 ```
 
 ```bash
-export R=cursor/mtt16-nft20-max-humans-d380
+export R=cursor/phone-friendly-aws-redeploy-debb
 ```
 
 ```bash

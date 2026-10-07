@@ -44,7 +44,7 @@ import {
   resetHandHistoryForTests,
 } from "../hand-history-store.js";
 import { playHouseIfDue } from "../house-play.js";
-import { advanceSiblingMttHouseTables } from "../mtt-house-advance.js";
+import { advanceSiblingMttHouseTables, clearMttRedrawPause } from "../mtt-house-advance.js";
 import {
   getMtt16NftPromoMeta,
   loadMtt16NftChallengeStore,
@@ -1310,6 +1310,20 @@ export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): vo
 function runMttHouseCatchup(triggerTableId: string): void {
   const mtt = mttByTable.get(triggerTableId);
   if (!mtt || mtt.getStatus() !== "running") return;
+  clearMttRedrawPause(mtt, triggerTableId, {
+    onHandComplete: (siblingId) => {
+      const engine = mtt.engineFor(siblingId);
+      if (!engine || engine.isHandInProgress()) return;
+      maybeRecordCompletedHand(siblingId, engine);
+      if (mtt.getStatus() === "running") {
+        mtt.afterHand(siblingId);
+        registerMttTables(mtt);
+      }
+      if (mtt.getStatus() === "finished") {
+        settleMttPrizes(mtt);
+      }
+    },
+  });
   advanceSiblingMttHouseTables(mtt, triggerTableId, {
     onHandStarted: (siblingId) => {
       mtt.onHandStarted(siblingId);

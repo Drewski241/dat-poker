@@ -173,6 +173,12 @@ export function TableRoom({
             Blinds {formatDatAmount(smallBlindMojos)}/{formatDatAmount(bigBlindMojos)}
             {sng ? ` · ${sngBlindClockLine(sng, nowMs)}` : ""}
           </p>
+          {sng?.pauseDeals && !hand && !runoutPlaying && (
+            <p className="table-room-redraw-wait" role="status">
+              Waiting to redraw tables — the other table is catching up. This usually clears in a few
+              seconds.
+            </p>
+          )}
           {sng && (
             <p className="table-room-sng-payouts">
               {sng.kind === "mtt"

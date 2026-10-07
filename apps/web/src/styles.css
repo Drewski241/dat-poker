@@ -2404,6 +2404,18 @@ html.play-table-screen body {
   color: var(--muted);
 }
 
+.table-room-redraw-wait {
+  margin: 0.35rem 0 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.45rem;
+  background: rgba(200, 120, 40, 0.18);
+  border: 1px solid rgba(240, 180, 80, 0.35);
+  color: #ffe8c8;
+  font-size: clamp(0.72rem, 2.8vmin, 0.85rem);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .table-room-header-actions {
   display: flex;
   flex-shrink: 0;
