@@ -92,6 +92,12 @@ else
   bad "redeploy.sh API health retry"
 fi
 
+if grep -q '16-player MTT' "$DIR/redeploy.sh"; then
+  ok "redeploy.sh verifies deployed web bundle includes 16-player MTT UI"
+else
+  bad "redeploy.sh MTT web bundle check"
+fi
+
 if grep -q 'dat-poker-bootstrap.web-only' "$ROOT/docs/BETA.md" \
   && grep -q 'systemctl status dat-poker-api' "$ROOT/docs/BETA.md"; then
   ok "docs/BETA.md covers the systemd vs curl race"

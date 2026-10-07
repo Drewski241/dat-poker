@@ -211,6 +211,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     seatedHumans: number;
     humansInHand: number;
   } | null>(null);
+  const [serverBuildRef, setServerBuildRef] = useState<string | null>(null);
+  const [serverMtt16, setServerMtt16] = useState<boolean | null>(null);
 
   useEffect(() => {
     writeVerifyPending(verificationPending);
@@ -221,10 +223,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     void (async () => {
       restoreApiAuthToken();
       try {
-        await api.health();
+        const health = await api.health();
         setApiOk(true);
+        setServerBuildRef(health.buildRef ?? null);
+        setServerMtt16(health.lobby?.mtt16 ?? null);
       } catch {
         setApiOk(false);
+        setServerMtt16(null);
         return;
       }
       try {
@@ -1551,6 +1556,62 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       {error && <div className="banner error">{error}</div>}
       {status && <div className="banner info">{status}</div>}
 
+      {!tableId && playerId && (
+        <section className="panel lobby-quick-start">
+          <h2>Start a table</h2>
+          <p className="muted small">
+            6-max cash, 9-max sit-n-go, or{" "}
+            <strong>16-player MTT</strong> (two 8-max tables, then a final table). Daily redeem is
+            5000 DAT — that is separate from the 16-player field size.
+          </p>
+          {serverMtt16 === false && (
+            <p className="banner error">
+              This server build does not expose 16-player MTT yet. Redeploy branch{" "}
+              <code>cursor/phone-friendly-aws-redeploy-debb</code> and hard-refresh this page.
+            </p>
+          )}
+          <div className="lobby-quick-start-buttons">
+            <button
+              type="button"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable()}
+            >
+              Buy in &amp; join 6-max ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinSng()}
+            >
+              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
+              9-max SNG
+            </button>
+            <button
+              type="button"
+              className="secondary lobby-mtt-btn"
+              disabled={
+                busy || !apiOk || !playerId || !datToken?.buyInReady || serverMtt16 === false
+              }
+              onClick={() => void joinMtt()}
+            >
+              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
+              16-player MTT
+            </button>
+          </div>
+          {serverBuildRef ? (
+            <p className="muted small mono">Server build: {serverBuildRef}</p>
+          ) : null}
+        </section>
+      )}
+
+      {!tableId && !playerId && (
+        <section className="panel lobby-quick-start">
+          <h2>Start a table</h2>
+          <p className="muted small">Sign in under Account below, redeem 5000 DAT, then pick 6-max, 9-max SNG, or 16-player MTT.</p>
+        </section>
+      )}
+
       {tableId && (
         <section className="panel seated-return">
           <h2>At the table</h2>
@@ -1694,34 +1755,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       )}
 
       <section className="panel">
-        <h2>{tableId ? "Leave table" : "Table"}</h2>
+        <h2>{tableId ? "Leave table" : "Sit-n-go lobby"}</h2>
         {!tableId ? (
           <>
-            <button
-              type="button"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable()}
-            >
-              Buy in &amp; join 6-max ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinSng()}
-            >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
-              9-max SNG
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinMtt()}
-            >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
-              16-player SNG
-            </button>
             <p className="muted small">
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
               Prize pool is every seat buy-in (you and house bots). Up to 10 humans per 16-player event;

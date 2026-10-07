@@ -256,7 +256,12 @@ export interface LobbyTable {
 }
 
 export const api = {
-  health: () => request<{ status: string }>("/health"),
+  health: () =>
+    request<{
+      status: string;
+      buildRef?: string | null;
+      lobby?: { cash6Max?: boolean; sng9Max?: boolean; mtt16?: boolean };
+    }>("/health"),
 
   walletConfig: () =>
     request<{

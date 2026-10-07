@@ -257,7 +257,11 @@ network). Run `sudo git remote -v` and try the fetch again.
 curl -s http://127.0.0.1/health
 ```
 
-You want JSON with `"status":"ok"`.
+You want JSON with `"status":"ok"` and `"lobby":{"mtt16":true}`. If `mtt16` is missing, the
+API is an old build — re-run `up.sh` on branch `cursor/phone-friendly-aws-redeploy-debb`.
+
+On the **Play** page you should see **Start a table** at the top with three buttons including
+**16-player MTT** (not only 6-max and 9-max). Hard-refresh the site if you still see two buttons.
 
 Wait until it prints `beta redeploy ok`. If it dies on
 `www.datspiritpoker.com: command not found`, the API already restarted —

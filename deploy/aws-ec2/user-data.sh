@@ -7,7 +7,7 @@ set -euxo pipefail
 exec > >(tee /var/log/dat-poker-bootstrap.log) 2>&1
 
 REPO_URL="${DAT_POKER_REPO_URL:-https://github.com/Drewski241/dat-poker.git}"
-REPO_REF="${DAT_POKER_REPO_REF:-main}"
+REPO_REF="${DAT_POKER_REPO_REF:-cursor/phone-friendly-aws-redeploy-debb}"
 DAT_POKER_STAGE="${DAT_POKER_STAGE:-beta}"
 NODE_VERSION="${DAT_POKER_NODE_VERSION:-v22.14.0}"
 INSTALL_ROOT="/opt/dat-poker"

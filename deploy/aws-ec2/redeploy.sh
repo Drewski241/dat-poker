@@ -39,6 +39,10 @@ pnpm --filter @dat-poker/web build
 
 rm -rf "${WEB_ROOT:?}/"*
 cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
+if ! grep -rq "16-player MTT" "$WEB_ROOT/assets/" 2>/dev/null; then
+  echo "deployed web bundle is missing 16-player MTT UI (wrong branch or failed web build)" >&2
+  exit 1
+fi
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 mkdir -p "$INSTALL_ROOT/data/feedback"
 if [[ ! -f "$INSTALL_ROOT/data/accounts.json" ]]; then
@@ -50,6 +54,13 @@ if [[ ! -f "$INSTALL_ROOT/data/ledger.json" ]]; then
   chmod 600 "$INSTALL_ROOT/data/ledger.json"
 fi
 chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
+ENV_FILE="$INSTALL_ROOT/.env"
+if [[ -f "$ENV_FILE" ]] && grep -q '^DAT_POKER_REPO_REF=' "$ENV_FILE"; then
+  sed -i "s|^DAT_POKER_REPO_REF=.*|DAT_POKER_REPO_REF=${REPO_REF}|" "$ENV_FILE"
+else
+  printf '\nDAT_POKER_REPO_REF=%s\n' "$REPO_REF" >> "$ENV_FILE"
+fi
+chown ec2-user:ec2-user "$ENV_FILE" 2>/dev/null || true
 systemctl reset-failed dat-poker-api 2>/dev/null || true
 systemctl restart dat-poker-api
 # Parse KEY=VALUE; do not `source` caddy.env. An unquoted
