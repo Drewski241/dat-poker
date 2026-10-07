@@ -22,13 +22,13 @@ export function shouldAutoDealNextHand(input: {
     input.busy ||
     input.stackIsZero ||
     input.runoutPlaying ||
-    input.celebrationPlaying ||
-    input.sittingOut
+    input.celebrationPlaying
   ) {
     return false;
   }
 
   if (input.tableFormat === "cash") {
+    if (input.sittingOut) return false;
     return true;
   }
 

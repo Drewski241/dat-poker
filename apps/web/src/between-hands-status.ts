@@ -28,6 +28,9 @@ export function betweenHandsStatusMessage(input: {
   canAutoDeal: boolean;
 }): string | null {
   if (input.sittingOut) {
+    if (input.tableFormat === "sng" || input.tableFormat === "mtt") {
+      return "Sitting out — tournament continues; you check/fold until you bust.";
+    }
     return "Sitting out — tap Sit in when you want the next hand.";
   }
   if (input.busy) {

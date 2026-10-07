@@ -675,6 +675,16 @@ button.secondary {
   font-size: 0.9rem;
 }
 
+.lobby-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.mtt-event-lobby-back {
+  margin-bottom: 0.75rem;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

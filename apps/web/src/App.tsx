@@ -22,6 +22,8 @@ import { AuthPanel, ChangePasswordForm } from "./AuthPanel.js";
 import { CardRow } from "./components/PlayingCard.js";
 import { BigWinOverlayHost } from "./components/BigWinOverlayHost.js";
 import { TableRoom } from "./components/TableRoom.js";
+import { MttEventLobby } from "./components/MttEventLobby.js";
+import { groupLobbyTables } from "./lobby-mtt.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
 import {
@@ -176,6 +178,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [tableMaxSeats, setTableMaxSeats] = useState(6);
   const [sng, setSng] = useState<SngSnapshot | null>(null);
   const [lobbyTables, setLobbyTables] = useState<LobbyTable[]>([]);
+  const [mttBrowseEventId, setMttBrowseEventId] = useState<string | null>(null);
   const [mtt16NftPromo, setMtt16NftPromo] = useState<Mtt16NftPromo | null>(null);
   const [mtt16NftReward, setMtt16NftReward] = useState<Mtt16NftReward | null>(null);
   const [nftOfferCopied, setNftOfferCopied] = useState(false);
@@ -871,7 +874,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           );
         }
       }
-      setStatus("Joining 16-player sit-n-go…");
+      setMttBrowseEventId(null);
+      setStatus("Joining MTT…");
       const joined = await api.joinMtt(playerId, buyIn, {
         devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
       });
@@ -934,6 +938,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   };
 
+  const resumeMttTable = async (targetTableId: string) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setMttBrowseEventId(null);
+    try {
+      setTableId(targetTableId);
+      setTableFormat("mtt");
+      setTableFocusMode(true);
+      await refreshTable(targetTableId);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const takeHouseSeat = async (openTable: LobbyTable) => {
     if (busy) return;
     setBusy(true);
@@ -955,6 +976,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           );
         }
       }
+      setMttBrowseEventId(null);
       setStatus("Taking a house seat…");
       const claimed = await api.claimHouse(openTable.tableId, playerId, buyIn, {
         devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
@@ -976,6 +998,16 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   };
 
   const minBuyInMojos = datToken?.minBuyInMojos ?? "1000000";
+
+  const { mttEvents, sngRows } = useMemo(
+    () => groupLobbyTables(lobbyTables, playerId),
+    [lobbyTables, playerId],
+  );
+  const mttBrowseEvent = useMemo(
+    () => mttEvents.find((ev) => ev.eventId === mttBrowseEventId) ?? null,
+    [mttEvents, mttBrowseEventId],
+  );
+  const defaultMttLabel = mttEvents[0]?.label ?? "16-player MTT";
 
   const rebuyAtTable = () => {
     if (!tableId || !playerId) return;
@@ -1872,8 +1904,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
               onClick={() => void joinMtt()}
             >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
-              16-player SNG
+              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; join{" "}
+              {defaultMttLabel}
             </button>
             <p className="muted small">
               Sit-n-go buy-in is {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}.
@@ -2049,31 +2081,77 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 </div>
               </div>
             ) : null}
-            <div className="lobby">
-              <h3>Active sit-n-gos</h3>
-              <p className="muted small">
-                Take a house seat on a live SNG, or start a new one if a table is full.
-              </p>
-              {lobbyTables.filter((row) => (row.format === "sng" || row.format === "mtt") && row.sng?.status !== "finished").length === 0 ? (
-                <p className="muted">No active sit-n-gos yet.</p>
-              ) : (
-                <ul className="lobby-list">
-                  {lobbyTables
-                    .filter((row) => (row.format === "sng" || row.format === "mtt") && row.sng?.status !== "finished")
-                    .map((row) => {
+            {mttBrowseEvent ? (
+              <MttEventLobby
+                event={mttBrowseEvent}
+                datToken={datToken}
+                playerId={playerId}
+                busy={busy}
+                buyInReady={Boolean(datToken?.buyInReady)}
+                playerLabel={playerLabel}
+                onBack={() => setMttBrowseEventId(null)}
+                onJoinAsPlayer={() => void joinMtt()}
+                onResumeTable={(id) => void resumeMttTable(id)}
+                onTakeHouseSeat={(row) => void takeHouseSeat(row)}
+              />
+            ) : (
+              <div className="lobby">
+                <h3>Active tournaments</h3>
+                {mttEvents.length === 0 ? (
+                  <p className="muted small">No MTT running — use Join above to start one.</p>
+                ) : (
+                  <ul className="lobby-list">
+                    {mttEvents.map((ev) => (
+                      <li key={ev.eventId}>
+                        <span>
+                          {ev.label} · {ev.tableCount} tables · {ev.humanCount} human
+                          {ev.humanCount === 1 ? "" : "s"}
+                          {ev.myTableId ? " · you are seated" : ""} · {ev.status} · pool{" "}
+                          {formatDatMojos(ev.prizePoolMojos, datToken?.ticker)}
+                        </span>
+                        <div className="row lobby-list-actions">
+                          {ev.myTableId ? (
+                            <button type="button" disabled={busy} onClick={() => void resumeMttTable(ev.myTableId!)}>
+                              Return to my table
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={busy || !playerId || !datToken?.buyInReady}
+                              onClick={() => void joinMtt()}
+                            >
+                              Join as player
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => setMttBrowseEventId(ev.eventId)}
+                          >
+                            Browse tables
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <h3>Active 9-max SNGs</h3>
+                <p className="muted small">
+                  Take a house seat on a live SNG, or start a new one if a table is full.
+                </p>
+                {sngRows.length === 0 ? (
+                  <p className="muted">No active 9-max SNGs yet.</p>
+                ) : (
+                  <ul className="lobby-list">
+                    {sngRows.map((row) => {
                       const humans = row.humanCount ?? row.humans ?? 0;
                       const house = row.houseSeatsAvailable ?? 0;
                       const full = Boolean(row.full) || house === 0;
                       return (
                         <li key={row.tableId}>
                           <span>
-                            {row.sng?.isFinalTable
-                              ? "Final Table"
-                              : row.sng?.kind === "mtt"
-                                ? (row.sng.tableLabel ?? "16-max")
-                                : "9-max"}
-                            {" · "}
-                            {humans} human{humans === 1 ? "" : "s"}
+                            9-max · {humans} human{humans === 1 ? "" : "s"}
                             {row.humanPlayerIds?.length
                               ? ` (${row.humanPlayerIds.map((id) => playerLabel(id, playerId)).join(", ")})`
                               : ""}
@@ -2110,9 +2188,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                         </li>
                       );
                     })}
-                </ul>
-              )}
-            </div>
+                  </ul>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <>

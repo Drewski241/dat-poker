@@ -1255,10 +1255,19 @@ function readFillHouseDefault(): boolean {
   return true;
 }
 
+function readMttFieldSize(): number {
+  const raw = Number(process.env.DAT_MTT_FIELD_SIZE ?? DAT_MTT_DEFAULTS.fieldSize);
+  if (!Number.isFinite(raw) || raw < DAT_MTT_DEFAULTS.startingTableSeats) {
+    return DAT_MTT_DEFAULTS.fieldSize;
+  }
+  return Math.min(10_000, Math.floor(raw));
+}
+
 function readMttMaxHumans(): number {
+  const fieldSize = readMttFieldSize();
   const raw = Number(process.env.DAT_MTT_MAX_HUMANS ?? DAT_MTT_DEFAULTS.maxHumans);
   if (!Number.isFinite(raw) || raw < 1) return DAT_MTT_DEFAULTS.maxHumans;
-  return Math.min(DAT_MTT_DEFAULTS.fieldSize, Math.floor(raw));
+  return Math.min(fieldSize, Math.floor(raw));
 }
 
 function createSngTable(options?: { maxSeats?: number; fillHouse?: boolean; minHumansToStart?: number }): {
@@ -1289,6 +1298,7 @@ function registerMttTables(mtt: MttEvent): void {
 
 function createMttEvent(): MttEvent {
   const mtt = MttEvent.create({
+    fieldSize: readMttFieldSize(),
     fillHouse: readFillHouseDefault(),
     minHumansToStart: 1,
     maxHumans: readMttMaxHumans(),

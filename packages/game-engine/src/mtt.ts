@@ -20,6 +20,8 @@ import { NlheTableEngine } from "./nlhe-table.js";
 import type { SngSnapshot } from "./sng.js";
 
 export interface MttOptions {
+  /** Total entries in the field (default from shared DAT_MTT_DEFAULTS). */
+  fieldSize?: number;
   buyInMojos?: bigint;
   startingStackMojos?: bigint;
   fillHouse?: boolean;
@@ -49,9 +51,9 @@ export class MttEvent {
   readonly minHumansToStart: number;
   readonly maxHumans: number;
   readonly housePolicy: HousePolicy;
-  readonly fieldSize = DAT_MTT_DEFAULTS.fieldSize;
+  readonly fieldSize: number;
   readonly startingTableSeats = DAT_MTT_DEFAULTS.startingTableSeats;
-  readonly startingTableCount = DAT_MTT_DEFAULTS.startingTableCount;
+  readonly startingTableCount: number;
   readonly finalTableSeats = DAT_MTT_DEFAULTS.finalTableSeats;
   private readonly blindLevels: SngBlindLevel[];
   private readonly payoutShares: SngPayoutShare[];
@@ -73,6 +75,18 @@ export class MttEvent {
 
   constructor(eventId: string, options: MttOptions = {}) {
     this.eventId = eventId;
+    const fieldRaw = options.fieldSize ?? DAT_MTT_DEFAULTS.fieldSize;
+    this.fieldSize = Math.max(
+      DAT_MTT_DEFAULTS.startingTableSeats,
+      Math.min(10_000, Math.floor(Number(fieldRaw))),
+    );
+    if (!Number.isFinite(this.fieldSize)) {
+      this.fieldSize = DAT_MTT_DEFAULTS.fieldSize;
+    }
+    this.startingTableCount = Math.max(
+      1,
+      Math.ceil(this.fieldSize / this.startingTableSeats),
+    );
     this.buyInMojos = options.buyInMojos ?? DAT_MTT_DEFAULTS.buyInMojos;
     this.startingStackMojos = options.startingStackMojos ?? DAT_MTT_DEFAULTS.startingStackMojos;
     this.fillHouse = options.fillHouse ?? DAT_MTT_DEFAULTS.fillHouse;
@@ -80,7 +94,7 @@ export class MttEvent {
     const maxHumansRaw = options.maxHumans ?? DAT_MTT_DEFAULTS.maxHumans ?? 10;
     this.maxHumans = Math.max(
       1,
-      Math.min(DAT_MTT_DEFAULTS.fieldSize, Math.floor(Number(maxHumansRaw))),
+      Math.min(this.fieldSize, Math.floor(Number(maxHumansRaw))),
     );
     if (!Number.isFinite(this.maxHumans)) {
       this.maxHumans = 10;

@@ -36,6 +36,10 @@ describe("shouldAutoDealNextHand", () => {
     expect(shouldAutoDealNextHand({ ...cashReady, sittingOut: true })).toBe(false);
   });
 
+  it("still auto-deals MTT while sitting out so the field keeps moving", () => {
+    expect(shouldAutoDealNextHand({ ...sngReady, tableFormat: "mtt", sittingOut: true })).toBe(true);
+  });
+
   it("does not auto-deal cash with fewer than two occupied seats", () => {
     expect(shouldAutoDealNextHand({ ...cashReady, occupiedSeats: 1 })).toBe(false);
   });
