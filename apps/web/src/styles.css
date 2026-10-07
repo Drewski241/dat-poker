@@ -685,6 +685,34 @@ button.secondary {
   margin-bottom: 0.75rem;
 }
 
+.table-format-heading {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e8eef5;
+}
+
+.table-format-heading:first-child {
+  margin-top: 0;
+}
+
+.mtt-format-heading {
+  color: #7dffb8;
+}
+
+button.mtt-join-btn {
+  width: 100%;
+  margin-top: 0.25rem;
+  background: linear-gradient(180deg, #3ecf7a 0%, #2aad62 100%);
+  border: 1px solid #5ae693;
+  color: #041008;
+  font-weight: 700;
+}
+
+button.mtt-join-btn:disabled {
+  opacity: 0.55;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

@@ -1886,6 +1886,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         <h2>{tableId ? "Leave table" : "Table"}</h2>
         {!tableId ? (
           <>
+            <h3 className="table-format-heading">6-max cash</h3>
             <button
               type="button"
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
@@ -1893,6 +1894,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             >
               Buy in &amp; join 6-max ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
             </button>
+            <h3 className="table-format-heading">9-max sit-n-go</h3>
             <button
               type="button"
               className="secondary"
@@ -1902,21 +1904,20 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
               9-max SNG
             </button>
+            <h3 className="table-format-heading mtt-format-heading">{configuredMttLabel}</h3>
             <button
               type="button"
-              className="secondary mtt-join-primary"
+              className="mtt-join-btn"
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
               onClick={() => void joinMtt()}
             >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} — join{" "}
-              {configuredMttLabel}
+              Join tournament · {configuredMttLabel} (
+              {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} buy-in)
             </button>
             <p className="muted small">
-              <strong>{configuredMttLabel}</strong> — buy-in{" "}
-              {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)}. One tournament,
-              many tables (browse from Active tournaments below). Up to {mttMaxHumans} humans in the field;
-              other seats are house bots. Pays 1st–3rd overall 50% / 30% / 20%. 9-max SNG is separate
-              (button above). Each completed tournament hand unlocks 1 DAT from account or prizes.
+              <strong>{configuredMttLabel}</strong> — one event, many tables (use Active tournaments below
+              to browse). Up to {mttMaxHumans} humans; other seats are house bots. Pays 1st–3rd overall
+              50% / 30% / 20%. Each completed hand unlocks 1 DAT from account or prizes.
             </p>
             {mtt16NftPromo?.enabled ? (
               <div className="nft-promo">
@@ -2358,8 +2359,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         {isBeta ? (
           <p>
             DAT POKER public beta. Redeem 5000 DAT per UTC day into a table account (not an
-            on-chain CAT send). 6-max cash, a 9-max sit-n-go, or a 16-player sit-n-go
-            (two tables of 8, then a championship final table). Cash still plays the house or another human.
+            on-chain CAT send). 6-max cash, 9-max SNG, or {configuredMttLabel} (multi-table, one
+            lobby entry). Build {import.meta.env.VITE_BUILD_ID ?? "dev"}
+            {datToken?.mttFieldSize != null ? ` · MTT field ${datToken.mttFieldSize}` : ""}.
             {" "}
             <a href="/feedback" onClick={(e) => { e.preventDefault(); onNavigate?.("feedback"); }}>
               Send feedback

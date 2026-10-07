@@ -17,7 +17,13 @@ fi
 REPO_REF="${DAT_POKER_REPO_REF:-cursor/beta-chop-mtt-b297}"
 
 cd "$INSTALL_ROOT"
+ENV_FILE="$INSTALL_ROOT/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  grep -q '^DAT_POKER_STAGE=' "$ENV_FILE" || echo 'DAT_POKER_STAGE=beta' >> "$ENV_FILE"
+  grep -q '^DAT_MTT_FIELD_SIZE=' "$ENV_FILE" || echo 'DAT_MTT_FIELD_SIZE=500' >> "$ENV_FILE"
+fi
 export CI=true
+export DAT_POKER_STAGE="${DAT_POKER_STAGE:-beta}"
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=512}"
 export VITE_APP_STAGE="${DAT_POKER_STAGE:-beta}"
 
@@ -35,10 +41,21 @@ corepack prepare pnpm@9.15.0 --activate
 pnpm install --frozen-lockfile
 pnpm --filter @dat-poker/api^... build
 pnpm --filter @dat-poker/api build
+export VITE_BUILD_ID="$(git rev-parse --short HEAD)"
+export VITE_APP_STAGE="${DAT_POKER_STAGE:-beta}"
 pnpm --filter @dat-poker/web build
 
 rm -rf "${WEB_ROOT:?}/"*
 cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
+if grep -rq "start 16-player SNG" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: web bundle still contains pre-MTT lobby strings — build did not update" >&2
+  exit 1
+fi
+if ! grep -rq "Join tournament" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: expected Join tournament CTA missing from web dist" >&2
+  exit 1
+fi
+echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (MTT lobby OK)"
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 mkdir -p "$INSTALL_ROOT/data/feedback"
 if [[ ! -f "$INSTALL_ROOT/data/accounts.json" ]]; then
