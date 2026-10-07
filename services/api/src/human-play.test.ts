@@ -3,7 +3,6 @@ import { NlheTableEngine, generateServerSeed } from "@dat-poker/game-engine";
 import type { TableConfig } from "@dat-poker/shared";
 import { PLAYER_ACTION_LIMIT_MS } from "@dat-poker/shared";
 import { playHumansIfDue, resetHumanTurnClockForTests } from "./human-play.js";
-import { HOUSE_PLAYER_ID } from "./house-id.js";
 
 const config: TableConfig = {
   id: "t1",
