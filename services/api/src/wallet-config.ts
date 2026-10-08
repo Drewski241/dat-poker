@@ -1,23 +1,44 @@
-import { resolveDatMinBuyInMojos } from "@dat-poker/shared";
+import { resolveDatDailyRedeemMojos, resolveDatMinBuyInMojos } from "@dat-poker/shared";
+import { verifyChip0002Signature } from "./chip0002.js";
+import {
+  readMtt16FieldSize,
+  readMtt16MaxHumans,
+  readMttFieldSize,
+  readMttMaxHumans,
+} from "./mtt-env.js";
 
 export interface DatTokenConfig {
   assetId: string | null;
   ticker: string;
   minBuyInMojos: string;
+  dailyRedeemMojos: string;
   devBuyInEnabled: boolean;
   buyInReady: boolean;
+  mttFieldSize: number;
+  mttMaxHumans: number;
+  /** Fixed 16-player sit-n-go field (two 8-max tables + final). */
+  mtt16FieldSize: number;
+  mtt16MaxHumans: number;
 }
 
 export function readDatTokenConfig(): DatTokenConfig {
   const assetId = process.env.DAT_GOVERNANCE_TOKEN_ASSET_ID?.trim() || undefined;
   const devBuyInEnabled = process.env.DAT_ALLOW_DEV_BUYIN === "true";
   const minBuyInMojos = resolveDatMinBuyInMojos(process.env.DAT_MIN_BUY_IN_MOJOS).toString();
+  const dailyRedeemMojos = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS).toString();
+  const mttFieldSize = readMttFieldSize();
+  const mttMaxHumans = readMttMaxHumans();
   return {
     assetId: assetId ?? null,
     ticker: process.env.DAT_GOVERNANCE_TOKEN_TICKER ?? "DAT",
     minBuyInMojos,
+    dailyRedeemMojos,
     devBuyInEnabled,
     buyInReady: Boolean(assetId) || devBuyInEnabled,
+    mttFieldSize,
+    mttMaxHumans,
+    mtt16FieldSize: readMtt16FieldSize(),
+    mtt16MaxHumans: readMtt16MaxHumans(),
   };
 }
 
@@ -38,6 +59,36 @@ export function buildWithdrawMessage(params: {
   return `dat-poker:v1:withdraw:${params.tableId}:${params.stackMojos}:${params.address}`;
 }
 
+export function buildRedeemMessage(params: { utcDate: string; address: string; amountMojos: string }): string {
+  return `dat-poker:v1:redeem:${params.utcDate}:${params.address}:${params.amountMojos}`;
+}
+
+export type RedeemProof = BuyInProof;
+
+export function validateRedeemProof(
+  proof: RedeemProof,
+  params: { utcDate: string; address: string; amountMojos: string; playerId: string },
+): string | null {
+  if (proof.address !== params.address) {
+    return "Redeem address must match the Sage session";
+  }
+  const expected = buildRedeemMessage({
+    utcDate: params.utcDate,
+    address: params.address,
+    amountMojos: params.amountMojos,
+  });
+  if (proof.message !== expected) {
+    return "Invalid redeem message";
+  }
+  if (!proof.signature || !proof.pubkey) {
+    return "Redeem signature required (approve in Sage)";
+  }
+  if (!verifyChip0002Signature(proof.pubkey, proof.message, proof.signature)) {
+    return "Invalid Sage redeem signature";
+  }
+  return null;
+}
+
 export interface BuyInProof {
   address: string;
   message: string;
@@ -50,10 +101,11 @@ export type WithdrawProof = BuyInProof;
 
 export function validateBuyInProof(
   proof: BuyInProof,
-  params: { tableId: string; seatIndex: number; buyInMojos: string; playerId: string },
+  params: { tableId: string; seatIndex: number; buyInMojos: string; playerId: string; address?: string },
 ): string | null {
-  if (proof.address !== params.playerId) {
-    return "Buy-in address must match playerId";
+  const expectedAddress = params.address ?? params.playerId;
+  if (proof.address !== expectedAddress) {
+    return "Buy-in address must match the Sage session";
   }
   const expected = buildBuyInMessage({
     tableId: params.tableId,
@@ -65,23 +117,21 @@ export function validateBuyInProof(
     return "Invalid buy-in message";
   }
   if (!proof.signature || !proof.pubkey) {
-    if (proof.datBalanceMojos && BigInt(proof.datBalanceMojos) >= BigInt(params.buyInMojos)) {
-      return null;
-    }
-    return "Buy-in signature required (approve in Sage) or provide balance attestation";
+    return "Buy-in signature required (approve in Sage)";
   }
-  if (params.playerId !== proof.address) {
-    return "Player id must be wallet address";
+  if (!verifyChip0002Signature(proof.pubkey, proof.message, proof.signature)) {
+    return "Invalid Sage buy-in signature";
   }
   return null;
 }
 
 export function validateWithdrawProof(
   proof: WithdrawProof,
-  params: { tableId: string; stackMojos: string; playerId: string },
+  params: { tableId: string; stackMojos: string; playerId: string; address?: string },
 ): string | null {
-  if (proof.address !== params.playerId) {
-    return "Withdraw address must match playerId";
+  const expectedAddress = params.address ?? params.playerId;
+  if (proof.address !== expectedAddress) {
+    return "Withdraw address must match the Sage session";
   }
   const expected = buildWithdrawMessage({
     tableId: params.tableId,
@@ -94,8 +144,8 @@ export function validateWithdrawProof(
   if (!proof.signature || !proof.pubkey) {
     return "Withdraw signature required (approve in Sage)";
   }
-  if (params.playerId !== proof.address) {
-    return "Player id must be wallet address";
+  if (!verifyChip0002Signature(proof.pubkey, proof.message, proof.signature)) {
+    return "Invalid Sage withdraw signature";
   }
   return null;
 }
