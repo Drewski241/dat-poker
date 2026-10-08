@@ -25,6 +25,7 @@ function mttRow(eventId: string, tableId: string, label: string, humans: string[
       playersRemaining: 8,
       humanCount: humans.length,
       houseSeatsAvailable: 8 - humans.length,
+      handNumber: 0,
       placements: [],
     },
   };
@@ -38,12 +39,12 @@ describe("groupLobbyTables", () => {
       mttRow("ev1", "t3", "Table 3", ["alice"]),
       {
         tableId: "sng1",
-        format: "sng",
+        format: "sng" as const,
         handInProgress: false,
         players: 9,
         sng: {
-          status: "running",
-          kind: "sng",
+          status: "running" as const,
+          kind: "sng" as const,
           maxSeats: 9,
           buyInMojos: "1000000",
           prizePoolMojos: "9000000",
@@ -52,10 +53,11 @@ describe("groupLobbyTables", () => {
           playersRemaining: 9,
           humanCount: 1,
           houseSeatsAvailable: 7,
+          handNumber: 0,
           placements: [],
         },
-      },
-    ];
+      } satisfies LobbyTable,
+    ] satisfies LobbyTable[];
     const { mttEvents, sngRows } = groupLobbyTables(rows, "alice");
     expect(mttEvents).toHaveLength(1);
     expect(mttEvents[0]!.tableCount).toBe(3);
