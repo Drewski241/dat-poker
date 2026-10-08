@@ -26,6 +26,7 @@ import {
   requestTreasuryOffer,
 } from "../treasury-payout.js";
 import { mtt16NftRewardForPlayer, retryMtt16NftOffer } from "../mtt16-nft-challenge-store.js";
+import { mtt500NftRewardForPlayer, retryMtt500NftOffer } from "../mtt500-nft-challenge-store.js";
 import { getTableEngine, persistTablePlaythrough, playthroughFields } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import type { NlheTableEngine } from "@dat-poker/game-engine";
@@ -131,6 +132,33 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     }
     const reward = mtt16NftRewardForPlayer(session.playerId);
     // Surface treasury failures as 502 so the lobby shows the real error, not a bare Bad Request.
+    if (result.retried && reward.offerError && !reward.offer) {
+      return reply.status(502).send({
+        error: reward.offerError,
+        ...reward,
+        retry: result,
+      });
+    }
+    return {
+      ...reward,
+      retry: result,
+    };
+  });
+
+  app.get("/v1/wallet/mtt500-nft-reward", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    return mtt500NftRewardForPlayer(session.playerId);
+  });
+
+  app.post("/v1/wallet/mtt500-nft-reward/retry", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    const result = await retryMtt500NftOffer(session.playerId);
+    if (!result.retried && result.reason === "only the challenge winner can retry") {
+      return reply.status(403).send({ error: result.reason });
+    }
+    const reward = mtt500NftRewardForPlayer(session.playerId);
     if (result.retried && reward.offerError && !reward.offer) {
       return reply.status(502).send({
         error: reward.offerError,

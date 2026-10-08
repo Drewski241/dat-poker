@@ -253,6 +253,9 @@ export interface Mtt16NftReward {
   awardedAt: string | null;
 }
 
+export type Mtt500NftPromo = Mtt16NftPromo;
+export type Mtt500NftReward = Mtt16NftReward;
+
 export interface LobbyTable {
   tableId: string;
   format?: "cash" | "sng" | "mtt";
@@ -574,6 +577,16 @@ export const api = {
     request<Mtt16NftReward & { retry?: { retried: boolean; reason?: string } }>(
       "/v1/wallet/mtt16-nft-reward/retry",
       // Fastify rejects application/json POSTs with an empty body as Bad Request.
+      { method: "POST", body: "{}" },
+    ),
+
+  mtt500NftPromo: () => request<Mtt500NftPromo>("/v1/lobby/mtt500-nft-promo"),
+
+  mtt500NftReward: () => request<Mtt500NftReward>("/v1/wallet/mtt500-nft-reward"),
+
+  retryMtt500NftReward: () =>
+    request<Mtt500NftReward & { retry?: { retried: boolean; reason?: string } }>(
+      "/v1/wallet/mtt500-nft-reward/retry",
       { method: "POST", body: "{}" },
     ),
 

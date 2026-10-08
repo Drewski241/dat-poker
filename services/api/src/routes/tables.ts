@@ -60,6 +60,13 @@ import {
   readMtt16NftChallengeConfig,
   recordMtt16FirstPlaceWin,
 } from "../mtt16-nft-challenge-store.js";
+import {
+  getMtt500NftPromoMeta,
+  loadMtt500NftChallengeStore,
+  mtt500NftChallengePublicView,
+  readMtt500NftChallengeConfig,
+  recordMtt500FirstPlaceWin,
+} from "../mtt500-nft-challenge-store.js";
 
 export interface UnseatedInactivePlayer {
   playerId: string;
@@ -75,6 +82,7 @@ const tables = new Map<string, NlheTableEngine>();
 const sngByTable = new Map<string, SngTournament>();
 const mttByTable = new Map<string, MttEvent>();
 const mtt16WinRecorded = new Set<string>();
+const mtt500WinRecorded = new Set<string>();
 const playerLabels = new Map<string, string>();
 export { HOUSE_PLAYER_ID };
 
@@ -461,6 +469,7 @@ function takeBuyInFromAccountOrProof(params: {
 
 export function registerTableRoutes(app: FastifyInstance): void {
   loadMtt16NftChallengeStore();
+  loadMtt500NftChallengeStore();
 
   app.get("/v1/lobby/presence", async () => lobbyPresence());
 
@@ -480,6 +489,42 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return reply.status(404).send({ error: "NFT image does not match current prize" });
     }
     const meta = await getMtt16NftPromoMeta();
+    if (!meta?.imageUrl) {
+      return reply.status(404).send({ error: "NFT image metadata unavailable" });
+    }
+    try {
+      const upstream = await fetch(meta.imageUrl, { signal: AbortSignal.timeout(20_000) });
+      if (!upstream.ok) {
+        return reply.status(502).send({ error: "Could not fetch NFT image from Coinset" });
+      }
+      const body = Buffer.from(await upstream.arrayBuffer());
+      const type = upstream.headers.get("content-type") ?? "image/png";
+      return reply
+        .header("Cache-Control", "public, max-age=3600")
+        .header("Vary", "Accept")
+        .type(type)
+        .send(body);
+    } catch (e) {
+      return reply.status(502).send({ error: (e as Error).message });
+    }
+  });
+
+  app.get("/v1/lobby/mtt500-nft-promo", async (req) => {
+    const session = readPlayerSession(req);
+    await getMtt500NftPromoMeta();
+    return mtt500NftChallengePublicView(session?.playerId);
+  });
+
+  app.get<{ Querystring: { nft?: string } }>("/v1/lobby/mtt500-nft-image", async (req, reply) => {
+    const cfg = readMtt500NftChallengeConfig();
+    if (!cfg.enabled) {
+      return reply.status(404).send({ error: "NFT promo disabled" });
+    }
+    const requested = req.query.nft?.trim();
+    if (requested && requested !== cfg.nftId) {
+      return reply.status(404).send({ error: "NFT image does not match current prize" });
+    }
+    const meta = await getMtt500NftPromoMeta();
     if (!meta?.imageUrl) {
       return reply.status(404).send({ error: "NFT image metadata unavailable" });
     }
@@ -1253,6 +1298,7 @@ export function resetTablesForTests(): void {
   sngByTable.clear();
   mttByTable.clear();
   mtt16WinRecorded.clear();
+  mtt500WinRecorded.clear();
   playerLabels.clear();
   resetHandHistoryForTests();
   resetHumanTurnClockForTests();
@@ -1376,15 +1422,24 @@ function settleMttPrizes(mtt: MttEvent): void {
     creditAccount(row.playerId, row.prizeMojos);
     mtt.markPrizePaid(row.playerId);
   }
-  if (mtt.fieldSize !== DAT_MTT_DEFAULTS.fieldSize) return;
-  if (mtt16WinRecorded.has(mtt.eventId)) return;
-  mtt16WinRecorded.add(mtt.eventId);
   const tableId = mtt.tableIds()[0];
   if (!tableId) return;
   const champion = mtt.snapshot(tableId).placements.find((row) => row.place === 1);
   if (!champion || isHousePlayerId(champion.playerId)) return;
   const payoutAddress = playerLabels.get(champion.playerId) ?? champion.playerId;
-  recordMtt16FirstPlaceWin(champion.playerId, payoutAddress);
+
+  if (mtt.fieldSize === DAT_MTT_DEFAULTS.fieldSize) {
+    if (mtt16WinRecorded.has(mtt.eventId)) return;
+    mtt16WinRecorded.add(mtt.eventId);
+    recordMtt16FirstPlaceWin(champion.playerId, payoutAddress);
+    return;
+  }
+
+  const largeFieldSize = readMttFieldSize();
+  if (mtt.fieldSize !== largeFieldSize) return;
+  if (mtt500WinRecorded.has(mtt.eventId)) return;
+  mtt500WinRecorded.add(mtt.eventId);
+  recordMtt500FirstPlaceWin(champion.playerId, payoutAddress);
 }
 
 export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): void {

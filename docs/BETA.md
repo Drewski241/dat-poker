@@ -248,6 +248,7 @@ You want `"status":"ok"`. Optional MTT promo:
 
 ```bash
 curl -s http://127.0.0.1/v1/lobby/mtt16-nft-promo
+curl -s http://127.0.0.1/v1/lobby/mtt500-nft-promo
 ```
 
 After the host has run step E once with this branch, later phone updates are

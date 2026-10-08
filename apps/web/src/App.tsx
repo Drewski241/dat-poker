@@ -14,6 +14,8 @@ import {
   type LobbyTable,
   type Mtt16NftPromo,
   type Mtt16NftReward,
+  type Mtt500NftPromo,
+  type Mtt500NftReward,
   type SngSnapshot,
   type TableSeat,
   type WithdrawResult,
@@ -23,6 +25,7 @@ import { CardRow } from "./components/PlayingCard.js";
 import { BigWinOverlayHost } from "./components/BigWinOverlayHost.js";
 import { TableRoom } from "./components/TableRoom.js";
 import { MttEventLobby } from "./components/MttEventLobby.js";
+import { NftChallengePromoCard } from "./components/NftChallengePromoCard.js";
 import { groupLobbyTables } from "./lobby-mtt.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
@@ -70,10 +73,8 @@ import {
   restoreSession,
   signRedeemMessage,
   signWithdrawMessage,
-  takeOffer,
   type WcSession,
 } from "./wallet/chia-wallet.js";
-import { sessionCanTakeOffer } from "./wallet/constants.js";
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
 const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
@@ -181,7 +182,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [mttBrowseEventId, setMttBrowseEventId] = useState<string | null>(null);
   const [mtt16NftPromo, setMtt16NftPromo] = useState<Mtt16NftPromo | null>(null);
   const [mtt16NftReward, setMtt16NftReward] = useState<Mtt16NftReward | null>(null);
-  const [nftOfferCopied, setNftOfferCopied] = useState(false);
+  const [mtt500NftPromo, setMtt500NftPromo] = useState<Mtt500NftPromo | null>(null);
+  const [mtt500NftReward, setMtt500NftReward] = useState<Mtt500NftReward | null>(null);
   /** When seated: full-screen table vs lobby (account, withdraw, leave). */
   const [tableFocusMode, setTableFocusMode] = useState(true);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
@@ -422,10 +424,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         () => setLobbyTables([]),
       );
       void api.mtt16NftPromo().then(setMtt16NftPromo, () => setMtt16NftPromo(null));
+      void api.mtt500NftPromo().then(setMtt500NftPromo, () => setMtt500NftPromo(null));
       if (playerId) {
         void api.mtt16NftReward().then(setMtt16NftReward, () => setMtt16NftReward(null));
+        void api.mtt500NftReward().then(setMtt500NftReward, () => setMtt500NftReward(null));
       } else {
         setMtt16NftReward(null);
+        setMtt500NftReward(null);
       }
     };
     load();
@@ -2064,6 +2069,25 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Two 8-max tables, then an 8-max final. Up to {mtt16MaxHumans} humans per event; other seats are
               house bots. Pays 1st–3rd 50% / 30% / 20%.
             </p>
+            <NftChallengePromoCard
+              promo={mtt16NftPromo}
+              reward={mtt16NftReward}
+              heading={`First to ${mtt16NftPromo?.winsRequired ?? 20} × 16-player SNG wins`}
+              description={`Treasury NFT prize for the first player to win ${mtt16NftPromo?.winsRequired ?? 20} 16-player sit-n-go tournaments (1st place each time).`}
+              imageAlt="16-player SNG NFT reward"
+              playerId={playerId}
+              playerLabel={playerLabel}
+              busy={busy}
+              session={session}
+              wcConfig={wcConfig}
+              run={(label, fn) => void run(label, fn)}
+              setStatus={setStatus}
+              setError={setError}
+              onRetryReward={() => api.retryMtt16NftReward()}
+              onRefreshPromo={() => api.mtt16NftPromo()}
+              onRewardUpdated={setMtt16NftReward}
+              onPromoUpdated={setMtt16NftPromo}
+            />
             <h3 className="table-format-heading mtt-format-heading">{configuredMttLabel}</h3>
             <button
               type="button"
@@ -2079,173 +2103,25 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               events below to browse). Up to {mttMaxHumans} humans; other seats are house bots. Pays 1st–3rd
               overall 50% / 30% / 20%. Each completed hand unlocks 1 DAT from account or prizes.
             </p>
-            {mtt16NftPromo?.enabled ? (
-              <div className="nft-promo">
-                {mtt16NftPromo.imageUrl ? (
-                  <img
-                    className="nft-promo-image"
-                    src={mtt16NftPromo.imageUrl}
-                    alt="16-player SNG NFT reward"
-                  />
-                ) : null}
-                <div className="nft-promo-copy">
-                  <h3>First to {mtt16NftPromo.winsRequired} × 16-player SNG wins</h3>
-                  <p className="muted small">
-                    Treasury NFT prize for the first player to win {mtt16NftPromo.winsRequired}{" "}
-                    16-player sit-n-go tournaments (1st place each time).
-                  </p>
-                  {mtt16NftPromo.description ? (
-                    <p className="nft-promo-desc">{mtt16NftPromo.description}</p>
-                  ) : null}
-                  {mtt16NftPromo.edition ? (
-                    <p className="muted small">Edition {mtt16NftPromo.edition}</p>
-                  ) : null}
-                  {mtt16NftPromo.awarded ? (
-                    <p className="nft-promo-status">
-                      Claimed by{" "}
-                      {playerLabel(mtt16NftPromo.winnerPlayerId ?? "", playerId)}
-                    </p>
-                  ) : playerId ? (
-                    <p className="nft-promo-status">
-                      Your wins: {mtt16NftPromo.yourWins} / {mtt16NftPromo.winsRequired}
-                      {mtt16NftPromo.winsToGo > 0
-                        ? ` · ${mtt16NftPromo.winsToGo} to go`
-                        : " · eligible for treasury NFT offer"}
-                    </p>
-                  ) : (
-                    <p className="muted small">Sign in to track your win count.</p>
-                  )}
-                  {mtt16NftPromo.leader && !mtt16NftPromo.awarded ? (
-                    <p className="muted small">
-                      Leader: {playerLabel(mtt16NftPromo.leader.playerId, playerId)} (
-                      {mtt16NftPromo.leader.wins} win{mtt16NftPromo.leader.wins === 1 ? "" : "s"})
-                    </p>
-                  ) : null}
-                  <p className="muted small nft-promo-id">{mtt16NftPromo.nftId}</p>
-                  {mtt16NftReward?.eligible ? (
-                    <div className="nft-promo-claim">
-                      {mtt16NftReward.offer ? (
-                        <>
-                          <p className="nft-promo-status">
-                            Your treasury NFT offer is ready
-                            {mtt16NftReward.feeMojos && BigInt(mtt16NftReward.feeMojos) > 0n
-                              ? ` (includes ${(Number(mtt16NftReward.feeMojos) / 1e12).toFixed(6)} XCH tx fee)`
-                              : ""}
-                            .
-                          </p>
-                          <p className="muted small">
-                            This <code>offer1…</code> string is <strong>not</strong> the WalletConnect
-                            <code>wc:…</code> link. Claim on desktop:{" "}
-                            <strong>Copy offer1</strong> → Sage → <strong>Offers → Import</strong> →
-                            paste → Accept. That import <em>is</em> the accept step (no second WC popup).
-                            Optional: <strong>Accept via WalletConnect</strong> only if this browser’s
-                            Sage pairing included takeOffer (Disconnect + Connect again after the latest
-                            deploy).
-                          </p>
-                          <div className="nft-promo-actions">
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => {
-                                void (async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(mtt16NftReward.offer!);
-                                    setNftOfferCopied(true);
-                                    setStatus(
-                                      "Copied offer1…. In Sage desktop: Offers → Import → paste → Accept.",
-                                    );
-                                    window.setTimeout(() => setNftOfferCopied(false), 4000);
-                                  } catch {
-                                    setError("Could not copy — select the offer1… text below and copy manually.");
-                                  }
-                                })();
-                              }}
-                            >
-                              {nftOfferCopied ? "Copied — Sage Offers → Import" : "Copy offer1 for Sage Import"}
-                            </button>
-                            <button
-                              type="button"
-                              className="secondary"
-                              disabled={busy || !session || !wcConfig}
-                              title="Asks the paired desktop Sage (same WC session) to takeOffer"
-                              onClick={() => {
-                                if (!session || !wcConfig) {
-                                  setError("Connect Sage in this browser first (paste the wc: URI into Sage).");
-                                  return;
-                                }
-                                if (!sessionCanTakeOffer(session)) {
-                                  setError(
-                                    "This Sage pairing has no takeOffer permission. Use Copy offer1 → Offers → Import, or Disconnect Sage and Connect again after redeploy so takeOffer is granted.",
-                                  );
-                                  return;
-                                }
-                                run("Waiting for desktop Sage to approve takeOffer…", async () => {
-                                  await takeOffer(
-                                    session,
-                                    wcConfig.projectId,
-                                    wcConfig.chainId,
-                                    mtt16NftReward.offer!,
-                                    BigInt(mtt16NftReward.feeMojos ?? "0"),
-                                  );
-                                  setStatus("Sage accepted the NFT offer — check your wallet NFTs.");
-                                });
-                              }}
-                            >
-                              Accept via WalletConnect
-                            </button>
-                          </div>
-                          <textarea
-                            className="nft-offer-text"
-                            readOnly
-                            rows={3}
-                            value={mtt16NftReward.offer}
-                            aria-label="Treasury NFT offer string"
-                            onFocus={(e) => e.currentTarget.select()}
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <p className="muted small">
-                            You won the challenge. Click the button below to build the treasury{" "}
-                            <code>offer1…</code> string. Then it will appear in this same NFT card so you
-                            can copy it into Sage → Offers → Import.
-                          </p>
-                          {mtt16NftReward.offerError ? (
-                            <p className="error small">{mtt16NftReward.offerError}</p>
-                          ) : null}
-                          <div className="nft-promo-actions">
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => {
-                                run("Requesting NFT offer…", async () => {
-                                  const reward = await api.retryMtt16NftReward();
-                                  setMtt16NftReward(reward);
-                                  setMtt16NftPromo(await api.mtt16NftPromo());
-                                  if (reward.offer) {
-                                    setStatus(
-                                      "NFT offer ready in this card — copy offer1… then Sage → Offers → Import.",
-                                    );
-                                  } else {
-                                    throw new Error(
-                                      reward.offerError ||
-                                        reward.retry?.reason ||
-                                        "Treasury did not return an NFT offer yet",
-                                    );
-                                  }
-                                });
-                              }}
-                            >
-                              {mtt16NftReward.offerError ? "Retry NFT offer" : "Get NFT offer"}
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
+            <NftChallengePromoCard
+              promo={mtt500NftPromo}
+              reward={mtt500NftReward}
+              heading={`First to ${mtt500NftPromo?.winsRequired ?? 5} × ${configuredMttLabel} wins`}
+              description={`Treasury NFT prize for the first player to win ${mtt500NftPromo?.winsRequired ?? 5} ${configuredMttLabel} tournaments (1st place each time).`}
+              imageAlt={`${configuredMttLabel} NFT reward`}
+              playerId={playerId}
+              playerLabel={playerLabel}
+              busy={busy}
+              session={session}
+              wcConfig={wcConfig}
+              run={(label, fn) => void run(label, fn)}
+              setStatus={setStatus}
+              setError={setError}
+              onRetryReward={() => api.retryMtt500NftReward()}
+              onRefreshPromo={() => api.mtt500NftPromo()}
+              onRewardUpdated={setMtt500NftReward}
+              onPromoUpdated={setMtt500NftPromo}
+            />
             {mttBrowseEvent ? (
               <MttEventLobby
                 event={mttBrowseEvent}
