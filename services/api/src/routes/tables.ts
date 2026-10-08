@@ -47,6 +47,7 @@ import {
 } from "../hand-history-store.js";
 import { playHouseIfDue } from "../house-play.js";
 import { playHumansIfDue, resetHumanTurnClockForTests } from "../human-play.js";
+import { maybeDealTournamentHandOnPoll } from "../tournament-poll-deal.js";
 import { advanceSiblingMttHouseTables } from "../mtt-house-advance.js";
 import {
   getMtt16NftPromoMeta,
@@ -226,6 +227,14 @@ function maintainTable(
     }
   } else {
     ensureHouseFunded(table);
+    maybeDealTournamentHandOnPoll(tableId, table, mtt, sng, {
+      onHandStarted: () => onTournamentHandStarted(tableId),
+      afterDeal: () => {
+        persistTablePlaythrough(table);
+        maybeRecordCompletedHand(tableId, table);
+        finalizeSngIfNeeded(tableId, table);
+      },
+    });
     finalizeSngIfNeeded(tableId, table);
   }
   runMttHouseCatchup(tableId);

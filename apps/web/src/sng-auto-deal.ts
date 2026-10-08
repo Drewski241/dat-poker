@@ -1,8 +1,23 @@
+/** Players who can actually be dealt in (not sitting out, stack > 0). */
+export function countActiveDealSeats(
+  seats: { sittingOut?: boolean; stackMojos: string }[],
+): number {
+  return seats.filter((s) => {
+    if (s.sittingOut) return false;
+    try {
+      return BigInt(s.stackMojos) > 0n;
+    } catch {
+      return false;
+    }
+  }).length;
+}
+
 export function shouldAutoDealNextHand(input: {
   atTableRoom: boolean;
   tableFormat: string | null | undefined;
   sngStatus: string | null | undefined;
   seated: boolean;
+  /** Active players eligible for the next deal (not raw seat count). */
   occupiedSeats: number;
   handLive: boolean;
   busy: boolean;

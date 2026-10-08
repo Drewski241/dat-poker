@@ -26,6 +26,8 @@ export function betweenHandsStatusMessage(input: {
   sittingOut: boolean;
   busy: boolean;
   canAutoDeal: boolean;
+  /** Active players who can be dealt in; used for clearer stall messages. */
+  activeDealSeats?: number;
 }): string | null {
   if (input.sittingOut) {
     if (input.tableFormat === "sng" || input.tableFormat === "mtt") {
@@ -68,6 +70,9 @@ export function betweenHandsStatusMessage(input: {
   }
 
   if (input.autoDeal && tourney && input.sng?.status === "running") {
+    if (input.activeDealSeats != null && input.activeDealSeats < 2) {
+      return "Need two active players to deal the next hand…";
+    }
     return "Waiting for the next hand…";
   }
 

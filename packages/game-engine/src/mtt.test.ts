@@ -58,6 +58,11 @@ describe("16-player MTT", () => {
     expect(final.tableLabel).toBe("Final Table");
     expect(final.eventPlayersRemaining).toBe(8);
     expect(event.engineFor(finalId!)!.hasPlayer("alice")).toBe(true);
+    const finalEngine = event.engineFor(finalId!)!;
+    expect(finalEngine.activeSeatedPlayers().length).toBe(8);
+    finalEngine.startHand("final-hand-1");
+    expect(finalEngine.isHandInProgress()).toBe(true);
+    finalEngine.abortHandRefundBets();
   });
 
   it("waits to form the final table while the other table is still in a hand", () => {

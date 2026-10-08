@@ -41,7 +41,11 @@ import {
   betweenHandsStatusMessage,
   TOURNAMENT_WAIT_TICK_MS,
 } from "./between-hands-status.js";
-import { shouldAutoDealNextHand } from "./sng-auto-deal.js";
+import { countActiveDealSeats, shouldAutoDealNextHand } from "./sng-auto-deal.js";
+import {
+  isRunoutCinemaActive,
+  shouldClearOrphanRunout,
+} from "./table-runout-state.js";
 import { nextHandBlindSeats, occupiedSeatIndexes } from "./next-hand-blinds.js";
 import { describeLiveHand } from "./live-hand.js";
 import {
@@ -305,9 +309,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setAccountPlaythrough(acc.playthrough ?? null);
   }, []);
 
+  const clearBetweenHandsCinema = useCallback(() => {
+    runoutFromBoardLenRef.current = null;
+    setRunoutFromBoardLen(null);
+    holdTableForRunoutRef.current = false;
+  }, []);
+
   const refreshTable = useCallback(async (id: string) => {
     let t = await api.getTable(id, playerId ?? undefined);
     if (t.sng?.relocatedToTableId && t.sng.relocatedToTableId !== id) {
+      clearBetweenHandsCinema();
+      playedRunouts.current.clear();
+      setHandResult(null);
       setTableId(t.sng.relocatedToTableId);
       t = await api.getTable(t.sng.relocatedToTableId, playerId ?? undefined);
     }
@@ -372,7 +385,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         /* history optional */
       }
     }
-  }, [playerId]);
+  }, [playerId, clearBetweenHandsCinema]);
 
   const applyActionResponse = useCallback(
     (response: {
@@ -430,6 +443,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   useEffect(() => {
     runoutFromBoardLenRef.current = runoutFromBoardLen;
   }, [runoutFromBoardLen]);
+
+  useEffect(() => {
+    if (shouldClearOrphanRunout(runoutFromBoardLen, handResult, hand)) {
+      clearBetweenHandsCinema();
+    }
+  }, [runoutFromBoardLen, handResult, hand, clearBetweenHandsCinema]);
 
   useEffect(() => {
     if (hand) {
@@ -1132,16 +1151,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       (sng?.status === "finished" || mySngPlace) &&
       !sng?.relocatedToTableId,
   );
+  const activeDealSeats = countActiveDealSeats(tableSeats);
   const sngCanAutoDeal = shouldAutoDealNextHand({
     atTableRoom,
     tableFormat,
     sngStatus: sng?.status,
     seated: Boolean(myTableSeat),
-    occupiedSeats: tableSeats.length,
+    occupiedSeats: activeDealSeats,
     handLive: Boolean(hand || handInProgress),
     busy,
     stackIsZero: tableStackIsZero,
-    runoutPlaying: runoutFromBoardLen != null,
+    runoutPlaying: isRunoutCinemaActive(runoutFromBoardLen, handResult),
     celebrationPlaying: bigWin != null,
     eliminated: sngEliminated,
     pauseDeals: Boolean(sng?.pauseDeals),
@@ -1194,6 +1214,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     sittingOut: mySittingOut,
     busy,
     canAutoDeal: sngCanAutoDeal,
+    activeDealSeats,
   });
   const handsPlayed = Math.max(myTableSeat?.handsPlayed ?? 0, accountPlaythrough?.handsPlayed ?? 0);
   const handsRequired = Math.max(myTableSeat?.handsRequired ?? 0, accountPlaythrough?.handsRequired ?? 0);
