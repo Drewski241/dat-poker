@@ -78,6 +78,7 @@ sudo bash deploy/aws-ec2/up.sh
 ```bash
 curl -s "http://127.0.0.1/health" | jq .
 curl -s "http://127.0.0.1/v1/lobby/mtt16-nft-promo" | jq .
+curl -s "http://127.0.0.1/v1/lobby/mtt500-nft-promo" | jq .
 ```
 
 After the 16-player SNG / 500 MTT split, `/health` should include

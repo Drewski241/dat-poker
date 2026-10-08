@@ -21,6 +21,9 @@ ENV_FILE="$INSTALL_ROOT/.env"
 if [[ -f "$ENV_FILE" ]]; then
   grep -q '^DAT_POKER_STAGE=' "$ENV_FILE" || echo 'DAT_POKER_STAGE=beta' >> "$ENV_FILE"
   grep -q '^DAT_MTT_FIELD_SIZE=' "$ENV_FILE" || echo 'DAT_MTT_FIELD_SIZE=500' >> "$ENV_FILE"
+  grep -q '^DAT_MTT500_NFT_REWARD_ID=' "$ENV_FILE" || \
+    echo 'DAT_MTT500_NFT_REWARD_ID=nft1vg5alplpueqgmrq5t4nuy0gemyn2zu43l9g9udz2jz60e6m45ncq76dsnc' >> "$ENV_FILE"
+  grep -q '^DAT_MTT500_NFT_WINS_REQUIRED=' "$ENV_FILE" || echo 'DAT_MTT500_NFT_WINS_REQUIRED=5' >> "$ENV_FILE"
   if grep -q '^DAT_POKER_REPO_REF=' "$ENV_FILE"; then
     sed -i "s|^DAT_POKER_REPO_REF=.*|DAT_POKER_REPO_REF=${REPO_REF}|" "$ENV_FILE"
   else
@@ -106,6 +109,10 @@ ok=0
 for i in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:4000/health >/dev/null 2>&1; then
     echo "API healthy after ${i}s at :4000/health"
+    curl -fsS http://127.0.0.1:4000/health | head -c 400 || true
+    echo
+    curl -fsS http://127.0.0.1:4000/v1/lobby/mtt500-nft-promo 2>/dev/null | head -c 200 || true
+    echo
     ok=1
     break
   fi
