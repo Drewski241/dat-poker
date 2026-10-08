@@ -27,6 +27,7 @@ export function betweenHandsStatusMessage(input: {
   sittingOut: boolean;
   busy: boolean;
   canAutoDeal: boolean;
+  tourneyRedrawWait?: boolean;
 }): string | null {
   if (input.sittingOut) {
     if (input.tableFormat === "sng" || input.tableFormat === "mtt") {
@@ -48,16 +49,11 @@ export function betweenHandsStatusMessage(input: {
     return "Seating the field…";
   }
 
-  if (tourney && input.sng?.pauseDeals) {
-    const deadline = input.autoDealAtMs;
-    if (input.sng.pendingFinalTable) {
-      return deadline != null
-        ? `Waiting for other tables… final table in ${formatCountdown(deadline - input.nowMs)}`
-        : "Waiting for other tables before the final table…";
+  if (tourney && (input.tourneyRedrawWait || input.sng?.pauseDeals)) {
+    if (input.sng?.pendingFinalTable) {
+      return "Waiting for other tables before the final table…";
     }
-    return deadline != null
-      ? `Redrawing tables… next hand in ${formatCountdown(deadline - input.nowMs)}`
-      : "Redrawing tables…";
+    return "Redrawing tables… waiting for the field to balance";
   }
 
   if (input.autoDeal && input.canAutoDeal && input.autoDealAtMs != null) {

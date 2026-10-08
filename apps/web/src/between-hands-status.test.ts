@@ -19,7 +19,7 @@ describe("betweenHandsStatusMessage", () => {
     ).toBe("Seating the field… tournament starts in 0:05");
   });
 
-  it("shows redraw countdown when deals are paused", () => {
+  it("shows redraw status when deals are paused", () => {
     expect(
       betweenHandsStatusMessage({
         nowMs: now,
@@ -30,8 +30,9 @@ describe("betweenHandsStatusMessage", () => {
         sittingOut: false,
         busy: false,
         canAutoDeal: false,
+        tourneyRedrawWait: true,
       }),
-    ).toBe("Redrawing tables… next hand in 0:02");
+    ).toBe("Redrawing tables… waiting for the field to balance");
   });
 
   it("shows next-hand countdown when auto-deal is armed", () => {

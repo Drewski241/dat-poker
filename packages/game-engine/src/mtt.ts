@@ -144,7 +144,13 @@ export class MttEvent {
   shouldPauseDeals(tableId: string): boolean {
     if (this.status !== "running" || this.finalTableId) return false;
     this.requireTable(tableId);
-    return this.needsFinalTable() || this.needsBalance();
+    if (this.needsFinalTable()) return true;
+    // 16-player (two starting tables): pause until the field is rebalanced.
+    // Large MTTs: keep dealing; rebalance when all tables are idle via maintain().
+    if (this.startingTableCount > 2) {
+      return false;
+    }
+    return this.needsBalance();
   }
 
   /** Buy-in from every seated player (human and house) across the field once running. */

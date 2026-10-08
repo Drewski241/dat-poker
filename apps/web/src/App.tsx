@@ -208,6 +208,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const bustLobbyTimerRef = useRef<number | null>(null);
   const bigWinActiveRef = useRef(false);
   const playedRunouts = useRef(new Set<string>());
+  /** While true, ignore lastHandResult from table polls so auto-deal is not reset mid-start. */
+  const ignorePollHandResultRef = useRef(false);
   const [handHistory, setHandHistory] = useState<HandHistoryEntry[]>([]);
   const [handHistoryOpen, setHandHistoryOpen] = useState(false);
   /** Cash tables auto-deal; Sit out pauses until the player sits back in. */
@@ -365,7 +367,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         /* keep current blinds */
       }
     }
-    if (t.lastHandResult) setHandResult(t.lastHandResult);
+    if (t.lastHandResult && !ignorePollHandResultRef.current) {
+      setHandResult((prev) =>
+        prev?.handId === t.lastHandResult!.handId ? prev : t.lastHandResult!,
+      );
+    } else if (!t.hand && !t.handInProgress && !t.lastHandResult) {
+      setHandResult(null);
+    }
     if (t.playthrough) setAccountPlaythrough(t.playthrough);
     if (playerId) {
       try {
@@ -1110,12 +1118,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     if (runoutFromBoardLenRef.current != null) return;
     if (bigWinActiveRef.current) return;
     run("Dealing hand…", async () => {
+      ignorePollHandResultRef.current = true;
       setHandResult(null);
-      const dealt = await api.goHand(tableId, playerId);
-      setHand(dealt.hand);
-      if (dealt.lastHandResult) setHandResult(dealt.lastHandResult);
-      if (dealt.playthrough) setAccountPlaythrough(dealt.playthrough);
-      await refreshTable(tableId);
+      try {
+        const dealt = await api.goHand(tableId, playerId);
+        setHand(dealt.hand);
+        if (dealt.lastHandResult) setHandResult(dealt.lastHandResult);
+        if (dealt.playthrough) setAccountPlaythrough(dealt.playthrough);
+        await refreshTable(tableId);
+      } finally {
+        ignorePollHandResultRef.current = false;
+      }
     });
   };
   const startHandFlowRef = useRef(startHandFlow);
@@ -1210,13 +1223,19 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   });
 
   const tableAutoDeal = tableFormat === "cash" || tableFormat === "sng" || tableFormat === "mtt";
-  const tourneyWaiting = Boolean(
+  const tourneyRegistering = Boolean(
     (tableFormat === "sng" || tableFormat === "mtt") &&
-      sng &&
+      sng?.status === "registering" &&
       !hand &&
       !handInProgress &&
-      !mySittingOut &&
-      (sng.status === "registering" || sng.pauseDeals),
+      !mySittingOut,
+  );
+  const tourneyRedrawWait = Boolean(
+    (tableFormat === "sng" || tableFormat === "mtt") &&
+      sng?.pauseDeals &&
+      !hand &&
+      !handInProgress &&
+      !mySittingOut,
   );
 
   const [betweenHandsNowMs, setBetweenHandsNowMs] = useState(() => Date.now());
@@ -1229,12 +1248,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   }, [atTableRoom]);
 
   useEffect(() => {
-    if (!tourneyWaiting) return;
+    if (!tourneyRegistering) return;
     const bump = () => setAutoDealAtMs(Date.now() + AUTO_DEAL_DELAY_MS);
     bump();
     const id = window.setInterval(bump, TOURNAMENT_WAIT_TICK_MS);
     return () => window.clearInterval(id);
-  }, [tourneyWaiting, sng?.status, sng?.pauseDeals, sng?.pendingFinalTable]);
+  }, [tourneyRegistering]);
+
+  useEffect(() => {
+    if (!tourneyRedrawWait) return;
+    setAutoDealAtMs(null);
+  }, [tourneyRedrawWait, sng?.pendingFinalTable]);
 
   useEffect(() => {
     if (!sngCanAutoDeal) return;
@@ -1244,7 +1268,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       startHandFlowRef.current();
     }, delay);
     return () => window.clearTimeout(id);
-  }, [sngCanAutoDeal, handResult]);
+  }, [sngCanAutoDeal, handResult?.handId]);
 
   const betweenHandsMessage = betweenHandsStatusMessage({
     nowMs: betweenHandsNowMs,
@@ -1255,6 +1279,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     sittingOut: mySittingOut,
     busy,
     canAutoDeal: sngCanAutoDeal,
+    tourneyRedrawWait,
   });
   const handsPlayed = Math.max(myTableSeat?.handsPlayed ?? 0, accountPlaythrough?.handsPlayed ?? 0);
   const handsRequired = Math.max(myTableSeat?.handsRequired ?? 0, accountPlaythrough?.handsRequired ?? 0);
