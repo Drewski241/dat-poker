@@ -176,7 +176,7 @@ security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
 
 ## Redeploy after you push code
 
-**Branch on the beta host:** `cursor/mtt500-and-16sng-ui-380b` — separate
+**Branch on the beta host:** `cursor/mtt-consolidate-8max-423d` — separate
 **16-player sit-n-go** (`join-mtt16`) and **500-player MTT** (`join-mtt`), plus
 prior beta fixes (chop labels, SNG sit-out, cash auto-deal, MTT16 NFT promo).
 
@@ -193,7 +193,7 @@ sudo bash /opt/dat-poker/deploy/aws-ec2/pull-16sng-mtt-ui.sh
 If that file is not on the box yet, use the **phone redeploy** steps below
 (fetch branch once, then `sudo bash deploy/aws-ec2/up.sh`).
 
-(`up.sh` fetches `cursor/mtt500-and-16sng-ui-380b` by default.)
+(`up.sh` fetches `cursor/mtt-consolidate-8max-423d` by default.)
 
 Use `main` only after those features merge:
 
@@ -217,7 +217,7 @@ cd /opt/dat-poker
 **Step B — set branch (copy from laptop if you can; otherwise type carefully)**
 
 ```bash
-export R=cursor/mtt500-and-16sng-ui-380b
+export R=cursor/mtt-consolidate-8max-423d
 ```
 
 **Step C — download that branch**
@@ -252,20 +252,20 @@ curl -s http://127.0.0.1/v1/lobby/mtt500-nft-promo
 ```
 
 After the host has run step E once with this branch, later phone updates are
-only **Step A** + **Step E** (`up.sh` defaults to `cursor/mtt500-and-16sng-ui-380b`).
+only **Step A** + **Step E** (`up.sh` defaults to `cursor/mtt-consolidate-8max-423d`).
 
 **If a one-liner with `DAT_POKER_REPO_REF=…` fails**, use `sudo bash -c '…'` so
 the variable is set inside root’s shell:
 
 ```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/mtt500-and-16sng-ui-380b; bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh'
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/mtt-consolidate-8max-423d; bash /opt/dat-poker/deploy/aws-ec2/redeploy.sh'
 ```
 
 **If `/opt/dat-poker/deploy/...` is missing**, pipe the script from GitHub
 (still requires `/opt/dat-poker` git checkout from bootstrap):
 
 ```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/mtt500-and-16sng-ui-380b; curl -fsSL https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/mtt500-and-16sng-ui-380b/deploy/aws-ec2/redeploy.sh | bash'
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/mtt-consolidate-8max-423d; curl -fsSL https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/mtt-consolidate-8max-423d/deploy/aws-ec2/redeploy.sh | bash'
 ```
 
 ### Update from your phone (Session Manager, no copy-paste)
@@ -293,7 +293,7 @@ cd /opt/dat-poker
 ```
 
 ```bash
-export R=cursor/mtt500-and-16sng-ui-380b
+export R=cursor/mtt-consolidate-8max-423d
 ```
 
 ```bash

@@ -2296,7 +2296,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                   ? `${sng.eventPlayersRemaining ?? sng.playersRemaining} left in the field`
                   : `${sng.playersRemaining}/${sng.maxSeats} left`}
                 {sng.kind === "mtt" && !sng.isFinalTable && sng.otherTablePlayers != null
-                  ? ` · ${sng.otherTablePlayers} at the other table`
+                  ? ` · ${sng.otherTablePlayers} at ${(sng.tableCount ?? 2) > 2 ? "other tables" : "the other table"}`
                   : ""}
                 {" · "}
                 {sng.humanCount} human

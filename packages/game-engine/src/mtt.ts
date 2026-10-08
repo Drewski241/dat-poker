@@ -145,8 +145,13 @@ export class MttEvent {
     if (this.status !== "running" || this.finalTableId) return false;
     this.requireTable(tableId);
     if (this.needsFinalTable()) return true;
+    // Break/redraw candidates sit out so consolidate can move them between hands.
+    if (this.needsConsolidate() && this.isConsolidateBreakCandidate(tableId)) {
+      return true;
+    }
     // 16-player (two starting tables): pause until the field is rebalanced.
-    // Large MTTs: keep dealing; rebalance when all tables are idle via maintain().
+    // Large MTTs keep dealing once table count matches ceil(alive/8); pairwise
+    // balance runs whenever idle tables are available via maintain().
     if (this.startingTableCount > 2) {
       return false;
     }
@@ -307,6 +312,12 @@ export class MttEvent {
     if (!table.closed && this.status === "running") {
       const busted = table.engine.unseatBustedPlayers();
       this.recordEliminations(busted);
+      // Free busted seats on other idle tables so consolidate can fill toward 8-max.
+      for (const row of this.openTables()) {
+        if (row.tableId === tableId || row.engine.isHandInProgress()) continue;
+        const extra = row.engine.unseatBustedPlayers();
+        this.recordEliminations(extra);
+      }
       this.maintain();
     }
     if (this.status === "finished") {
@@ -340,6 +351,7 @@ export class MttEvent {
 
   private maintain(): void {
     this.tryFormFinalTable();
+    this.tryConsolidateTables();
     this.tryBalanceTables();
     this.tryFinish();
   }
@@ -350,25 +362,145 @@ export class MttEvent {
     return this.alivePlayers().length <= this.finalTableSeats;
   }
 
+  /** Target open tables so seats stay near startingTableSeats (8-max). */
+  private idealOpenTableCount(aliveCount = this.alivePlayers().length): number {
+    if (aliveCount <= this.finalTableSeats) return 1;
+    return Math.max(1, Math.ceil(aliveCount / this.startingTableSeats));
+  }
+
+  private tableAliveCount(table: MttTable): number {
+    return table.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n).length;
+  }
+
+  private needsConsolidate(): boolean {
+    if (this.finalTableId || this.status !== "running") return false;
+    const alive = this.alivePlayers().length;
+    if (alive <= this.finalTableSeats) return false;
+    return this.openTables().length > this.idealOpenTableCount(alive);
+  }
+
+  /** Shortest excess tables are broken so the field redraws toward 8-max. */
+  private isConsolidateBreakCandidate(tableId: string): boolean {
+    if (!this.needsConsolidate()) return false;
+    const open = this.openTables();
+    const excess = open.length - this.idealOpenTableCount();
+    if (excess <= 0) return false;
+    const ranked = [...open].sort((a, b) => {
+      const diff = this.tableAliveCount(a) - this.tableAliveCount(b);
+      if (diff !== 0) return diff;
+      return a.tableId.localeCompare(b.tableId);
+    });
+    return ranked.slice(0, excess).some((row) => row.tableId === tableId);
+  }
+
+  /**
+   * Close surplus short tables and reseat survivors onto remaining tables so
+   * open table count tracks ceil(alive / 8), not the original starting count.
+   * Moves only between idle tables (restoreSeat forbids mid-hand seating).
+   */
+  private tryConsolidateTables(): void {
+    let guard = 0;
+    while (this.needsConsolidate() && guard < this.startingTableCount + 4) {
+      guard += 1;
+      const open = this.openTables();
+      const alive = this.alivePlayers().length;
+      const ideal = this.idealOpenTableCount(alive);
+      if (open.length <= ideal) return;
+
+      const idle = open.filter((row) => !row.engine.isHandInProgress());
+      if (idle.length === 0) return;
+
+      const victim = [...idle].sort((a, b) => {
+        const diff = this.tableAliveCount(a) - this.tableAliveCount(b);
+        if (diff !== 0) return diff;
+        return a.tableId.localeCompare(b.tableId);
+      })[0];
+      if (!victim) return;
+
+      const remainingCapacity =
+        (open.length - 1) * this.startingTableSeats;
+      if (alive > remainingCapacity) return;
+
+      const movers = victim.engine
+        .getSeatedPlayers()
+        .filter((p) => p.stackMojos > 0n)
+        .sort((a, b) => {
+          if (a.stackMojos === b.stackMojos) return a.playerId.localeCompare(b.playerId);
+          return a.stackMojos < b.stackMojos ? -1 : 1;
+        });
+
+      let lastDestId: string | null = null;
+      for (const mover of movers) {
+        const destinations = open
+          .filter(
+            (row) =>
+              row.tableId !== victim.tableId &&
+              !row.engine.isHandInProgress() &&
+              row.engine.emptySeatIndex() != null,
+          )
+          .sort((a, b) => {
+            // Fill fuller tables first so broken seats land near 8-max.
+            const diff = this.tableAliveCount(b) - this.tableAliveCount(a);
+            if (diff !== 0) return diff;
+            return a.tableId.localeCompare(b.tableId);
+          });
+        const dest = destinations[0];
+        if (!dest) return;
+        const seatIndex = dest.engine.emptySeatIndex();
+        if (seatIndex == null) return;
+        const handsPlayed = victim.engine.getHandsPlayed(mover.playerId);
+        try {
+          victim.engine.cashOutPlayer(mover.playerId);
+        } catch {
+          continue;
+        }
+        dest.engine.restoreSeat(mover.playerId, seatIndex, mover.stackMojos);
+        dest.engine.setHandsPlayed(mover.playerId, handsPlayed);
+        this.playerMoves.set(mover.playerId, dest.tableId);
+        lastDestId = dest.tableId;
+      }
+
+      if (this.tableAliveCount(victim) > 0) return;
+
+      const fallbackDest =
+        lastDestId ??
+        open.find((row) => row.tableId !== victim.tableId)?.tableId ??
+        null;
+      victim.closed = true;
+      if (fallbackDest) {
+        this.relocations.set(victim.tableId, fallbackDest);
+      }
+      for (const seated of [...victim.engine.getSeatedPlayers()]) {
+        try {
+          victim.engine.cashOutPlayer(seated.playerId);
+        } catch {
+          /* already standing */
+        }
+      }
+    }
+  }
+
   private needsBalance(): boolean {
     if (this.finalTableId || this.status !== "running") return false;
     const open = this.openTables();
     if (open.length < 2) return false;
     if (this.alivePlayers().length <= this.finalTableSeats) return false;
-    const counts = open.map(
-      (row) => row.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n).length,
-    );
+    // Finish redrawing surplus tables before evening seat counts.
+    if (this.needsConsolidate()) return false;
+    const counts = open.map((row) => this.tableAliveCount(row));
     return Math.max(...counts) - Math.min(...counts) >= 2;
   }
 
   private tryBalanceTables(): void {
     if (!this.needsBalance()) return;
     const open = this.openTables();
-    if (open.some((row) => row.engine.isHandInProgress())) return;
-    const ranked = open
+    // Large fields rarely go fully idle; move between idle pairs only.
+    const idle = open.filter((row) => !row.engine.isHandInProgress());
+    if (idle.length < 2) return;
+    const ranked = idle
       .map((table) => ({
         table,
-        n: table.engine.getSeatedPlayers().filter((p) => p.stackMojos > 0n).length,
+        n: this.tableAliveCount(table),
       }))
       .sort((a, b) => a.n - b.n);
     const short = ranked[0];
