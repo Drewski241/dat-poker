@@ -10,7 +10,10 @@ export function participantAwardMojos(p: {
   }
 }
 
-/** True when more than one player received a positive pot award (split pot). */
+/**
+ * True when more than one player received chips. Side-pot hands also match —
+ * do not use this alone to label a chop; prefer `HandResult.isChop` from the engine.
+ */
 export function isChopFromParticipants(
   participants: Array<{ stackBeforePayoutMojos: string; stackAfterMojos: string }>,
 ): boolean {

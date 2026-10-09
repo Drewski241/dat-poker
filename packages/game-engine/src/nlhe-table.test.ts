@@ -445,10 +445,76 @@ describe("NlheTableEngine", () => {
     expect(table.isHandInProgress()).toBe(false);
 
     expect(table.getLastHandResult()?.winnerId).toBe("deep");
+    const layered = table.getLastHandResult()!;
+    expect(layered.isChop).toBe(false);
+    expect(
+      [...new Set(layered.participants.filter((p) => p.awardedMojos > 0n).map((p) => p.playerId))]
+        .length,
+    ).toBe(1);
     expect(table.getPlayerStack("short")).toBe(0n);
     expect(table.getPlayerStack("mid")).toBe(0n);
     // Deep risked only up to mid (3k); uncalled 7k returned + won both pots.
     expect(table.getPlayerStack("deep")).toBe(14_000n);
+  });
+
+  it("pays short the main pot and mid the side pot without labeling a chop", () => {
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 1n,
+      bigBlindMojos: 2n,
+      minBuyInMojos: 100n,
+      maxBuyInMojos: 50_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("short", 0, 1_000n);
+    table.seatPlayer("mid", 1, 3_000n);
+    table.seatPlayer("deep", 2, 3_000n);
+    table.startHand("hand-main-side-split");
+    for (const id of ["short", "mid", "deep"]) {
+      table.submitPlayerSeed(id, generateServerSeed());
+    }
+    table.revealAndDeal();
+
+    const dealt = (
+      table as unknown as {
+        hand: {
+          players: { playerId: string; holeCards: ReturnType<typeof parseCard>[] }[];
+          deck: ReturnType<typeof parseCard>[];
+          deckIndex: number;
+        } | null;
+      }
+    ).hand!;
+    // Short has the nuts overall; mid beats deep for the side pot only.
+    for (const p of dealt.players) {
+      if (p.playerId === "short") p.holeCards = [parseCard("Ah"), parseCard("Ad")];
+      else if (p.playerId === "mid") p.holeCards = [parseCard("Kh"), parseCard("Kd")];
+      else p.holeCards = [parseCard("2c"), parseCard("3d")];
+    }
+    dealt.deck = ["Ac", "Kc", "7s", "4h", "9d"].map(parseCard);
+    dealt.deckIndex = 0;
+
+    for (let guard = 0; guard < 12; guard++) {
+      const state = table.getHandState();
+      if (!state || state.actionSeat == null) break;
+      const actor = state.players.find((p) => p.seatIndex === state.actionSeat && !p.folded);
+      if (!actor || actor.allIn) break;
+      table.applyAction(actor.playerId, "all-in");
+    }
+    table.advanceHandIfIdle();
+    expect(table.isHandInProgress()).toBe(false);
+
+    const result = table.getLastHandResult()!;
+    expect(result.reason).toBe("showdown");
+    expect(result.isChop).toBe(false);
+    expect(result.winnerId).toBe("short");
+    // Main 3_000 (1k×3) → short; side 4_000 (2k×2) → mid; deep busted.
+    expect(result.participants.find((p) => p.playerId === "short")!.awardedMojos).toBe(3_000n);
+    expect(result.participants.find((p) => p.playerId === "mid")!.awardedMojos).toBe(4_000n);
+    expect(result.participants.find((p) => p.playerId === "deep")!.awardedMojos).toBe(0n);
+    expect(result.totalPotMojos).toBe(7_000n);
+    expect(table.getPlayerStack("short")).toBe(3_000n);
+    expect(table.getPlayerStack("mid")).toBe(4_000n);
+    expect(table.getPlayerStack("deep")).toBe(0n);
   });
 
   it("deals a short-for-blind stack all-in and settles a side pot", () => {

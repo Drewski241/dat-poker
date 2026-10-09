@@ -14,7 +14,7 @@ if [[ -z "${WEB_ROOT:-}" ]]; then
     WEB_ROOT="/usr/share/nginx/html"
   fi
 fi
-REPO_REF="${DAT_POKER_REPO_REF:-cursor/mtt-consolidate-8max-423d}"
+REPO_REF="${DAT_POKER_REPO_REF:-cursor/hand-history-pot-audit-423d}"
 
 cd "$INSTALL_ROOT"
 ENV_FILE="$INSTALL_ROOT/.env"
@@ -24,6 +24,8 @@ if [[ -f "$ENV_FILE" ]]; then
   grep -q '^DAT_MTT500_NFT_REWARD_ID=' "$ENV_FILE" || \
     echo 'DAT_MTT500_NFT_REWARD_ID=nft1vg5alplpueqgmrq5t4nuy0gemyn2zu43l9g9udz2jz60e6m45ncq76dsnc' >> "$ENV_FILE"
   grep -q '^DAT_MTT500_NFT_WINS_REQUIRED=' "$ENV_FILE" || echo 'DAT_MTT500_NFT_WINS_REQUIRED=5' >> "$ENV_FILE"
+  grep -q '^DAT_HAND_HISTORY_PATH=' "$ENV_FILE" || \
+    echo 'DAT_HAND_HISTORY_PATH=/opt/dat-poker/data/hand-history.jsonl' >> "$ENV_FILE"
   if grep -q '^DAT_POKER_REPO_REF=' "$ENV_FILE"; then
     sed -i "s|^DAT_POKER_REPO_REF=.*|DAT_POKER_REPO_REF=${REPO_REF}|" "$ENV_FILE"
   else

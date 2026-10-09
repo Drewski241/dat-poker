@@ -36,7 +36,7 @@ export interface HandResult {
   potMojos: bigint;
   /** Full pot after uncalled refunds (sum of all awards). */
   totalPotMojos: bigint;
-  /** True when two or more players received a positive award (split pot). */
+  /** True when at least one pot layer was split between tied hands (not side-pot multi-winners). */
   isChop: boolean;
   reason: "fold" | "showdown";
   board: Card[];
@@ -838,7 +838,7 @@ export class NlheTableEngine {
       stackBeforePayoutMojos: p.stackMojos,
     }));
 
-    const { primaryWinnerId, awardedByPlayer } = this.settleSidePots(h, live, false);
+    const { primaryWinnerId, awardedByPlayer, isChop } = this.settleSidePots(h, live, false);
     for (const p of h.players) {
       const add = awardedByPlayer.get(p.playerId) ?? 0n;
       if (add > 0n) {
@@ -849,7 +849,6 @@ export class NlheTableEngine {
 
     const potMojos = awardedByPlayer.get(primaryWinnerId) ?? 0n;
     const totalPotMojos = [...awardedByPlayer.values()].reduce((a, b) => a + b, 0n);
-    const isChop = [...awardedByPlayer.values()].filter((v) => v > 0n).length > 1;
     const participants = participantsBase.map((p) => ({
       ...p,
       awardedMojos: awardedByPlayer.get(p.playerId) ?? 0n,
@@ -883,7 +882,7 @@ export class NlheTableEngine {
       stackBeforePayoutMojos: p.stackMojos,
     }));
 
-    const { primaryWinnerId, awardedByPlayer } = this.settleSidePots(h, live, true);
+    const { primaryWinnerId, awardedByPlayer, isChop } = this.settleSidePots(h, live, true);
     for (const p of h.players) {
       const add = awardedByPlayer.get(p.playerId) ?? 0n;
       if (add > 0n) {
@@ -894,7 +893,6 @@ export class NlheTableEngine {
 
     const potMojos = awardedByPlayer.get(primaryWinnerId) ?? 0n;
     const totalPotMojos = [...awardedByPlayer.values()].reduce((a, b) => a + b, 0n);
-    const isChop = [...awardedByPlayer.values()].filter((v) => v > 0n).length > 1;
     const participants = participantsBase.map((p) => ({
       ...p,
       awardedMojos: awardedByPlayer.get(p.playerId) ?? 0n,
@@ -924,7 +922,7 @@ export class NlheTableEngine {
     h: TableHandState,
     live: PlayerHandState[],
     foldWin: boolean,
-  ): { primaryWinnerId: PlayerId; awardedByPlayer: Map<PlayerId, bigint> } {
+  ): { primaryWinnerId: PlayerId; awardedByPlayer: Map<PlayerId, bigint>; isChop: boolean } {
     const contributions = h.players.map((p) => ({
       playerId: p.playerId,
       totalBetHandMojos: p.totalBetHandMojos,
@@ -932,6 +930,7 @@ export class NlheTableEngine {
     const pots = buildSidePots(contributions);
     const awardedByPlayer = new Map<PlayerId, bigint>();
     const eligibleSet = (ids: PlayerId[]) => new Set(ids);
+    let isChop = false;
 
     for (const pot of pots) {
       const contenders = foldWin
@@ -953,6 +952,9 @@ export class NlheTableEngine {
         winners = this.showdownWinnersForPot(contenders, h.board);
       }
 
+      if (winners.length > 1) {
+        isChop = true;
+      }
       winners.sort((a, b) => a.seatIndex - b.seatIndex);
       const shares = splitPotEvenly(pot.amountMojos, winners.length);
       for (let i = 0; i < winners.length; i++) {
@@ -983,7 +985,7 @@ export class NlheTableEngine {
       );
     }
 
-    return { primaryWinnerId, awardedByPlayer };
+    return { primaryWinnerId, awardedByPlayer, isChop };
   }
 
   /**

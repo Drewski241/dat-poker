@@ -1,9 +1,5 @@
 import { formatDatMojos } from "@dat-poker/shared";
-import {
-  isChopFromParticipants,
-  participantAwardMojos,
-  totalPotFromParticipants,
-} from "./hand-result-copy.js";
+import { participantAwardMojos, totalPotFromParticipants } from "./hand-result-copy.js";
 
 type OutcomeParticipant = {
   playerId: string;
@@ -37,8 +33,8 @@ export function formatHandOutcomeLine(params: {
     (p): p is OutcomeParticipant & { stackAfterMojos: string } => p.stackAfterMojos != null,
   );
 
-  const chopped =
-    hand.isChop === true || (withAfter.length > 0 && isChopFromParticipants(withAfter));
+  // Side pots can pay multiple players without tying — only trust engine `isChop`.
+  const chopped = hand.isChop === true;
 
   if (chopped) {
     const total =

@@ -6,3 +6,5 @@ export * from "./hand-view.js";
 export * from "./house-bot.js";
 export * from "./sng.js";
 export * from "./mtt.js";
+export * from "./side-pots.js";
+export * from "./pot-audit.js";

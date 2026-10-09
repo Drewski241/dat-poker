@@ -79,7 +79,7 @@ export interface HandResult {
   potMojos: string;
   /** Full pot after uncalled refunds. */
   totalPotMojos?: string;
-  /** True when two or more players received a positive award. */
+  /** True when a pot layer was split between tied hands (not mere side-pot payouts). */
   isChop?: boolean;
   reason: "fold" | "showdown";
   board?: { rank: string; suit: string }[];
@@ -114,7 +114,9 @@ export interface HandHistoryEntry {
     totalBetHandMojos: string;
     stackBeforePayoutMojos: string;
     stackAfterMojos: string;
+    awardedMojos?: string;
   }[];
+  auditIssues?: string[];
 }
 
 export interface WalletConnectConfig {
