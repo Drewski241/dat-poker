@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CAT_MOJOS_PER_TOKEN, computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatAmount, formatDatMojos, isHousePlayerId } from "@dat-poker/shared";
+import {
+  CAT_MOJOS_PER_TOKEN,
+  computeNlheBetRange,
+  DAT_MTT_DEFAULTS,
+  DAT_TABLE_DEFAULTS,
+  formatDatAmount,
+  formatDatMojos,
+  isHousePlayerId,
+} from "@dat-poker/shared";
 import {
   api,
   restoreApiAuthToken,
@@ -872,7 +880,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   };
 
-  const joinMtt = async () => {
+  const joinMtt = async (fieldSize?: number) => {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -894,9 +902,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         }
       }
       setMttBrowseEventId(null);
-      setStatus("Joining MTT…");
+      const resolvedField =
+        fieldSize ??
+        datToken?.mttFieldSize ??
+        DAT_MTT_DEFAULTS.fieldSize;
+      const joiningSitNGo = resolvedField === DAT_MTT_DEFAULTS.fieldSize;
+      setStatus(joiningSitNGo ? "Joining 16-player Sit-n-Go…" : `Joining ${resolvedField}-player MTT…`);
       const joined = await api.joinMtt(playerId, buyIn, {
         devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
+        fieldSize: resolvedField,
       });
       setTableId(joined.tableId);
       setTableFormat("mtt");
@@ -1026,11 +1040,13 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     () => mttEvents.find((ev) => ev.eventId === mttBrowseEventId) ?? null,
     [mttEvents, mttBrowseEventId],
   );
-  const configuredMttLabel = datToken?.mttFieldSize
-    ? `${datToken.mttFieldSize}-player MTT`
-    : "16-player MTT";
-  const defaultMttLabel = mttEvents[0]?.label ?? configuredMttLabel;
+  const sitNgoFieldSize = DAT_MTT_DEFAULTS.fieldSize;
+  const sitNgoLabel = `${sitNgoFieldSize}-player Sit-n-Go`;
+  const largeMttFieldSize = datToken?.mttFieldSize ?? sitNgoFieldSize;
+  const largeMttLabel = `${largeMttFieldSize}-player MTT`;
   const mttMaxHumans = datToken?.mttMaxHumans ?? 10;
+  const largeMttEvents = mttEvents.filter((ev) => ev.fieldSize !== sitNgoFieldSize);
+  const sitNgoEvents = mttEvents.filter((ev) => ev.fieldSize === sitNgoFieldSize);
 
   const rebuyAtTable = () => {
     if (!tableId || !playerId) return;
@@ -1925,20 +1941,34 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
               9-max SNG
             </button>
-            <h3 className="table-format-heading mtt-format-heading">{configuredMttLabel}</h3>
+            <h3 className="table-format-heading">{sitNgoLabel}</h3>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinMtt(sitNgoFieldSize)}
+            >
+              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; join{" "}
+              {sitNgoLabel}
+            </button>
+            <p className="muted small">
+              Two 8-max tables, then an 8-max final table. Wins count toward the NFT promo below. Up to{" "}
+              {Math.min(mttMaxHumans, sitNgoFieldSize)} humans per event; other seats are house bots.
+            </p>
+            <h3 className="table-format-heading mtt-format-heading">{largeMttLabel}</h3>
             <button
               type="button"
               className="mtt-join-btn"
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinMtt()}
+              onClick={() => void joinMtt(largeMttFieldSize)}
             >
-              Join tournament · {configuredMttLabel} (
+              Join {largeMttLabel} (
               {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} buy-in)
             </button>
             <p className="muted small">
-              <strong>{configuredMttLabel}</strong> — one event, many tables (use Active tournaments below
-              to browse). Up to {mttMaxHumans} humans; other seats are house bots. Pays 1st–3rd overall
-              50% / 30% / 20%. Each completed hand unlocks 1 DAT from account or prizes.
+              <strong>{largeMttLabel}</strong> — one event, many tables (use Active tournaments below to
+              browse). Up to {mttMaxHumans} humans; other seats are house bots. Pays 1st–3rd overall 50% /
+              30% / 20%. Each completed hand unlocks 1 DAT from account or prizes.
             </p>
             {mtt16NftPromo?.enabled ? (
               <div className="nft-promo">
@@ -2116,18 +2146,20 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 buyInReady={Boolean(datToken?.buyInReady)}
                 playerLabel={playerLabel}
                 onBack={() => setMttBrowseEventId(null)}
-                onJoinAsPlayer={() => void joinMtt()}
+                onJoinAsPlayer={() => void joinMtt(mttBrowseEvent.fieldSize)}
                 onResumeTable={(id) => void resumeMttTable(id)}
                 onTakeHouseSeat={(row) => void takeHouseSeat(row)}
               />
             ) : (
               <div className="lobby">
-                <h3>Active tournaments</h3>
-                {mttEvents.length === 0 ? (
-                  <p className="muted small">No MTT running — use Join above to start one.</p>
+                <h3>Active {largeMttLabel}s</h3>
+                {largeMttEvents.length === 0 ? (
+                  <p className="muted small">
+                    No {largeMttLabel} running — use Join {largeMttLabel} above to start one.
+                  </p>
                 ) : (
                   <ul className="lobby-list">
-                    {mttEvents.map((ev) => (
+                    {largeMttEvents.map((ev) => (
                       <li key={ev.eventId}>
                         <span>
                           {ev.label} · {ev.tableCount} tables · {ev.humanCount} human
@@ -2144,9 +2176,51 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                             <button
                               type="button"
                               disabled={busy || !playerId || !datToken?.buyInReady}
-                              onClick={() => void joinMtt()}
+                              onClick={() => void joinMtt(ev.fieldSize)}
                             >
-                              Join as player
+                              Join {largeMttLabel}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => setMttBrowseEventId(ev.eventId)}
+                          >
+                            Browse tables
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <h3>Active {sitNgoLabel}s</h3>
+                {sitNgoEvents.length === 0 ? (
+                  <p className="muted small">
+                    No {sitNgoLabel} running — use the {sitNgoLabel} button above to start one.
+                  </p>
+                ) : (
+                  <ul className="lobby-list">
+                    {sitNgoEvents.map((ev) => (
+                      <li key={ev.eventId}>
+                        <span>
+                          {ev.label} · {ev.tableCount} tables · {ev.humanCount} human
+                          {ev.humanCount === 1 ? "" : "s"}
+                          {ev.myTableId ? " · you are seated" : ""} · {ev.status} · pool{" "}
+                          {formatDatMojos(ev.prizePoolMojos, datToken?.ticker)}
+                        </span>
+                        <div className="row lobby-list-actions">
+                          {ev.myTableId ? (
+                            <button type="button" disabled={busy} onClick={() => void resumeMttTable(ev.myTableId!)}>
+                              Return to my table
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={busy || !playerId || !datToken?.buyInReady}
+                              onClick={() => void joinMtt(ev.fieldSize)}
+                            >
+                              Join {sitNgoLabel}
                             </button>
                           )}
                           <button
@@ -2380,8 +2454,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         {isBeta ? (
           <p>
             DAT POKER public beta. Redeem 5000 DAT per UTC day into a table account (not an
-            on-chain CAT send). 6-max cash, 9-max SNG, or {configuredMttLabel} (multi-table, one
-            lobby entry). Build {import.meta.env.VITE_BUILD_ID ?? "dev"}
+            on-chain CAT send). 6-max cash, 9-max SNG, {sitNgoLabel}, or {largeMttLabel}. Build{" "}
+            {import.meta.env.VITE_BUILD_ID ?? "dev"}
             {datToken?.mttFieldSize != null ? ` · MTT field ${datToken.mttFieldSize}` : ""}.
             {" "}
             <a href="/feedback" onClick={(e) => { e.preventDefault(); onNavigate?.("feedback"); }}>

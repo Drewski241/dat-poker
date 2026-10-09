@@ -25,7 +25,11 @@ import {
 } from "../account-store.js";
 import { recordBuyIn, clearBuyIn } from "../buy-in-store.js";
 import { HOUSE_PLAYER_ID } from "../house-id.js";
-import { readMttFieldSize, readMttMaxHumans } from "../mtt-env.js";
+import {
+  normalizeJoinMttFieldSize,
+  readMttFieldSize,
+  readMttMaxHumansForField,
+} from "../mtt-env.js";
 import { redactHandForViewer } from "../redact-hand.js";
 import { allowIpBucket } from "../ip-rate-limit.js";
 import { readPlayerSession, requirePlayer, sessionMatchesClaim } from "../player-session.js";
@@ -655,6 +659,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
       buyInMojos?: string;
       buyInProof?: BuyInProof;
       devAck?: boolean;
+      /** 16 = sit-n-go; omit = server default large MTT (e.g. 500 on beta). */
+      fieldSize?: number;
     };
   }>("/v1/tables/join-mtt", async (req, reply) => {
     const session = requirePlayer(req, reply);
@@ -681,8 +687,16 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
     const dat = readDatTokenConfig();
     const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+    let targetFieldSize: number;
+    try {
+      targetFieldSize = normalizeJoinMttFieldSize(req.body.fieldSize);
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
 
-    const joinable = [...mttByTable.values()].find((mtt) => {
+    const activeEvents = [...new Set(mttByTable.values())];
+    const joinable = activeEvents.find((mtt) => {
+      if (mtt.fieldSize !== targetFieldSize) return false;
       if (mtt.getStatus() === "finished") return false;
       if (!mtt.canAcceptHuman(playerId)) return false;
       return mtt.firstHouseSeat() !== null;
@@ -720,10 +734,10 @@ export function registerTableRoutes(app: FastifyInstance): void {
       }
     }
 
-    const created = createMttEvent();
+    const created = createMttEvent(targetFieldSize);
     const open = created.firstOpenSeat();
     if (!open) {
-      return reply.status(500).send({ error: "Could not open a 16-player SNG" });
+      return reply.status(500).send({ error: "Could not open a tournament table" });
     }
     const buyIn = takeBuyInFromAccountOrProof({
       tableId: open.tableId,
@@ -1291,12 +1305,12 @@ function registerMttTables(mtt: MttEvent): void {
   }
 }
 
-function createMttEvent(): MttEvent {
+function createMttEvent(fieldSize = readMttFieldSize()): MttEvent {
   const mtt = MttEvent.create({
-    fieldSize: readMttFieldSize(),
+    fieldSize,
     fillHouse: readFillHouseDefault(),
     minHumansToStart: 1,
-    maxHumans: readMttMaxHumans(),
+    maxHumans: readMttMaxHumansForField(fieldSize),
   });
   registerMttTables(mtt);
   return mtt;

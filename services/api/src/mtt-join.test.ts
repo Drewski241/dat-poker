@@ -126,4 +126,41 @@ describe("16-player MTT join", () => {
     expect(getMtt(secondBody.tableId)?.enteredHumanCount()).toBe(1);
     await app.close();
   });
+
+  it("keeps 16-player sit-n-go separate from the large MTT on beta", async () => {
+    process.env.DAT_POKER_STAGE = "beta";
+    delete process.env.DAT_MTT_FIELD_SIZE;
+    const app = await buildApp();
+    const alice = issueTestSession("xch1mtt500");
+    const bob = issueTestSession("xch1mtt16");
+    tryRedeemDaily(alice.session.playerId, 5_000_000n);
+    tryRedeemDaily(bob.session.playerId, 5_000_000n);
+
+    const large = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-mtt",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId, buyInMojos: "1000000", devAck: true },
+    });
+    expect(large.statusCode).toBe(200);
+    const largeBody = JSON.parse(large.body) as { sng: { fieldSize: number; eventId: string } };
+    expect(largeBody.sng.fieldSize).toBe(500);
+
+    const sit = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-mtt",
+      headers: auth(bob.token),
+      payload: {
+        playerId: bob.session.playerId,
+        buyInMojos: "1000000",
+        devAck: true,
+        fieldSize: 16,
+      },
+    });
+    expect(sit.statusCode).toBe(200);
+    const sitBody = JSON.parse(sit.body) as { sng: { fieldSize: number; eventId: string } };
+    expect(sitBody.sng.fieldSize).toBe(16);
+    expect(sitBody.sng.eventId).not.toBe(largeBody.sng.eventId);
+    await app.close();
+  });
 });

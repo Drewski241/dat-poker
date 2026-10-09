@@ -50,7 +50,7 @@ export function MttEventLobby({
           </button>
         ) : (
           <button type="button" disabled={busy || !playerId || !buyInReady} onClick={onJoinAsPlayer}>
-            Join as player (take a seat)
+            Join {event.label} (take a seat)
           </button>
         )}
       </div>

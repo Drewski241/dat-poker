@@ -603,7 +603,7 @@ export const api = {
   joinMtt: (
     playerId: string,
     buyInMojos: string,
-    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+    options?: { buyInProof?: BuyInProof; devAck?: boolean; fieldSize?: number },
   ) =>
     request<{
       ok: boolean;
@@ -621,7 +621,9 @@ export const api = {
       body: JSON.stringify({
         playerId,
         buyInMojos,
-        ...options,
+        fieldSize: options?.fieldSize,
+        buyInProof: options?.buyInProof,
+        devAck: options?.devAck,
       }),
     }),
 

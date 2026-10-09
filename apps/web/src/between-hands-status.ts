@@ -1,3 +1,4 @@
+import { DAT_MTT_DEFAULTS } from "@dat-poker/shared";
 import type { SngSnapshot } from "./api.js";
 
 export const AUTO_DEAL_DELAY_MS = 3_000;
@@ -14,6 +15,9 @@ function formatCountdown(ms: number): string {
 
 export function mttFieldLabel(sng: SngSnapshot): string {
   const size = sng.fieldSize ?? sng.maxSeats;
+  if (size === DAT_MTT_DEFAULTS.fieldSize) {
+    return `${size}-player Sit-n-Go`;
+  }
   return `${size}-player MTT`;
 }
 

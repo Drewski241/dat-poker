@@ -47,12 +47,12 @@ pnpm --filter @dat-poker/web build
 
 rm -rf "${WEB_ROOT:?}/"*
 cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
-if grep -rq "start 16-player SNG" "$WEB_ROOT" 2>/dev/null; then
-  echo "ERROR: web bundle still contains pre-MTT lobby strings — build did not update" >&2
+if ! grep -rq "Join .*-player MTT" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: expected large MTT join CTA missing from web dist" >&2
   exit 1
 fi
-if ! grep -rq "Join tournament" "$WEB_ROOT" 2>/dev/null; then
-  echo "ERROR: expected Join tournament CTA missing from web dist" >&2
+if ! grep -rq "16-player Sit-n-Go" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: expected 16-player Sit-n-Go CTA missing from web dist" >&2
   exit 1
 fi
 echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (MTT lobby OK)"
