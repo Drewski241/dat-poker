@@ -14,7 +14,7 @@ if [[ -z "${WEB_ROOT:-}" ]]; then
     WEB_ROOT="/usr/share/nginx/html"
   fi
 fi
-REPO_REF="${DAT_POKER_REPO_REF:-cursor/beta-chop-mtt-b297}"
+REPO_REF="${DAT_POKER_REPO_REF:-cursor/lobby-sng16-mtt500-labels-ebbc}"
 
 cd "$INSTALL_ROOT"
 ENV_FILE="$INSTALL_ROOT/.env"

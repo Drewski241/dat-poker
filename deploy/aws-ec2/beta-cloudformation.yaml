@@ -19,7 +19,7 @@ Parameters:
 
   RepoRef:
     Type: String
-    Default: cursor/beta-chop-mtt-b297
+    Default: cursor/lobby-sng16-mtt500-labels-ebbc
     Description: Git branch — 16-player MTT, chop pot labels, SNG sit-out server pace.
 
   LatestAmiId:

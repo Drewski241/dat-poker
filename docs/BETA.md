@@ -176,9 +176,9 @@ security group is missing inbound **HTTP (80)** from `0.0.0.0/0`.
 
 ## Redeploy after you push code
 
-**Branch on the beta host:** `cursor/beta-chop-mtt-b297` — 16-player MTT / final
-table, true chop labels (not side-pot mislabels), SNG sit-out + server turn
-timeout, cash auto-deal, MTT16 NFT lobby promo.
+**Branch on the beta host:** `cursor/lobby-sng16-mtt500-labels-ebbc` — 500-player
+MTT + separate **16-player Sit-n-Go** lobby buttons, final-table deal fix, chop
+labels, SNG sit-out + server turn timeout, cash auto-deal, MTT16 NFT promo.
 
 **Laptop (Session Manager, one line):**
 
@@ -186,7 +186,7 @@ timeout, cash auto-deal, MTT16 NFT lobby promo.
 sudo bash /opt/dat-poker/deploy/aws-ec2/up.sh
 ```
 
-(`up.sh` fetches `cursor/beta-chop-mtt-b297` by default. Override with
+(`up.sh` fetches `cursor/lobby-sng16-mtt500-labels-ebbc` by default. Override with
 `DAT_POKER_REPO_REF=…` if needed.)
 
 Use `main` only after those features merge:
@@ -211,7 +211,7 @@ cd /opt/dat-poker
 **Step B — set branch (copy from laptop if you can; otherwise type carefully)**
 
 ```bash
-export R=cursor/beta-chop-mtt-b297
+export R=cursor/lobby-sng16-mtt500-labels-ebbc
 ```
 
 **Step C — download that branch**
@@ -245,7 +245,7 @@ curl -s http://127.0.0.1/v1/lobby/mtt16-nft-promo
 ```
 
 After the host has run step E once with this branch, later phone updates are
-only **Step A** + **Step E** (`up.sh` already knows `cursor/beta-chop-mtt-b297`).
+only **Step A** + **Step E** (`up.sh` already knows `cursor/lobby-sng16-mtt500-labels-ebbc`).
 
 ### Update from your phone (Session Manager, no copy-paste)
 
@@ -272,7 +272,7 @@ cd /opt/dat-poker
 ```
 
 ```bash
-export R=cursor/beta-chop-mtt-b297
+export R=cursor/lobby-sng16-mtt500-labels-ebbc
 ```
 
 ```bash
