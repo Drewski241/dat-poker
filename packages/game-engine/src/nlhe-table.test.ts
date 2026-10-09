@@ -457,6 +457,63 @@ describe("NlheTableEngine", () => {
     expect(table.getPlayerStack("deep")).toBe(14_000n);
   });
 
+  it("screenshot bd6ada89: short K8 wins main, K2 takes side vs trash — not a chop", () => {
+    // Board K♣4♥8♣3♥Q♣ · short K♦8♦ (two pair) · you K♠2♠ (one pair) · deep 7♥6♥.
+    // Short wins main; you win side (deep loses). Unequal awards must not set isChop.
+    const tiny: TableConfig = {
+      ...config,
+      smallBlindMojos: 1n,
+      bigBlindMojos: 2n,
+      minBuyInMojos: 25n,
+      maxBuyInMojos: 50_000n,
+    };
+    const table = new NlheTableEngine(tiny);
+    table.seatPlayer("short", 0, 25n);
+    table.seatPlayer("you", 1, 100n);
+    table.seatPlayer("deep", 2, 100n);
+    table.startHand("bd6ada89-hand");
+    for (const id of ["short", "you", "deep"]) {
+      table.submitPlayerSeed(id, generateServerSeed());
+    }
+    table.revealAndDeal();
+
+    const dealt = (
+      table as unknown as {
+        hand: {
+          players: { playerId: string; holeCards: ReturnType<typeof parseCard>[] }[];
+          deck: ReturnType<typeof parseCard>[];
+          deckIndex: number;
+        } | null;
+      }
+    ).hand!;
+    for (const p of dealt.players) {
+      if (p.playerId === "short") p.holeCards = [parseCard("Kd"), parseCard("8d")];
+      else if (p.playerId === "you") p.holeCards = [parseCard("Ks"), parseCard("2s")];
+      else p.holeCards = [parseCard("7h"), parseCard("6h")];
+    }
+    dealt.deck = ["Kc", "4h", "8c", "3h", "Qc"].map(parseCard);
+    dealt.deckIndex = 0;
+
+    for (let guard = 0; guard < 12; guard++) {
+      const state = table.getHandState();
+      if (!state || state.actionSeat == null) break;
+      const actor = state.players.find((p) => p.seatIndex === state.actionSeat && !p.folded);
+      if (!actor || actor.allIn) break;
+      table.applyAction(actor.playerId, "all-in");
+    }
+    table.advanceHandIfIdle();
+    expect(table.isHandInProgress()).toBe(false);
+
+    const result = table.getLastHandResult()!;
+    expect(result.reason).toBe("showdown");
+    expect(result.isChop).toBe(false);
+    expect(result.winnerId).toBe("short");
+    expect(result.participants.find((p) => p.playerId === "short")!.awardedMojos).toBe(75n); // 25×3 main
+    expect(result.participants.find((p) => p.playerId === "you")!.awardedMojos).toBe(150n); // 75×2 side
+    expect(result.participants.find((p) => p.playerId === "deep")!.awardedMojos).toBe(0n);
+    expect(result.totalPotMojos).toBe(225n);
+  });
+
   it("pays short the main pot and mid the side pot without labeling a chop", () => {
     const tiny: TableConfig = {
       ...config,

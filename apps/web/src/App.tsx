@@ -121,8 +121,16 @@ function playerLabel(id: string, youId: string | null, display?: string): string
   if (id === youId) return "You";
   if (isHousePlayerId(id)) {
     if (id === HOUSE_PLAYER_ID) return "House";
-    const seat = id.split(":").pop();
-    return `House ${seat ?? ""}`.trim();
+    // Cash: dat-poker:house:<seat> · MTT: dat-poker:house:<tableId>:<seat>
+    // After MTT redraw, bots from different tables can share a seat number — tag the table.
+    const parts = id.split(":");
+    const seat = parts[parts.length - 1] ?? "";
+    if (parts.length >= 4) {
+      const tableId = parts[parts.length - 2] ?? "";
+      const tag = tableId.slice(0, 4);
+      return tag ? `House ${seat}·${tag}` : `House ${seat}`.trim();
+    }
+    return `House ${seat}`.trim();
   }
   const shown = display && display.length > 0 ? display : id;
   return shown.length > 16 ? `${shown.slice(0, 8)}…${shown.slice(-6)}` : shown;

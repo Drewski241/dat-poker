@@ -60,32 +60,39 @@ describe("formatHandOutcomeLine", () => {
     ).toBe("You won 9.84 DAT · showdown");
   });
 
-  it("does not call a side-pot hand a chop when two players are paid but isChop is false", () => {
+  it("labels main+side payouts as side pots (not a chop) — K8 short vs K2 deep", () => {
+    // Screenshot bd6ada89: House 7 (K8 two pair) short all-in wins main 125;
+    // You (K2 one pair) take the 250 side after other stacks fold.
     expect(
       formatHandOutcomeLine({
         playerId: "you",
-        winnerLabel: "You",
+        winnerLabel: "House 7",
         ticker: "DAT",
         hand: {
-          winnerId: "you",
-          potMojos: "780000",
-          totalPotMojos: "1260000",
+          winnerId: "house-7",
+          potMojos: "125000",
+          totalPotMojos: "375000",
           isChop: false,
           reason: "showdown",
           participants: [
             {
               playerId: "you",
-              stackBeforePayoutMojos: "0",
-              stackAfterMojos: "780000",
+              stackBeforePayoutMojos: "50000",
+              stackAfterMojos: "300000",
             },
             {
               playerId: "house-7",
-              stackBeforePayoutMojos: "5780000",
-              stackAfterMojos: "6260000",
+              stackBeforePayoutMojos: "0",
+              stackAfterMojos: "125000",
+            },
+            {
+              playerId: "house-0a",
+              stackBeforePayoutMojos: "1820000",
+              stackAfterMojos: "1820000",
             },
           ],
         },
       }),
-    ).toBe("You won 780 DAT · showdown");
+    ).toBe("Side pots · pot 375 DAT · you got 250 DAT · showdown");
   });
 });
