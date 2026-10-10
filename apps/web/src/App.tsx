@@ -246,7 +246,6 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     seatedHumans: number;
     humansInHand: number;
   } | null>(null);
-  const [serverBuildRef, setServerBuildRef] = useState<string | null>(null);
 
   useEffect(() => {
     writeVerifyPending(verificationPending);
@@ -257,12 +256,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     void (async () => {
       restoreApiAuthToken();
       try {
-        const health = await api.health();
+        await api.health();
         setApiOk(true);
-        setServerBuildRef(health.buildRef ?? null);
       } catch {
         setApiOk(false);
-        setServerBuildRef(null);
         return;
       }
       try {
@@ -1883,9 +1880,6 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               {configuredMttLabel}
             </button>
           </div>
-          {serverBuildRef ? (
-            <p className="muted small mono">Server build: {serverBuildRef}</p>
-          ) : null}
         </section>
       )}
 
@@ -2443,9 +2437,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         {isBeta ? (
           <p>
             DAT POKER public beta. Redeem 5000 DAT per UTC day into a table account (not an
-            on-chain CAT send). 6-max cash, 9-max SNG, 16-player SNG, or {configuredMttLabel}. Build{" "}
-            {import.meta.env.VITE_BUILD_ID ?? "dev"}
-            {datToken?.mttFieldSize != null ? ` · large MTT field ${datToken.mttFieldSize}` : ""}.
+            on-chain CAT send). 6-max cash, 9-max SNG, 16-player SNG, or {configuredMttLabel}.
             {" "}
             <a href="/feedback" onClick={(e) => { e.preventDefault(); onNavigate?.("feedback"); }}>
               Send feedback
