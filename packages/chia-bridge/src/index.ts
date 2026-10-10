@@ -5,3 +5,4 @@ export * from "./sage-wallet-rpc.js";
 export * from "./sage-payout-offer.js";
 export * from "./cat-payout-offer.js";
 export * from "./treasury-payout-offer.js";
+export * from "./sage-nft-payout-offer.js";
