@@ -5,7 +5,7 @@ instance (nginx on `:80`, API on `:4000`). Treasury Sage and
 `pnpm dev:treasury` stay on a **separate** machine ([docs/TREASURY.md](../../docs/TREASURY.md)).
 
 **Current beta branch (16-player SNG + 500-player MTT, chop pots, SNG sit-out pace, cash auto-deal):**
-`cursor/hand-history-pot-audit-423d` (or set `DAT_POKER_REPO_REF` on redeploy).
+`cursor/fix-final-table-deal-stuck-7c36` (or set `DAT_POKER_REPO_REF` on redeploy).
 
 ## Option A — EC2 console (recommended)
 
@@ -31,7 +31,7 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     InstanceType=t3.small \
-    RepoRef=cursor/hand-history-pot-audit-423d
+    RepoRef=cursor/fix-final-table-deal-stuck-7c36
 
 aws cloudformation describe-stacks --stack-name dat-poker-beta \
   --query 'Stacks[0].Outputs'
@@ -58,7 +58,7 @@ Wait for **`beta redeploy ok`**. If `pull-16sng-mtt-ui.sh` is not found yet:
 
 ```bash
 cd /opt/dat-poker
-export R=cursor/hand-history-pot-audit-423d
+export R=cursor/fix-final-table-deal-stuck-7c36
 sudo git fetch --depth 1 origin $R
 sudo git checkout -f FETCH_HEAD
 sudo bash deploy/aws-ec2/up.sh

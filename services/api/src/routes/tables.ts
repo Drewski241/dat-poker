@@ -52,6 +52,7 @@ import {
 } from "../hand-history-store.js";
 import { playHouseIfDue } from "../house-play.js";
 import { playHumansIfDue, resetHumanTurnClockForTests } from "../human-play.js";
+import { maybeDealTournamentHandOnPoll } from "../tournament-poll-deal.js";
 import { advanceSiblingMttHouseTables } from "../mtt-house-advance.js";
 import {
   getMtt16NftPromoMeta,
@@ -239,6 +240,33 @@ function maintainTable(
     }
   } else {
     ensureHouseFunded(table);
+    const dealHooks = {
+      onHandStarted: () => onTournamentHandStarted(tableId),
+      afterDeal: () => {
+        persistTablePlaythrough(table);
+        maybeRecordCompletedHand(tableId, table);
+        finalizeSngIfNeeded(tableId, table);
+      },
+    };
+    maybeDealTournamentHandOnPoll(tableId, table, mtt, sng, dealHooks);
+    // Clients often still poll the closed source table after final-table
+    // relocation; kick the destination so the first hand is not stuck waiting
+    // on a stale client-side runout flag.
+    const destId = mtt?.relocatedTo(tableId);
+    if (mtt && destId && destId !== tableId) {
+      registerMttTables(mtt);
+      const dest = tables.get(destId);
+      if (dest && !dest.isHandInProgress()) {
+        maybeDealTournamentHandOnPoll(destId, dest, mtt, undefined, {
+          onHandStarted: () => onTournamentHandStarted(destId),
+          afterDeal: () => {
+            persistTablePlaythrough(dest);
+            maybeRecordCompletedHand(destId, dest);
+            finalizeSngIfNeeded(destId, dest);
+          },
+        });
+      }
+    }
     finalizeSngIfNeeded(tableId, table);
   }
   runMttHouseCatchup(tableId);

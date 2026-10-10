@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { shouldAutoDealNextHand, sngShouldAutoDeal } from "./sng-auto-deal.js";
+import {
+  countActiveDealSeats,
+  shouldAutoDealNextHand,
+  sngShouldAutoDeal,
+} from "./sng-auto-deal.js";
 
 const sngReady = {
   atTableRoom: true,
@@ -26,6 +30,19 @@ const cashReady = {
   runoutPlaying: false,
   eliminated: false,
 };
+
+describe("countActiveDealSeats", () => {
+  it("ignores sitting-out and zero-stack seats", () => {
+    expect(
+      countActiveDealSeats([
+        { stackMojos: "1000", sittingOut: false },
+        { stackMojos: "0", sittingOut: false },
+        { stackMojos: "500", sittingOut: true },
+        { stackMojos: "200", sittingOut: false },
+      ]),
+    ).toBe(2);
+  });
+});
 
 describe("shouldAutoDealNextHand", () => {
   it("auto-deals cash when seated with chips and enough players", () => {
