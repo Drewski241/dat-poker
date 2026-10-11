@@ -49,6 +49,12 @@ export interface HandResultParticipant {
   awardedMojos: bigint;
 }
 
+export interface HandFairnessReveal {
+  commitHash: string;
+  serverSeed: string;
+  playerSeeds: Record<PlayerId, string>;
+}
+
 export interface HandResult {
   handId: HandId;
   winnerId: PlayerId;
@@ -65,6 +71,8 @@ export interface HandResult {
   /** Board length when no two remaining players could still bet. Null if side betting continued. */
   runoutFromBoardLen: number | null;
   participants: HandResultParticipant[];
+  /** Post-hand commit/reveal material for client verification. */
+  fairness?: HandFairnessReveal;
 }
 
 export interface PlayerHandState {
@@ -1123,6 +1131,7 @@ export class NlheTableEngine {
       allInPlayerIds: h.players.filter((p) => p.allIn && !p.folded).map((p) => p.playerId),
       runoutFromBoardLen: this.allInRunoutFrom,
       participants,
+      fairness: this.fairnessReveal(h),
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;
@@ -1167,10 +1176,20 @@ export class NlheTableEngine {
       allInPlayerIds: h.players.filter((p) => p.allIn && !p.folded).map((p) => p.playerId),
       runoutFromBoardLen: this.allInRunoutFrom,
       participants,
+      fairness: this.fairnessReveal(h),
     };
     this.recordHandPlayed(h);
     h.potMojos = 0n;
     this.finishHand();
+  }
+
+  private fairnessReveal(h: TableHandState): HandFairnessReveal | undefined {
+    if (!h.serverSeed || !h.commitHash) return undefined;
+    return {
+      commitHash: h.commitHash,
+      serverSeed: h.serverSeed,
+      playerSeeds: { ...h.playerSeeds },
+    };
   }
 
   /**
