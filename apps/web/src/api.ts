@@ -658,6 +658,53 @@ export const api = {
       }),
     }),
 
+  dailyRitual: () =>
+    request<{
+      utcDay: string;
+      freerollAvailable: boolean;
+      freerollEnteredToday: boolean;
+      streakDays: number;
+      freerollEntries: number;
+      freerollItm: number;
+      freerollWins: number;
+      badge: string | null;
+      redeemedToday: boolean;
+      freeroll: {
+        maxSeats: number;
+        prizePoolMojos: string;
+        startingStackMojos: string;
+      };
+    }>("/v1/ritual/daily"),
+
+  joinDailyFreeroll: (playerId: string) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      maxSeats: number;
+      format?: string;
+      variant?: string;
+      freeroll?: boolean;
+      humans?: number;
+      handInProgress: boolean;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+      ritual?: {
+        utcDay: string;
+        freerollAvailable: boolean;
+        freerollEnteredToday: boolean;
+        streakDays: number;
+        freerollEntries: number;
+        freerollItm: number;
+        freerollWins: number;
+        badge: string | null;
+      };
+    }>("/v1/tables/join-daily-freeroll", {
+      method: "POST",
+      body: JSON.stringify({ playerId }),
+    }),
+
   joinMtt16: (
     playerId: string,
     buyInMojos: string,
