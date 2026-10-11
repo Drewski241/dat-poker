@@ -13,7 +13,13 @@ export function describeLiveHand(
   try {
     const holeCards = hole.map((c) => parseCard(`${c.rank}${c.suit}`));
     const boardCards = board.map((c) => parseCard(`${c.rank}${c.suit}`));
-    const omaha = variant === "plo4" || variant === "plo5" || variant === "plo6" || hole.length >= 4;
+    const omaha =
+      variant === "plo4" ||
+      variant === "plo5" ||
+      variant === "plo6" ||
+      variant === "plo4_hl" ||
+      variant === "omaha" ||
+      hole.length >= 4;
     if (omaha) {
       return describeOmahaMadeHand(holeCards, boardCards);
     }

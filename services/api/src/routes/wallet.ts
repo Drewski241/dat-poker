@@ -29,7 +29,7 @@ import { mtt16NftRewardForPlayer, retryMtt16NftOffer } from "../mtt16-nft-challe
 import { mtt500NftRewardForPlayer, retryMtt500NftOffer } from "../mtt500-nft-challenge-store.js";
 import { getTableEngine, persistTablePlaythrough, playthroughFields } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
-import type { NlheTableEngine } from "@dat-poker/game-engine";
+import type { TableEngine } from "@dat-poker/game-engine";
 import { allowIpBucket } from "../ip-rate-limit.js";
 import { requirePlayer, sessionMatchesClaim, sessionTtlSeconds } from "../player-session.js";
 import {
@@ -45,7 +45,7 @@ function playthroughView(playerId: string) {
   return playthroughFields(playerId);
 }
 
-function isSngEngine(table: NlheTableEngine | undefined): boolean {
+function isSngEngine(table: TableEngine | undefined): boolean {
   return table?.getConfig().format === "sng" || table?.getConfig().format === "mtt";
 }
 
@@ -58,7 +58,7 @@ function unlockedFromHeld(playerId: string, heldMojos: bigint): bigint {
   return playthroughWithdrawableMojos(pt.handsPlayed, pt.poolMojos, heldMojos);
 }
 
-function unlockedTableWithdrawMojos(table: NlheTableEngine, playerId: string): bigint {
+function unlockedTableWithdrawMojos(table: TableEngine, playerId: string): bigint {
   const stack = table.getPlayerStack(playerId);
   if (stack === null) return 0n;
   return unlockedFromHeld(playerId, stack);

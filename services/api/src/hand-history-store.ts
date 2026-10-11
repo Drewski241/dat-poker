@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import {
   auditHistoryStacks,
   type HandResult,
-  type NlheTableEngine,
+  type TableEngine,
 } from "@dat-poker/game-engine";
 
 export interface HandHistoryEntry {
@@ -58,12 +58,12 @@ async function appendHandHistoryLog(
   }
 }
 
-export function maybeRecordCompletedHand(tableId: string, table: NlheTableEngine): void {
+export function maybeRecordCompletedHand(tableId: string, table: TableEngine): void {
   if (table.isHandInProgress()) return;
   void recordHandHistoryIfNew(tableId, table);
 }
 
-export function recordHandHistoryIfNew(tableId: string, table: NlheTableEngine): void {
+export function recordHandHistoryIfNew(tableId: string, table: TableEngine): void {
   const result = table.getLastHandResult();
   if (!result) return;
   const key = recordKey(tableId, result.handId);

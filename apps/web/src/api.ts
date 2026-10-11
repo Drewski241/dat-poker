@@ -46,16 +46,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in";
+export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in" | "discard";
 
 export interface HandPlayer {
   playerId: string;
   seatIndex: number;
   holeCards: { rank: string; suit: string }[];
+  holeCardCount?: number;
   stackMojos: string;
   betThisStreetMojos: string;
   folded: boolean;
   allIn?: boolean;
+  needsDiscard?: boolean;
+  needsDraw?: boolean;
 }
 
 export interface HandState {
@@ -926,7 +929,13 @@ export const api = {
       body: "{}",
     }),
 
-  action: (tableId: string, playerId: string, action: PlayerAction, amountMojos?: string) =>
+  action: (
+    tableId: string,
+    playerId: string,
+    action: PlayerAction,
+    amountMojos?: string,
+    discardIndexes?: number[],
+  ) =>
     request<{
       ok: boolean;
       hand: HandState | null;
@@ -937,7 +946,7 @@ export const api = {
       `/v1/tables/${tableId}/hands/action`,
       {
         method: "POST",
-        body: JSON.stringify({ playerId, action, amountMojos }),
+        body: JSON.stringify({ playerId, action, amountMojos, discardIndexes }),
       },
     ),
 

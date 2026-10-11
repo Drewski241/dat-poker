@@ -57,7 +57,7 @@ type Props = {
   betAmountMojos: bigint;
   myStack: bigint;
   onBetAmountChange: (v: bigint) => void;
-  onSendAction: (action: PlayerAction, amountMojos?: string) => void;
+  onSendAction: (action: PlayerAction, amountMojos?: string, discardIndexes?: number[]) => void;
   onStartHand: () => void;
   canRebuy: boolean;
   canDeal?: boolean;
@@ -590,6 +590,61 @@ export function TableRoom({
             <div className="action-bar-top">
               <span className="action-bar-label">Your action · {actionSecondsLeft}s</span>
               <div className="action-buttons-row">
+                {(hand.street === "discard" ||
+                  String(hand.street).startsWith("draw") ||
+                  me?.needsDiscard ||
+                  me?.needsDraw) && (
+                  <>
+                    <button
+                      type="button"
+                      className="primary-bet"
+                      disabled={busy}
+                      onClick={() =>
+                        onSendAction(
+                          "discard",
+                          undefined,
+                          me?.needsDiscard && (me.holeCards?.length ?? 0) > 2 ? [0] : [],
+                        )
+                      }
+                    >
+                      {me?.needsDiscard ? "discard 1st" : "stand pat"}
+                    </button>
+                    {me?.needsDiscard && (me.holeCards?.length ?? 0) > 2 && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onSendAction("discard", undefined, [1])}
+                      >
+                        discard 2nd
+                      </button>
+                    )}
+                    {me?.needsDiscard && (me.holeCards?.length ?? 0) > 3 && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onSendAction("discard", undefined, [2])}
+                      >
+                        discard 3rd
+                      </button>
+                    )}
+                    {me?.needsDraw && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onSendAction("discard", undefined, [0, 1, 2].slice(0, Math.min(3, me.holeCards.length)))}
+                      >
+                        draw 3
+                      </button>
+                    )}
+                  </>
+                )}
+                {!(
+                  hand.street === "discard" ||
+                  String(hand.street).startsWith("draw") ||
+                  me?.needsDiscard ||
+                  me?.needsDraw
+                ) && (
+                  <>
                 <button
                   type="button"
                   className="primary-bet"
@@ -628,9 +683,17 @@ export function TableRoom({
                     all-in
                   </button>
                 )}
+                  </>
+                )}
               </div>
             </div>
-            {betRange.canBetOrRaise && (
+            {betRange.canBetOrRaise &&
+              !(
+                hand.street === "discard" ||
+                String(hand.street).startsWith("draw") ||
+                me?.needsDiscard ||
+                me?.needsDraw
+              ) && (
               <div className="action-bet-panel">
                 <BetSlider
                   label={betRange.isOpeningBet ? "Bet size" : "Raise to"}

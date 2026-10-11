@@ -1,8 +1,12 @@
 import { isHousePlayerId } from "./house-id.js";
 import { chooseHouseAction } from "./house-strategy.js";
-import type { NlheTableEngine } from "@dat-poker/game-engine";
+import type { TableEngine } from "@dat-poker/game-engine";
+import {
+  isDrawFamilyVariant,
+  isPineappleVariant,
+} from "@dat-poker/shared";
 
-export function playHouseIfDue(table: NlheTableEngine, random: () => number = Math.random): void {
+export function playHouseIfDue(table: TableEngine, random: () => number = Math.random): void {
   for (let i = 0; i < 16; i++) {
     const hand = table.getHandState();
     if (!hand || hand.actionSeat == null) {
@@ -12,6 +16,30 @@ export function playHouseIfDue(table: NlheTableEngine, random: () => number = Ma
     if (!actor || !isHousePlayerId(actor.playerId)) {
       return;
     }
+
+    const variant = table.getConfig().variant;
+    const needsDiscard =
+      ("needsDiscard" in actor && Boolean(actor.needsDiscard)) ||
+      (isPineappleVariant(variant) && hand.street === "discard");
+    const needsDraw =
+      ("needsDraw" in actor && Boolean(actor.needsDraw)) ||
+      (isDrawFamilyVariant(variant) && String(hand.street).startsWith("draw"));
+
+    if (needsDiscard || needsDraw) {
+      try {
+        // Stand pat / discard first hole card for pineapple.
+        if ("applyDiscard" in table && typeof table.applyDiscard === "function") {
+          const indexes = needsDiscard && actor.holeCards.length > 2 ? [0] : [];
+          table.applyDiscard(actor.playerId, indexes);
+        } else {
+          table.applyAction(actor.playerId, "discard", 0n);
+        }
+      } catch {
+        return;
+      }
+      continue;
+    }
+
     const opponentsAllIn = hand.players
       .filter((p) => !isHousePlayerId(p.playerId) && !p.folded)
       .every((p) => p.allIn);
@@ -29,7 +57,7 @@ export function playHouseIfDue(table: NlheTableEngine, random: () => number = Ma
         lastRaiseIncrementMojos: hand.lastRaiseIncrementMojos,
         opponentsAllIn,
         headsUp: live.length === 2,
-        variant: table.getConfig().variant,
+        variant,
       },
       random,
     );

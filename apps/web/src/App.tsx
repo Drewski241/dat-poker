@@ -840,7 +840,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setStatus(result.note);
     });
 
-  const joinTable = async (variant: "nlhe" | "plo4" = "nlhe") => {
+  const joinTable = async (variant: string = "nlhe") => {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -863,7 +863,20 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         }
       }
 
-      const label = variant === "plo4" ? "6-max PLO" : "6-max Hold'em";
+      const labels: Record<string, string> = {
+        nlhe: "6-max Hold'em",
+        plo4: "6-max PLO",
+        plo4_hl: "6-max PLO Hi/Lo",
+        pineapple: "Pineapple",
+        crazy_pineapple: "Crazy Pineapple",
+        lazy_pineapple: "Lazy Pineapple",
+        five_card_draw: "Five-Card Draw",
+        triple_draw_27: "2-7 Triple Draw",
+        badugi: "Badugi",
+        seven_card_stud: "Seven-Card Stud",
+        razz: "Razz",
+      };
+      const label = labels[variant] ?? variant;
       setStatus(`Joining ${label} table…`);
       const joined = await api.joinTable(playerId, buyIn, {
         // Free mint only for truly empty ledgers — never top up a short account.
@@ -1317,7 +1330,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const startHandFlowRef = useRef(startHandFlow);
   startHandFlowRef.current = startHandFlow;
 
-  const sendAction = (action: PlayerAction, amountMojos?: string) => {
+  const sendAction = (action: PlayerAction, amountMojos?: string, discardIndexes?: number[]) => {
     if (!tableId || !playerId) return;
     const me = hand?.players.find((p) => p.playerId === playerId);
     const callIsAllIn = action === "call" && isCallAllIn(me, hand?.currentBetMojos);
@@ -1353,7 +1366,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       };
     }
     run(action, async () => {
-      const response = await api.action(tableId, playerId, action, amountMojos);
+      const response = await api.action(tableId, playerId, action, amountMojos, discardIndexes);
       applyActionResponse(response);
       if (!response.hand) await refreshTable(tableId);
     });
@@ -2028,7 +2041,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         <section className="panel lobby-quick-start">
           <h2>Start a table</h2>
           <p className="muted small">
-            Hold&apos;em and <strong>Pot-Limit Omaha</strong>. Multi-table SNGs always seat{" "}
+            Hold&apos;em, Omaha, draw, stud, and more. Multi-table SNGs always seat{" "}
             <strong>8 per table</strong> (16-player = two tables → final eight). Daily redeem is 5000 DAT.
           </p>
           <div className="lobby-quick-start-buttons">
@@ -2046,6 +2059,62 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               onClick={() => void joinTable("plo4")}
             >
               6-max PLO
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable("plo4_hl")}
+            >
+              PLO Hi/Lo
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable("pineapple")}
+            >
+              Pineapple
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable("five_card_draw")}
+            >
+              5-Card Draw
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable("triple_draw_27")}
+            >
+              2-7 Triple Draw
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable("badugi")}
+            >
+              Badugi
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable("seven_card_stud")}
+            >
+              7-Card Stud
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable("razz")}
+            >
+              Razz
             </button>
             <button
               type="button"
@@ -2271,6 +2340,62 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 onClick={() => void joinTable("plo4")}
               >
                 PLO 6-max
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
+                onClick={() => void joinTable("plo4_hl")}
+              >
+                PLO Hi/Lo
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
+                onClick={() => void joinTable("pineapple")}
+              >
+                Pineapple
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
+                onClick={() => void joinTable("five_card_draw")}
+              >
+                5-Card Draw
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
+                onClick={() => void joinTable("triple_draw_27")}
+              >
+                2-7 Triple Draw
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
+                onClick={() => void joinTable("badugi")}
+              >
+                Badugi
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
+                onClick={() => void joinTable("seven_card_stud")}
+              >
+                7-Card Stud
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
+                onClick={() => void joinTable("razz")}
+              >
+                Razz
               </button>
             </div>
             <h3 className="table-format-heading">Sit-n-go (single table)</h3>

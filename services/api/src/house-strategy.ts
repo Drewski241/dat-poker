@@ -12,10 +12,8 @@ import {
   snapRaiseTo,
   type PokerVariant,
 } from "@dat-poker/shared";
-import type { Street } from "@dat-poker/shared";
-
 export interface HouseView {
-  street: Street;
+  street: string;
   holeCards: Card[];
   board: Card[];
   potMojos: bigint;

@@ -1,20 +1,31 @@
-import type { TableHandState } from "@dat-poker/game-engine";
-
-export function redactHandForViewer(
-  hand: TableHandState | null,
-  viewerId: string | undefined,
-): TableHandState | null {
-  if (!hand) {
-    return null;
-  }
+/** Redact private cards / seeds for a viewer while keeping betting metadata. */
+export function redactHandForViewer(hand: unknown, viewerId: string | undefined): unknown {
+  if (!hand || typeof hand !== "object") return null;
+  const h = hand as {
+    players: Array<{
+      playerId: string;
+      holeCards: unknown[];
+      upCardIndexes?: number[];
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  };
   return {
-    ...hand,
+    ...h,
     serverSeed: null,
     deck: [],
     playerSeeds: {},
-    players: hand.players.map((p) => ({
-      ...p,
-      holeCards: p.playerId === viewerId ? p.holeCards : [],
-    })),
+    players: h.players.map((p) => {
+      const visible = p.playerId === viewerId;
+      let holeCards: unknown[] = visible ? p.holeCards : [];
+      if (!visible && p.upCardIndexes && p.upCardIndexes.length > 0) {
+        holeCards = p.upCardIndexes.map((i) => p.holeCards[i]).filter((c) => c != null);
+      }
+      return {
+        ...p,
+        holeCards,
+        holeCardCount: p.holeCards.length,
+      };
+    }),
   };
 }

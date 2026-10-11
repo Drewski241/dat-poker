@@ -11,11 +11,18 @@ import {
   formatDatMojos,
   isHousePlayerId,
   isTournamentFormat,
+  normalizePokerVariant,
   playthroughHandsRequired,
   playthroughUnlockedMojos,
   resolveDatMinBuyInMojos,
 } from "@dat-poker/shared";
-import { MttEvent, NlheTableEngine, SngTournament } from "@dat-poker/game-engine";
+import {
+  createTableEngine,
+  MttEvent,
+  NlheTableEngine,
+  SngTournament,
+  type TableEngine,
+} from "@dat-poker/game-engine";
 import {
   applyBuyInPlaythrough,
   creditAccount,
@@ -82,7 +89,7 @@ export interface UnseatInactiveResult {
   unseated: UnseatedInactivePlayer[];
 }
 
-const tables = new Map<string, NlheTableEngine>();
+const tables = new Map<string, TableEngine>();
 const sngByTable = new Map<string, SngTournament>();
 const mttByTable = new Map<string, MttEvent>();
 const mtt16WinRecorded = new Set<string>();
@@ -94,11 +101,11 @@ function rememberLabel(playerId: string, displayAddress: string): void {
   if (displayAddress) playerLabels.set(playerId, displayAddress);
 }
 
-function humanCount(table: NlheTableEngine): number {
+function humanCount(table: TableEngine): number {
   return table.getSeatedPlayers().filter((s) => !isHousePlayerId(s.playerId)).length;
 }
 
-function isSngTable(table: NlheTableEngine): boolean {
+function isSngTable(table: TableEngine): boolean {
   return isTournamentFormat(table.getConfig().format);
 }
 
@@ -131,7 +138,7 @@ export function lobbyPresence(): {
 function createTable(
   maxSeats = 6,
   variant: PokerVariant = "nlhe",
-): { tableId: string; table: NlheTableEngine; config: TableConfig } {
+): { tableId: string; table: TableEngine; config: TableConfig } {
   const id = randomUUID();
   const dat = readDatTokenConfig();
   const useDatStakes = Boolean(dat.assetId) || dat.devBuyInEnabled;
@@ -151,7 +158,7 @@ function createTable(
     maxBuyInMojos: useDatStakes ? DAT_TABLE_DEFAULTS.maxBuyInMojos : 20_000_000_000_000n,
     rakeBps: 500,
   };
-  const table = new NlheTableEngine(config);
+  const table = createTableEngine(config);
   tables.set(id, table);
   return { tableId: id, table, config };
 }
@@ -167,7 +174,7 @@ function defaultHouseBuyIn(): bigint {
  */
 export function unseatInactivePlayers(
   tableId: string,
-  table: NlheTableEngine,
+  table: TableEngine,
   nowMs: number,
 ): UnseatInactiveResult {
   const unseated: UnseatedInactivePlayer[] = [];
@@ -208,7 +215,7 @@ export function unseatInactivePlayers(
 
 function maintainTable(
   tableId: string,
-  table: NlheTableEngine,
+  table: TableEngine,
   viewerId?: string,
 ): UnseatInactiveResult {
   const nowMs = Date.now();
@@ -254,7 +261,8 @@ function maintainTable(
         finalizeSngIfNeeded(tableId, table);
       },
     };
-    maybeDealTournamentHandOnPoll(tableId, table, mtt, sng, dealHooks);
+    // Tournament engines are always Hold'em-family (NlheTableEngine).
+    maybeDealTournamentHandOnPoll(tableId, table as NlheTableEngine, mtt, sng, dealHooks);
     // Clients often still poll the closed source table after final-table
     // relocation; kick the destination so the first hand is not stuck waiting
     // on a stale client-side runout flag.
@@ -263,7 +271,7 @@ function maintainTable(
       registerMttTables(mtt);
       const dest = tables.get(destId);
       if (dest && !dest.isHandInProgress()) {
-        maybeDealTournamentHandOnPoll(destId, dest, mtt, undefined, {
+        maybeDealTournamentHandOnPoll(destId, dest as NlheTableEngine, mtt, undefined, {
           onHandStarted: () => onTournamentHandStarted(destId),
           afterDeal: () => {
             persistTablePlaythrough(dest);
@@ -281,7 +289,7 @@ function maintainTable(
 
 function tableSnapshot(
   tableId: string,
-  table: NlheTableEngine,
+  table: TableEngine,
   viewerId?: string,
   maintenance?: UnseatInactiveResult,
 ) {
@@ -333,7 +341,7 @@ function tableSnapshot(
   };
 }
 
-function findPlayerTable(playerId: string): { tableId: string; table: NlheTableEngine } | null {
+function findPlayerTable(playerId: string): { tableId: string; table: TableEngine } | null {
   for (const [tableId, table] of tables) {
     if (table.hasPlayer(playerId)) {
       return { tableId, table };
@@ -344,7 +352,7 @@ function findPlayerTable(playerId: string): { tableId: string; table: NlheTableE
 
 export function pickJoinableTable(
   variant: PokerVariant = "nlhe",
-): { tableId: string; table: NlheTableEngine } | null {
+): { tableId: string; table: TableEngine } | null {
   const open = [...tables.entries()]
     .filter(
       ([, table]) =>
@@ -360,7 +368,7 @@ export function pickJoinableTable(
   return { tableId: open[0][0], table: open[0][1] };
 }
 
-function seatHouseIfNeeded(table: NlheTableEngine, buyInMojos: bigint): void {
+function seatHouseIfNeeded(table: TableEngine, buyInMojos: bigint): void {
   if (isSngTable(table)) {
     return;
   }
@@ -404,7 +412,7 @@ function seatHouseIfNeeded(table: NlheTableEngine, buyInMojos: bigint): void {
 }
 
 /** Top up or seat the house between hands (heads-up vs one human). */
-export function ensureHouseFunded(table: NlheTableEngine): void {
+export function ensureHouseFunded(table: TableEngine): void {
   seatHouseIfNeeded(table, defaultHouseBuyIn());
 }
 
@@ -1316,7 +1324,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
   });
 }
 
-export function getTableEngine(tableId: string): NlheTableEngine | undefined {
+export function getTableEngine(tableId: string): TableEngine | undefined {
   return tables.get(tableId);
 }
 
@@ -1334,7 +1342,7 @@ export function playthroughFields(playerId: string, tableHandsPlayed = 0) {
   };
 }
 
-export function persistTablePlaythrough(table: NlheTableEngine): void {
+export function persistTablePlaythrough(table: TableEngine): void {
   const sng = isSngTable(table);
   for (const seated of table.getSeatedPlayers()) {
     if (isHousePlayerId(seated.playerId)) continue;
@@ -1421,11 +1429,7 @@ function parsePokerVariant(
   raw: string | null | undefined,
   fallback: PokerVariant = "nlhe",
 ): PokerVariant {
-  if (raw === "plo4" || raw === "plo5" || raw === "plo6" || raw === "nlhe" || raw === "plhe") {
-    return raw;
-  }
-  if (raw === "plo") return "plo4";
-  return fallback;
+  return normalizePokerVariant(raw) ?? fallback;
 }
 
 function createSngTable(options?: {
@@ -1580,7 +1584,7 @@ function settleMttPrizes(mtt: MttEvent): void {
   recordMtt500FirstPlaceWin(champion.playerId, payoutAddress);
 }
 
-export function finalizeSngIfNeeded(tableId: string, table: NlheTableEngine): void {
+export function finalizeSngIfNeeded(tableId: string, table: TableEngine): void {
   const sng = sngByTable.get(tableId);
   if (sng && !table.isHandInProgress()) {
     persistTablePlaythrough(table);

@@ -1,5 +1,6 @@
 import { PLAYER_ACTION_LIMIT_MS } from "@dat-poker/shared";
-import type { NlheTableEngine } from "@dat-poker/game-engine";
+import type { TableEngine } from "@dat-poker/game-engine";
+import { isDrawFamilyVariant, isPineappleVariant } from "@dat-poker/shared";
 import { isHousePlayerId } from "./house-id.js";
 
 const turnStarted = new Map<string, { key: string; startedMs: number }>();
@@ -15,13 +16,21 @@ function turnKey(hand: {
 }
 
 function autoAction(
-  table: NlheTableEngine,
+  table: TableEngine,
   playerId: string,
-): "check" | "fold" {
+): "check" | "fold" | "discard" {
   const hand = table.getHandState();
   if (!hand) return "fold";
   const me = hand.players.find((p) => p.playerId === playerId);
   if (!me) return "fold";
+  const variant = table.getConfig().variant;
+  const needsDiscard =
+    ("needsDiscard" in me && Boolean(me.needsDiscard)) ||
+    (isPineappleVariant(variant) && hand.street === "discard");
+  const needsDraw =
+    ("needsDraw" in me && Boolean(me.needsDraw)) ||
+    (isDrawFamilyVariant(variant) && String(hand.street).startsWith("draw"));
+  if (needsDiscard || needsDraw) return "discard";
   const toCall = hand.currentBetMojos - me.betThisStreetMojos;
   return toCall <= 0n ? "check" : "fold";
 }
@@ -36,7 +45,7 @@ export function resetHumanTurnClockForTests(): void {
  */
 export function playHumansIfDue(
   tableId: string,
-  table: NlheTableEngine,
+  table: TableEngine,
   nowMs: number = Date.now(),
 ): void {
   for (let i = 0; i < 24; i++) {
@@ -64,7 +73,13 @@ export function playHumansIfDue(
 
     const action = autoAction(table, actor.playerId);
     try {
-      table.applyAction(actor.playerId, action);
+      if (action === "discard" && "applyDiscard" in table && typeof table.applyDiscard === "function") {
+        const indexes =
+          "needsDiscard" in actor && actor.needsDiscard && actor.holeCards.length > 2 ? [0] : [];
+        table.applyDiscard(actor.playerId, indexes);
+      } else {
+        table.applyAction(actor.playerId, action);
+      }
     } catch {
       return;
     }

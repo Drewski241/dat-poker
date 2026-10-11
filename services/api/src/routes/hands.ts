@@ -1,6 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
-import { generateServerSeed, type NlheTableEngine, type PlayerAction } from "@dat-poker/game-engine";
+import {
+  generateServerSeed,
+  type PlayerAction,
+  type TableEngine,
+} from "@dat-poker/game-engine";
+import { isDrawFamilyVariant, isPineappleVariant } from "@dat-poker/shared";
 import { maybeRecordCompletedHand } from "../hand-history-store.js";
 import {
   ensureHouseFunded,
@@ -23,7 +28,7 @@ import { requirePlayer, sessionMatchesClaim, type PlayerSession } from "../playe
 function seatedPlayer(
   req: FastifyRequest,
   reply: FastifyReply,
-  table: NlheTableEngine,
+  table: TableEngine,
   claimed?: string,
 ): PlayerSession | null {
   const session = requirePlayer(req, reply);
@@ -166,15 +171,37 @@ export function registerHandRoutes(app: FastifyInstance): void {
 
   app.post<{
     Params: { tableId: string };
-    Body: { playerId?: string; action: PlayerAction; amountMojos?: string };
+    Body: {
+      playerId?: string;
+      action: PlayerAction;
+      amountMojos?: string;
+      /** Card indexes to discard/draw (pineapple / draw family). */
+      discardIndexes?: number[];
+    };
   }>("/v1/tables/:tableId/hands/action", async (req, reply) => {
     const table = getTableEngine(req.params.tableId);
     if (!table) return reply.status(404).send({ error: "Table not found" });
     const session = seatedPlayer(req, reply, table, req.body.playerId);
     if (!session) return;
     try {
-      const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
-      table.applyAction(session.playerId, req.body.action, amount);
+      const variant = table.getConfig().variant;
+      if (
+        req.body.action === "discard" ||
+        (req.body.discardIndexes &&
+          (isPineappleVariant(variant) || isDrawFamilyVariant(variant)))
+      ) {
+        const indexes =
+          req.body.discardIndexes ??
+          (req.body.amountMojos != null ? [Number(req.body.amountMojos)] : []);
+        if ("applyDiscard" in table && typeof table.applyDiscard === "function") {
+          table.applyDiscard(session.playerId, indexes);
+        } else {
+          table.applyAction(session.playerId, "discard", BigInt(indexes[0] ?? 0));
+        }
+      } else {
+        const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
+        table.applyAction(session.playerId, req.body.action, amount);
+      }
       table.advanceHandIfIdle();
       playHumansIfDue(req.params.tableId, table);
       playHouseIfDue(table);
