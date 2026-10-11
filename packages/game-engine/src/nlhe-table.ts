@@ -1,6 +1,9 @@
 import {
+  getVariantMeta,
   holeCardCountForVariant,
+  isOmahaHiLoVariant,
   isOmahaVariant,
+  isPineappleVariant,
   isPotLimitVariant,
   isHousePlayerId,
   potLimitMaxRaiseTo,
@@ -17,6 +20,7 @@ import {
   type EvaluatedHand,
   type HandCategory,
 } from "./hand-evaluator.js";
+import { evaluateOmahaEightOrBetterLow } from "./lowball-evaluator.js";
 import {
   buildShuffleEntropy,
   createCommit,
@@ -26,7 +30,7 @@ import {
 } from "./shuffle.js";
 import { buildSidePots, splitPotEvenly } from "./side-pots.js";
 
-export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in";
+export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in" | "discard";
 
 export interface ShownHand {
   playerId: PlayerId;
@@ -74,6 +78,8 @@ export interface PlayerHandState {
   allIn: boolean;
   /** Voluntary action (check/call/fold/bet/raise) completed this betting round. */
   actedThisStreet: boolean;
+  /** Pineapple family: still must discard down to two hole cards. */
+  needsDiscard: boolean;
 }
 
 export interface TableHandState {
@@ -449,6 +455,7 @@ export class NlheTableEngine {
       folded: false,
       allIn: false,
       actedThisStreet: false,
+      needsDiscard: false,
     }));
 
     this.hand = {
@@ -510,6 +517,18 @@ export class NlheTableEngine {
       p.holeCards = holes;
     }
 
+    const meta = getVariantMeta(this.config.variant);
+    if (isPineappleVariant(this.config.variant) && meta?.discardTiming === "preflop") {
+      for (const p of h.players) {
+        p.needsDiscard = true;
+        p.actedThisStreet = false;
+      }
+      h.street = "discard";
+      h.actionSeat = this.firstDiscardSeatClockwise(h, h.dealerSeat);
+      h.seq++;
+      return;
+    }
+
     this.postBlinds(h);
     h.seq++;
   }
@@ -548,6 +567,16 @@ export class NlheTableEngine {
     }
     if (player.folded || player.allIn) {
       throw new Error("Player cannot act");
+    }
+
+    if (action === "discard") {
+      // amountMojos encodes a single hole-card index to discard (0-based).
+      this.applyDiscard(playerId, [Number(amountMojos)]);
+      return;
+    }
+
+    if (h.street === "discard" || player.needsDiscard) {
+      throw new Error("Must discard before betting");
     }
 
     const currentBetBefore = h.currentBetMojos;
@@ -624,6 +653,155 @@ export class NlheTableEngine {
     } else {
       this.advanceActionSeat(h, playerId);
     }
+  }
+
+  /**
+   * Pineapple discard: drop the given hole-card indices (usually one card).
+   * After everyone discards, resumes the scheduled street (preflop blinds / turn / river).
+   */
+  applyDiscard(playerId: PlayerId, discardIndices: number[]): void {
+    const h = this.requireHand();
+    const player = this.getPlayer(h, playerId);
+    if (player.seatIndex !== h.actionSeat) {
+      throw new Error("Not this player's turn");
+    }
+    if (player.folded) {
+      throw new Error("Player cannot discard");
+    }
+    if (!player.needsDiscard) {
+      throw new Error("Player does not need to discard");
+    }
+    const meta = getVariantMeta(this.config.variant);
+    const target = meta?.discardToHoleCards ?? 2;
+    const mustDrop = player.holeCards.length - target;
+    if (mustDrop <= 0) {
+      player.needsDiscard = false;
+      player.actedThisStreet = true;
+      this.finishDiscardOrAdvance(h, playerId);
+      return;
+    }
+    if (discardIndices.length !== mustDrop) {
+      throw new Error(`Must discard exactly ${mustDrop} card(s)`);
+    }
+    const unique = new Set(discardIndices);
+    if (unique.size !== discardIndices.length) {
+      throw new Error("Duplicate discard index");
+    }
+    for (const idx of discardIndices) {
+      if (!Number.isInteger(idx) || idx < 0 || idx >= player.holeCards.length) {
+        throw new Error("Invalid discard index");
+      }
+    }
+    const keep = player.holeCards.filter((_, i) => !unique.has(i));
+    player.holeCards = keep;
+    player.needsDiscard = false;
+    player.actedThisStreet = true;
+    h.seq++;
+    this.finishDiscardOrAdvance(h, playerId);
+  }
+
+  private finishDiscardOrAdvance(h: TableHandState, fromPlayerId: PlayerId): void {
+    const pending = h.players.filter((p) => !p.folded && p.needsDiscard);
+    if (pending.length > 0) {
+      try {
+        h.actionSeat = this.firstDiscardSeatClockwise(
+          h,
+          this.getPlayer(h, fromPlayerId).seatIndex,
+        );
+      } catch {
+        h.actionSeat = null;
+      }
+      return;
+    }
+
+    const meta = getVariantMeta(this.config.variant);
+    const timing = meta?.discardTiming ?? "preflop";
+    for (const p of h.players) {
+      p.actedThisStreet = false;
+    }
+
+    if (timing === "preflop" && h.board.length === 0 && h.potMojos === 0n) {
+      h.street = "preflop";
+      this.postBlinds(h);
+      h.seq++;
+      return;
+    }
+
+    // Mid-hand discard (crazy → turn, lazy → river): deal the next board street.
+    if (timing === "turn" && h.street === "discard") {
+      h.street = "turn";
+      h.board.push(this.draw(h));
+      this.resetBettingForStreet(h);
+      if (this.playersWhoCanBet(h).length === 0 || this.noFurtherBetting(h)) {
+        this.reconcileMatchedContributions(h);
+        h.actionSeat = null;
+        h.seq++;
+        this.noteAllInRunout(h);
+        this.advanceStreet(h);
+        return;
+      }
+      h.actionSeat = this.firstActiveSeatClockwise(h, h.dealerSeat);
+      h.seq++;
+      return;
+    }
+
+    if (timing === "river" && h.street === "discard") {
+      h.street = "river";
+      h.board.push(this.draw(h));
+      this.resetBettingForStreet(h);
+      if (this.playersWhoCanBet(h).length === 0 || this.noFurtherBetting(h)) {
+        this.reconcileMatchedContributions(h);
+        h.actionSeat = null;
+        h.seq++;
+        this.noteAllInRunout(h);
+        this.runShowdown(h);
+        return;
+      }
+      h.actionSeat = this.firstActiveSeatClockwise(h, h.dealerSeat);
+      h.seq++;
+      return;
+    }
+
+    h.street = h.board.length === 0 ? "preflop" : h.street === "discard" ? "flop" : h.street;
+    this.resetBettingForStreet(h);
+    h.actionSeat = this.firstActiveSeatClockwise(h, h.dealerSeat);
+    h.seq++;
+  }
+
+  private resetBettingForStreet(h: TableHandState): void {
+    for (const p of h.players) {
+      p.betThisStreetMojos = 0n;
+      p.actedThisStreet = false;
+    }
+    h.currentBetMojos = 0n;
+    h.lastRaiseIncrementMojos = this.config.bigBlindMojos;
+  }
+
+  private beginDiscardRound(h: TableHandState): void {
+    for (const p of h.players) {
+      if (!p.folded && p.holeCards.length > (getVariantMeta(this.config.variant)?.discardToHoleCards ?? 2)) {
+        p.needsDiscard = true;
+        p.actedThisStreet = false;
+      }
+    }
+    h.street = "discard";
+    h.actionSeat = this.firstDiscardSeatClockwise(h, h.dealerSeat);
+    h.seq++;
+  }
+
+  private firstDiscardSeatClockwise(h: TableHandState, fromSeat: number): number {
+    const seats = this.occupiedSeatIndices(h);
+    const max = this.config.maxSeats;
+    let seat = fromSeat;
+    for (let step = 0; step < max; step++) {
+      seat = (seat + 1) % max;
+      if (!seats.includes(seat)) continue;
+      const p = this.playerAtSeat(h, seat);
+      if (p && !p.folded && p.needsDiscard) {
+        return seat;
+      }
+    }
+    throw new Error("No player needs to discard");
   }
 
   getHandState(): TableHandState | null {
@@ -712,7 +890,11 @@ export class NlheTableEngine {
   }
 
   private canPlayerAct(p: PlayerHandState): boolean {
-    return !p.folded && !p.allIn && p.stackMojos > 0n;
+    if (p.folded || p.allIn || p.stackMojos <= 0n) return false;
+    // During a discard round, only players who still need to discard may act.
+    if (this.hand?.street === "discard") return p.needsDiscard;
+    if (p.needsDiscard) return false;
+    return true;
   }
 
   private playersWhoCanBet(h: TableHandState): PlayerHandState[] {
@@ -776,6 +958,8 @@ export class NlheTableEngine {
   }
 
   private bettingRoundComplete(h: TableHandState): boolean {
+    // Discard rounds complete via applyDiscard → finishDiscardOrAdvance, not street advance.
+    if (h.street === "discard") return false;
     const contenders = this.playersWhoCanBet(h);
     if (contenders.length === 0) return true;
     return contenders.every(
@@ -816,18 +1000,38 @@ export class NlheTableEngine {
   }
 
   private advanceStreet(h: TableHandState): void {
-    for (const p of h.players) {
-      p.betThisStreetMojos = 0n;
-      p.actedThisStreet = false;
+    if (h.street === "discard") {
+      return;
     }
-    h.currentBetMojos = 0n;
-    h.lastRaiseIncrementMojos = this.config.bigBlindMojos;
+
+    this.resetBettingForStreet(h);
+
+    const meta = getVariantMeta(this.config.variant);
+    // Crazy pineapple: discard before dealing the turn.
+    if (
+      h.street === "flop" &&
+      isPineappleVariant(this.config.variant) &&
+      meta?.discardTiming === "turn"
+    ) {
+      this.beginDiscardRound(h);
+      return;
+    }
+    // Lazy pineapple: discard before dealing the river.
+    if (
+      h.street === "turn" &&
+      isPineappleVariant(this.config.variant) &&
+      meta?.discardTiming === "river"
+    ) {
+      this.beginDiscardRound(h);
+      return;
+    }
 
     const next: Record<Street, Street | "showdown"> = {
       preflop: "flop",
       flop: "turn",
       turn: "river",
       river: "showdown",
+      discard: "showdown",
       showdown: "showdown",
     };
 
@@ -982,6 +1186,29 @@ export class NlheTableEngine {
         winners = contenders;
       } else if (foldWin) {
         winners = contenders;
+      } else if (isOmahaHiLoVariant(this.config.variant)) {
+        const hiWinners = this.showdownWinnersForPot(contenders, h.board);
+        const loWinners = this.showdownLowWinnersForPot(contenders, h.board);
+        const hiAmount = loWinners.length > 0 ? pot.amountMojos / 2n : pot.amountMojos;
+        const loAmount = pot.amountMojos - hiAmount;
+        if (hiWinners.length > 1 || loWinners.length > 1 || loWinners.length > 0) {
+          isChop = true;
+        }
+        hiWinners.sort((a, b) => a.seatIndex - b.seatIndex);
+        const hiShares = splitPotEvenly(hiAmount, hiWinners.length);
+        for (let i = 0; i < hiWinners.length; i++) {
+          const w = hiWinners[i]!;
+          awardedByPlayer.set(w.playerId, (awardedByPlayer.get(w.playerId) ?? 0n) + (hiShares[i] ?? 0n));
+        }
+        if (loWinners.length > 0 && loAmount > 0n) {
+          loWinners.sort((a, b) => a.seatIndex - b.seatIndex);
+          const loShares = splitPotEvenly(loAmount, loWinners.length);
+          for (let i = 0; i < loWinners.length; i++) {
+            const w = loWinners[i]!;
+            awardedByPlayer.set(w.playerId, (awardedByPlayer.get(w.playerId) ?? 0n) + (loShares[i] ?? 0n));
+          }
+        }
+        continue;
       } else {
         winners = this.showdownWinnersForPot(contenders, h.board);
       }
@@ -1031,7 +1258,8 @@ export class NlheTableEngine {
     live: PlayerHandState[],
     awardedByPlayer: Map<PlayerId, bigint>,
   ): ShownHand[] {
-    const expectedHoles = holeCardCountForVariant(this.config.variant);
+    const meta = getVariantMeta(this.config.variant);
+    const expectedHoles = meta?.discardToHoleCards ?? holeCardCountForVariant(this.config.variant);
     const contestants = live.filter(
       (p) => !p.folded && p.holeCards.length === expectedHoles,
     );
@@ -1087,6 +1315,23 @@ export class NlheTableEngine {
         bestEval = ev;
         winners = [p];
       } else if (cmp === 0) {
+        winners.push(p);
+      }
+    }
+    return winners;
+  }
+
+  /** Omaha hi/lo: Ace-to-5 eight-or-better low winners (empty if nobody qualifies). */
+  private showdownLowWinnersForPot(contenders: PlayerHandState[], board: Card[]): PlayerHandState[] {
+    let bestScore: number | null = null;
+    let winners: PlayerHandState[] = [];
+    for (const p of contenders) {
+      const low = evaluateOmahaEightOrBetterLow(p.holeCards, board);
+      if (!low) continue;
+      if (bestScore == null || low.score < bestScore) {
+        bestScore = low.score;
+        winners = [p];
+      } else if (low.score === bestScore) {
         winners.push(p);
       }
     }

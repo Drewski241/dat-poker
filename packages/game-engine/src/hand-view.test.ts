@@ -29,6 +29,7 @@ function hand(street: TableHandState["street"]): TableHandState {
         folded: false,
         allIn: false,
         actedThisStreet: false,
+        needsDiscard: false,
       },
       {
         playerId: "bob",
@@ -43,6 +44,7 @@ function hand(street: TableHandState["street"]): TableHandState {
         folded: false,
         allIn: false,
         actedThisStreet: false,
+        needsDiscard: false,
       },
     ],
     commitHash: "abc",
