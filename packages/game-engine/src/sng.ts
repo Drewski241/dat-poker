@@ -1,4 +1,4 @@
-import type { PlayerId, TableConfig } from "@dat-poker/shared";
+import type { PlayerId, PokerVariant, TableConfig } from "@dat-poker/shared";
 import {
   DAT_SNG_DEFAULTS,
   assignSngItmPrizes,
@@ -21,6 +21,8 @@ export interface SngOptions {
   buyInMojos?: bigint;
   startingStackMojos?: bigint;
   maxSeats?: number;
+  /** Poker variant for this SNG (default nlhe). */
+  variant?: PokerVariant;
   fillHouse?: boolean;
   minHumansToStart?: number;
   housePolicy?: HousePolicy;
@@ -35,6 +37,7 @@ export interface SngSnapshot {
   fillHouse: boolean;
   minHumansToStart: number;
   housePolicy: HousePolicy;
+  variant?: PokerVariant;
   maxSeats: number;
   buyInMojos: bigint;
   startingStackMojos: bigint;
@@ -115,7 +118,7 @@ export class SngTournament {
     const level = (options.blindLevels ?? DAT_SNG_DEFAULTS.blindLevels)[0];
     const config: TableConfig = {
       id: tableId,
-      variant: "nlhe",
+      variant: options.variant ?? "nlhe",
       format: "sng",
       maxSeats,
       smallBlindMojos: level.smallBlindMojos,
@@ -257,6 +260,7 @@ export class SngTournament {
       fillHouse: this.fillHouse,
       minHumansToStart: this.minHumansToStart,
       housePolicy: this.housePolicy,
+      variant: this.engine.getConfig().variant,
       maxSeats: this.maxSeats,
       buyInMojos: this.buyInMojos,
       startingStackMojos: this.startingStackMojos,

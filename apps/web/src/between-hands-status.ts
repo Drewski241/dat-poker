@@ -14,8 +14,11 @@ function formatCountdown(ms: number): string {
 
 export function mttFieldLabel(sng: SngSnapshot): string {
   const size = sng.fieldSize ?? sng.maxSeats;
-  if (size === 16) return "16-player SNG";
-  return `${size}-player MTT`;
+  const plo = sng.variant === "plo4" || sng.variant === "plo5" || sng.variant === "plo6";
+  const game = plo ? "PLO " : "";
+  if (size === 16) return `${game}16-player SNG`.replace("  ", " ").trim();
+  if (plo && size === 500) return "PLO 500-player MTT";
+  return `${game}${size}-player MTT`.replace("  ", " ").trim();
 }
 
 export function betweenHandsStatusMessage(input: {

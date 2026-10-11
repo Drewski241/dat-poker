@@ -1,6 +1,22 @@
-import { isHousePlayerId, type HandId, type PlayerId, type Street, type TableConfig } from "@dat-poker/shared";
+import {
+  holeCardCountForVariant,
+  isOmahaVariant,
+  isPotLimitVariant,
+  isHousePlayerId,
+  potLimitMaxRaiseTo,
+  type HandId,
+  type PlayerId,
+  type Street,
+  type TableConfig,
+} from "@dat-poker/shared";
 import { standardDeck, type Card } from "./card.js";
-import { compareHands, evaluateBestHand, type HandCategory } from "./hand-evaluator.js";
+import {
+  compareHands,
+  evaluateBestHand,
+  evaluateOmahaBestHand,
+  type EvaluatedHand,
+  type HandCategory,
+} from "./hand-evaluator.js";
 import {
   buildShuffleEntropy,
   createCommit,
@@ -485,8 +501,13 @@ export class NlheTableEngine {
     const entropy = buildShuffleEntropy(h.serverSeed, h.playerSeeds);
     h.deck = shuffleDeck(h.deck, entropy);
 
+    const holeCount = holeCardCountForVariant(this.config.variant);
     for (const p of h.players) {
-      p.holeCards = [this.draw(h), this.draw(h)];
+      const holes: Card[] = [];
+      for (let i = 0; i < holeCount; i += 1) {
+        holes.push(this.draw(h));
+      }
+      p.holeCards = holes;
     }
 
     this.postBlinds(h);
@@ -550,12 +571,25 @@ export class NlheTableEngine {
         if (amountMojos <= h.currentBetMojos) {
           throw new Error("Raise must exceed current bet");
         }
-        const maxTo = player.betThisStreetMojos + player.stackMojos;
+        const stackMax = player.betThisStreetMojos + player.stackMojos;
+        let maxTo = stackMax;
+        if (isPotLimitVariant(this.config.variant)) {
+          const potMax = potLimitMaxRaiseTo({
+            potMojos: h.potMojos,
+            currentBetMojos: h.currentBetMojos,
+            myBetThisStreetMojos: player.betThisStreetMojos,
+          });
+          if (potMax < maxTo) maxTo = potMax;
+        }
+        let raiseTo = amountMojos > maxTo ? maxTo : amountMojos;
         const minRaiseTo = h.currentBetMojos + h.lastRaiseIncrementMojos;
-        if (amountMojos < minRaiseTo && amountMojos < maxTo) {
+        if (raiseTo < minRaiseTo && raiseTo < stackMax) {
           throw new Error("Raise must be at least the size of the last bet or raise");
         }
-        const add = amountMojos - player.betThisStreetMojos;
+        if (raiseTo <= h.currentBetMojos) {
+          throw new Error("Raise must exceed current bet");
+        }
+        const add = raiseTo - player.betThisStreetMojos;
         this.charge(player, h, add);
         h.currentBetMojos = player.betThisStreetMojos;
         this.updateLastRaiseIncrement(h, currentBetBefore);
@@ -967,9 +1001,9 @@ export class NlheTableEngine {
     let primaryWinnerId = live[0]!.playerId;
     if (!foldWin) {
       let best = live[0]!;
-      let bestEval = evaluateBestHand([...best.holeCards, ...h.board]);
+      let bestEval = this.evaluatePlayerHand(best.holeCards, h.board);
       for (const p of live.slice(1)) {
-        const ev = evaluateBestHand([...p.holeCards, ...h.board]);
+        const ev = this.evaluatePlayerHand(p.holeCards, h.board);
         if (compareHands(ev, bestEval) > 0) {
           best = p;
           bestEval = ev;
@@ -997,7 +1031,10 @@ export class NlheTableEngine {
     live: PlayerHandState[],
     awardedByPlayer: Map<PlayerId, bigint>,
   ): ShownHand[] {
-    const contestants = live.filter((p) => !p.folded && p.holeCards.length === 2);
+    const expectedHoles = holeCardCountForVariant(this.config.variant);
+    const contestants = live.filter(
+      (p) => !p.folded && p.holeCards.length === expectedHoles,
+    );
     const bigBlind = this.config.bigBlindMojos;
     const allInPot = contestants.some((p) => p.allIn);
     const putMoneyIn = contestants.filter(
@@ -1011,8 +1048,8 @@ export class NlheTableEngine {
     if (reveal.size < 2 && contestants.length >= 2) {
       const remaining = contestants.filter((p) => !reveal.has(p.playerId));
       remaining.sort((a, b) => {
-        const evA = evaluateBestHand([...a.holeCards, ...h.board]);
-        const evB = evaluateBestHand([...b.holeCards, ...h.board]);
+        const evA = this.evaluatePlayerHand(a.holeCards, h.board);
+        const evB = this.evaluatePlayerHand(b.holeCards, h.board);
         return compareHands(evB, evA);
       });
       const bestLoser = remaining[0];
@@ -1028,16 +1065,23 @@ export class NlheTableEngine {
       .map((p) => ({
         playerId: p.playerId,
         holeCards: [...p.holeCards],
-        category: evaluateBestHand([...p.holeCards, ...h.board]).category,
+        category: this.evaluatePlayerHand(p.holeCards, h.board).category,
         allIn: p.allIn,
       }));
   }
 
+  private evaluatePlayerHand(hole: Card[], board: Card[]): EvaluatedHand {
+    if (isOmahaVariant(this.config.variant)) {
+      return evaluateOmahaBestHand(hole, board);
+    }
+    return evaluateBestHand([...hole, ...board]);
+  }
+
   private showdownWinnersForPot(contenders: PlayerHandState[], board: Card[]): PlayerHandState[] {
-    let bestEval = evaluateBestHand([...contenders[0]!.holeCards, ...board]);
+    let bestEval = this.evaluatePlayerHand(contenders[0]!.holeCards, board);
     let winners: PlayerHandState[] = [contenders[0]!];
     for (const p of contenders.slice(1)) {
-      const ev = evaluateBestHand([...p.holeCards, ...board]);
+      const ev = this.evaluatePlayerHand(p.holeCards, board);
       const cmp = compareHands(ev, bestEval);
       if (cmp > 0) {
         bestEval = ev;

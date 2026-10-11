@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PlayerId, TableConfig } from "@dat-poker/shared";
+import type { PlayerId, PokerVariant, TableConfig } from "@dat-poker/shared";
 import {
   DAT_MTT_DEFAULTS,
   assignSngItmPrizes,
@@ -22,6 +22,12 @@ import type { SngSnapshot } from "./sng.js";
 export interface MttOptions {
   /** Total entries in the field (default from shared DAT_MTT_DEFAULTS). */
   fieldSize?: number;
+  /** Seats per starting table — always 8 for multi-table SNGs/MTTs. */
+  startingTableSeats?: number;
+  /** Final table seat count (default matches startingTableSeats). */
+  finalTableSeats?: number;
+  /** Poker variant (nlhe or plo4). */
+  variant?: PokerVariant;
   buyInMojos?: bigint;
   startingStackMojos?: bigint;
   fillHouse?: boolean;
@@ -52,9 +58,10 @@ export class MttEvent {
   readonly maxHumans: number;
   readonly housePolicy: HousePolicy;
   readonly fieldSize: number;
-  readonly startingTableSeats = DAT_MTT_DEFAULTS.startingTableSeats;
+  readonly startingTableSeats: number;
   readonly startingTableCount: number;
-  readonly finalTableSeats = DAT_MTT_DEFAULTS.finalTableSeats;
+  readonly finalTableSeats: number;
+  readonly variant: PokerVariant;
   private readonly blindLevels: SngBlindLevel[];
   private readonly payoutShares: SngPayoutShare[];
   private readonly handsPerLevel: number;
@@ -75,9 +82,20 @@ export class MttEvent {
 
   constructor(eventId: string, options: MttOptions = {}) {
     this.eventId = eventId;
+    const seatRaw = options.startingTableSeats ?? DAT_MTT_DEFAULTS.startingTableSeats;
+    this.startingTableSeats = Math.max(2, Math.min(8, Math.floor(Number(seatRaw))));
+    if (!Number.isFinite(this.startingTableSeats)) {
+      this.startingTableSeats = DAT_MTT_DEFAULTS.startingTableSeats;
+    }
+    const finalRaw = options.finalTableSeats ?? this.startingTableSeats;
+    this.finalTableSeats = Math.max(2, Math.min(8, Math.floor(Number(finalRaw))));
+    if (!Number.isFinite(this.finalTableSeats)) {
+      this.finalTableSeats = this.startingTableSeats;
+    }
+    this.variant = options.variant ?? "nlhe";
     const fieldRaw = options.fieldSize ?? DAT_MTT_DEFAULTS.fieldSize;
     this.fieldSize = Math.max(
-      DAT_MTT_DEFAULTS.startingTableSeats,
+      this.startingTableSeats,
       Math.min(10_000, Math.floor(Number(fieldRaw))),
     );
     if (!Number.isFinite(this.fieldSize)) {
@@ -187,7 +205,7 @@ export class MttEvent {
     }
     if (!this.canAcceptHuman(playerId)) {
       throw new Error(
-        `This 16-player SNG already has the maximum of ${this.maxHumans} human players`,
+        `This ${this.fieldSize}-player event already has the maximum of ${this.maxHumans} human players`,
       );
     }
     const table = this.requireTable(tableId);
@@ -264,7 +282,7 @@ export class MttEvent {
   start(nowMs = Date.now()): void {
     if (!this.canStart()) {
       throw new Error(
-        `16-player SNG not ready (need ${this.startingTableCount} tables of ${this.startingTableSeats} and ${this.minHumansToStart} human)`,
+        `${this.fieldSize}-player ${this.variant === "plo4" ? "PLO " : ""}SNG not ready (need ${this.startingTableCount} tables of ${this.startingTableSeats} and ${this.minHumansToStart} human)`,
       );
     }
     this.status = "running";
@@ -543,6 +561,7 @@ export class MttEvent {
       fillHouse: this.fillHouse,
       minHumansToStart: this.minHumansToStart,
       housePolicy: this.housePolicy,
+      variant: this.variant,
       maxSeats: table.engine.getMaxSeats(),
       buyInMojos: this.buyInMojos,
       startingStackMojos: this.startingStackMojos,
@@ -602,7 +621,7 @@ export class MttEvent {
     const level = this.blindLevels[this.levelIndex] ?? this.blindLevels[0];
     const config: TableConfig = {
       id: tableId,
-      variant: "nlhe",
+      variant: this.variant,
       format: "mtt",
       maxSeats,
       smallBlindMojos: level.smallBlindMojos,

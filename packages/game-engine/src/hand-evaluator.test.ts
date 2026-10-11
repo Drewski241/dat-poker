@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseCard } from "./card.js";
-import { compareHands, describeBestMadeHand, evaluateBestHand } from "./hand-evaluator.js";
+import {
+  compareHands,
+  describeBestMadeHand,
+  describeOmahaMadeHand,
+  evaluateBestHand,
+  evaluateOmahaBestHand,
+} from "./hand-evaluator.js";
 
 describe("hand evaluator", () => {
   it("detects a flush beating a straight", () => {
@@ -66,5 +72,24 @@ describe("describeBestMadeHand", () => {
     expect(
       describeBestMadeHand(["Ah", "2c", "3d", "4s", "5h"].map(parseCard)),
     ).toBe("5-high straight");
+  });
+});
+
+describe("Omaha evaluator", () => {
+  it("must use exactly two hole cards (board nut flush does not play alone)", () => {
+    // Hole has no heart — cannot make the board flush in Omaha.
+    const hole = ["As", "Kd", "Qc", "Jh"].map(parseCard);
+    const board = ["Ah", "Kh", "9h", "7h", "2h"].map(parseCard);
+    const omaha = evaluateOmahaBestHand(hole, board);
+    expect(omaha.category).not.toBe("flush");
+    expect(omaha.category).not.toBe("straight_flush");
+  });
+
+  it("uses two hole cards for a wrap straight", () => {
+    const hole = ["9h", "8d", "2c", "2s"].map(parseCard);
+    const board = ["7c", "6h", "5d", "Ks", "Ad"].map(parseCard);
+    const omaha = evaluateOmahaBestHand(hole, board);
+    expect(omaha.category).toBe("straight");
+    expect(describeOmahaMadeHand(hole, board)).toMatch(/straight/i);
   });
 });

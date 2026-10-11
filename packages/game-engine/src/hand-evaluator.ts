@@ -175,6 +175,41 @@ export function evaluateBestHand(cards: Card[]): EvaluatedHand {
   return best!;
 }
 
+/**
+ * Pot-Limit Omaha showdown: must use exactly 2 hole cards and exactly 3 board cards.
+ */
+export function evaluateOmahaBestHand(hole: Card[], board: Card[]): EvaluatedHand {
+  if (hole.length < 2) {
+    throw new Error(`Omaha needs at least 2 hole cards, got ${hole.length}`);
+  }
+  if (board.length < 3) {
+    throw new Error(`Omaha needs at least 3 board cards, got ${board.length}`);
+  }
+  let best: EvaluatedHand | null = null;
+  for (const holePair of combinations(hole, 2)) {
+    for (const boardTrip of combinations(board, 3)) {
+      const ev = evaluateFive([...holePair, ...boardTrip]);
+      if (!best || ev.score > best.score) {
+        best = ev;
+      }
+    }
+  }
+  return best!;
+}
+
+/** Player-facing Omaha label (uses 2+3 rule once the board has 3+ cards). */
+export function describeOmahaMadeHand(hole: Card[], board: Card[]): string | null {
+  if (hole.length === 0) return null;
+  if (board.length < 3) {
+    return describePartial(hole);
+  }
+  try {
+    return describeEvaluated(evaluateOmahaBestHand(hole, board));
+  } catch {
+    return describePartial(hole);
+  }
+}
+
 export function compareHands(a: EvaluatedHand, b: EvaluatedHand): number {
   return a.score - b.score;
 }

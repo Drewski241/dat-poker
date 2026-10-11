@@ -72,6 +72,52 @@ export const DAT_MTT_DEFAULTS = {
   blindLevels: DAT_SNG_DEFAULTS.blindLevels,
 } as const;
 
+/** 8-max Pot-Limit Omaha sit-n-go (single table — still only 8 seats). */
+export const DAT_PLO_SNG_8 = {
+  ...DAT_SNG_DEFAULTS,
+  maxSeats: 8,
+  variant: "plo4" as const,
+} as const;
+
+/**
+ * 16-player PLO sit-n-go: two 8-max tables, then an 8-max final.
+ * Same seating model as the NLHE 16-player SNG — never more than 8 at a table.
+ */
+export const DAT_PLO_MTT_16 = {
+  fieldSize: 16,
+  startingTableSeats: 8,
+  startingTableCount: 2,
+  finalTableSeats: 8,
+  maxHumans: 10,
+  variant: "plo4" as const,
+  buyInMojos: DAT_SNG_DEFAULTS.buyInMojos,
+  startingStackMojos: DAT_SNG_DEFAULTS.startingStackMojos,
+  handsPerLevel: DAT_SNG_DEFAULTS.handsPerLevel,
+  levelDurationMs: DAT_SNG_DEFAULTS.levelDurationMs,
+  fillHouse: true,
+  minHumansToStart: 1,
+  housePolicy: "mixed" as HousePolicy,
+  blindLevels: DAT_SNG_DEFAULTS.blindLevels,
+} as const;
+
+/** 500-player Pot-Limit Omaha MTT (8-max tables throughout). */
+export const DAT_PLO_MTT_500 = {
+  fieldSize: 500,
+  startingTableSeats: 8,
+  startingTableCount: 63,
+  finalTableSeats: 8,
+  maxHumans: 10,
+  variant: "plo4" as const,
+  buyInMojos: DAT_SNG_DEFAULTS.buyInMojos,
+  startingStackMojos: DAT_SNG_DEFAULTS.startingStackMojos,
+  handsPerLevel: DAT_SNG_DEFAULTS.handsPerLevel,
+  levelDurationMs: DAT_SNG_DEFAULTS.levelDurationMs,
+  fillHouse: true,
+  minHumansToStart: 1,
+  housePolicy: "mixed" as HousePolicy,
+  blindLevels: DAT_SNG_DEFAULTS.blindLevels,
+} as const;
+
 export function mttHousePlayerId(tableId: string, seatIndex: number): string {
   return `${HOUSE_PLAYER_PREFIX}${tableId}:${seatIndex}`;
 }

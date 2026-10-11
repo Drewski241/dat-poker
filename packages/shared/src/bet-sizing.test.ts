@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeNlheBetRange, snapRaiseTo, betSizePresets } from "./bet-sizing.js";
+import {
+  computeNlheBetRange,
+  potLimitMaxRaiseTo,
+  snapRaiseTo,
+  betSizePresets,
+} from "./bet-sizing.js";
 
 describe("computeNlheBetRange", () => {
   const bb = 10_000n;
@@ -40,6 +45,28 @@ describe("computeNlheBetRange", () => {
       lastRaiseIncrementMojos: bet,
     });
     expect(range.minRaiseTo).toBe(600_000n);
+  });
+
+  it("caps pot-limit raises to pot + current + to-call", () => {
+    // Pot 150, facing BB 100: max raise-to = 150 + 100 + 100 = 350
+    expect(
+      potLimitMaxRaiseTo({
+        potMojos: 150n,
+        currentBetMojos: 100n,
+        myBetThisStreetMojos: 0n,
+      }),
+    ).toBe(350n);
+    const range = computeNlheBetRange({
+      bigBlindMojos: 100n,
+      currentBetMojos: 100n,
+      myBetThisStreetMojos: 0n,
+      myStackMojos: 10_000n,
+      lastRaiseIncrementMojos: 100n,
+      potMojos: 150n,
+      bettingStructure: "pot-limit",
+    });
+    expect(range.maxRaiseTo).toBe(350n);
+    expect(range.minRaiseTo).toBe(200n);
   });
 });
 

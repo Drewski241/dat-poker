@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CAT_MOJOS_PER_TOKEN, computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatAmount, formatDatMojos, isHousePlayerId } from "@dat-poker/shared";
+import {
+  CAT_MOJOS_PER_TOKEN,
+  computeNlheBetRange,
+  DAT_TABLE_DEFAULTS,
+  formatDatAmount,
+  formatDatMojos,
+  isHousePlayerId,
+  isPotLimitVariant,
+} from "@dat-poker/shared";
 import {
   api,
   restoreApiAuthToken,
@@ -188,6 +196,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
   const [tableId, setTableId] = useState<string | null>(null);
   const [tableFormat, setTableFormat] = useState<"cash" | "sng" | "mtt">("cash");
+  const [tableVariant, setTableVariant] = useState<string>("nlhe");
   const [tableMaxSeats, setTableMaxSeats] = useState(6);
   const [sng, setSng] = useState<SngSnapshot | null>(null);
   const [lobbyTables, setLobbyTables] = useState<LobbyTable[]>([]);
@@ -346,6 +355,8 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setHandInProgress(t.handInProgress);
     setDealerButtonSeat(t.dealerButtonSeat ?? null);
     if (t.format) setTableFormat(t.format);
+    if (t.variant) setTableVariant(t.variant);
+    else if (t.sng?.variant) setTableVariant(t.sng.variant);
     if (t.maxSeats) setTableMaxSeats(t.maxSeats);
     setSng(t.sng ?? null);
     if (t.sng?.status === "finished" && playerId && !t.seats.some((s) => s.playerId === playerId)) {
@@ -829,7 +840,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setStatus(result.note);
     });
 
-  const joinTable = async () => {
+  const joinTable = async (variant: "nlhe" | "plo4" = "nlhe") => {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -852,13 +863,16 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         }
       }
 
-      setStatus("Joining 6-max table…");
+      const label = variant === "plo4" ? "6-max PLO" : "6-max Hold'em";
+      setStatus(`Joining ${label} table…`);
       const joined = await api.joinTable(playerId, buyIn, {
         // Free mint only for truly empty ledgers — never top up a short account.
         devAck: Boolean(datToken?.devBuyInEnabled && account === 0n && sage === 0n),
+        variant,
       });
       setTableId(joined.tableId);
       setTableFormat("cash");
+      setTableVariant(joined.variant ?? variant);
       setCashSittingOut(false);
       setTableMaxSeats(joined.maxSeats ?? 6);
       setSng(null);
@@ -928,6 +942,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
       setTableId(joined.tableId);
       setTableFormat("mtt");
+      setTableVariant(joined.variant ?? joined.sng?.variant ?? "nlhe");
       setTableMaxSeats(joined.maxSeats ?? 8);
       setSng(joined.sng ?? null);
       setTableFocusMode(true);
@@ -971,6 +986,95 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
       setTableId(joined.tableId);
       setTableFormat("mtt");
+      setTableVariant(joined.variant ?? joined.sng?.variant ?? "nlhe");
+      setTableMaxSeats(joined.maxSeats ?? 8);
+      setSng(joined.sng ?? null);
+      setTableFocusMode(true);
+      setTableSeats(joined.seats);
+      setHand(joined.hand);
+      setHandInProgress(joined.handInProgress);
+      await refreshAccount(playerId);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const joinMttPlo16 = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!playerId) throw new Error("Create an account or sign in first");
+      const ticker = datToken?.ticker ?? "DAT";
+      const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      const account = BigInt(accountMojos ?? "0");
+      if (account < BigInt(buyIn)) {
+        if (account > 0n) {
+          throw new Error(
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to buy in`,
+          );
+        }
+        if (!datToken?.devBuyInEnabled) {
+          throw new Error(
+            `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`,
+          );
+        }
+      }
+      setMttBrowseEventId(null);
+      setStatus("Joining 16-player PLO sit-n-go…");
+      const joined = await api.joinMttPlo16(playerId, buyIn, {
+        devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
+      });
+      setTableId(joined.tableId);
+      setTableFormat("mtt");
+      setTableVariant(joined.variant ?? joined.sng?.variant ?? "plo4");
+      setTableMaxSeats(joined.maxSeats ?? 8);
+      setSng(joined.sng ?? null);
+      setTableFocusMode(true);
+      setTableSeats(joined.seats);
+      setHand(joined.hand);
+      setHandInProgress(joined.handInProgress);
+      await refreshAccount(playerId);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const joinMttPlo500 = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!playerId) throw new Error("Create an account or sign in first");
+      const ticker = datToken?.ticker ?? "DAT";
+      const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      const account = BigInt(accountMojos ?? "0");
+      if (account < BigInt(buyIn)) {
+        if (account > 0n) {
+          throw new Error(
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to buy in`,
+          );
+        }
+        if (!datToken?.devBuyInEnabled) {
+          throw new Error(
+            `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`,
+          );
+        }
+      }
+      setMttBrowseEventId(null);
+      setStatus("Joining PLO 500-player MTT…");
+      const joined = await api.joinMttPlo500(playerId, buyIn, {
+        devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
+      });
+      setTableId(joined.tableId);
+      setTableFormat("mtt");
+      setTableVariant(joined.variant ?? joined.sng?.variant ?? "plo4");
       setTableMaxSeats(joined.maxSeats ?? 8);
       setSng(joined.sng ?? null);
       setTableFocusMode(true);
@@ -1013,7 +1117,51 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       });
       setTableId(joined.tableId);
       setTableFormat("sng");
+      setTableVariant(joined.variant ?? joined.sng?.variant ?? "nlhe");
       setTableMaxSeats(joined.maxSeats ?? 9);
+      setSng(joined.sng ?? null);
+      setTableFocusMode(true);
+      setTableSeats(joined.seats);
+      setHand(joined.hand);
+      setHandInProgress(joined.handInProgress);
+      await refreshAccount(playerId);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const joinSngPlo8 = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!playerId) throw new Error("Create an account or sign in first");
+      const ticker = datToken?.ticker ?? "DAT";
+      const buyIn = datToken?.minBuyInMojos ?? "1000000";
+      const account = BigInt(accountMojos ?? "0");
+      if (account < BigInt(buyIn)) {
+        if (account > 0n) {
+          throw new Error(
+            `Not enough DAT in your account — have ${formatDatMojos(account.toString(), ticker)}, need ${formatDatMojos(buyIn, ticker)} to buy in`,
+          );
+        }
+        if (!datToken?.devBuyInEnabled) {
+          throw new Error(
+            `Redeem ${formatDatMojos(datToken?.dailyRedeemMojos ?? "5000000", ticker)} today, then buy in`,
+          );
+        }
+      }
+      setStatus("Joining 8-max PLO sit-n-go…");
+      const joined = await api.joinSngPlo8(playerId, buyIn, {
+        devAck: Boolean(datToken?.devBuyInEnabled && account === 0n),
+      });
+      setTableId(joined.tableId);
+      setTableFormat("sng");
+      setTableVariant(joined.variant ?? joined.sng?.variant ?? "plo4");
+      setTableMaxSeats(joined.maxSeats ?? 8);
       setSng(joined.sng ?? null);
       setTableFocusMode(true);
       setTableSeats(joined.seats);
@@ -1365,6 +1513,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setHand(null);
     setHandResult(null);
     setTableFormat("cash");
+    setTableVariant("nlhe");
     setCashSittingOut(false);
     setTableMaxSeats(6);
     setTableFocusMode(true);
@@ -1529,6 +1678,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     }
   }, [hand?.lastRaiseIncrementMojos, bigBlindMojos]);
 
+  const potMojos = useMemo(() => {
+    try {
+      return BigInt(hand?.potMojos ?? "0");
+    } catch {
+      return 0n;
+    }
+  }, [hand?.potMojos]);
+
   const betRange = useMemo(
     () =>
       computeNlheBetRange({
@@ -1537,8 +1694,10 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         myBetThisStreetMojos: myBet,
         myStackMojos: myStack,
         lastRaiseIncrementMojos: lastRaiseIncrement,
+        potMojos,
+        bettingStructure: isPotLimitVariant(tableVariant) ? "pot-limit" : "no-limit",
       }),
-    [bigBlindMojos, currentBet, myBet, myStack, lastRaiseIncrement],
+    [bigBlindMojos, currentBet, myBet, myStack, lastRaiseIncrement, potMojos, tableVariant],
   );
 
   const actionSeatPlayer =
@@ -1550,7 +1709,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     actionSeatPlayer?.playerId === playerId &&
     Boolean(me && !me.folded && !me.allIn && BigInt(me.stackMojos) > 0n);
   const liveHandLabel =
-    me && me.holeCards.length > 0 ? describeLiveHand(me.holeCards, hand?.board ?? []) : null;
+    me && me.holeCards.length > 0
+      ? describeLiveHand(me.holeCards, hand?.board ?? [], tableVariant)
+      : null;
   const actionSecondsLeft = actionSecondsRemaining(turnElapsedMs);
   const showSlothReminder =
     slothPreview || (isMyAction && shouldShowSloth(turnElapsedMs, true));
@@ -1867,17 +2028,24 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         <section className="panel lobby-quick-start">
           <h2>Start a table</h2>
           <p className="muted small">
-            6-max cash, 9-max sit-n-go, <strong>16-player sit-n-go</strong> (two 8-max tables, then a final
-            table), or a <strong>{configuredMttLabel}</strong>. Daily redeem is 5000 DAT — separate from
-            tournament field sizes.
+            Hold&apos;em and <strong>Pot-Limit Omaha</strong>. Multi-table SNGs always seat{" "}
+            <strong>8 per table</strong> (16-player = two tables → final eight). Daily redeem is 5000 DAT.
           </p>
           <div className="lobby-quick-start-buttons">
             <button
               type="button"
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable()}
+              onClick={() => void joinTable("nlhe")}
             >
-              Buy in &amp; join 6-max ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+              6-max Hold&apos;em
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable("plo4")}
+            >
+              6-max PLO
             </button>
             <button
               type="button"
@@ -1885,8 +2053,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
               onClick={() => void joinSng()}
             >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
-              9-max SNG
+              9-max Hold&apos;em SNG
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinSngPlo8()}
+            >
+              8-max PLO SNG
             </button>
             <button
               type="button"
@@ -1894,8 +2069,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
               onClick={() => void joinMtt16()}
             >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
-              16-player SNG
+              16-player Hold&apos;em SNG
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinMttPlo16()}
+            >
+              16-player PLO SNG
             </button>
             <button
               type="button"
@@ -1903,8 +2085,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
               onClick={() => void joinMtt()}
             >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; join{" "}
               {configuredMttLabel}
+            </button>
+            <button
+              type="button"
+              className="secondary lobby-mtt-btn"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinMttPlo500()}
+            >
+              PLO 500 MTT
             </button>
           </div>
         </section>
@@ -2067,36 +2256,64 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         {!tableId ? (
           <>
             <h3 className="table-format-heading">6-max cash</h3>
-            <button
-              type="button"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable()}
-            >
-              Buy in &amp; join 6-max ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
-            </button>
-            <h3 className="table-format-heading">9-max sit-n-go</h3>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinSng()}
-            >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
-              9-max SNG
-            </button>
-            <h3 className="table-format-heading">16-player sit-n-go</h3>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinMtt16()}
-            >
-              Buy in {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} &amp; start
-              16-player SNG
-            </button>
+            <div className="row">
+              <button
+                type="button"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+                onClick={() => void joinTable("nlhe")}
+              >
+                Hold&apos;em 6-max
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+                onClick={() => void joinTable("plo4")}
+              >
+                PLO 6-max
+              </button>
+            </div>
+            <h3 className="table-format-heading">Sit-n-go (single table)</h3>
+            <div className="row">
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+                onClick={() => void joinSng()}
+              >
+                9-max Hold&apos;em SNG
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+                onClick={() => void joinSngPlo8()}
+              >
+                8-max PLO SNG
+              </button>
+            </div>
+            <h3 className="table-format-heading">16-player sit-n-go (8 per table)</h3>
+            <div className="row">
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+                onClick={() => void joinMtt16()}
+              >
+                Hold&apos;em 16 SNG
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+                onClick={() => void joinMttPlo16()}
+              >
+                PLO 16 SNG
+              </button>
+            </div>
             <p className="muted small">
-              Two 8-max tables, then an 8-max final. Up to {mtt16MaxHumans} humans per event; other seats are
-              house bots. Pays 1st–3rd 50% / 30% / 20%.
+              Always two 8-max tables, then an 8-max final — never more than 8 seated at once. Up to{" "}
+              {mtt16MaxHumans} humans; other seats are house bots. Pays 1st–3rd 50% / 30% / 20%.
             </p>
             <NftChallengePromoCard
               promo={mtt16NftPromo}
@@ -2118,19 +2335,27 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               onPromoUpdated={setMtt16NftPromo}
             />
             <h3 className="table-format-heading mtt-format-heading">{configuredMttLabel}</h3>
-            <button
-              type="button"
-              className="mtt-join-btn"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinMtt()}
-            >
-              Join tournament · {configuredMttLabel} (
-              {formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)} buy-in)
-            </button>
+            <div className="row">
+              <button
+                type="button"
+                className="mtt-join-btn"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+                onClick={() => void joinMtt()}
+              >
+                Hold&apos;em {configuredMttLabel}
+              </button>
+              <button
+                type="button"
+                className="mtt-join-btn secondary"
+                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+                onClick={() => void joinMttPlo500()}
+              >
+                PLO 500 MTT
+              </button>
+            </div>
             <p className="muted small">
-              <strong>{configuredMttLabel}</strong> — one event, many tables (use Active {configuredMttLabel}{" "}
-              events below to browse). Up to {mttMaxHumans} humans; other seats are house bots. Pays 1st–3rd
-              overall 50% / 30% / 20%. Each completed hand unlocks 1 DAT from account or prizes.
+              Large MTTs use <strong>8-max tables</strong> throughout. Up to {mttMaxHumans} humans; other seats
+              are house bots. Pays 1st–3rd overall 50% / 30% / 20%.
             </p>
             <NftChallengePromoCard
               promo={mtt500NftPromo}

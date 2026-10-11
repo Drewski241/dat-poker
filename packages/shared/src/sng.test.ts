@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DAT_MTT_DEFAULTS,
+  DAT_PLO_MTT_16,
+  DAT_PLO_MTT_500,
+  DAT_PLO_SNG_8,
   DAT_SNG_DEFAULTS,
   defaultSngPayouts,
   houseSeatPlayerId,
@@ -39,6 +42,19 @@ describe("SNG helpers", () => {
     expect(DAT_SNG_DEFAULTS.levelDurationMs).toBe(3 * 60 * 1000);
     expect(DAT_SNG_DEFAULTS.handsPerLevel).toBe(4);
     expect(DAT_SNG_DEFAULTS.blindLevels.length).toBeGreaterThan(1);
+  });
+
+  it("keeps all PLO multi-table products at 8 seats per table", () => {
+    expect(DAT_PLO_SNG_8.maxSeats).toBe(8);
+    expect(DAT_PLO_SNG_8.variant).toBe("plo4");
+    expect(DAT_PLO_MTT_16.fieldSize).toBe(16);
+    expect(DAT_PLO_MTT_16.startingTableSeats).toBe(8);
+    expect(DAT_PLO_MTT_16.finalTableSeats).toBe(8);
+    expect(DAT_PLO_MTT_16.startingTableCount).toBe(2);
+    expect(DAT_PLO_MTT_16.variant).toBe("plo4");
+    expect(DAT_PLO_MTT_500.startingTableSeats).toBe(8);
+    expect(DAT_PLO_MTT_500.finalTableSeats).toBe(8);
+    expect(DAT_PLO_MTT_500.variant).toBe("plo4");
   });
 
   it("raises the blind level on the clock and after enough hands", () => {

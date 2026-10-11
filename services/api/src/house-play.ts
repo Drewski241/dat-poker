@@ -29,6 +29,7 @@ export function playHouseIfDue(table: NlheTableEngine, random: () => number = Ma
         lastRaiseIncrementMojos: hand.lastRaiseIncrementMojos,
         opponentsAllIn,
         headsUp: live.length === 2,
+        variant: table.getConfig().variant,
       },
       random,
     );

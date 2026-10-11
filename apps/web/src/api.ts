@@ -195,6 +195,7 @@ export interface TableConfigResponse {
 
 export interface SngSnapshot {
   status: "registering" | "running" | "finished";
+  variant?: string;
   maxSeats: number;
   buyInMojos: string;
   prizePoolMojos: string;
@@ -261,6 +262,7 @@ export type Mtt500NftReward = Mtt16NftReward;
 export interface LobbyTable {
   tableId: string;
   format?: "cash" | "sng" | "mtt";
+  variant?: string;
   sng?: SngSnapshot | null;
   sngStatus?: string | null;
   handInProgress: boolean;
@@ -611,6 +613,7 @@ export const api = {
       tableId: string;
       maxSeats: number;
       format?: string;
+      variant?: string;
       humans?: number;
       handInProgress: boolean;
       seats: TableSeat[];
@@ -618,6 +621,32 @@ export const api = {
       lastHandResult: HandResult | null;
       sng?: SngSnapshot | null;
     }>("/v1/tables/join-sng", {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        buyInMojos,
+        ...options,
+      }),
+    }),
+
+  joinSngPlo8: (
+    playerId: string,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      maxSeats: number;
+      format?: string;
+      variant?: string;
+      humans?: number;
+      handInProgress: boolean;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+    }>("/v1/tables/join-sng-plo8", {
       method: "POST",
       body: JSON.stringify({
         playerId,
@@ -636,6 +665,7 @@ export const api = {
       tableId: string;
       maxSeats: number;
       format?: string;
+      variant?: string;
       humans?: number;
       handInProgress: boolean;
       seats: TableSeat[];
@@ -643,6 +673,32 @@ export const api = {
       lastHandResult: HandResult | null;
       sng?: SngSnapshot | null;
     }>("/v1/tables/join-mtt16", {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        buyInMojos,
+        ...options,
+      }),
+    }),
+
+  joinMttPlo16: (
+    playerId: string,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      maxSeats: number;
+      format?: string;
+      variant?: string;
+      humans?: number;
+      handInProgress: boolean;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+    }>("/v1/tables/join-mtt-plo16", {
       method: "POST",
       body: JSON.stringify({
         playerId,
@@ -661,6 +717,7 @@ export const api = {
       tableId: string;
       maxSeats: number;
       format?: string;
+      variant?: string;
       humans?: number;
       handInProgress: boolean;
       seats: TableSeat[];
@@ -668,6 +725,32 @@ export const api = {
       lastHandResult: HandResult | null;
       sng?: SngSnapshot | null;
     }>("/v1/tables/join-mtt", {
+      method: "POST",
+      body: JSON.stringify({
+        playerId,
+        buyInMojos,
+        ...options,
+      }),
+    }),
+
+  joinMttPlo500: (
+    playerId: string,
+    buyInMojos: string,
+    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      maxSeats: number;
+      format?: string;
+      variant?: string;
+      humans?: number;
+      handInProgress: boolean;
+      seats: TableSeat[];
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      sng?: SngSnapshot | null;
+    }>("/v1/tables/join-mtt-plo500", {
       method: "POST",
       body: JSON.stringify({
         playerId,
@@ -702,12 +785,13 @@ export const api = {
   joinTable: (
     playerId: string,
     buyInMojos: string,
-    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+    options?: { buyInProof?: BuyInProof; devAck?: boolean; variant?: string },
   ) =>
     request<{
       ok: boolean;
       tableId: string;
       maxSeats: number;
+      variant?: string;
       humans: number;
       handInProgress: boolean;
       smallBlindMojos?: string;
@@ -737,6 +821,7 @@ export const api = {
     request<{
       tableId: string;
       format?: "cash" | "sng" | "mtt";
+      variant?: string;
       maxSeats?: number;
       players: number;
       humans?: number;

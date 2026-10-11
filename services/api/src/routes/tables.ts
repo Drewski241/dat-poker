@@ -1,8 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
-import type { TableConfig, TableFormat } from "@dat-poker/shared";
+import type { PokerVariant, TableConfig, TableFormat } from "@dat-poker/shared";
 import {
   DAT_MTT_DEFAULTS,
+  DAT_PLO_MTT_16,
+  DAT_PLO_MTT_500,
+  DAT_PLO_SNG_8,
   DAT_SNG_DEFAULTS,
   DAT_TABLE_DEFAULTS,
   formatDatMojos,
@@ -125,7 +128,10 @@ export function lobbyPresence(): {
   };
 }
 
-function createTable(maxSeats = 6): { tableId: string; table: NlheTableEngine; config: TableConfig } {
+function createTable(
+  maxSeats = 6,
+  variant: PokerVariant = "nlhe",
+): { tableId: string; table: NlheTableEngine; config: TableConfig } {
   const id = randomUUID();
   const dat = readDatTokenConfig();
   const useDatStakes = Boolean(dat.assetId) || dat.devBuyInEnabled;
@@ -134,7 +140,7 @@ function createTable(maxSeats = 6): { tableId: string; table: NlheTableEngine; c
     : DAT_TABLE_DEFAULTS.minBuyInMojos;
   const config: TableConfig = {
     id,
-    variant: "nlhe",
+    variant,
     format: "cash",
     maxSeats,
     smallBlindMojos: BigInt(
@@ -288,6 +294,7 @@ function tableSnapshot(
     smallBlindMojos: table.getSmallBlindMojos().toString(),
     bigBlindMojos: table.getBigBlindMojos().toString(),
     format: table.getConfig().format,
+    variant: table.getConfig().variant,
     sng: tournamentSnapshot(tableId, viewerId),
     houseSeatsAvailable: table.houseSeats().length,
     full:
@@ -335,9 +342,17 @@ function findPlayerTable(playerId: string): { tableId: string; table: NlheTableE
   return null;
 }
 
-export function pickJoinableTable(): { tableId: string; table: NlheTableEngine } | null {
+export function pickJoinableTable(
+  variant: PokerVariant = "nlhe",
+): { tableId: string; table: NlheTableEngine } | null {
   const open = [...tables.entries()]
-    .filter(([, table]) => !isSngTable(table) && !table.isHandInProgress() && table.emptySeatIndex() !== null)
+    .filter(
+      ([, table]) =>
+        !isSngTable(table) &&
+        table.getConfig().variant === variant &&
+        !table.isHandInProgress() &&
+        table.emptySeatIndex() !== null,
+    )
     .sort((a, b) => humanCount(b[1]) - humanCount(a[1]));
   if (open.length === 0) {
     return null;
@@ -600,6 +615,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
         maxSeats: req.body.maxSeats,
         fillHouse: req.body.fillHouse,
         minHumansToStart: req.body.minHumansToStart,
+        variant: parsePokerVariant(req.body.variant),
       });
       return {
         tableId: created.tableId,
@@ -607,19 +623,25 @@ export function registerTableRoutes(app: FastifyInstance): void {
         sng: created.sng.snapshot(),
       };
     }
-    const created = createTable(req.body.maxSeats ?? 6);
+    const created = createTable(req.body.maxSeats ?? 6, parsePokerVariant(req.body.variant));
     return { tableId: created.tableId, config: created.config, sng: null };
   });
 
-  app.post<{
-    Body: {
-      playerId?: string;
-      buyInMojos?: string;
-      buyInProof?: BuyInProof;
-      devAck?: boolean;
-    };
-  }>("/v1/tables/join-sng", async (req, reply) => {
-    const session = requirePlayer(req, reply);
+  type JoinSngBody = {
+    playerId?: string;
+    buyInMojos?: string;
+    buyInProof?: BuyInProof;
+    devAck?: boolean;
+    maxSeats?: number;
+    variant?: string;
+  };
+
+  async function handleJoinSng(
+    req: { body: JoinSngBody; ip: string },
+    reply: Parameters<typeof requirePlayer>[1],
+    defaults: { maxSeats: number; variant: PokerVariant },
+  ) {
+    const session = requirePlayer(req as never, reply);
     if (!session) return;
     if (!sessionMatchesClaim(session, req.body.playerId)) {
       return reply.status(403).send({ error: "playerId does not match the signed-in account" });
@@ -629,6 +651,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
     const playerId = session.playerId;
     rememberLabel(playerId, session.displayAddress);
+    const variant = parsePokerVariant(req.body.variant, defaults.variant);
+    const maxSeats = req.body.maxSeats ?? defaults.maxSeats;
 
     const existing = findPlayerTable(playerId);
     if (existing) {
@@ -647,6 +671,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const joinable = [...sngByTable.entries()].find(([, sng]) => {
       if (sng.getStatus() === "finished") return false;
       if (sng.engine.isHandInProgress()) return false;
+      if (sng.engine.getConfig().variant !== variant) return false;
+      if (sng.maxSeats !== maxSeats) return false;
       return sng.engine.houseSeats().length > 0;
     });
 
@@ -682,7 +708,12 @@ export function registerTableRoutes(app: FastifyInstance): void {
       }
     }
 
-    const created = createSngTable({ fillHouse: true, minHumansToStart: 1 });
+    const created = createSngTable({
+      fillHouse: true,
+      minHumansToStart: 1,
+      maxSeats,
+      variant,
+    });
     const seat = created.table.emptySeatIndex() ?? 0;
     const buyIn = takeBuyInFromAccountOrProof({
       tableId: created.tableId,
@@ -716,7 +747,21 @@ export function registerTableRoutes(app: FastifyInstance): void {
       sngByTable.delete(created.tableId);
       return reply.status(400).send({ error: (e as Error).message });
     }
-  });
+  }
+
+  app.post<{ Body: JoinSngBody }>("/v1/tables/join-sng", async (req, reply) =>
+    handleJoinSng(req, reply, {
+      maxSeats: DAT_SNG_DEFAULTS.maxSeats,
+      variant: "nlhe",
+    }),
+  );
+
+  app.post<{ Body: JoinSngBody }>("/v1/tables/join-sng-plo8", async (req, reply) =>
+    handleJoinSng(req, reply, {
+      maxSeats: DAT_PLO_SNG_8.maxSeats,
+      variant: DAT_PLO_SNG_8.variant,
+    }),
+  );
 
   type JoinMttBody = {
     playerId?: string;
@@ -730,6 +775,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
     reply: Parameters<typeof requirePlayer>[1],
     fieldSize: number,
     maxHumans: number,
+    options?: {
+      variant?: PokerVariant;
+      startingTableSeats?: number;
+      finalTableSeats?: number;
+    },
   ) {
     const session = requirePlayer(req as never, reply);
     if (!session) return;
@@ -755,8 +805,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
     const dat = readDatTokenConfig();
     const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+    const variant = options?.variant ?? "nlhe";
+    const startingTableSeats = options?.startingTableSeats ?? DAT_MTT_DEFAULTS.startingTableSeats;
+    const finalTableSeats = options?.finalTableSeats ?? startingTableSeats;
 
-    const joinable = findJoinableMttEvent(playerId, fieldSize);
+    const joinable = findJoinableMttEvent(playerId, fieldSize, variant);
 
     if (joinable) {
       const house = joinable.firstHouseSeat()!;
@@ -790,7 +843,13 @@ export function registerTableRoutes(app: FastifyInstance): void {
       }
     }
 
-    const created = createMttEvent({ fieldSize, maxHumans });
+    const created = createMttEvent({
+      fieldSize,
+      maxHumans,
+      variant,
+      startingTableSeats,
+      finalTableSeats,
+    });
     const open = created.firstOpenSeat();
     if (!open) {
       return reply.status(500).send({ error: openMttEventLabel(fieldSize) });
@@ -834,6 +893,24 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
   app.post<{ Body: JoinMttBody }>("/v1/tables/join-mtt", async (req, reply) =>
     handleJoinMtt(req, reply, readMttFieldSize(), readMttMaxHumans()),
+  );
+
+  /** PLO 16-player SNG: two 8-max tables → 8-max final (same seating as NLHE 16). */
+  app.post<{ Body: JoinMttBody }>("/v1/tables/join-mtt-plo16", async (req, reply) =>
+    handleJoinMtt(req, reply, DAT_PLO_MTT_16.fieldSize, DAT_PLO_MTT_16.maxHumans, {
+      variant: DAT_PLO_MTT_16.variant,
+      startingTableSeats: DAT_PLO_MTT_16.startingTableSeats,
+      finalTableSeats: DAT_PLO_MTT_16.finalTableSeats,
+    }),
+  );
+
+  /** PLO 500-player MTT: 8-max tables throughout. */
+  app.post<{ Body: JoinMttBody }>("/v1/tables/join-mtt-plo500", async (req, reply) =>
+    handleJoinMtt(req, reply, DAT_PLO_MTT_500.fieldSize, DAT_PLO_MTT_500.maxHumans, {
+      variant: DAT_PLO_MTT_500.variant,
+      startingTableSeats: DAT_PLO_MTT_500.startingTableSeats,
+      finalTableSeats: DAT_PLO_MTT_500.finalTableSeats,
+    }),
   );
 
   app.post<{
@@ -906,6 +983,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       buyInMojos?: string;
       buyInProof?: BuyInProof;
       devAck?: boolean;
+      variant?: string;
     };
   }>("/v1/tables/join", async (req, reply) => {
     const session = requirePlayer(req, reply);
@@ -918,6 +996,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
     const playerId = session.playerId;
     rememberLabel(playerId, session.displayAddress);
+    const variant = parsePokerVariant(req.body.variant);
 
     const existing = findPlayerTable(playerId);
     if (existing) {
@@ -932,15 +1011,15 @@ export function registerTableRoutes(app: FastifyInstance): void {
 
     const dat = readDatTokenConfig();
     const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
-    let target = pickJoinableTable();
+    let target = pickJoinableTable(variant);
     if (!target) {
-      const created = createTable(6);
+      const created = createTable(6, variant);
       target = { tableId: created.tableId, table: created.table };
     }
 
     const seatIndex = target.table.emptySeatIndex();
     if (seatIndex === null) {
-      const created = createTable(6);
+      const created = createTable(6, variant);
       target = { tableId: created.tableId, table: created.table };
     }
     const seat = target.table.emptySeatIndex();
@@ -1338,7 +1417,23 @@ function readFillHouseDefault(): boolean {
   return true;
 }
 
-function createSngTable(options?: { maxSeats?: number; fillHouse?: boolean; minHumansToStart?: number }): {
+function parsePokerVariant(
+  raw: string | null | undefined,
+  fallback: PokerVariant = "nlhe",
+): PokerVariant {
+  if (raw === "plo4" || raw === "plo5" || raw === "plo6" || raw === "nlhe" || raw === "plhe") {
+    return raw;
+  }
+  if (raw === "plo") return "plo4";
+  return fallback;
+}
+
+function createSngTable(options?: {
+  maxSeats?: number;
+  fillHouse?: boolean;
+  minHumansToStart?: number;
+  variant?: PokerVariant;
+}): {
   tableId: string;
   table: NlheTableEngine;
   sng: SngTournament;
@@ -1349,6 +1444,7 @@ function createSngTable(options?: { maxSeats?: number; fillHouse?: boolean; minH
     fillHouse,
     minHumansToStart,
     maxSeats: options?.maxSeats ?? DAT_SNG_DEFAULTS.maxSeats,
+    variant: options?.variant ?? "nlhe",
   });
   const tableId = sng.engine.getConfig().id;
   tables.set(tableId, sng.engine);
@@ -1364,7 +1460,13 @@ function registerMttTables(mtt: MttEvent): void {
   }
 }
 
-function createMttEvent(options?: { fieldSize: number; maxHumans: number }): MttEvent {
+function createMttEvent(options?: {
+  fieldSize: number;
+  maxHumans: number;
+  variant?: PokerVariant;
+  startingTableSeats?: number;
+  finalTableSeats?: number;
+}): MttEvent {
   const fieldSize = options?.fieldSize ?? readMttFieldSize();
   const maxHumans = options?.maxHumans ?? readMttMaxHumans();
   const mtt = MttEvent.create({
@@ -1372,6 +1474,9 @@ function createMttEvent(options?: { fieldSize: number; maxHumans: number }): Mtt
     fillHouse: readFillHouseDefault(),
     minHumansToStart: 1,
     maxHumans,
+    variant: options?.variant ?? "nlhe",
+    startingTableSeats: options?.startingTableSeats,
+    finalTableSeats: options?.finalTableSeats,
   });
   registerMttTables(mtt);
   return mtt;
@@ -1388,9 +1493,14 @@ function uniqueMttEvents(): MttEvent[] {
   return out;
 }
 
-function findJoinableMttEvent(playerId: string, fieldSize: number): MttEvent | undefined {
+function findJoinableMttEvent(
+  playerId: string,
+  fieldSize: number,
+  variant: PokerVariant = "nlhe",
+): MttEvent | undefined {
   return uniqueMttEvents().find((mtt) => {
     if (mtt.fieldSize !== fieldSize) return false;
+    if (mtt.variant !== variant) return false;
     if (mtt.getStatus() === "finished") return false;
     if (!mtt.canAcceptHuman(playerId)) return false;
     return mtt.firstHouseSeat() !== null;

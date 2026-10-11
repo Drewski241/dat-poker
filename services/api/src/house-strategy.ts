@@ -1,10 +1,17 @@
 import {
   evaluateBestHand,
+  evaluateOmahaBestHand,
   rankValue,
   type Card,
   type PlayerAction,
 } from "@dat-poker/game-engine";
-import { computeNlheBetRange, snapRaiseTo } from "@dat-poker/shared";
+import {
+  computeNlheBetRange,
+  isOmahaVariant,
+  isPotLimitVariant,
+  snapRaiseTo,
+  type PokerVariant,
+} from "@dat-poker/shared";
 import type { Street } from "@dat-poker/shared";
 
 export interface HouseView {
@@ -20,6 +27,7 @@ export interface HouseView {
   opponentsAllIn: boolean;
   /** House vs one live opponent — always true at our 6-max fill seat. */
   headsUp?: boolean;
+  variant?: PokerVariant;
 }
 
 export interface HouseChoice {
@@ -43,7 +51,8 @@ export function chooseHouseAction(
   const passive: HouseChoice =
     toCall > 0n ? { action: "call", amountMojos: 0n } : { action: "check", amountMojos: 0n };
 
-  if (view.holeCards.length !== 2) {
+  const omaha = isOmahaVariant(view.variant) || view.holeCards.length >= 4;
+  if (view.holeCards.length < 2 || (view.holeCards.length !== 2 && !omaha)) {
     return passive;
   }
 
@@ -54,7 +63,7 @@ export function chooseHouseAction(
   const strength = estimateHouseStrength(view);
   const roll = () => clamp01(random());
 
-  if (view.street === "preflop" && view.headsUp) {
+  if (view.street === "preflop" && view.headsUp && !omaha) {
     return headsUpPreflop(view, toCall, roll);
   }
 
@@ -65,28 +74,32 @@ export function chooseHouseAction(
 }
 
 export function estimateHouseStrength(view: HouseView): number {
-  if (view.holeCards.length !== 2) {
+  const omaha = isOmahaVariant(view.variant) || view.holeCards.length >= 4;
+  if (view.holeCards.length < 2) {
     return 0;
   }
   if (view.street === "preflop" || view.board.length < 3) {
+    if (omaha) return omahaPreflopStrength(view.holeCards);
     return preflopStrength(view.holeCards[0], view.holeCards[1]);
   }
 
-  const hero = evaluateBestHand([...view.holeCards, ...view.board]);
+  const hero = omaha
+    ? evaluateOmahaBestHand(view.holeCards, view.board)
+    : evaluateBestHand([...view.holeCards, ...view.board]);
   let score = categoryScore(hero.category);
 
   if (hero.category === "pair") {
-    score = pairScore(view.holeCards, view.board);
+    score = omaha ? Math.min(0.42, score) : pairScore(view.holeCards, view.board);
   } else if (hero.category === "high_card") {
     score = 0.16 + Math.max(...view.holeCards.map((c) => rankValue(c.rank))) / 200;
   }
 
-  if (view.board.length === 5) {
+  if (view.board.length === 5 && !omaha) {
     const boardOnly = evaluateBestHand(view.board);
     if (hero.score <= boardOnly.score) {
       score = Math.min(score, 0.28);
     }
-  } else if (!holePlays(view.holeCards, view.board) && hero.category === "pair") {
+  } else if (!omaha && !holePlays(view.holeCards, view.board) && hero.category === "pair") {
     score = Math.min(score, 0.24);
   }
 
@@ -382,13 +395,31 @@ function raiseChoice(view: HouseView, potNum: number, potDen: number): HouseChoi
 }
 
 function betRange(view: HouseView) {
+  const potLimit =
+    isPotLimitVariant(view.variant) || isOmahaVariant(view.variant) || view.holeCards.length >= 4;
   return computeNlheBetRange({
     bigBlindMojos: view.bigBlindMojos,
     currentBetMojos: view.currentBetMojos,
     myBetThisStreetMojos: view.betThisStreetMojos,
     myStackMojos: view.stackMojos,
     lastRaiseIncrementMojos: view.lastRaiseIncrementMojos,
+    potMojos: view.potMojos,
+    bettingStructure: potLimit ? "pot-limit" : "no-limit",
   });
+}
+
+/** Rough PLO preflop: prefer double-suited / high pairs / rundowns. */
+function omahaPreflopStrength(hole: Card[]): number {
+  const ranks = hole.map((c) => rankValue(c.rank)).sort((a, b) => b - a);
+  const suits = hole.map((c) => c.suit);
+  const suitCounts = new Map<string, number>();
+  for (const s of suits) suitCounts.set(s, (suitCounts.get(s) ?? 0) + 1);
+  const maxSuit = Math.max(...suitCounts.values());
+  const uniqueRanks = new Set(ranks).size;
+  const pairBonus = 4 - uniqueRanks;
+  const high = (ranks[0] + ranks[1]) / 28;
+  const suitedBonus = maxSuit >= 3 ? 0.18 : maxSuit === 2 ? 0.1 : 0;
+  return clamp01(0.22 + high * 0.45 + pairBonus * 0.12 + suitedBonus);
 }
 
 function preflopStrength(a: Card, b: Card): number {
