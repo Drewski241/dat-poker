@@ -66,11 +66,24 @@ if ! grep -rq "join-mtt16" "$WEB_ROOT" 2>/dev/null; then
   echo "ERROR: join-mtt16 client missing from web dist" >&2
   exit 1
 fi
-if ! grep -rq "Join tournament" "$WEB_ROOT" 2>/dev/null; then
-  echo "ERROR: expected large-MTT Join tournament CTA missing from web dist" >&2
+# Large MTT routes (avoid matching join-mtt16 as a false positive for join-mtt).
+if ! grep -rq "join-mtt-plo500" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: join-mtt-plo500 client missing from web dist" >&2
   exit 1
 fi
-echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (16-player SNG + large MTT lobby OK)"
+if ! grep -rhoE '/v1/tables/join-mtt[a-z0-9-]*' "$WEB_ROOT" 2>/dev/null | grep -qx '/v1/tables/join-mtt'; then
+  echo "ERROR: large-MTT /v1/tables/join-mtt client missing from web dist" >&2
+  exit 1
+fi
+if ! grep -rq "6-max cash" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: expected Hold'em game-modes hero CTA missing from web dist" >&2
+  exit 1
+fi
+if ! grep -rq "PLO 500 MTT" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: expected PLO 500 MTT CTA missing from web dist" >&2
+  exit 1
+fi
+echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (game modes shelf + 16-player SNG + large MTT OK)"
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 mkdir -p "$INSTALL_ROOT/data/feedback"
 if [[ ! -f "$INSTALL_ROOT/data/accounts.json" ]]; then
