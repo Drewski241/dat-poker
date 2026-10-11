@@ -17,6 +17,7 @@ import {
   type HandHistoryEntry,
   type HandResult,
   type HandState,
+  type LedgerEvent,
   type PlayerAction,
   type PlaythroughInfo,
   type LobbyTable,
@@ -42,6 +43,7 @@ import {
   DailyRitualPanel,
   type DailyRitualInfo,
 } from "./components/DailyRitualPanel.js";
+import { AccountAuditPanel } from "./components/AccountAuditPanel.js";
 import { groupLobbyTables } from "./lobby-mtt.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
@@ -217,6 +219,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [tableFocusMode, setTableFocusMode] = useState(true);
   const [lobbyMoreGamesOpen, setLobbyMoreGamesOpen] = useState(false);
   const [dailyRitual, setDailyRitual] = useState<DailyRitualInfo | null>(null);
+  const [ledgerEvents, setLedgerEvents] = useState<LedgerEvent[]>([]);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
   const [dealerButtonSeat, setDealerButtonSeat] = useState<number | null>(null);
   const [handInProgress, setHandInProgress] = useState(false);
@@ -315,6 +318,12 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             } catch {
               /* older API */
             }
+            try {
+              const ledger = await api.ledger(40);
+              setLedgerEvents(ledger.events);
+            } catch {
+              /* older API */
+            }
           } catch {
             setApiAuthToken(null);
           }
@@ -375,6 +384,15 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setRedeemedToday(ritual.redeemedToday);
     } catch {
       /* ritual is optional for older API builds */
+    }
+  }, []);
+
+  const refreshLedger = useCallback(async () => {
+    try {
+      const ledger = await api.ledger(40);
+      setLedgerEvents(ledger.events);
+    } catch {
+      /* optional on older API builds */
     }
   }, []);
 
@@ -731,6 +749,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setUsername(result.username);
       if (result.sageAddress) setWalletAddress(result.sageAddress);
       await refreshAccount(result.playerId);
+      await refreshLedger();
     });
   };
 
@@ -754,6 +773,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setUsername(result.username);
       if (result.sageAddress) setWalletAddress(result.sageAddress);
       await refreshAccount(result.playerId);
+      await refreshLedger();
       setStatus(result.message);
     } catch (e) {
       setError((e as Error).message);
@@ -886,6 +906,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       if (result.playthrough) setAccountPlaythrough(result.playthrough);
       await refreshAccount(playerId);
       await refreshDailyRitual();
+      await refreshLedger();
       setStatus(result.note);
     });
 
@@ -2284,6 +2305,17 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           </>
         )}
       </section>
+
+      {playerId && (
+        <AccountAuditPanel
+          events={ledgerEvents}
+          ticker={datToken?.ticker}
+          busy={busy}
+          onRefresh={() => {
+            void refreshLedger();
+          }}
+        />
+      )}
 
       {playerId && (
       <section className="panel">

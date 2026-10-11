@@ -3278,6 +3278,76 @@ html.play-table-screen body {
   margin: 0.25rem 0;
 }
 
+.hand-history-fairness {
+  margin-top: 0.45rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed #2d3a4f;
+}
+
+.hand-history-fairness summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.fairness-ok {
+  color: #7dcea0;
+  font-weight: 600;
+}
+
+.fairness-bad {
+  color: #e07474;
+  font-weight: 600;
+}
+
+.fairness-line {
+  margin: 0.2rem 0;
+  word-break: break-all;
+}
+
+.lobby-account-audit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.lobby-account-audit-head h2 {
+  margin: 0;
+}
+
+.lobby-account-audit-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.lobby-account-audit-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: baseline;
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #2d3a4f;
+}
+
+.lobby-audit-type {
+  flex: 1 1 8rem;
+  font-weight: 600;
+}
+
+.lobby-audit-delta.pos {
+  color: #7dcea0;
+}
+
+.lobby-audit-delta.neg {
+  color: #e0a070;
+}
+
 .table-room-actions {
   flex-shrink: 0;
   overflow: hidden;

@@ -102,6 +102,14 @@ export interface HandResult {
   }[];
 }
 
+export interface HandHistoryFairness {
+  commitHash: string;
+  serverSeed: string;
+  playerSeeds: Record<string, string>;
+  verified: boolean;
+  deckPrefix?: string[];
+}
+
 export interface HandHistoryEntry {
   handId: string;
   completedAtMs: number;
@@ -120,6 +128,17 @@ export interface HandHistoryEntry {
     awardedMojos?: string;
   }[];
   auditIssues?: string[];
+  fairness?: HandHistoryFairness;
+}
+
+export interface LedgerEvent {
+  id: string;
+  atMs: number;
+  playerId: string;
+  type: string;
+  deltaMojos: string;
+  balanceAfterMojos: string;
+  ref?: string;
 }
 
 export interface WalletConnectConfig {
@@ -315,6 +334,11 @@ export const api = {
       nextRedeemAt: string;
       playthrough?: PlaythroughInfo;
     }>(`/v1/wallet/account?address=${encodeURIComponent(address)}`),
+
+  ledger: (limit = 40) =>
+    request<{ playerId: string; events: LedgerEvent[] }>(
+      `/v1/wallet/ledger?limit=${encodeURIComponent(String(limit))}`,
+    ),
 
   sessionChallenge: (address: string) =>
     request<{ nonce: string; message: string; expiresAt: string; note?: string }>(
