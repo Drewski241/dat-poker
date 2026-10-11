@@ -1830,6 +1830,14 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     [bigBlindMojos, currentBet, myBet, myStack, lastRaiseIncrement, potMojos, tableVariant],
   );
 
+  /** Pot-limit: all-in only as a short call, or when the shove fits in the pot max. */
+  const canAllIn = useMemo(() => {
+    if (myStack <= 0n) return false;
+    if (toCall >= myStack) return true;
+    if (!isPotLimitVariant(tableVariant)) return true;
+    return betRange.canBetOrRaise && betRange.maxRaiseTo >= myBet + myStack;
+  }, [myStack, toCall, tableVariant, betRange, myBet]);
+
   const actionSeatPlayer =
     hand?.actionSeat != null
       ? hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded)
@@ -2040,6 +2048,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             betRange={betRange}
             betAmountMojos={betAmountMojos}
             myStack={myStack}
+            canAllIn={canAllIn}
             onBetAmountChange={setBetAmountMojos}
             onSendAction={sendAction}
             onStartHand={startHandFlow}
