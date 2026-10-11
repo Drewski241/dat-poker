@@ -9,6 +9,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./card": {
+      "types": "./dist/card.d.ts",
+      "import": "./dist/card.js"
+    },
+    "./hand-evaluator": {
+      "types": "./dist/hand-evaluator.d.ts",
+      "import": "./dist/hand-evaluator.js"
     }
   },
   "scripts": {

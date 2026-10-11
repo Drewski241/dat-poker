@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPayoutOffer, readTreasuryServiceConfig } from "./payout.js";
+import { buildNftPayoutOffer, buildPayoutOffer, readTreasuryServiceConfig } from "./payout.js";
 
 describe("buildPayoutOffer", () => {
   const baseConfig = {
@@ -16,6 +16,16 @@ describe("buildPayoutOffer", () => {
     expect(result.mode).toBe("mock");
     expect(result.offer).toContain("mock-offer:");
     expect(result.offer).toContain("50000");
+  });
+
+  it("returns mock NFT offer with fee in mock mode", async () => {
+    const result = await buildNftPayoutOffer(baseConfig, {
+      address: "xch1abc",
+      nftId: "nft1mkl29gyx5z695mgkcmksezphpsnp70drl4dvpajh44z9kap4tgpqjt837h",
+    });
+    expect(result.mode).toBe("mock");
+    expect(result.offer).toContain("mock-nft-offer:");
+    expect(BigInt(result.feeMojos)).toBeGreaterThan(0n);
   });
 
   it("rejects zero payout", async () => {

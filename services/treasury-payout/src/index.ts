@@ -3,7 +3,13 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { buildPayoutOffer, readTreasuryServiceConfig, type PayoutRequestBody } from "./payout.js";
+import {
+  buildNftPayoutOffer,
+  buildPayoutOffer,
+  readTreasuryServiceConfig,
+  type NftPayoutRequestBody,
+  type PayoutRequestBody,
+} from "./payout.js";
 import { pingTreasuryWalletRpc } from "@dat-poker/chia-bridge";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,7 +35,24 @@ async function main(): Promise<void> {
       walletConfigured,
       walletRpcReachable,
       sageFingerprint: config.walletRpc.sageFingerprint ?? null,
+      nftPayoutFeeMojos: config.nftPayoutFeeMojos.toString(),
     };
+  });
+
+  app.post<{ Body: NftPayoutRequestBody }>("/nft-payout", async (req, reply) => {
+    try {
+      const result = await buildNftPayoutOffer(config, req.body);
+      return {
+        ok: true,
+        offer: result.offer,
+        mode: result.mode,
+        recipient: req.body.address,
+        nftId: req.body.nftId,
+        feeMojos: result.feeMojos,
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
   });
 
   app.post<{ Body: PayoutRequestBody }>("/payout", async (req, reply) => {
