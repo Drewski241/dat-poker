@@ -203,7 +203,10 @@ export function unseatInactivePlayers(
     if (inactiveForMs < threshold) continue;
     try {
       const cash = table.cashOutPlayer(seated.playerId);
-      creditAccount(seated.playerId, cash.stackMojos);
+      creditAccount(seated.playerId, cash.stackMojos, {
+        type: "table_return",
+        ref: tableId,
+      });
       syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId));
       clearBuyIn(tableId, seated.playerId);
       clearPlayerActivity(seated.playerId);
@@ -443,7 +446,10 @@ function takeBuyInFromAccountOrProof(params: {
   const account = getAccountBalance(params.playerId);
   if (account >= params.buyInMojos) {
     const { addedFreshMojos } = applyBuyInPlaythrough(params.playerId, params.buyInMojos, true);
-    debitAccount(params.playerId, params.buyInMojos);
+    debitAccount(params.playerId, params.buyInMojos, {
+      type: "buy_in",
+      ref: params.tableId,
+    });
     const buyInProof = params.buyInProof ?? {
       address: params.displayAddress,
       message: "account-credit",
@@ -719,7 +725,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
           ...tableSnapshot(tableId, sng.engine, playerId, maintenance),
         };
       } catch (e) {
-        if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+        if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
         if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
         return reply.status(400).send({ error: (e as Error).message });
       }
@@ -758,7 +764,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
         ...tableSnapshot(created.tableId, created.table, playerId, maintenance),
       };
     } catch (e) {
-      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
       if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
       tables.delete(created.tableId);
       sngByTable.delete(created.tableId);
@@ -975,7 +981,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
           ...tableSnapshot(house.tableId, table, playerId, maintenance),
         };
       } catch (e) {
-        if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+        if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
         if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
         return reply.status(400).send({ error: (e as Error).message });
       }
@@ -1018,7 +1024,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
         ...tableSnapshot(open.tableId, table, playerId, maintenance),
       };
     } catch (e) {
-      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
       if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
       teardownMttEvent(created);
       return reply.status(400).send({ error: (e as Error).message });
@@ -1109,7 +1115,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
         ...tableSnapshot(req.params.tableId, table, playerId, maintenance),
       };
     } catch (e) {
-      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos);
+      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
       if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
       return reply.status(400).send({ error: (e as Error).message });
     }
@@ -1191,7 +1197,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       };
     } catch (e) {
       if (buyIn.usedAccount) {
-        creditAccount(playerId, buyInMojos);
+        creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
       }
       if (buyIn.addedFreshMojos > 0n) {
         reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
@@ -1303,7 +1309,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return { ok: true };
     } catch (e) {
       if (buyIn.usedAccount) {
-        creditAccount(playerId, buyInMojos);
+        creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
       }
       if (buyIn.addedFreshMojos > 0n) {
         reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
@@ -1406,7 +1412,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       };
     } catch (e) {
       if (buyIn.usedAccount) {
-        creditAccount(playerId, buyInMojos);
+        creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
       }
       if (buyIn.addedFreshMojos > 0n) {
         reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
@@ -1525,7 +1531,7 @@ export function returnAllStacksToAccounts(): { returned: number } {
       }
       try {
         const cash = table.cashOutPlayer(seated.playerId);
-        creditAccount(seated.playerId, cash.stackMojos);
+        creditAccount(seated.playerId, cash.stackMojos, { type: "table_return" });
         syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId));
         clearBuyIn(tableId, seated.playerId);
         clearPlayerActivity(seated.playerId);
@@ -1698,7 +1704,10 @@ function autoFillAndStartSng(sng: SngTournament): void {
 
 function settleSngPrizes(sng: SngTournament): void {
   for (const row of sng.unpaidHumanPrizes()) {
-    creditAccount(row.playerId, row.prizeMojos);
+    creditAccount(row.playerId, row.prizeMojos, {
+      type: "prize",
+      ref: sng.engine.getConfig().id,
+    });
     sng.markPrizePaid(row.playerId);
     if (sng.freeroll && row.place >= 1 && row.place <= 3) {
       recordFreerollFinish(row.playerId, row.place);
@@ -1708,7 +1717,10 @@ function settleSngPrizes(sng: SngTournament): void {
 
 function settleMttPrizes(mtt: MttEvent): void {
   for (const row of mtt.unpaidHumanPrizes()) {
-    creditAccount(row.playerId, row.prizeMojos);
+    creditAccount(row.playerId, row.prizeMojos, {
+      type: "prize",
+      ref: mtt.eventId,
+    });
     mtt.markPrizePaid(row.playerId);
   }
   const tableId = mtt.tableIds()[0];

@@ -660,6 +660,10 @@ export class StudTableEngine {
         stackBeforePayoutMojos: p.stackMojos - (awardedByPlayer.get(p.playerId) ?? 0n),
         awardedMojos: awardedByPlayer.get(p.playerId) ?? 0n,
       })),
+      fairness:
+        h.serverSeed && h.commitHash
+          ? { commitHash: h.commitHash, serverSeed: h.serverSeed, playerSeeds: { ...h.playerSeeds } }
+          : undefined,
     };
     for (const p of h.players) {
       this.handsPlayed.set(p.playerId, (this.handsPlayed.get(p.playerId) ?? 0) + 1);
@@ -692,6 +696,10 @@ export class StudTableEngine {
         stackBeforePayoutMojos: p.playerId === winner.playerId ? p.stackMojos - awarded : p.stackMojos,
         awardedMojos: p.playerId === winner.playerId ? awarded : 0n,
       })),
+      fairness:
+        h.serverSeed && h.commitHash
+          ? { commitHash: h.commitHash, serverSeed: h.serverSeed, playerSeeds: { ...h.playerSeeds } }
+          : undefined,
     };
     for (const p of h.players) {
       this.handsPlayed.set(p.playerId, (this.handsPlayed.get(p.playerId) ?? 0) + 1);

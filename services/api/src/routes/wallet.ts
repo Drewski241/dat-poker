@@ -20,6 +20,7 @@ import {
   syncPlaythroughHeld,
   tryRedeemDaily,
 } from "../account-store.js";
+import { getLedgerEventsForPlayer } from "../ledger-journal.js";
 import {
   computeWithdrawPayout,
   readTreasuryPayoutConfig,
@@ -190,6 +191,17 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       redeemedToday: hasRedeemedToday(address, now),
       nextRedeemAt: nextRedeemAvailableAt(address, now),
       playthrough: pt,
+    };
+  });
+
+  app.get<{ Querystring: { limit?: string } }>("/v1/wallet/ledger", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    const limitRaw = Number(req.query.limit ?? 40);
+    const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, Math.floor(limitRaw))) : 40;
+    return {
+      playerId: session.playerId,
+      events: getLedgerEventsForPlayer(session.playerId, limit),
     };
   });
 
@@ -438,7 +450,10 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
             treasuryPayoutUrl: payoutConfig.treasuryPayoutUrl,
           });
           if (treasuryOffer) {
-            accountMojos = debitAccount(playerId, withdrawMojos);
+            accountMojos = debitAccount(playerId, withdrawMojos, {
+              type: "withdraw_sage",
+              ref: withdrawKey,
+            });
             mode = "offer";
             offer = treasuryOffer;
           }
@@ -593,7 +608,10 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     }
 
     const credited = cashOutToAccount ? stack : withdrawMojos;
-    const accountMojos = creditAccount(playerId, credited);
+    const accountMojos = creditAccount(playerId, credited, {
+      type: cashOutToAccount ? "cash_out" : "credit",
+      ref: withdrawKey,
+    });
     if (cashOutToAccount) {
       syncPlaythroughHeld(playerId, accountMojos);
       if (tableId) clearBuyIn(tableId, playerId);

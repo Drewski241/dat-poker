@@ -1,5 +1,6 @@
 export * from "./card.js";
 export * from "./shuffle.js";
+export * from "./fairness.js";
 export * from "./hand-evaluator.js";
 export * from "./lowball-evaluator.js";
 export * from "./nlhe-table.js";

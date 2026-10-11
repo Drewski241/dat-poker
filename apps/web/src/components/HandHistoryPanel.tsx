@@ -88,6 +88,31 @@ export function HandHistoryPanel({
                   })}
                 </div>
               )}
+              {hand.fairness && (
+                <details className="hand-history-fairness">
+                  <summary>
+                    Fairness{" "}
+                    <span className={hand.fairness.verified ? "fairness-ok" : "fairness-bad"}>
+                      {hand.fairness.verified ? "verified ✓" : "verify failed"}
+                    </span>
+                  </summary>
+                  <p className="muted small">
+                    Commit was published before deal; seeds are revealed after the hand so you can
+                    check the shuffle was fixed.
+                  </p>
+                  <p className="mono small fairness-line">
+                    commit {hand.fairness.commitHash.slice(0, 16)}…
+                  </p>
+                  <p className="mono small fairness-line">
+                    server {hand.fairness.serverSeed.slice(0, 16)}…
+                  </p>
+                  {hand.fairness.deckPrefix && hand.fairness.deckPrefix.length > 0 && (
+                    <p className="mono small fairness-line">
+                      deck {hand.fairness.deckPrefix.join(" ")}
+                    </p>
+                  )}
+                </details>
+              )}
             </li>
           );
         })}
