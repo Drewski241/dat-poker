@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DAT_DAILY_FREEROLL,
   DAT_MTT_DEFAULTS,
   DAT_PLO_MTT_16,
   DAT_PLO_MTT_500,
@@ -42,6 +43,14 @@ describe("SNG helpers", () => {
     expect(DAT_SNG_DEFAULTS.levelDurationMs).toBe(3 * 60 * 1000);
     expect(DAT_SNG_DEFAULTS.handsPerLevel).toBe(4);
     expect(DAT_SNG_DEFAULTS.blindLevels.length).toBeGreaterThan(1);
+  });
+
+  it("defines a free 6-max daily freeroll with a house-funded prize pool", () => {
+    expect(DAT_DAILY_FREEROLL.maxSeats).toBe(6);
+    expect(DAT_DAILY_FREEROLL.buyInMojos).toBe(0n);
+    expect(DAT_DAILY_FREEROLL.prizePoolMojos).toBe(3_000_000n);
+    expect(DAT_DAILY_FREEROLL.variant).toBe("nlhe");
+    expect(DAT_DAILY_FREEROLL.fillHouse).toBe(true);
   });
 
   it("keeps all PLO multi-table products at 8 seats per table", () => {

@@ -152,6 +152,41 @@ header h1 {
   border-color: rgba(240, 200, 80, 0.55);
 }
 
+.lobby-daily-ritual {
+  border-color: rgba(240, 200, 80, 0.4);
+}
+
+.lobby-ritual-badge {
+  margin: 0 0 0.45rem;
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  background: rgba(240, 200, 80, 0.15);
+  border: 1px solid rgba(240, 200, 80, 0.45);
+  color: #f0d878;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.lobby-ritual-stats {
+  margin: 0 0 0.75rem;
+}
+
+.lobby-ritual-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.lobby-ritual-actions button {
+  flex: 1 1 10rem;
+}
+
+.lobby-ritual-freeroll-btn {
+  background: linear-gradient(180deg, #e8c84a 0%, #c9a227 100%);
+  color: #1a1408;
+}
+
 .lobby-modes {
   display: flex;
   flex-direction: column;

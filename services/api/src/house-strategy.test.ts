@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseCard, type Card } from "@dat-poker/game-engine";
-import { chooseHouseAction, estimateHouseStrength, huPreflopScore, type HouseView } from "./house-strategy.js";
+import {
+  chooseHouseAction,
+  estimateHouseStrength,
+  huPreflopScore,
+  omahaDrawStrength,
+  type HouseView,
+} from "./house-strategy.js";
 
 function cards(...s: string[]): Card[] {
   return s.map(parseCard);
@@ -211,6 +217,74 @@ describe("house strategy", () => {
       potMojos: 30_000n,
     });
     expect(estimateHouseStrength(v)).toBeGreaterThan(0.45);
+    expect(chooseHouseAction(v, () => 0.5).action).toBe("call");
+  });
+
+  it("detects a legal Omaha flush draw (exactly two hole + two board)", () => {
+    const ok = omahaDrawStrength(cards("Ah", "Kh", "2c", "3d"), cards("Qh", "7h", "9c"));
+    expect(ok.flushDraw).toBe(true);
+    const fake = omahaDrawStrength(cards("Ah", "2c", "3d", "4s"), cards("Kh", "7h", "9c"));
+    expect(fake.flushDraw).toBe(false);
+  });
+
+  it("calls a priced Omaha wrap instead of folding", () => {
+    const v = view({
+      street: "flop",
+      variant: "plo4",
+      holeCards: cards("Jh", "Td", "9c", "8s"),
+      board: cards("7h", "6d", "2c"),
+      currentBetMojos: 20_000n,
+      potMojos: 80_000n,
+      stackMojos: 900_000n,
+      headsUp: true,
+    });
+    expect(estimateHouseStrength(v)).toBeGreaterThan(0.45);
+    expect(chooseHouseAction(v, () => 0.5).action).toBe("call");
+  });
+
+  it("checks Omaha air at short SPR instead of bluff-shoving", () => {
+    const v = view({
+      street: "flop",
+      variant: "plo4",
+      holeCards: cards("Ah", "7d", "3c", "2s"),
+      board: cards("Kc", "9h", "8d"),
+      potMojos: 200_000n,
+      stackMojos: 80_000n,
+      headsUp: true,
+    });
+    // Any pot bet commits the stack — drunk-bot mode used to shove; pot-odds path checks.
+    expect(chooseHouseAction(v, () => 0.05).action).toBe("check");
+  });
+
+  it("bets a smaller fraction of the pot with a deep-stack Omaha nutty hand", () => {
+    const v = view({
+      street: "flop",
+      variant: "plo4",
+      holeCards: cards("Ah", "Ad", "Kh", "Kd"),
+      board: cards("Ac", "Kc", "2s"),
+      potMojos: 90_000n,
+      stackMojos: 1_000_000n,
+      headsUp: true,
+    });
+    const choice = chooseHouseAction(v, () => 0.5);
+    expect(choice.action).toBe("bet");
+    // Prefer ~1/2 pot, not a stack shove.
+    expect(choice.amountMojos).toBeLessThan(v.stackMojos);
+    expect(choice.amountMojos).toBeLessThanOrEqual(60_000n);
+  });
+
+  it("calls an Omaha all-in when the price is right with a combo draw", () => {
+    const v = view({
+      street: "flop",
+      variant: "plo4",
+      holeCards: cards("Ah", "Kh", "Qd", "Jd"),
+      board: cards("Th", "9h", "2c"),
+      currentBetMojos: 25_000n,
+      potMojos: 120_000n,
+      opponentsAllIn: true,
+      headsUp: true,
+      stackMojos: 500_000n,
+    });
     expect(chooseHouseAction(v, () => 0.5).action).toBe("call");
   });
 });

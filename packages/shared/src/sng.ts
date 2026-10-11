@@ -80,6 +80,26 @@ export const DAT_PLO_SNG_8 = {
 } as const;
 
 /**
+ * Daily freeroll sit-n-go (beta ritual). Free entry; house-funded prize pool.
+ * 6-max for a quicker session than the standard 9-max SNG.
+ */
+export const DAT_DAILY_FREEROLL = {
+  maxSeats: 6,
+  variant: "nlhe" as const,
+  buyInMojos: 0n,
+  /** Table chips for the freeroll only (not deducted from account). */
+  startingStackMojos: DAT_SNG_DEFAULTS.startingStackMojos,
+  /** House-funded prizes split 50/30/20 among humans in the money. */
+  prizePoolMojos: 3_000_000n,
+  fillHouse: true,
+  minHumansToStart: 1,
+  housePolicy: "mixed" as HousePolicy,
+  handsPerLevel: DAT_SNG_DEFAULTS.handsPerLevel,
+  levelDurationMs: DAT_SNG_DEFAULTS.levelDurationMs,
+  blindLevels: DAT_SNG_DEFAULTS.blindLevels,
+} as const;
+
+/**
  * 16-player PLO sit-n-go: two 8-max tables, then an 8-max final.
  * Same seating model as the NLHE 16-player SNG — never more than 8 at a table.
  */

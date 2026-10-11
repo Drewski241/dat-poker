@@ -30,6 +30,10 @@ export interface SngOptions {
   levelDurationMs?: number;
   blindLevels?: SngBlindLevel[];
   payouts?: SngPayoutShare[];
+  /** Daily freeroll (free entry; prize pool may be house-funded). */
+  freeroll?: boolean;
+  /** When set, used as prize pool instead of buyIn × seats. */
+  prizePoolOverrideMojos?: bigint;
 }
 
 export interface SngSnapshot {
@@ -62,6 +66,7 @@ export interface SngSnapshot {
   maxHumans?: number;
   houseSeatsAvailable: number;
   placements: SngPlacement[];
+  freeroll?: boolean;
   kind?: "sng" | "mtt";
   eventId?: string;
   tableLabel?: string;
@@ -85,6 +90,8 @@ export class SngTournament {
   readonly maxSeats: number;
   readonly buyInMojos: bigint;
   readonly startingStackMojos: bigint;
+  readonly freeroll: boolean;
+  private readonly prizePoolOverrideMojos: bigint | null;
   private readonly blindLevels: SngBlindLevel[];
   private readonly payoutShares: SngPayoutShare[];
   private readonly handsPerLevel: number;
@@ -101,6 +108,9 @@ export class SngTournament {
     this.maxSeats = options.maxSeats ?? DAT_SNG_DEFAULTS.maxSeats;
     this.buyInMojos = options.buyInMojos ?? DAT_SNG_DEFAULTS.buyInMojos;
     this.startingStackMojos = options.startingStackMojos ?? DAT_SNG_DEFAULTS.startingStackMojos;
+    this.freeroll = Boolean(options.freeroll);
+    this.prizePoolOverrideMojos =
+      options.prizePoolOverrideMojos != null ? options.prizePoolOverrideMojos : null;
     this.fillHouse = options.fillHouse ?? DAT_SNG_DEFAULTS.fillHouse;
     this.minHumansToStart = options.minHumansToStart ?? DAT_SNG_DEFAULTS.minHumansToStart;
     this.housePolicy = options.housePolicy ?? DAT_SNG_DEFAULTS.housePolicy;
@@ -142,6 +152,9 @@ export class SngTournament {
 
   /** Buy-in from every seated player (human and house) once the SNG is running. */
   get prizePoolMojos(): bigint {
+    if (this.prizePoolOverrideMojos != null) {
+      return this.prizePoolOverrideMojos;
+    }
     const seats =
       this.status === "registering"
         ? this.engine.getSeatedPlayers().length
@@ -293,6 +306,7 @@ export class SngTournament {
       humanCount: this.humanCount(),
       houseSeatsAvailable: this.engine.houseSeats().length,
       placements: [...this.placements],
+      freeroll: this.freeroll || undefined,
     };
   }
 

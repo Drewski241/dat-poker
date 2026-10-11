@@ -38,6 +38,10 @@ import {
   LobbyModesShelf,
   type LobbyModeAction,
 } from "./components/LobbyModesShelf.js";
+import {
+  DailyRitualPanel,
+  type DailyRitualInfo,
+} from "./components/DailyRitualPanel.js";
 import { groupLobbyTables } from "./lobby-mtt.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
@@ -212,6 +216,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   /** When seated: full-screen table vs lobby (account, withdraw, leave). */
   const [tableFocusMode, setTableFocusMode] = useState(true);
   const [lobbyMoreGamesOpen, setLobbyMoreGamesOpen] = useState(false);
+  const [dailyRitual, setDailyRitual] = useState<DailyRitualInfo | null>(null);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
   const [dealerButtonSeat, setDealerButtonSeat] = useState<number | null>(null);
   const [handInProgress, setHandInProgress] = useState(false);
@@ -293,6 +298,23 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
             setAccountMojos(acc.balanceMojos);
             setRedeemedToday(acc.redeemedToday);
             setAccountPlaythrough(acc.playthrough ?? null);
+            try {
+              const ritual = await api.dailyRitual();
+              setDailyRitual({
+                freerollAvailable: ritual.freerollAvailable,
+                freerollEnteredToday: ritual.freerollEnteredToday,
+                streakDays: ritual.streakDays,
+                freerollWins: ritual.freerollWins,
+                badge: ritual.badge,
+                redeemedToday: ritual.redeemedToday,
+                freeroll: {
+                  maxSeats: ritual.freeroll.maxSeats,
+                  prizePoolMojos: ritual.freeroll.prizePoolMojos,
+                },
+              });
+            } catch {
+              /* older API */
+            }
           } catch {
             setApiAuthToken(null);
           }
@@ -333,6 +355,27 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
     setAccountMojos(acc.balanceMojos);
     setRedeemedToday(acc.redeemedToday);
     setAccountPlaythrough(acc.playthrough ?? null);
+  }, []);
+
+  const refreshDailyRitual = useCallback(async () => {
+    try {
+      const ritual = await api.dailyRitual();
+      setDailyRitual({
+        freerollAvailable: ritual.freerollAvailable,
+        freerollEnteredToday: ritual.freerollEnteredToday,
+        streakDays: ritual.streakDays,
+        freerollWins: ritual.freerollWins,
+        badge: ritual.badge,
+        redeemedToday: ritual.redeemedToday,
+        freeroll: {
+          maxSeats: ritual.freeroll.maxSeats,
+          prizePoolMojos: ritual.freeroll.prizePoolMojos,
+        },
+      });
+      setRedeemedToday(ritual.redeemedToday);
+    } catch {
+      /* ritual is optional for older API builds */
+    }
   }, []);
 
   const clearBetweenHandsCinema = useCallback(() => {
@@ -842,8 +885,41 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       setRedeemedToday(true);
       if (result.playthrough) setAccountPlaythrough(result.playthrough);
       await refreshAccount(playerId);
+      await refreshDailyRitual();
       setStatus(result.note);
     });
+
+  const joinDailyFreeroll = () => {
+    if (busy) return;
+    void run("Joining daily freeroll…", async () => {
+      if (!playerId) throw new Error("Create an account or sign in first");
+      const joined = await api.joinDailyFreeroll(playerId);
+      setTableId(joined.tableId);
+      setTableFormat("sng");
+      setTableVariant(joined.variant ?? "nlhe");
+      setCashSittingOut(false);
+      setTableMaxSeats(joined.maxSeats ?? 6);
+      setSng(joined.sng ?? null);
+      setTableFocusMode(true);
+      if (joined.ritual) {
+        setDailyRitual({
+          freerollAvailable: joined.ritual.freerollAvailable,
+          freerollEnteredToday: joined.ritual.freerollEnteredToday,
+          streakDays: joined.ritual.streakDays,
+          freerollWins: joined.ritual.freerollWins,
+          badge: joined.ritual.badge,
+          redeemedToday,
+          freeroll: dailyRitual?.freeroll ?? {
+            maxSeats: joined.maxSeats ?? 6,
+            prizePoolMojos: "3000000",
+          },
+        });
+      } else {
+        await refreshDailyRitual();
+      }
+      setStatus("Daily freeroll — free entry · house-funded prizes");
+    });
+  };
 
   const joinTable = async (variant: string = "nlhe") => {
     if (busy) return;
@@ -2015,7 +2091,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 : sng?.kind === "mtt"
                   ? (sng.tableLabel ?? "16-max SNG")
                   : tableFormat === "sng"
-                    ? "9-max SNG"
+                    ? sng?.freeroll
+                      ? `Daily freeroll · ${tableMaxSeats}-max`
+                      : `${sng?.maxSeats ?? tableMaxSeats}-max SNG`
                     : "6-max"
             }
             sng={tableFormat === "sng" || tableFormat === "mtt" ? sng : null}
@@ -2079,19 +2157,30 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       {status && <div className="banner info">{status}</div>}
 
       {!tableId && playerId && (
-        <section className="panel lobby-quick-start">
-          <h2>Game modes</h2>
-          <p className="muted small">
-            Hold&apos;em first. Omaha and tournaments next. Daily redeem is 5000 DAT.
-          </p>
-          <LobbyModesShelf
-            disabled={busy || !apiOk || !datToken?.buyInReady}
-            mttLabel={configuredMttLabel}
-            moreOpen={lobbyMoreGamesOpen}
-            onToggleMore={() => setLobbyMoreGamesOpen((open) => !open)}
-            onAction={runLobbyModeAction}
+        <>
+          <DailyRitualPanel
+            ritual={dailyRitual}
+            busy={busy}
+            buyInReady={Boolean(apiOk && datToken?.buyInReady)}
+            ticker={datToken?.ticker}
+            dailyRedeemMojos={datToken?.dailyRedeemMojos ?? "5000000"}
+            onRedeem={redeemDaily}
+            onPlayFreeroll={joinDailyFreeroll}
           />
-        </section>
+          <section className="panel lobby-quick-start">
+            <h2>Game modes</h2>
+            <p className="muted small">
+              Hold&apos;em first. Omaha and tournaments next. Daily redeem is 5000 DAT.
+            </p>
+            <LobbyModesShelf
+              disabled={busy || !apiOk || !datToken?.buyInReady}
+              mttLabel={configuredMttLabel}
+              moreOpen={lobbyMoreGamesOpen}
+              onToggleMore={() => setLobbyMoreGamesOpen((open) => !open)}
+              onAction={runLobbyModeAction}
+            />
+          </section>
+        </>
       )}
 
       {!tableId && !playerId && (

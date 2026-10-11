@@ -280,4 +280,21 @@ describe("SngTournament", () => {
     expect(snap.houseSeatsAvailable).toBe(0);
     expect(sng.engine.getActivePlayerCount()).toBe(2);
   });
+
+  it("uses a house-funded prize pool for freeroll SNGs", () => {
+    const sng = SngTournament.create("sng-freeroll", {
+      maxSeats: 6,
+      buyInMojos: 0n,
+      freeroll: true,
+      prizePoolOverrideMojos: 3_000_000n,
+      fillHouse: true,
+      minHumansToStart: 1,
+    });
+    sng.engine.seatPlayer("alice", 0, DAT_SNG_DEFAULTS.startingStackMojos);
+    sng.fillHouseSeats();
+    sng.start();
+    expect(sng.freeroll).toBe(true);
+    expect(sng.prizePoolMojos).toBe(3_000_000n);
+    expect(sng.snapshot().prizePoolMojos).toBe(3_000_000n);
+  });
 });
