@@ -53,3 +53,28 @@ export async function requestTreasuryOffer(params: {
   const body = (await res.json()) as { offer?: string };
   return body.offer?.trim() || null;
 }
+
+export async function requestTreasuryNftOffer(params: {
+  nftId: string;
+  recipientAddress: string;
+  treasuryNftPayoutUrl: string;
+}): Promise<{ offer: string; feeMojos: string | null } | null> {
+  const res = await fetch(params.treasuryNftPayoutUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      nftId: params.nftId,
+      address: params.recipientAddress,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Treasury NFT payout failed (${res.status}): ${text || res.statusText}`);
+  }
+
+  const body = (await res.json()) as { offer?: string; feeMojos?: string };
+  const offer = body.offer?.trim();
+  if (!offer) return null;
+  return { offer, feeMojos: body.feeMojos?.trim() || null };
+}

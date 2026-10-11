@@ -91,3 +91,17 @@ export const POKER_VARIANTS: VariantMeta[] = [
 export function getVariantMeta(id: PokerVariant): VariantMeta | undefined {
   return POKER_VARIANTS.find((v) => v.id === id);
 }
+
+export function isOmahaVariant(id: PokerVariant | string | null | undefined): boolean {
+  return id === "plo4" || id === "plo5" || id === "plo6";
+}
+
+export function isPotLimitVariant(id: PokerVariant | string | null | undefined): boolean {
+  if (!id) return false;
+  return getVariantMeta(id as PokerVariant)?.bettingStructure === "pot-limit";
+}
+
+export function holeCardCountForVariant(id: PokerVariant | string | null | undefined): number {
+  if (!id) return 2;
+  return getVariantMeta(id as PokerVariant)?.holeCards ?? 2;
+}

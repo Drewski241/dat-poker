@@ -71,13 +71,15 @@ Use a **dedicated machine** (or VM) that players never access directly.
    ```bash
    curl -s http://localhost:4200/health | jq
    ```
-   Expect `"walletRpcReachable": true`.
+   Expect `"walletRpcReachable": true`. Health also reports `nftPayoutFeeMojos` (XCH fee attached to NFT gift offers).
 
-7. **Lock down networking**:
+7. **NFT gift offers** (16-player SNG challenge): `POST /nft-payout` with `{ "nftId": "nft1…", "address": "xch1…" }`. Set `TREASURY_NFT_PAYOUT_FEE_MOJOS` (default `500000000` = 0.0005 XCH). Game API calls this when a player wins the configured number of 16-player SNGs.
+
+8. **Lock down networking**:
    - Sage RPC **9257** — localhost only (never expose)
    - Treasury **4200** — allow **only** your game API server IP
 
-8. **On the game host**, set:
+9. **On the game host**, set:
    ```env
    DAT_TREASURY_PAYOUT_URL=http://<TREASURY_PRIVATE_IP>:4200/payout
    ```
