@@ -56,6 +56,8 @@ type Props = {
   betRange: ReturnType<typeof computeNlheBetRange>;
   betAmountMojos: bigint;
   myStack: bigint;
+  /** False under pot-limit when a shove would exceed the pot-sized max. */
+  canAllIn?: boolean;
   onBetAmountChange: (v: bigint) => void;
   onSendAction: (action: PlayerAction, amountMojos?: string, discardIndexes?: number[]) => void;
   onStartHand: () => void;
@@ -103,6 +105,7 @@ export function TableRoom({
   betRange,
   betAmountMojos,
   myStack,
+  canAllIn = true,
   onBetAmountChange,
   onSendAction,
   onStartHand,
@@ -680,7 +683,7 @@ export function TableRoom({
                     {formatDatMojos(betAmountMojos.toString(), datToken?.ticker)}
                   </button>
                 )}
-                {myStack > 0n && (
+                {canAllIn && myStack > 0n && (
                   <button type="button" disabled={busy} onClick={() => onSendAction("all-in")}>
                     all-in
                   </button>

@@ -44,6 +44,63 @@ describe("PLO table engine", () => {
     }
   });
 
+  it("rejects an all-in shove that exceeds the pot-limit maximum", () => {
+    const table = new NlheTableEngine(ploCash);
+    table.seatPlayer("alice", 0, 5_000n);
+    table.seatPlayer("bob", 1, 5_000n);
+    table.startHand("plo-allin");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+    const state = table.getHandState()!;
+    const actor = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    const toCall =
+      state.currentBetMojos > actor.betThisStreetMojos
+        ? state.currentBetMojos - actor.betThisStreetMojos
+        : 0n;
+    const potMax = state.potMojos + state.currentBetMojos + toCall;
+    expect(actor.stackMojos + actor.betThisStreetMojos).toBeGreaterThan(potMax);
+    expect(() => table.applyAction(actor.playerId, "all-in")).toThrow(/pot-limit/i);
+    // Actor still to act with a full stack — action did not commit chips.
+    const after = table.getHandState()!;
+    expect(after.actionSeat).toBe(state.actionSeat);
+    const still = after.players.find((p) => p.playerId === actor.playerId)!;
+    expect(still.stackMojos).toBe(actor.stackMojos);
+    expect(still.allIn).toBe(false);
+  });
+
+  it("allows a short all-in call under pot-limit", () => {
+    const table = new NlheTableEngine({
+      ...ploCash,
+      id: "plo-short-allin",
+      minBuyInMojos: 100n,
+    });
+    // Deep SB / short BB — after blinds BB has almost nothing left vs a pot raise.
+    table.seatPlayer("alice", 0, 5_000n);
+    table.seatPlayer("bob", 1, 120n);
+    table.startHand("plo-short");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+    const state = table.getHandState()!;
+    const first = state.players.find((p) => p.seatIndex === state.actionSeat)!;
+    // Heads-up: SB acts first preflop.
+    expect(first.playerId).toBe("alice");
+    const toCall =
+      state.currentBetMojos > first.betThisStreetMojos
+        ? state.currentBetMojos - first.betThisStreetMojos
+        : 0n;
+    const potMax = state.potMojos + state.currentBetMojos + toCall;
+    table.applyAction("alice", "raise", potMax);
+
+    const bobTurn = table.getHandState()!;
+    const bob = bobTurn.players.find((p) => p.playerId === "bob")!;
+    expect(bobTurn.actionSeat).toBe(bob.seatIndex);
+    const need = bobTurn.currentBetMojos - bob.betThisStreetMojos;
+    expect(bob.stackMojos).toBeLessThanOrEqual(need);
+    expect(() => table.applyAction("bob", "all-in")).not.toThrow();
+  });
+
   it("builds a 16-player PLO SNG as two 8-max tables", () => {
     const event = MttEvent.create({
       fieldSize: 16,

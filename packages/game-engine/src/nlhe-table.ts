@@ -625,6 +625,26 @@ export class NlheTableEngine {
         break;
       }
       case "all-in": {
+        const toCall =
+          h.currentBetMojos > player.betThisStreetMojos
+            ? h.currentBetMojos - player.betThisStreetMojos
+            : 0n;
+        const stackMax = player.betThisStreetMojos + player.stackMojos;
+
+        if (isPotLimitVariant(this.config.variant)) {
+          // Short all-in call is always legal. A shove that raises must fit in the pot.
+          if (player.stackMojos > toCall) {
+            const potMax = potLimitMaxRaiseTo({
+              potMojos: h.potMojos,
+              currentBetMojos: h.currentBetMojos,
+              myBetThisStreetMojos: player.betThisStreetMojos,
+            });
+            if (stackMax > potMax) {
+              throw new Error("All-in exceeds the pot-limit maximum");
+            }
+          }
+        }
+
         const add = player.stackMojos;
         this.charge(player, h, add);
         player.allIn = true;
