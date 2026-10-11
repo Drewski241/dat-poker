@@ -2,7 +2,12 @@ import { describe, expect, it, beforeEach } from "vitest";
 import Fastify from "fastify";
 import { serializeForJson } from "./serialize.js";
 import { resetAccountsForTests, tryRedeemDaily } from "./account-store.js";
-import { registerTableRoutes, resetTablesForTests, returnAllStacksToAccounts } from "./routes/tables.js";
+import {
+  clearTableStateForTests,
+  registerTableRoutes,
+  resetTablesForTests,
+  returnAllStacksToAccounts,
+} from "./routes/tables.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
 import { registerSessionRoutes } from "./routes/session.js";
@@ -683,6 +688,106 @@ describe("6-max join + daily redeem", () => {
     });
     expect(blocked.statusCode).toBe(400);
     expect(JSON.parse(blocked.body).error).toMatch(/Play through/i);
+    await app.close();
+  });
+});
+
+describe("daily freeroll ritual", () => {
+  beforeEach(() => {
+    process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
+    process.env.DAT_ACCOUNTS_PATH = "memory";
+    process.env.DAT_LEDGER_PATH = "memory";
+    process.env.DAT_RITUAL_PATH = "memory";
+    process.env.DAT_SCRYPT_N = "4096";
+    process.env.DAT_EMAIL_MODE = "memory";
+    process.env.DAT_PLAY_COMPLIANCE_MODE = "test";
+    process.env.DAT_TERMS_ACCEPTANCE_PATH = "memory";
+    resetMailOutboxForTests();
+    resetTablesForTests();
+    resetAccountsForTests();
+    resetPlayerSessionsForTests();
+    resetUsersForTests();
+    resetIpRateLimitsForTests();
+    process.env.DAT_ALLOW_DEV_BUYIN = "true";
+    process.env.DAT_MIN_BUY_IN_MOJOS = "1000000";
+    process.env.DAT_DAILY_REDEEM_MOJOS = "5000000";
+  });
+
+  it("seats a free 6-max freeroll once per UTC day and reports ritual state", async () => {
+    const app = await buildApp();
+    const alice = issueTestSession("xch1ritual");
+
+    const ritual = await app.inject({
+      method: "GET",
+      url: "/v1/ritual/daily",
+      headers: auth(alice.token),
+    });
+    expect(ritual.statusCode).toBe(200);
+    const before = JSON.parse(ritual.body);
+    expect(before.freerollAvailable).toBe(true);
+    expect(before.freeroll.maxSeats).toBe(6);
+    expect(before.freeroll.prizePoolMojos).toBe("3000000");
+
+    const join = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-daily-freeroll",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId },
+    });
+    expect(join.statusCode).toBe(200);
+    const seated = JSON.parse(join.body);
+    expect(seated.ok).toBe(true);
+    expect(seated.freeroll).toBe(true);
+    expect(seated.maxSeats).toBe(6);
+    expect(seated.sng?.prizePoolMojos).toBe("3000000");
+    expect(seated.ritual?.freerollEnteredToday).toBe(true);
+    expect(seated.ritual?.streakDays).toBe(1);
+
+    const again = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-daily-freeroll",
+      headers: auth(alice.token),
+      payload: { playerId: alice.session.playerId },
+    });
+    expect(again.statusCode).toBe(200);
+    const rejoin = JSON.parse(again.body);
+    expect(rejoin.joinedExisting).toBe(true);
+    expect(rejoin.tableId).toBe(seated.tableId);
+
+    await app.close();
+  });
+
+  it("rejects a second freeroll entry after leaving the table the same UTC day", async () => {
+    const app = await buildApp();
+    const bob = issueTestSession("xch1ritual2");
+
+    const join = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-daily-freeroll",
+      headers: auth(bob.token),
+      payload: { playerId: bob.session.playerId },
+    });
+    expect(join.statusCode).toBe(200);
+
+    clearTableStateForTests();
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/v1/tables/join-daily-freeroll",
+      headers: auth(bob.token),
+      payload: { playerId: bob.session.playerId },
+    });
+    expect(blocked.statusCode).toBe(400);
+    expect(JSON.parse(blocked.body).error).toMatch(/already played today/i);
+
+    const ritual = await app.inject({
+      method: "GET",
+      url: "/v1/ritual/daily",
+      headers: auth(bob.token),
+    });
+    expect(ritual.statusCode).toBe(200);
+    expect(JSON.parse(ritual.body).freerollAvailable).toBe(false);
+
     await app.close();
   });
 });

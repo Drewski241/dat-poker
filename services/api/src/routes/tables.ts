@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { PokerVariant, TableConfig, TableFormat } from "@dat-poker/shared";
 import {
+  DAT_DAILY_FREEROLL,
   DAT_MTT_DEFAULTS,
   DAT_PLO_MTT_16,
   DAT_PLO_MTT_500,
@@ -29,6 +30,7 @@ import {
   debitAccount,
   getAccountBalance,
   getPlaythrough,
+  hasRedeemedToday,
   reducePlaythroughPool,
   setPlaythroughHands,
   syncPlaythroughHeld,
@@ -64,6 +66,13 @@ import { playHouseIfDue } from "../house-play.js";
 import { playHumansIfDue, resetHumanTurnClockForTests } from "../human-play.js";
 import { maybeDealTournamentHandOnPoll } from "../tournament-poll-deal.js";
 import { advanceSiblingMttHouseTables } from "../mtt-house-advance.js";
+import {
+  getDailyRitual,
+  recordFreerollEntry,
+  recordFreerollFinish,
+  releaseFreerollEntry,
+  resetRitualForTests,
+} from "../ritual-store.js";
 import {
   getMtt16NftPromoMeta,
   loadMtt16NftChallengeStore,
@@ -771,6 +780,127 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }),
   );
 
+  app.get("/v1/ritual/daily", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    const ritual = getDailyRitual(session.playerId);
+    return {
+      ...ritual,
+      redeemedToday: hasRedeemedToday(session.playerId),
+      freeroll: {
+        maxSeats: DAT_DAILY_FREEROLL.maxSeats,
+        prizePoolMojos: DAT_DAILY_FREEROLL.prizePoolMojos.toString(),
+        startingStackMojos: DAT_DAILY_FREEROLL.startingStackMojos.toString(),
+      },
+    };
+  });
+
+  app.post<{ Body: { playerId?: string } }>("/v1/tables/join-daily-freeroll", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many join requests from this network" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
+
+    const existing = findPlayerTable(playerId);
+    if (existing) {
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(existing.tableId, existing.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: true,
+        ritual: getDailyRitual(playerId),
+        ...tableSnapshot(existing.tableId, existing.table, playerId, maintenance),
+      };
+    }
+
+    const ritualBefore = getDailyRitual(playerId);
+    if (!ritualBefore.freerollAvailable) {
+      return reply.status(400).send({
+        error: "Daily freeroll already played today — come back tomorrow (UTC).",
+        ritual: ritualBefore,
+      });
+    }
+
+    const joinable = [...sngByTable.entries()].find(([, sng]) => {
+      if (!sng.freeroll) return false;
+      if (sng.getStatus() === "finished") return false;
+      if (sng.engine.isHandInProgress()) return false;
+      return sng.engine.houseSeats().length > 0 || sng.engine.emptySeatIndex() !== null;
+    });
+
+    const utcDay = ritualBefore.utcDay;
+    if (!recordFreerollEntry(playerId)) {
+      return reply.status(400).send({
+        error: "Daily freeroll already played today — come back tomorrow (UTC).",
+        ritual: getDailyRitual(playerId),
+      });
+    }
+
+    if (joinable) {
+      const [tableId, sng] = joinable;
+      try {
+        const house = sng.engine.houseSeats()[0];
+        if (house) {
+          sng.claimHouseSeat(playerId, house.seatIndex);
+        } else {
+          const seat = sng.engine.emptySeatIndex() ?? 0;
+          sng.engine.seatPlayer(playerId, seat, sng.startingStackMojos);
+        }
+        sng.engine.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+        touchPlayerActivity(playerId);
+        autoFillAndStartSng(sng);
+        const maintenance = maintainTable(tableId, sng.engine, playerId);
+        return {
+          ok: true,
+          joinedExisting: true,
+          freeroll: true,
+          ritual: getDailyRitual(playerId),
+          ...tableSnapshot(tableId, sng.engine, playerId, maintenance),
+        };
+      } catch (e) {
+        releaseFreerollEntry(playerId, utcDay);
+        return reply.status(400).send({ error: (e as Error).message });
+      }
+    }
+
+    const created = createSngTable({
+      fillHouse: true,
+      minHumansToStart: DAT_DAILY_FREEROLL.minHumansToStart,
+      maxSeats: DAT_DAILY_FREEROLL.maxSeats,
+      variant: DAT_DAILY_FREEROLL.variant,
+      buyInMojos: DAT_DAILY_FREEROLL.buyInMojos,
+      startingStackMojos: DAT_DAILY_FREEROLL.startingStackMojos,
+      freeroll: true,
+      prizePoolOverrideMojos: DAT_DAILY_FREEROLL.prizePoolMojos,
+    });
+    const seat = created.table.emptySeatIndex() ?? 0;
+    try {
+      created.table.seatPlayer(playerId, seat, created.sng.startingStackMojos);
+      created.table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      autoFillAndStartSng(created.sng);
+      const maintenance = maintainTable(created.tableId, created.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: false,
+        freeroll: true,
+        ritual: getDailyRitual(playerId),
+        ...tableSnapshot(created.tableId, created.table, playerId, maintenance),
+      };
+    } catch (e) {
+      releaseFreerollEntry(playerId, utcDay);
+      tables.delete(created.tableId);
+      sngByTable.delete(created.tableId);
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
   type JoinMttBody = {
     playerId?: string;
     buyInMojos?: string;
@@ -1408,7 +1538,8 @@ export function returnAllStacksToAccounts(): { returned: number } {
   return { returned };
 }
 
-export function resetTablesForTests(): void {
+/** Clear in-memory tables without wiping daily ritual progress. */
+export function clearTableStateForTests(): void {
   tables.clear();
   sngByTable.clear();
   mttByTable.clear();
@@ -1417,6 +1548,11 @@ export function resetTablesForTests(): void {
   playerLabels.clear();
   resetHandHistoryForTests();
   resetHumanTurnClockForTests();
+}
+
+export function resetTablesForTests(): void {
+  clearTableStateForTests();
+  resetRitualForTests();
 }
 
 function readFillHouseDefault(): boolean {
@@ -1437,6 +1573,10 @@ function createSngTable(options?: {
   fillHouse?: boolean;
   minHumansToStart?: number;
   variant?: PokerVariant;
+  buyInMojos?: bigint;
+  startingStackMojos?: bigint;
+  freeroll?: boolean;
+  prizePoolOverrideMojos?: bigint;
 }): {
   tableId: string;
   table: NlheTableEngine;
@@ -1449,6 +1589,10 @@ function createSngTable(options?: {
     minHumansToStart,
     maxSeats: options?.maxSeats ?? DAT_SNG_DEFAULTS.maxSeats,
     variant: options?.variant ?? "nlhe",
+    buyInMojos: options?.buyInMojos,
+    startingStackMojos: options?.startingStackMojos,
+    freeroll: options?.freeroll,
+    prizePoolOverrideMojos: options?.prizePoolOverrideMojos,
   });
   const tableId = sng.engine.getConfig().id;
   tables.set(tableId, sng.engine);
@@ -1556,6 +1700,9 @@ function settleSngPrizes(sng: SngTournament): void {
   for (const row of sng.unpaidHumanPrizes()) {
     creditAccount(row.playerId, row.prizeMojos);
     sng.markPrizePaid(row.playerId);
+    if (sng.freeroll && row.place >= 1 && row.place <= 3) {
+      recordFreerollFinish(row.playerId, row.place);
+    }
   }
 }
 
