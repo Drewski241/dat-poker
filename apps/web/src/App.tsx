@@ -34,6 +34,10 @@ import { BigWinOverlayHost } from "./components/BigWinOverlayHost.js";
 import { TableRoom } from "./components/TableRoom.js";
 import { MttEventLobby } from "./components/MttEventLobby.js";
 import { NftChallengePromoCard } from "./components/NftChallengePromoCard.js";
+import {
+  LobbyModesShelf,
+  type LobbyModeAction,
+} from "./components/LobbyModesShelf.js";
 import { groupLobbyTables } from "./lobby-mtt.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
@@ -207,6 +211,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   const [mtt500NftReward, setMtt500NftReward] = useState<Mtt500NftReward | null>(null);
   /** When seated: full-screen table vs lobby (account, withdraw, leave). */
   const [tableFocusMode, setTableFocusMode] = useState(true);
+  const [lobbyMoreGamesOpen, setLobbyMoreGamesOpen] = useState(false);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
   const [dealerButtonSeat, setDealerButtonSeat] = useState<number | null>(null);
   const [handInProgress, setHandInProgress] = useState(false);
@@ -1260,6 +1265,42 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
   );
   const mtt16FieldSize = datToken?.mtt16FieldSize ?? 16;
   const mtt16MaxHumans = datToken?.mtt16MaxHumans ?? 10;
+  const runLobbyModeAction = (action: LobbyModeAction) => {
+    switch (action) {
+      case "nlhe":
+      case "plo4":
+      case "plo4_hl":
+      case "pineapple":
+      case "crazy_pineapple":
+      case "lazy_pineapple":
+      case "five_card_draw":
+      case "triple_draw_27":
+      case "badugi":
+      case "seven_card_stud":
+      case "razz":
+        void joinTable(action);
+        return;
+      case "sng":
+        void joinSng();
+        return;
+      case "sng_plo8":
+        void joinSngPlo8();
+        return;
+      case "mtt16":
+        void joinMtt16();
+        return;
+      case "mtt_plo16":
+        void joinMttPlo16();
+        return;
+      case "mtt":
+        void joinMtt();
+        return;
+      case "mtt_plo500":
+        void joinMttPlo500();
+        return;
+    }
+  };
+
   const configuredMttLabel = datToken?.mttFieldSize
     ? `${datToken.mttFieldSize}-player MTT`
     : "MTT";
@@ -2039,141 +2080,26 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
 
       {!tableId && playerId && (
         <section className="panel lobby-quick-start">
-          <h2>Start a table</h2>
+          <h2>Game modes</h2>
           <p className="muted small">
-            Hold&apos;em, Omaha, draw, stud, and more. Multi-table SNGs always seat{" "}
-            <strong>8 per table</strong> (16-player = two tables → final eight). Daily redeem is 5000 DAT.
+            Hold&apos;em first. Omaha and tournaments next. Daily redeem is 5000 DAT.
           </p>
-          <div className="lobby-quick-start-buttons">
-            <button
-              type="button"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable("nlhe")}
-            >
-              6-max Hold&apos;em
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable("plo4")}
-            >
-              6-max PLO
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable("plo4_hl")}
-            >
-              PLO Hi/Lo
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable("pineapple")}
-            >
-              Pineapple
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable("five_card_draw")}
-            >
-              5-Card Draw
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable("triple_draw_27")}
-            >
-              2-7 Triple Draw
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable("badugi")}
-            >
-              Badugi
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable("seven_card_stud")}
-            >
-              7-Card Stud
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable("razz")}
-            >
-              Razz
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinSng()}
-            >
-              9-max Hold&apos;em SNG
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinSngPlo8()}
-            >
-              8-max PLO SNG
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinMtt16()}
-            >
-              16-player Hold&apos;em SNG
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinMttPlo16()}
-            >
-              16-player PLO SNG
-            </button>
-            <button
-              type="button"
-              className="secondary lobby-mtt-btn"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinMtt()}
-            >
-              {configuredMttLabel}
-            </button>
-            <button
-              type="button"
-              className="secondary lobby-mtt-btn"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinMttPlo500()}
-            >
-              PLO 500 MTT
-            </button>
-          </div>
+          <LobbyModesShelf
+            disabled={busy || !apiOk || !datToken?.buyInReady}
+            mttLabel={configuredMttLabel}
+            moreOpen={lobbyMoreGamesOpen}
+            onToggleMore={() => setLobbyMoreGamesOpen((open) => !open)}
+            onAction={runLobbyModeAction}
+          />
         </section>
       )}
 
       {!tableId && !playerId && (
         <section className="panel lobby-quick-start">
-          <h2>Start a table</h2>
+          <h2>Game modes</h2>
           <p className="muted small">
-            Sign in under Account below, redeem 5000 DAT, then pick 6-max, 9-max SNG, 16-player SNG, or{" "}
-            {configuredMttLabel}.
+            Sign in under Account below, redeem 5000 DAT, then play Hold&apos;em — or open tournaments
+            and more games once you&apos;re in.
           </p>
         </section>
       )}
@@ -2321,124 +2247,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
       )}
 
       <section className="panel">
-        <h2>{tableId ? "Leave table" : "Table"}</h2>
+        <h2>{tableId ? "Leave table" : "Tournaments & lobby"}</h2>
         {!tableId ? (
           <>
-            <h3 className="table-format-heading">6-max cash</h3>
-            <div className="row">
-              <button
-                type="button"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                onClick={() => void joinTable("nlhe")}
-              >
-                Hold&apos;em 6-max
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                onClick={() => void joinTable("plo4")}
-              >
-                PLO 6-max
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
-                onClick={() => void joinTable("plo4_hl")}
-              >
-                PLO Hi/Lo
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
-                onClick={() => void joinTable("pineapple")}
-              >
-                Pineapple
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
-                onClick={() => void joinTable("five_card_draw")}
-              >
-                5-Card Draw
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
-                onClick={() => void joinTable("triple_draw_27")}
-              >
-                2-7 Triple Draw
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
-                onClick={() => void joinTable("badugi")}
-              >
-                Badugi
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
-                onClick={() => void joinTable("seven_card_stud")}
-              >
-                7-Card Stud
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady || Boolean(tableId)}
-                onClick={() => void joinTable("razz")}
-              >
-                Razz
-              </button>
-            </div>
-            <h3 className="table-format-heading">Sit-n-go (single table)</h3>
-            <div className="row">
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                onClick={() => void joinSng()}
-              >
-                9-max Hold&apos;em SNG
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                onClick={() => void joinSngPlo8()}
-              >
-                8-max PLO SNG
-              </button>
-            </div>
+            <p className="muted small">
+              Cash and sit-n-go joins live under <strong>Game modes</strong> above. NFT challenges and
+              live events stay here.
+            </p>
             <h3 className="table-format-heading">16-player sit-n-go (8 per table)</h3>
-            <div className="row">
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                onClick={() => void joinMtt16()}
-              >
-                Hold&apos;em 16 SNG
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                onClick={() => void joinMttPlo16()}
-              >
-                PLO 16 SNG
-              </button>
-            </div>
             <p className="muted small">
               Always two 8-max tables, then an 8-max final — never more than 8 seated at once. Up to{" "}
-              {mtt16MaxHumans} humans; other seats are house bots. Pays 1st–3rd 50% / 30% / 20%.
+              {mtt16MaxHumans} humans; other seats are house bots. Pays 1st–3rd 50% / 30% / 20%. Join
+              from Game modes.
             </p>
             <NftChallengePromoCard
               promo={mtt16NftPromo}
@@ -2460,27 +2280,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               onPromoUpdated={setMtt16NftPromo}
             />
             <h3 className="table-format-heading mtt-format-heading">{configuredMttLabel}</h3>
-            <div className="row">
-              <button
-                type="button"
-                className="mtt-join-btn"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                onClick={() => void joinMtt()}
-              >
-                Hold&apos;em {configuredMttLabel}
-              </button>
-              <button
-                type="button"
-                className="mtt-join-btn secondary"
-                disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-                onClick={() => void joinMttPlo500()}
-              >
-                PLO 500 MTT
-              </button>
-            </div>
             <p className="muted small">
               Large MTTs use <strong>8-max tables</strong> throughout. Up to {mttMaxHumans} humans; other seats
-              are house bots. Pays 1st–3rd overall 50% / 30% / 20%.
+              are house bots. Pays 1st–3rd overall 50% / 30% / 20%. Join from Game modes.
             </p>
             <NftChallengePromoCard
               promo={mtt500NftPromo}
