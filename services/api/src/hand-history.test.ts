@@ -113,10 +113,28 @@ describe("hand history", () => {
     });
     expect(history.statusCode).toBe(200);
     const body = JSON.parse(history.body) as {
-      hands: { handId: string; potMojos: string; participants: { totalBetHandMojos: string }[] }[];
+      hands: {
+        handId: string;
+        potMojos: string;
+        participants: { totalBetHandMojos: string }[];
+        fairness?: { verified: boolean; commitHash: string; serverSeed: string };
+      }[];
     };
     expect(body.hands.length).toBeGreaterThanOrEqual(1);
     expect(body.hands[0].participants.length).toBeGreaterThanOrEqual(2);
+    expect(body.hands[0].fairness?.verified).toBe(true);
+    expect(body.hands[0].fairness?.commitHash.length).toBeGreaterThan(16);
+    expect(body.hands[0].fairness?.serverSeed.length).toBeGreaterThan(16);
+
+    const ledger = await app.inject({
+      method: "GET",
+      url: "/v1/wallet/ledger",
+      headers: auth(alice.token),
+    });
+    expect(ledger.statusCode).toBe(200);
+    const ledgerBody = JSON.parse(ledger.body) as { events: { type: string }[] };
+    expect(ledgerBody.events.some((e) => e.type === "redeem")).toBe(true);
+    expect(ledgerBody.events.some((e) => e.type === "buy_in")).toBe(true);
     await app.close();
   });
 });

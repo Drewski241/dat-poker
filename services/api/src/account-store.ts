@@ -9,6 +9,11 @@ import {
   redeemCooldownRemainingMs,
   resolveDatDailyRedeemMojos,
 } from "@dat-poker/shared";
+import {
+  recordLedgerEvent,
+  resetLedgerJournalForTests,
+  type LedgerEventMeta,
+} from "./ledger-journal.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -164,7 +169,11 @@ export function getAccountBalance(address: string): bigint {
   return balances.get(address) ?? 0n;
 }
 
-export function creditAccount(address: string, amount: bigint): bigint {
+export function creditAccount(
+  address: string,
+  amount: bigint,
+  meta: LedgerEventMeta = { type: "credit" },
+): bigint {
   loadLedger();
   if (amount < 0n) {
     throw new Error("credit must be non-negative");
@@ -172,10 +181,17 @@ export function creditAccount(address: string, amount: bigint): bigint {
   const next = getAccountBalance(address) + amount;
   balances.set(address, next);
   persist();
+  if (amount > 0n) {
+    recordLedgerEvent(address, amount, next, meta);
+  }
   return next;
 }
 
-export function debitAccount(address: string, amount: bigint): bigint {
+export function debitAccount(
+  address: string,
+  amount: bigint,
+  meta: LedgerEventMeta = { type: "debit" },
+): bigint {
   loadLedger();
   const current = getAccountBalance(address);
   if (amount > current) {
@@ -184,6 +200,9 @@ export function debitAccount(address: string, amount: bigint): bigint {
   const next = current - amount;
   balances.set(address, next);
   persist();
+  if (amount > 0n) {
+    recordLedgerEvent(address, -amount, next, meta);
+  }
   return next;
 }
 
@@ -217,7 +236,7 @@ export function tryRedeemDaily(
   }
   const hadPriorRedeem = lastRedeemAt.has(address);
   lastRedeemAt.set(address, now.toISOString());
-  const balance = creditAccount(address, amount);
+  const balance = creditAccount(address, amount, { type: "redeem" });
   clearedByWithdraw.delete(address);
   if (hadPriorRedeem) {
     ensureRedeemLock(address);
@@ -362,6 +381,7 @@ export function resetAccountsForTests(): void {
   lifetimeRedeemed.clear();
   lifetimeWithdrawn.clear();
   clearedByWithdraw.clear();
+  resetLedgerJournalForTests();
   loaded = true;
 }
 

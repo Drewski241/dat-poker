@@ -2,9 +2,19 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   auditHistoryStacks,
+  verifyHandFairness,
   type HandResult,
   type TableEngine,
 } from "@dat-poker/game-engine";
+
+export interface HandHistoryFairness {
+  commitHash: string;
+  serverSeed: string;
+  playerSeeds: Record<string, string>;
+  /** Server-side verify at record time. */
+  verified: boolean;
+  deckPrefix?: string[];
+}
 
 export interface HandHistoryEntry {
   handId: string;
@@ -25,6 +35,8 @@ export interface HandHistoryEntry {
   }[];
   /** Present when settlement invariants failed (should be empty in healthy play). */
   auditIssues?: string[];
+  /** Commit/reveal material so players can verify the shuffle was fixed before deal. */
+  fairness?: HandHistoryFairness;
 }
 
 const MAX_HANDS_PER_TABLE = 40;
@@ -104,6 +116,24 @@ export function recordHandHistoryIfNew(tableId: string, table: TableEngine): voi
     );
   }
 
+  let fairness: HandHistoryFairness | undefined;
+  if (result.fairness?.serverSeed && result.fairness.commitHash) {
+    const check = verifyHandFairness(result.fairness);
+    fairness = {
+      commitHash: result.fairness.commitHash,
+      serverSeed: result.fairness.serverSeed,
+      playerSeeds: { ...result.fairness.playerSeeds },
+      verified: check.ok,
+      deckPrefix: check.deckPrefix,
+    };
+    if (!check.ok) {
+      console.error(
+        `[hand-history] fairness verify failed table=${tableId} hand=${result.handId}`,
+        check.issues,
+      );
+    }
+  }
+
   const entry: HandHistoryEntry = {
     handId: result.handId,
     completedAtMs: Date.now(),
@@ -116,6 +146,7 @@ export function recordHandHistoryIfNew(tableId: string, table: TableEngine): voi
     shown: result.shown,
     participants,
     ...(auditIssues.length > 0 ? { auditIssues } : {}),
+    ...(fairness ? { fairness } : {}),
   };
 
   const list = historyByTable.get(tableId) ?? [];

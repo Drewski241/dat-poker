@@ -75,5 +75,9 @@ describe("hand-history-store stackAfter timing", () => {
     expect(house.stackAfterMojos).toBe("4160");
     expect(house.stackBeforePayoutMojos).toBe("4160");
     expect(BigInt(you.stackAfterMojos)).toBe(youBefore + result.potMojos);
+    expect(result.fairness?.commitHash).toBeTruthy();
+    expect(entry!.fairness?.verified).toBe(true);
+    expect(entry!.fairness?.commitHash).toBe(result.fairness!.commitHash);
+    expect(entry!.fairness?.deckPrefix?.length).toBe(8);
   });
 });
