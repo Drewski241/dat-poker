@@ -2091,7 +2091,9 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
                 : sng?.kind === "mtt"
                   ? (sng.tableLabel ?? "16-max SNG")
                   : tableFormat === "sng"
-                    ? "9-max SNG"
+                    ? sng?.freeroll
+                      ? `Daily freeroll · ${tableMaxSeats}-max`
+                      : `${sng?.maxSeats ?? tableMaxSeats}-max SNG`
                     : "6-max"
             }
             sng={tableFormat === "sng" || tableFormat === "mtt" ? sng : null}

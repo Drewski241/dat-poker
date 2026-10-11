@@ -220,6 +220,7 @@ export interface SngSnapshot {
   humanCount: number;
   houseSeatsAvailable: number;
   placements: { playerId: string; place: number; prizeMojos: string }[];
+  freeroll?: boolean;
   kind?: "sng" | "mtt";
   eventId?: string;
   tableLabel?: string;

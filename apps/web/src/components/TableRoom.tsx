@@ -218,8 +218,10 @@ export function TableRoom({
                   ? " · redrawing tables"
                   : ""}
               {" · "}
-              Buy-in {formatDatMojos(sng.buyInMojos, datToken?.ticker)} · pool{" "}
-              {formatDatMojos(sng.prizePoolMojos, datToken?.ticker)} · pays 1st–3rd 50/30/20
+              {sng.freeroll
+                ? "Free entry"
+                : `Buy-in ${formatDatMojos(sng.buyInMojos, datToken?.ticker)}`}{" "}
+              · pool {formatDatMojos(sng.prizePoolMojos, datToken?.ticker)} · pays 1st–3rd 50/30/20
               {sng.payouts?.length
                 ? ` (${sng.payouts
                     .map((row) => `${row.place} ${formatDatMojos(row.prizeMojos, datToken?.ticker)}`)
