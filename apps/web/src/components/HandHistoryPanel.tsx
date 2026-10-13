@@ -1,7 +1,9 @@
+import { useState } from "react";
 import type { DatTokenInfo, HandHistoryEntry } from "../api.js";
 import { formatDatMojos } from "@dat-poker/shared";
 import { formatHandOutcomeLine } from "../hand-outcome-line.js";
 import { participantAwardMojos } from "../hand-result-copy.js";
+import { sharedHandPath } from "../site-route.js";
 import { CardRow } from "./PlayingCard.js";
 
 type Props = {
@@ -19,6 +21,8 @@ export function HandHistoryPanel({
   playerLabel,
   seatDisplayFor,
 }: Props) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   if (hands.length === 0) {
     return (
       <p className="muted small hand-history-empty">
@@ -26,6 +30,20 @@ export function HandHistoryPanel({
       </p>
     );
   }
+
+  const copyShareLink = async (handId: string) => {
+    const url = `${window.location.origin}${sharedHandPath(handId)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(handId);
+      window.setTimeout(() => {
+        setCopiedId((cur) => (cur === handId ? null : cur));
+      }, 2000);
+    } catch {
+      setCopiedId(null);
+      window.prompt("Copy this hand link:", url);
+    }
+  };
 
   return (
     <section className="hand-history" aria-label="Recent hand history">
@@ -45,6 +63,23 @@ export function HandHistoryPanel({
                   })}
                 </strong>
                 <span className="mono hand-history-id"> · {hand.handId.slice(0, 8)}</span>
+              </p>
+              <p className="hand-history-share-row">
+                <button
+                  type="button"
+                  className="secondary hand-history-share-btn"
+                  onClick={() => void copyShareLink(hand.handId)}
+                >
+                  {copiedId === hand.handId ? "Copied" : "Copy link"}
+                </button>
+                <a
+                  className="muted small"
+                  href={sharedHandPath(hand.handId)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open share page
+                </a>
               </p>
               {you && (
                 <p className="muted small hand-history-you">

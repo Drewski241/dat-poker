@@ -131,6 +131,26 @@ export interface HandHistoryEntry {
   fairness?: HandHistoryFairness;
 }
 
+/** Public share projection — stacks omitted. */
+export interface SharedHandView {
+  handId: string;
+  tableId: string;
+  completedAtMs: number;
+  winnerId: string;
+  potMojos: string;
+  totalPotMojos: string;
+  isChop: boolean;
+  reason: "fold" | "showdown";
+  board?: HandHistoryEntry["board"];
+  shown?: HandHistoryEntry["shown"];
+  participants: {
+    playerId: string;
+    totalBetHandMojos: string;
+    awardedMojos: string;
+  }[];
+  fairness?: HandHistoryFairness;
+}
+
 export interface LedgerEvent {
   id: string;
   atMs: number;
@@ -891,6 +911,10 @@ export const api = {
       `/v1/tables/${tableId}/hand-history?${q}`,
     );
   },
+
+  /** Auth-free public hand share (fairness proof). */
+  getSharedHand: (handId: string) =>
+    request<SharedHandView>(`/v1/hands/${encodeURIComponent(handId)}`),
 
   getTable: (tableId: string, playerId?: string) =>
     request<{

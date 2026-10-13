@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { pageToPath, pathToPage, testerSiteUrls } from "./site-route.js";
+import {
+  locationToPath,
+  pageToPath,
+  parseSiteLocation,
+  pathToPage,
+  sharedHandPath,
+  testerSiteUrls,
+} from "./site-route.js";
 
 describe("pathToPage", () => {
   it("treats / as the public landing site", () => {
@@ -35,6 +42,38 @@ describe("pageToPath", () => {
     expect(pageToPath("privacy")).toBe("/privacy");
     expect(pathToPage(pageToPath("feedback"))).toBe("feedback");
     expect(pathToPage(pageToPath("privacy"))).toBe("privacy");
+  });
+});
+
+describe("parseSiteLocation / shared hand", () => {
+  it("parses /h/:handId as a shared hand view", () => {
+    expect(parseSiteLocation("/h/abc-123")).toEqual({
+      page: "sharedHand",
+      handId: "abc-123",
+    });
+    expect(parseSiteLocation("/h/abc-123/")).toEqual({
+      page: "sharedHand",
+      handId: "abc-123",
+    });
+  });
+
+  it("decodes URI components in hand ids", () => {
+    expect(parseSiteLocation("/h/hand%2Fid")).toEqual({
+      page: "sharedHand",
+      handId: "hand/id",
+    });
+  });
+
+  it("builds share paths and round-trips", () => {
+    expect(sharedHandPath("hand-1")).toBe("/h/hand-1");
+    const loc = parseSiteLocation(sharedHandPath("uuid-xyz"));
+    expect(loc).toEqual({ page: "sharedHand", handId: "uuid-xyz" });
+    expect(locationToPath(loc)).toBe("/h/uuid-xyz");
+  });
+
+  it("does not treat bare /h as a shared hand", () => {
+    expect(parseSiteLocation("/h")).toEqual({ page: "landing" });
+    expect(parseSiteLocation("/h/")).toEqual({ page: "landing" });
   });
 });
 
