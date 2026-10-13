@@ -6,8 +6,10 @@ import {
   allowFeedbackFrom,
   decodeDataUrl,
   detectImageKind,
+  listFeedback,
   resetFeedbackRateLimitForTests,
   saveFeedback,
+  updateFeedbackTriage,
 } from "./feedback-store.js";
 
 const PNG_1x1 = Buffer.from(
@@ -65,6 +67,20 @@ describe("saveFeedback", () => {
           images: [{ dataBase64: Buffer.from("<svg></svg>").toString("base64") }],
         }),
       ).rejects.toThrow(/JPEG, PNG, or WebP/);
+
+      const listed = await listFeedback();
+      expect(listed[0]?.id).toBe(saved.id);
+      expect(listed[0]?.label).toBe("new");
+      expect(listed[0]?.status).toBe("open");
+
+      const triaged = await updateFeedbackTriage(saved.id, {
+        label: "bug",
+        status: "done",
+        triageNote: "fixed in next deploy",
+      });
+      expect(triaged.label).toBe("bug");
+      expect(triaged.status).toBe("done");
+      expect((await listFeedback())[0]?.status).toBe("done");
     } finally {
       await rm(dir, { recursive: true, force: true });
       delete process.env.DAT_FEEDBACK_DIR;

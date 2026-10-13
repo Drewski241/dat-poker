@@ -30,6 +30,11 @@ export function SiteNav({
       <a href={pageToPath("privacy")} className={page === "privacy" ? "active" : ""} onClick={go("privacy")}>
         Privacy
       </a>
+      {page === "ops" ? (
+        <a href={pageToPath("ops")} className="active" onClick={go("ops")}>
+          Ops
+        </a>
+      ) : null}
     </nav>
   );
 }

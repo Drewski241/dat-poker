@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -6,6 +6,26 @@ export const MAX_FEEDBACK_COMMENT = 8_000;
 export const MAX_FEEDBACK_CONTACT = 200;
 export const MAX_FEEDBACK_IMAGES = 3;
 export const MAX_FEEDBACK_IMAGE_BYTES = 1_500_000;
+
+export const FEEDBACK_LABELS = ["new", "bug", "ux", "question", "other"] as const;
+export type FeedbackLabel = (typeof FEEDBACK_LABELS)[number];
+
+export const FEEDBACK_STATUSES = ["open", "triage", "done", "wontfix"] as const;
+export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
+
+export interface FeedbackRecord {
+  id: string;
+  createdAt: string;
+  page: string;
+  contact: string;
+  comment: string;
+  userAgent: string;
+  images: string[];
+  label: FeedbackLabel;
+  status: FeedbackStatus;
+  triageNote?: string;
+  updatedAt?: string;
+}
 
 const hits = new Map<string, number[]>();
 
@@ -103,7 +123,7 @@ export async function saveFeedback(params: {
     saved.push(filename);
   }
 
-  const record = {
+  const record: FeedbackRecord = {
     id,
     createdAt: new Date().toISOString(),
     page,
@@ -111,7 +131,87 @@ export async function saveFeedback(params: {
     comment,
     userAgent: (params.userAgent ?? "").slice(0, 300),
     images: saved,
+    label: "new",
+    status: "open",
   };
   await writeFile(join(dir, "feedback.json"), `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
   return { id, imageCount: saved.length };
+}
+
+function normalizeRecord(raw: Partial<FeedbackRecord> & { id: string }): FeedbackRecord {
+  const label = FEEDBACK_LABELS.includes(raw.label as FeedbackLabel)
+    ? (raw.label as FeedbackLabel)
+    : "new";
+  const status = FEEDBACK_STATUSES.includes(raw.status as FeedbackStatus)
+    ? (raw.status as FeedbackStatus)
+    : "open";
+  return {
+    id: raw.id,
+    createdAt: raw.createdAt ?? new Date(0).toISOString(),
+    page: raw.page ?? "",
+    contact: raw.contact ?? "",
+    comment: raw.comment ?? "",
+    userAgent: raw.userAgent ?? "",
+    images: Array.isArray(raw.images) ? raw.images : [],
+    label,
+    status,
+    ...(raw.triageNote ? { triageNote: raw.triageNote } : {}),
+    ...(raw.updatedAt ? { updatedAt: raw.updatedAt } : {}),
+  };
+}
+
+export async function listFeedback(limit = 50): Promise<FeedbackRecord[]> {
+  const root = feedbackDir();
+  let entries: string[] = [];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return [];
+  }
+  const out: FeedbackRecord[] = [];
+  for (const name of entries) {
+    try {
+      const raw = JSON.parse(await readFile(join(root, name, "feedback.json"), "utf8")) as Partial<FeedbackRecord>;
+      if (!raw?.id) continue;
+      out.push(normalizeRecord({ ...raw, id: String(raw.id) }));
+    } catch {
+      /* skip corrupt / non-feedback dirs */
+    }
+  }
+  out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  return out.slice(0, Math.min(Math.max(limit, 1), 200));
+}
+
+export async function updateFeedbackTriage(
+  id: string,
+  patch: { label?: FeedbackLabel; status?: FeedbackStatus; triageNote?: string },
+): Promise<FeedbackRecord> {
+  const path = join(feedbackDir(), id, "feedback.json");
+  let raw: Partial<FeedbackRecord>;
+  try {
+    raw = JSON.parse(await readFile(path, "utf8")) as Partial<FeedbackRecord>;
+  } catch {
+    throw new Error("Feedback not found");
+  }
+  if (!raw?.id) throw new Error("Feedback not found");
+  const next = normalizeRecord({
+    ...raw,
+    id: String(raw.id),
+    ...(patch.label ? { label: patch.label } : {}),
+    ...(patch.status ? { status: patch.status } : {}),
+    ...(patch.triageNote !== undefined
+      ? { triageNote: patch.triageNote.trim().slice(0, 500) }
+      : {}),
+    updatedAt: new Date().toISOString(),
+  });
+  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  return next;
+}
+
+export function isFeedbackLabel(v: unknown): v is FeedbackLabel {
+  return typeof v === "string" && (FEEDBACK_LABELS as readonly string[]).includes(v);
+}
+
+export function isFeedbackStatus(v: unknown): v is FeedbackStatus {
+  return typeof v === "string" && (FEEDBACK_STATUSES as readonly string[]).includes(v);
 }

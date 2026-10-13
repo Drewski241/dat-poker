@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { App } from "./App.js";
 import { Feedback } from "./Feedback.js";
 import { Landing } from "./Landing.js";
+import { Ops } from "./Ops.js";
 import { Privacy } from "./Privacy.js";
 import { SharedHand } from "./SharedHand.js";
 import {
@@ -42,6 +43,9 @@ export function Root() {
   }
   if (location.page === "privacy") {
     return <Privacy onNavigate={onNavigate} />;
+  }
+  if (location.page === "ops") {
+    return <Ops onNavigate={onNavigate} />;
   }
   return <Landing onNavigate={onNavigate} />;
 }

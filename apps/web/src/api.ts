@@ -1056,4 +1056,74 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  opsStatus: (opsToken: string) =>
+    request<OpsStatus>(`/v1/ops/status`, {
+      headers: { "x-dat-ops-token": opsToken },
+    }),
+
+  opsMetrics: (opsToken: string) =>
+    request<OpsMetricsSnapshot>(`/v1/ops/metrics`, {
+      headers: { "x-dat-ops-token": opsToken },
+    }),
+
+  opsFeedback: (opsToken: string, status?: string) => {
+    const q = status ? `?status=${encodeURIComponent(status)}` : "";
+    return request<{ feedback: OpsFeedbackItem[] }>(`/v1/ops/feedback${q}`, {
+      headers: { "x-dat-ops-token": opsToken },
+    });
+  },
+
+  opsPatchFeedback: (
+    opsToken: string,
+    id: string,
+    body: { label?: string; status?: string; triageNote?: string },
+  ) =>
+    request<{ ok: boolean; feedback: OpsFeedbackItem }>(`/v1/ops/feedback/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "x-dat-ops-token": opsToken },
+      body: JSON.stringify(body),
+    }),
 };
+
+export interface OpsMetricsSnapshot {
+  day: string;
+  dau: number;
+  handsCompleted: number;
+  handsPerActivePlayer: number;
+  dropOffStreet: Record<string, number>;
+  recentDays: Array<{
+    day: string;
+    dau: number;
+    handsCompleted: number;
+    handsPerActivePlayer: number;
+    dropOffStreet: Record<string, number>;
+  }>;
+}
+
+export interface OpsStatus {
+  ok: boolean;
+  opsEnabled: boolean;
+  buildRef: string | null;
+  uptimeSeconds: number;
+  tables: number;
+  seatedHumans: number;
+  humansInHand: number;
+  today: { dau: number; handsCompleted: number; handsPerActivePlayer: number };
+  openFeedback: number;
+  feedbackLabels: string[];
+  feedbackStatuses: string[];
+}
+
+export interface OpsFeedbackItem {
+  id: string;
+  createdAt: string;
+  page: string;
+  contact: string;
+  comment: string;
+  images: string[];
+  label: string;
+  status: string;
+  triageNote?: string;
+  updatedAt?: string;
+}

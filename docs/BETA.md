@@ -468,6 +468,31 @@ You want `"walletConnectConfigured": true` and a non-null `assetId`.
    sign-only pairing (it cannot send coins).
 8. Send notes and screenshots from **https://datspiritpoker.com/feedback**.
 
+### Host ops (metrics + feedback triage)
+
+Closed-beta stickiness needs a host glance at DAU / hands / street drop-off and a
+way to label feedback without SSHing into `data/feedback`.
+
+1. Set a long secret in `/opt/dat-poker/.env` (min 8 chars), then restart API:
+
+```bash
+# on the box
+sudo nano /opt/dat-poker/.env   # add: DAT_OPS_TOKEN=your-long-secret
+sudo systemctl restart dat-poker-api
+```
+
+2. Phone / Session Manager one-liner:
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/ops-status.sh
+```
+
+3. Or open **https://datspiritpoker.com/ops**, paste the same token, triage
+   feedback labels (`bug` / `ux` / …) and status (`open` → `triage` → `done`).
+
+Counters are anonymized aggregates (no player ids in the response). Optional
+JSONL: `DAT_OPS_METRICS_PATH=/opt/dat-poker/data/ops-metrics.jsonl`.
+
 ### Email delivery (one-time operator setup)
 
 The game already works the way you expect: **any** address the player types → code by email → they paste the code → account verified. You do **not** add testers in AWS one by one unless SES is still in **sandbox**.
