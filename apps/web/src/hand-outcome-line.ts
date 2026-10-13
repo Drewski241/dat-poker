@@ -3,8 +3,9 @@ import { participantAwardMojos, totalPotFromParticipants } from "./hand-result-c
 
 type OutcomeParticipant = {
   playerId: string;
-  stackBeforePayoutMojos: string;
+  stackBeforePayoutMojos?: string;
   stackAfterMojos?: string;
+  awardedMojos?: string;
 };
 
 type OutcomeHand = {
@@ -16,7 +17,12 @@ type OutcomeHand = {
   participants?: OutcomeParticipant[];
 };
 
-function totalPotOf(hand: OutcomeHand, withAfter: Array<OutcomeParticipant & { stackAfterMojos: string }>): bigint {
+type StackedParticipant = OutcomeParticipant & {
+  stackBeforePayoutMojos: string;
+  stackAfterMojos: string;
+};
+
+function totalPotOf(hand: OutcomeHand, withAfter: StackedParticipant[]): bigint {
   if (hand.totalPotMojos != null) return BigInt(hand.totalPotMojos);
   if (withAfter.length > 0) return totalPotFromParticipants(withAfter);
   return BigInt(hand.potMojos);
@@ -25,7 +31,7 @@ function totalPotOf(hand: OutcomeHand, withAfter: Array<OutcomeParticipant & { s
 function yourShareBit(
   hand: OutcomeHand,
   playerId: string,
-  withAfter: Array<OutcomeParticipant & { stackAfterMojos: string }>,
+  withAfter: StackedParticipant[],
   ticker?: string,
 ): string {
   const you = withAfter.find((p) => p.playerId === playerId);
@@ -58,7 +64,8 @@ export function formatHandOutcomeLine(params: {
   const reason = hand.reason === "showdown" ? "showdown" : "fold";
 
   const withAfter = (hand.participants ?? []).filter(
-    (p): p is OutcomeParticipant & { stackAfterMojos: string } => p.stackAfterMojos != null,
+    (p): p is StackedParticipant =>
+      p.stackAfterMojos != null && p.stackBeforePayoutMojos != null,
   );
 
   const paidWinners = withAfter.filter((p) => participantAwardMojos(p) > 0n).length;
