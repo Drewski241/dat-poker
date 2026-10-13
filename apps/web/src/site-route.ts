@@ -1,4 +1,4 @@
-export type SitePage = "landing" | "play" | "feedback" | "privacy";
+export type SitePage = "landing" | "play" | "feedback" | "privacy" | "ops";
 
 /** Browser location: static pages or a public shared-hand view. */
 export type SiteLocation =
@@ -11,6 +11,7 @@ export function pathToPage(pathname: string): SitePage {
   if (p === "/play") return "play";
   if (p === "/feedback") return "feedback";
   if (p === "/privacy") return "privacy";
+  if (p === "/ops") return "ops";
   return "landing";
 }
 
@@ -18,6 +19,7 @@ export function pageToPath(page: SitePage): string {
   if (page === "play") return "/play";
   if (page === "feedback") return "/feedback";
   if (page === "privacy") return "/privacy";
+  if (page === "ops") return "/ops";
   return "/";
 }
 
