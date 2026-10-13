@@ -6,6 +6,7 @@ import {
   type HandResult,
   type TableEngine,
 } from "@dat-poker/game-engine";
+import { recordHandCompleted } from "./ops-metrics.js";
 
 export interface HandHistoryFairness {
   commitHash: string;
@@ -221,6 +222,12 @@ export function recordHandHistoryIfNew(tableId: string, table: TableEngine): voi
   historyByTable.set(tableId, list);
   tableByHandId.set(entry.handId, tableId);
   void appendHandHistoryLog(tableId, entry);
+  recordHandCompleted({
+    reason: entry.reason,
+    boardLen: entry.board?.length ?? 0,
+    participantIds: entry.participants.map((p) => p.playerId),
+    nowMs: entry.completedAtMs,
+  });
 }
 
 export function getHandHistory(tableId: string, limit = 20): HandHistoryEntry[] {

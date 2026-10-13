@@ -1,3 +1,5 @@
+import { recordActivePlayer } from "./ops-metrics.js";
+
 const lastActiveMs = new Map<string, number>();
 
 /** Minimum 10s; default 2 minutes without polls/actions before unseating between hands. */
@@ -8,6 +10,7 @@ export function inactiveUnseatMs(): number {
 
 export function touchPlayerActivity(playerId: string, nowMs = Date.now()): void {
   lastActiveMs.set(playerId, nowMs);
+  recordActivePlayer(playerId, nowMs);
 }
 
 export function getLastPlayerActivity(playerId: string): number | undefined {
