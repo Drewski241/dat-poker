@@ -2,9 +2,11 @@ import { describe, expect, it, beforeEach } from "vitest";
 import type { TableConfig } from "@dat-poker/shared";
 import { NlheTableEngine, parseCard, generateServerSeed } from "@dat-poker/game-engine";
 import {
+  findHandById,
   getHandHistory,
   recordHandHistoryIfNew,
   resetHandHistoryForTests,
+  toSharedHandView,
 } from "./hand-history-store.js";
 
 const config: TableConfig = {
@@ -79,5 +81,13 @@ describe("hand-history-store stackAfter timing", () => {
     expect(entry!.fairness?.verified).toBe(true);
     expect(entry!.fairness?.commitHash).toBe(result.fairness!.commitHash);
     expect(entry!.fairness?.deckPrefix?.length).toBe(8);
+
+    const found = findHandById(entry!.handId);
+    expect(found?.tableId).toBe("table-hist");
+    const shared = toSharedHandView(found!.tableId, found!.entry);
+    expect(shared.handId).toBe(entry!.handId);
+    expect(shared.fairness?.verified).toBe(true);
+    expect(shared.participants[0]).not.toHaveProperty("stackAfterMojos");
+    expect(shared.participants[0]).not.toHaveProperty("stackBeforePayoutMojos");
   });
 });

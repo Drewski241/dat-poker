@@ -2,11 +2,13 @@ import type { MouseEvent } from "react";
 import type { SitePage } from "./site-route.js";
 import { pageToPath } from "./site-route.js";
 
+export type SiteNavPage = SitePage | "sharedHand";
+
 export function SiteNav({
   page,
   onNavigate,
 }: {
-  page: SitePage;
+  page: SiteNavPage;
   onNavigate: (next: SitePage) => void;
 }) {
   const go = (next: SitePage) => (event: MouseEvent<HTMLAnchorElement>) => {

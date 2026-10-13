@@ -135,6 +135,31 @@ describe("hand history", () => {
     const ledgerBody = JSON.parse(ledger.body) as { events: { type: string }[] };
     expect(ledgerBody.events.some((e) => e.type === "redeem")).toBe(true);
     expect(ledgerBody.events.some((e) => e.type === "buy_in")).toBe(true);
+
+    const handId = body.hands[0].handId;
+    const shared = await app.inject({
+      method: "GET",
+      url: `/v1/hands/${handId}`,
+    });
+    expect(shared.statusCode).toBe(200);
+    const sharedBody = JSON.parse(shared.body) as {
+      handId: string;
+      tableId: string;
+      fairness?: { verified: boolean; commitHash: string; serverSeed: string };
+      participants: Record<string, string>[];
+    };
+    expect(sharedBody.handId).toBe(handId);
+    expect(sharedBody.tableId).toBe(joined.tableId);
+    expect(sharedBody.fairness?.verified).toBe(true);
+    expect(sharedBody.fairness?.commitHash).toBe(body.hands[0].fairness?.commitHash);
+    expect(sharedBody.participants[0]).not.toHaveProperty("stackAfterMojos");
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/v1/hands/does-not-exist",
+    });
+    expect(missing.statusCode).toBe(404);
+
     await app.close();
   });
 });
