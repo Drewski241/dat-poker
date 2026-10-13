@@ -42,9 +42,68 @@ export interface HandHistoryEntry {
 const MAX_HANDS_PER_TABLE = 40;
 const historyByTable = new Map<string, HandHistoryEntry[]>();
 const recordedKeys = new Set<string>();
+/** Latest tableId for a handId (hands are UUID in production). */
+const tableByHandId = new Map<string, string>();
 
 function recordKey(tableId: string, handId: string): string {
   return `${tableId}:${handId}`;
+}
+
+export interface SharedHandView {
+  handId: string;
+  tableId: string;
+  completedAtMs: number;
+  winnerId: string;
+  potMojos: string;
+  totalPotMojos: string;
+  isChop: boolean;
+  reason: "fold" | "showdown";
+  board: HandHistoryEntry["board"];
+  shown: HandHistoryEntry["shown"];
+  participants: {
+    playerId: string;
+    totalBetHandMojos: string;
+    awardedMojos: string;
+  }[];
+  fairness?: HandHistoryFairness;
+}
+
+/** Public, redacted projection — no stack sizes. */
+export function toSharedHandView(tableId: string, entry: HandHistoryEntry): SharedHandView {
+  return {
+    handId: entry.handId,
+    tableId,
+    completedAtMs: entry.completedAtMs,
+    winnerId: entry.winnerId,
+    potMojos: entry.potMojos,
+    totalPotMojos: entry.totalPotMojos,
+    isChop: entry.isChop,
+    reason: entry.reason,
+    board: entry.board,
+    shown: entry.shown,
+    participants: entry.participants.map((p) => ({
+      playerId: p.playerId,
+      totalBetHandMojos: p.totalBetHandMojos,
+      awardedMojos: p.awardedMojos,
+    })),
+    ...(entry.fairness ? { fairness: entry.fairness } : {}),
+  };
+}
+
+export function findHandById(handId: string): { tableId: string; entry: HandHistoryEntry } | null {
+  const knownTable = tableByHandId.get(handId);
+  if (knownTable) {
+    const entry = (historyByTable.get(knownTable) ?? []).find((h) => h.handId === handId);
+    if (entry) return { tableId: knownTable, entry };
+  }
+  for (const [tableId, list] of historyByTable) {
+    const entry = list.find((h) => h.handId === handId);
+    if (entry) {
+      tableByHandId.set(handId, tableId);
+      return { tableId, entry };
+    }
+  }
+  return null;
 }
 
 function handHistoryLogPath(): string | null {
@@ -152,9 +211,15 @@ export function recordHandHistoryIfNew(tableId: string, table: TableEngine): voi
   const list = historyByTable.get(tableId) ?? [];
   list.unshift(entry);
   if (list.length > MAX_HANDS_PER_TABLE) {
-    list.length = MAX_HANDS_PER_TABLE;
+    const dropped = list.splice(MAX_HANDS_PER_TABLE);
+    for (const old of dropped) {
+      if (tableByHandId.get(old.handId) === tableId) {
+        tableByHandId.delete(old.handId);
+      }
+    }
   }
   historyByTable.set(tableId, list);
+  tableByHandId.set(entry.handId, tableId);
   void appendHandHistoryLog(tableId, entry);
 }
 
@@ -175,4 +240,5 @@ export function getAllHandHistory(limitPerTable = 40): { tableId: string; hands:
 export function resetHandHistoryForTests(): void {
   historyByTable.clear();
   recordedKeys.clear();
+  tableByHandId.clear();
 }

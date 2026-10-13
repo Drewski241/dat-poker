@@ -6,7 +6,11 @@ import {
   type TableEngine,
 } from "@dat-poker/game-engine";
 import { isDrawFamilyVariant, isPineappleVariant } from "@dat-poker/shared";
-import { maybeRecordCompletedHand } from "../hand-history-store.js";
+import {
+  findHandById,
+  maybeRecordCompletedHand,
+  toSharedHandView,
+} from "../hand-history-store.js";
 import {
   ensureHouseFunded,
   finalizeSngIfNeeded,
@@ -46,6 +50,13 @@ function seatedPlayer(
 }
 
 export function registerHandRoutes(app: FastifyInstance): void {
+  /** Public share link — redacted hand + fairness seeds (no auth, no stacks). */
+  app.get<{ Params: { handId: string } }>("/v1/hands/:handId", async (req, reply) => {
+    const found = findHandById(req.params.handId);
+    if (!found) return reply.status(404).send({ error: "Hand not found" });
+    return toSharedHandView(found.tableId, found.entry);
+  });
+
   app.post<{ Params: { tableId: string }; Body: { handId?: string; playerId?: string } }>(
     "/v1/tables/:tableId/hands/start",
     async (req, reply) => {
