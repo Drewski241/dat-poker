@@ -11,7 +11,7 @@ Assume average **80 hands/hour/table**, **9-handed** tables, **6s/action** budge
 | Active tables | ~14,300 |
 | Actions/sec (global) | ~3,000–8,000 peak |
 
-Off-chain authoritative servers handle this; Chia handles **session boundaries** and **settlements**, not per-action writes.
+Off-chain authoritative servers handle this; Chia handles **DAT CAT buy-ins and settlements**, not per-action writes.
 
 ## Topology
 

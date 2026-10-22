@@ -11,8 +11,8 @@ DAT POKER uses the **DAT Governance Token** as the primary in-game currency for:
 The DAT Governance Token is a **Chia Asset Token (CAT)** — a fungible token on the Chia blockchain, controlled by a TAIL (Token and Asset Issuance Limitations) program.
 
 - Players hold DAT in a standard Chia wallet (Sage, official light wallet, etc.).
-- Buy-ins transfer DAT CAT coins into table/tournament escrow (platform or state-channel puzzles).
-- Settlements return DAT winnings to player wallets.
+- Buy-ins credit the platform ledger (on-chain CAT escrow planned; see Phase 2 below).
+- Withdraws return DAT winnings to player wallets via treasury CAT offers.
 
 Reference: [Chia CAT documentation](https://docs.chia.net/academy-cat/)
 
@@ -69,8 +69,6 @@ sequenceDiagram
 |-------|------------------|
 | **DAT** | Player buy-ins, pots, payouts |
 | **XCH** | Network fees only (mempool fees for opens/settles) |
-
-Head-to-head **chia-gaming** sessions may still lock XCH or CAT per room config; DAT POKER will standardize on DAT for ring games and MTTs.
 
 ## Governance (future)
 

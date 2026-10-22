@@ -13,9 +13,9 @@
 
 ## Funds handling
 
-1. **Development** — Use chia-gaming simulator only.
-2. **Staging** — Testnet + low stakes; monitor known alpha fund-leak issues.
-3. **Production** — Segregated treasury, multi-sig for large movements, reconciliation jobs.
+1. **Development** — `DAT_ALLOW_DEV_BUYIN=true` or testnet; no mainnet treasury hot wallet.
+2. **Staging** — Testnet + low stakes; exercise WalletConnect buy-in and treasury withdraw offers.
+3. **Production** — Segregated treasury host, multi-sig for large movements, reconciliation jobs.
 
 ## Compliance (planned)
 

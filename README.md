@@ -1,6 +1,6 @@
 # DAT POKER
 
-Global-scale poker on the **Chia blockchain** with off-chain gameplay and on-chain settlement via [chia-gaming](https://github.com/Chia-Network/chia-gaming) state channels.
+Global-scale poker on the **Chia blockchain** with off-chain gameplay and on-chain settlement in the **DAT Governance Token** (CAT) via Sage WalletConnect buy-ins and treasury payout offers.
 
 **Account funding:** player buy-ins and bankrolls use the **DAT Governance Token** (Chia CAT). See [docs/DAT_TOKEN.md](./docs/DAT_TOKEN.md).
 
@@ -39,7 +39,7 @@ For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a 
 | Path | Purpose |
 |------|---------|
 | `packages/game-engine` | NLHE engine, commit-reveal shuffle, hand evaluation |
-| `packages/chia-bridge` | chia-gaming adapter, CAT payout offers, settlement proofs |
+| `packages/chia-bridge` | CAT payout offers, settlement proofs, optional chia-gaming health probe |
 | `packages/shared` | Types, variant catalog, DAT units, bet sizing |
 | `services/api` | REST API (tables, hands, wallet, withdraw) |
 | `services/treasury-payout` | Treasury offer builder for on-chain DAT payouts |

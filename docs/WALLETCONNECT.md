@@ -1,12 +1,12 @@
 # WalletConnect Setup
 
-DAT POKER uses [WalletConnect v2](https://docs.walletconnect.com/) so the web client can pair with Chia wallets (Sage, official light wallet, etc.) for buy-ins and head-to-head state-channel flows via [chia-gaming](https://github.com/Chia-Network/chia-gaming).
+DAT POKER uses [WalletConnect v2](https://docs.walletconnect.com/) so the web client can pair with Chia wallets (Sage, official light wallet, etc.) for DAT buy-ins and treasury withdraw offers.
 
 ## Prerequisites
 
 1. A [WalletConnect Cloud](https://cloud.walletconnect.com/) project (free tier is fine for development).
 2. A Chia wallet that supports WalletConnect on your target network (mainnet or testnet11).
-3. Optional: local chia-gaming lobby/game services for head-to-head testing (see [CHIA_INTEGRATION.md](./CHIA_INTEGRATION.md)).
+3. For on-chain withdraws: treasury Sage + `pnpm dev:treasury` (see [TREASURY.md](./TREASURY.md)).
 
 ## Environment variables
 
@@ -36,9 +36,9 @@ The REST API exposes wallet configuration for clients:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /v1/wallet/config` | WalletConnect project ID, chain id, chia-gaming URLs |
+| `GET /v1/wallet/config` | WalletConnect project ID, chain id, optional service URLs |
 | `GET /v1/wallet/dat-token` | DAT CAT asset metadata and buy-in readiness |
-| `GET /v1/wallet/status` | Combined wallet + chia-gaming health snapshot |
+| `GET /v1/wallet/status` | Combined wallet + optional health snapshot |
 
 Example:
 
@@ -86,11 +86,11 @@ pnpm dev:web    # terminal 3 — open http://localhost:5173
 | **Local dev** | Optional | `DAT_ALLOW_DEV_BUYIN=true` uses engine mojos without on-chain CAT |
 | **Staging / prod** | Required | Real DAT CAT offers; `DAT_GOVERNANCE_TOKEN_ASSET_ID` must be set |
 
-> **Alpha warning:** Live WalletConnect testing against mainnet can leave funds locked in state channels if sessions are not closed cleanly. Prefer chia-gaming simulator + testnet11 for development. See [CHIA_INTEGRATION.md](./CHIA_INTEGRATION.md).
+> **Alpha warning:** Prefer testnet11 (or `DAT_ALLOW_DEV_BUYIN=true`) while WalletConnect + treasury offer flows are still alpha. See [TREASURY.md](./TREASURY.md) and [CHIA_INTEGRATION.md](./CHIA_INTEGRATION.md).
 
 ## Related docs
 
 - [TREASURY.md](./TREASURY.md) — treasury wallet + on-chain DAT withdraw setup
 - [DAT_TOKEN.md](./DAT_TOKEN.md) — DAT Governance Token buy-in architecture
-- [CHIA_INTEGRATION.md](./CHIA_INTEGRATION.md) — chia-gaming modes and network URLs
+- [CHIA_INTEGRATION.md](./CHIA_INTEGRATION.md) — Chia / DAT settlement model
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — wallet / treasury component in the platform diagram
