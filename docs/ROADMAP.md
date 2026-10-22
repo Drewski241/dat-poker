@@ -6,7 +6,7 @@
 - [x] NLHE engine with commit-reveal shuffle
 - [x] Hand evaluator (showdown)
 - [x] REST API + WebSocket gateway skeleton
-- [x] chia-gaming client adapter
+- [x] Chia bridge (settlement proofs + CAT helpers)
 - [x] Architecture + security docs
 
 ## Phase 1 — Playable MVP
@@ -16,13 +16,13 @@
 - [ ] Postgres persistence for tables/hands/events
 - [ ] Redis pub/sub for gateway fanout
 - [ ] Docker Compose dev stack
-- [ ] chia-gaming simulator E2E
+- [ ] Treasury + WalletConnect E2E on testnet
 
 ## Phase 2 — Multi-variant
 
 - [ ] PLO4 / PLO5 engines
 - [ ] SNG + MTT schedulers
-- [ ] Calpoker route through chia-gaming native flow
+- [ ] Calpoker rules in platform engine (off-chain)
 - [ ] Rake accounting + ledger
 
 ## Phase 3 — Scale (10k–100k concurrent)
@@ -47,4 +47,5 @@
 ## Non-goals (for now)
 
 - Putting every fold/call on-chain (too slow/expensive)
+- chia-gaming state channels for play or settlement
 - Single monolithic server for global traffic

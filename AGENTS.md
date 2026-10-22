@@ -19,7 +19,7 @@ Libraries under `packages/*` are built/tested via workspace filters; there is no
 
 - Copy `.env.example` → `.env` before running services (root `.env` is loaded by API/gateway via `dotenv` where configured).
 - **Postgres/Redis** in `docker/docker-compose.yml` are **not wired** in application code yet; do not start Docker solely for REST poker flows.
-- **chia-gaming** (lobby `:3001`, game `:3000`) is optional unless testing `/health/chia-gaming` or Chia head-to-head flows. See `docs/CHIA_INTEGRATION.md`.
+- **chia-gaming** (lobby `:3001`, game `:3000`) is optional and unused by the DAT play/settlement path; only needed if probing `/health/chia-gaming`. See `docs/CHIA_INTEGRATION.md`.
 
 ### Standard commands (from repo root)
 

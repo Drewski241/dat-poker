@@ -58,8 +58,8 @@ export const POKER_VARIANTS: VariantMeta[] = [
     holeCards: 2,
     communityCards: 5,
     bettingStructure: "no-limit",
-    chiaGamingNative: true,
-    notes: "Reference implementation in chia-gaming; head-to-head state channels.",
+    chiaGamingNative: false,
+    notes: "Calpoker rules inspired by Chia Gaming; DAT POKER runs this variant off-chain (no state channels).",
   },
   {
     id: "stud",

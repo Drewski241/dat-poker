@@ -1,58 +1,37 @@
 # Chia Integration
 
-## Official stack
+## How DAT POKER uses Chia
 
-This platform integrates with **[Chia-Network/chia-gaming](https://github.com/Chia-Network/chia-gaming)**:
+DAT POKER settles value on Chia with the **DAT Governance Token** (CAT):
 
-- **State channels** — Shared on-chain coin; gameplay off-chain via signed messages (potato protocol).
-- **Referee puzzles** — Chialisp validators for moves and slashing on dispute.
-- **Calpoker** — Reference poker variant with commit-reveal randomness.
+- **Buy-in / bankroll** — Sage WalletConnect (`docs/WALLETCONNECT.md`)
+- **Withdraw** — treasury payout service builds DAT CAT offers; players take them in Sage (`docs/TREASURY.md`)
+- **Gameplay** — authoritative off-chain game servers (not per-action on-chain writes)
 
-Developer guide: [Chia Gaming Developers Guide](https://docs.chia.net/guides/gaming-developers-guide)
+DAT POKER does **not** use [chia-gaming](https://github.com/Chia-Network/chia-gaming) **state channels** for play or settlement.
 
-## Running chia-gaming locally (optional)
+## Optional health probe
 
-```bash
-git clone https://github.com/Chia-Network/chia-gaming.git
-cd chia-gaming
-./build-docker-images.sh
-# Frontend :3000, Lobby :3001, Simulator :5800
-```
-
-Point this monorepo at those services:
+The API can probe optional chia-gaming lobby/game URLs for operators who run those services locally. This is unrelated to the DAT buy-in / treasury path:
 
 ```env
 CHIA_GAMING_LOBBY_URL=http://localhost:3001
 CHIA_GAMING_GAME_URL=http://localhost:3000
 ```
 
-> **Alpha warning:** Live WalletConnect testing can leave funds on-chain after shutdown. Prefer the simulator for development.
+```bash
+curl -s http://localhost:4000/health/chia-gaming
+```
 
-## Integration modes
+If those env vars are unset, the probe simply reports unreachable — that does not affect tables, hands, or DAT settlement.
 
-### Mode A — Native state channel (2 players)
+## Settlement model (current)
 
-Best for: Calpoker, heads-up NLHE, high-trust P2P stakes.
-
-- Use `ChiaGamingClient.createHeadToHeadRoom()`
-- Wallets open/close channel via chia-gaming UI
-- Platform records session metadata only
-
-### Mode B — Platform escrow + batch settlement (3–10 players)
-
-Best for: cash games, SNGs.
-
-- Buy-ins tracked in platform treasury service (future Chialisp escrow coins)
-- Hand ends → `buildSettlementProof()` → settlement worker submits Chia tx
-- Event log + `stateRootHash` enable third-party audit
-
-### Mode C — Tournament pools (100k+ players)
-
-Best for: MTTs.
-
-- Registration opens tournament pool coin on Chia
-- Payout table executed after final table settlement
-- Off-chain blind/level schedule with on-chain prize pool lock
+| Layer | Mechanism |
+|-------|-----------|
+| Off-chain | Game engine + platform ledger (stacks, hands, events) |
+| On-chain | DAT CAT via WalletConnect buy-in checks and treasury `make_offer` / `chia_takeOffer` withdraws |
+| Audit | `SettlementProof` / `stateRootHash` helpers in `packages/chia-bridge` (batch anchoring planned) |
 
 ## Network configuration
 
@@ -61,11 +40,10 @@ Best for: MTTs.
 | mainnet | `https://coinset.org` |
 | testnet11 | `https://testnet11.api.coinset.org` |
 
-WalletConnect project ID is required for production wallet flows. See [WALLETCONNECT.md](./WALLETCONNECT.md) for setup and API endpoints.
+WalletConnect project ID is required for production wallet flows. See [WALLETCONNECT.md](./WALLETCONNECT.md).
 
-## Next implementation steps
+## Related docs
 
-1. Wire real lobby API paths from chia-gaming OpenAPI (alpha APIs may change).
-2. Add settlement worker service consuming Kafka hand-complete events.
-3. Implement Chialisp escrow puzzle templates for ring-game buy-ins.
-4. Simulator E2E test harness in CI (Docker compose profile).
+- [TREASURY.md](./TREASURY.md) — treasury Sage + on-chain DAT withdraw
+- [DAT_TOKEN.md](./DAT_TOKEN.md) — DAT CAT configuration
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — platform diagram

@@ -1,7 +1,8 @@
 import type { ChiaBridgeConfig, LobbyRoom, StateChannelSession } from "./types.js";
 
 /**
- * HTTP adapter for Chia-Network/chia-gaming lobby + game services.
+ * Optional HTTP adapter for Chia-Network/chia-gaming lobby + game health probes.
+ * DAT POKER does not use chia-gaming state channels for play or settlement.
  * @see https://github.com/Chia-Network/chia-gaming
  */
 export class ChiaGamingClient {
@@ -28,7 +29,7 @@ export class ChiaGamingClient {
   }
 
   /**
-   * Create a head-to-head room for Chia Gaming (Calpoker / state channel flow).
+   * Create a head-to-head room against a local chia-gaming lobby (optional / unused by DAT flows).
    * Exact API shape may change with chia-gaming alpha releases.
    */
   async createHeadToHeadRoom(params: {
@@ -59,7 +60,7 @@ export class ChiaGamingClient {
     };
   }
 
-  /** Track an active state channel session (platform-side metadata). */
+  /** Platform-side metadata record for an optional external lobby session. */
   createSessionRecord(room: LobbyRoom, playerA: string, playerB: string, stakeMojos: bigint): StateChannelSession {
     return {
       sessionId: `sc_${room.roomId}`,

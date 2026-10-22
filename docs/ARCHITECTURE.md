@@ -2,9 +2,9 @@
 
 ## Design principles
 
-1. **Off-chain speed, on-chain trust** — Betting actions run on authoritative game servers (single-digit ms). Value custody, session open/close, and disputes use Chia.
+1. **Off-chain speed, on-chain trust** — Betting actions run on authoritative game servers (single-digit ms). Value custody and payouts use Chia DAT CAT coins.
 2. **Event-sourced hands** — Every action is an append-only event with monotonic `seq` for replay, audit, and settlement proofs.
-3. **Hybrid Chia modes** — Head-to-head (2-player) uses [chia-gaming](https://github.com/Chia-Network/chia-gaming) state channels; ring games and MTTs batch settlement to chain.
+3. **DAT CAT settlement** — Buy-ins and withdraws settle on-chain via WalletConnect / treasury payout offers. DAT POKER does **not** use chia-gaming state channels.
 4. **Regional scale-out** — Game shards per geography; global control plane for identity, lobby, and treasury.
 
 ## Logical components
@@ -39,7 +39,7 @@ flowchart TB
 
   subgraph chia [Chia Layer]
     Bridge[Chia Bridge]
-    Gaming[chia-gaming Lobby/Game]
+    Treasury[Treasury Payout / DAT CAT]
     Settlement[Settlement Worker]
   end
 
@@ -61,7 +61,7 @@ flowchart TB
   Shard1 --> Kafka
   Lobby --> Wallet
   Wallet --> Bridge
-  Bridge --> Gaming
+  Bridge --> Treasury
   Bridge --> Settlement
   Settlement --> PG
   Shard1 --> Redis
@@ -76,12 +76,12 @@ flowchart TB
 4. Actions validated by `game-engine`; events broadcast via gateway.
 5. Showdown → engine computes winners; settlement worker builds `SettlementProof` and optionally anchors on Chia.
 
-## Game loop (head-to-head / Calpoker)
+## Game loop (vs house / cash)
 
-1. Platform creates chia-gaming lobby room via `ChiaGamingClient`.
-2. Players connect wallets (WalletConnect) and open state channel.
-3. Moves exchanged off-chain (potato protocol); platform mirrors events for analytics only.
-4. Session close → single on-chain payout transaction.
+1. Player connects Sage via WalletConnect and buys in with DAT (dev mode can skip on-chain checks).
+2. Hands run on the platform game engine (same commit-reveal / action path as ring games).
+3. Stack updates stay in the platform ledger until withdraw.
+4. Withdraw → treasury service builds a DAT CAT offer; player takes it in Sage (`chia_takeOffer`).
 
 ## Trust model
 
@@ -89,7 +89,7 @@ flowchart TB
 |---------|-----------|
 | Deck fairness | Commit-reveal + player seeds + deterministic shuffle |
 | Action integrity | Server-authoritative with signed client intents (future) |
-| Payout correctness | Settlement proofs + optional on-chain referee (chia-gaming) |
+| Payout correctness | Settlement proofs + treasury DAT CAT offers |
 | Collusion | Behavioral ML, device graph, table isolation (planned) |
 
 ## Repository mapping (current vs planned)
@@ -97,9 +97,10 @@ flowchart TB
 | Component | Status |
 |-----------|--------|
 | `packages/game-engine` | MVP NLHE + evaluator |
-| `packages/chia-bridge` | Lobby HTTP adapter + settlement hashes |
-| `services/api` | Table CRUD, variants |
+| `packages/chia-bridge` | Settlement hashes + CAT payout helpers |
+| `services/api` | Tables, hands, wallet, withdraw |
+| `services/treasury-payout` | Sage RPC offer builder for DAT withdraws |
 | `services/gateway` | WS scaffold |
+| `apps/web` | Sage WalletConnect + NLHE vs house |
 | Postgres / Redis / Kafka | Planned |
-| Mobile / Web UI | Planned |
 | KYC / AML | Planned |

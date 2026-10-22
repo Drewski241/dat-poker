@@ -1,5 +1,6 @@
 export type ChiaNetwork = "mainnet" | "testnet";
 
+/** Optional lobby session metadata. Not used by DAT POKER settlement (no state channels). */
 export interface StateChannelSession {
   sessionId: string;
   playerA: string;

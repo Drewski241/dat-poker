@@ -5,6 +5,6 @@ describe("variants", () => {
   it("includes nlhe and calpoker", () => {
     expect(POKER_VARIANTS.length).toBeGreaterThan(5);
     expect(getVariantMeta("nlhe")?.bettingStructure).toBe("no-limit");
-    expect(getVariantMeta("calpoker")?.chiaGamingNative).toBe(true);
+    expect(getVariantMeta("calpoker")?.chiaGamingNative).toBe(false);
   });
 });
