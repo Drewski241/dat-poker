@@ -44,7 +44,7 @@ For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a 
 | `services/api` | REST API (tables, hands, wallet, withdraw) |
 | `services/treasury-payout` | Treasury offer builder for on-chain DAT payouts |
 | `services/gateway` | WebSocket realtime |
-| `apps/web` | Web client — Sage WalletConnect, NLHE vs house |
+| `apps/web` | Web client — Sage WalletConnect, NLHE vs house, Spirit Slots (`/slots`) |
 | `docs/` | Architecture, DAT token, Chia integration, roadmap |
 
 ## Create this repo on GitHub
