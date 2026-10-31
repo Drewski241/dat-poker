@@ -66,7 +66,7 @@ If `up.sh` is missing locally, bootstrap once with `git fetch` + `checkout`, or 
 |------|----------------|
 | HTTPS (WalletConnect) | [enable-https.sh](./enable-https.sh) — [BETA.md § HTTPS](../../docs/BETA.md) |
 | Sage project + DAT asset | [enable-sage.sh](./enable-sage.sh) |
-| Redeploy latest code | `sudo bash /opt/dat-poker/deploy/aws-ec2/pull-16sng-mtt-ui.sh` or [BETA.md § phone update](../../docs/BETA.md) |
+| Redeploy latest code | `sudo bash -c 'export DAT_POKER_REPO_REF=<branch>; bash /opt/dat-poker/deploy/aws-ec2/up.sh'` |
 | NFT payouts (20× 16-player wins) | Treasury host: `pnpm dev:treasury`, NFT in treasury wallet; game `.env`: `DAT_TREASURY_PAYOUT_URL` → treasury `:4200/payout` (NFT uses `:4200/nft-payout`) |
 
 ## Verify SNG + NFT promo
