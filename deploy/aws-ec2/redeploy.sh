@@ -91,6 +91,7 @@ if [[ ! -f "$INSTALL_ROOT/data/ledger.json" ]]; then
   printf '%s\n' '{"balances":[],"redeemed":[]}' > "$INSTALL_ROOT/data/ledger.json"
   chmod 600 "$INSTALL_ROOT/data/ledger.json"
 fi
+# Progressive jackpot persists in slots-jackpot.json (created on first spin if missing).
 chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
 systemctl reset-failed dat-poker-api 2>/dev/null || true
 systemctl restart dat-poker-api

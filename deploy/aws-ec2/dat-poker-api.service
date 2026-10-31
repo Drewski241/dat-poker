@@ -10,6 +10,7 @@ WorkingDirectory=/opt/dat-poker
 EnvironmentFile=-/opt/dat-poker/.env
 Environment=DAT_LEDGER_PATH=/opt/dat-poker/data/ledger.json
 Environment=DAT_ACCOUNTS_PATH=/opt/dat-poker/data/accounts.json
+Environment=DAT_SLOTS_JACKPOT_PATH=/opt/dat-poker/data/slots-jackpot.json
 ExecStart=/usr/local/bin/node /opt/dat-poker/services/api/dist/index.js
 Restart=on-failure
 RestartSec=3
