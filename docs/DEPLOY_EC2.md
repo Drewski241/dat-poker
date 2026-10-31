@@ -10,16 +10,25 @@ Spirit Slots **only exist on** `cursor/spirit-slots-game-4501`. Redeploying
 `cursor/trust-rails-fairness-7c36` (or the old MTT branch) replaces the UI with
 the lobby/MTT client and **removes** the slot machine.
 
-On the beta host (Session Manager or SSH):
+On the beta host (Session Manager or SSH).
+
+**If `pull-spirit-slots.sh` is not on the box yet** (has not deployed this branch before), use
+**one** of these — they fetch `up.sh` from GitHub and do not need new local files:
 
 ```bash
-sudo bash /opt/dat-poker/deploy/aws-ec2/pull-spirit-slots.sh
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/spirit-slots-game-4501; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/spirit-slots-game-4501/deploy/aws-ec2/up.sh" | bash'
 ```
 
-Or explicitly:
+Or, if `/opt/dat-poker/deploy/aws-ec2/up.sh` already exists:
 
 ```bash
 sudo bash -c 'export DAT_POKER_REPO_REF=cursor/spirit-slots-game-4501; bash /opt/dat-poker/deploy/aws-ec2/up.sh'
+```
+
+After the first successful deploy, you can use:
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/pull-spirit-slots.sh
 ```
 
 Wait for **`beta redeploy ok`** and the line **`Spirit Slots UI: open /slots`**.

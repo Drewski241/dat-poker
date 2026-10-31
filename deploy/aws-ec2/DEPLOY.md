@@ -47,6 +47,14 @@ Spirit Slots ship on **`cursor/spirit-slots-game-4501` only**. Do **not** redepl
 `cursor/trust-rails-fairness-7c36` if you want the slot machine — that branch is
 the MTT/lobby client without slots.
 
+**First time / `pull-spirit-slots.sh` missing** — paste this single line (downloads `up.sh` from GitHub):
+
+```bash
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/spirit-slots-game-4501; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/spirit-slots-game-4501/deploy/aws-ec2/up.sh" | bash'
+```
+
+Later deploys (after this branch is checked out on the host):
+
 ```bash
 sudo bash /opt/dat-poker/deploy/aws-ec2/pull-spirit-slots.sh
 ```
