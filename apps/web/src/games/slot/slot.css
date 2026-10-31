@@ -499,6 +499,16 @@
   color: var(--accent);
 }
 
+.site-nav button.nav-tab.slot-tab {
+  border-color: rgba(255, 229, 102, 0.35);
+}
+
+.site-nav button.nav-tab.slot-tab.active {
+  background: linear-gradient(135deg, rgba(255, 229, 102, 0.22), rgba(61, 214, 140, 0.18));
+  border-color: rgba(255, 229, 102, 0.65);
+  color: #ffe566;
+}
+
 .app-shell-wide {
   max-width: 52rem;
 }

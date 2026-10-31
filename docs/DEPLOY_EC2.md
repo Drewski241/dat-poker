@@ -4,24 +4,33 @@ Production deploys use the kit under **`deploy/aws-ec2/`** (Caddy/nginx, systemd
 
 Full runbook: **[deploy/aws-ec2/DEPLOY.md](../deploy/aws-ec2/DEPLOY.md)** and **[docs/BETA.md](./BETA.md)**.
 
-## Redeploy (your usual pattern)
+## Redeploy (Spirit Slots — required ref)
 
-On the beta host (Session Manager or SSH), set the git ref and run `up.sh`:
+Spirit Slots **only exist on** `cursor/spirit-slots-game-4501`. Redeploying
+`cursor/trust-rails-fairness-7c36` (or the old MTT branch) replaces the UI with
+the lobby/MTT client and **removes** the slot machine.
+
+On the beta host (Session Manager or SSH):
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/pull-spirit-slots.sh
+```
+
+Or explicitly:
 
 ```bash
 sudo bash -c 'export DAT_POKER_REPO_REF=cursor/spirit-slots-game-4501; bash /opt/dat-poker/deploy/aws-ec2/up.sh'
 ```
 
-Wait for **`beta redeploy ok`**.
+Wait for **`beta redeploy ok`** and the line **`Spirit Slots UI: open /slots`**.
 
-- `DAT_POKER_REPO_REF` — branch or tag to fetch (shallow `git fetch --depth 1`)
-- `INSTALL_ROOT` — defaults to `/opt/dat-poker`
-- `up.sh` checks out the ref, then runs `redeploy.sh` (build API + web, copy dist to nginx/html, restart `dat-poker-api`)
+Then open **https://datspiritpoker.com/slots** (or **/play** → click **✨ Spirit Slots** in the top nav).
 
-Other branches (example):
+Verify the build on the box:
 
 ```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/trust-rails-fairness-7c36; bash /opt/dat-poker/deploy/aws-ec2/up.sh'
+grep -l 'Spirit Slots' /usr/share/nginx/html/assets/*.js
+curl -s http://127.0.0.1:4000/v1/play/config
 ```
 
 ## Spirit Slots env (appended on redeploy if missing)

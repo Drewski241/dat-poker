@@ -129,3 +129,4 @@ if [[ "$ok" -ne 1 ]]; then
   exit 1
 fi
 echo "beta redeploy ok"
+echo "Spirit Slots UI: open /slots (or tap ✨ Spirit Slots in the nav). Poker: /play"

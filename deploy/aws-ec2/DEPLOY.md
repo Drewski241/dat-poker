@@ -43,19 +43,15 @@ Use the **ElasticIp** output as your public URL.
 
 Open **EC2 → Instances → select beta host → Connect → Session Manager**.
 
-Set the branch (or tag) and run **`up.sh`** (fetch + checkout + `redeploy.sh`):
+Spirit Slots ship on **`cursor/spirit-slots-game-4501` only**. Do **not** redeploy
+`cursor/trust-rails-fairness-7c36` if you want the slot machine — that branch is
+the MTT/lobby client without slots.
 
 ```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/spirit-slots-game-4501; bash /opt/dat-poker/deploy/aws-ec2/up.sh'
+sudo bash /opt/dat-poker/deploy/aws-ec2/pull-spirit-slots.sh
 ```
 
-Wait for **`beta redeploy ok`**.
-
-Other refs use the same pattern, for example:
-
-```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/trust-rails-fairness-7c36; bash /opt/dat-poker/deploy/aws-ec2/up.sh'
-```
+Wait for **`beta redeploy ok`**, then open **`/slots`** or use the **✨ Spirit Slots** tab at **`/play`**.
 
 If `up.sh` is missing locally, bootstrap once with `git fetch` + `checkout`, or paste
 [console-user-data.sh](./console-user-data.sh) on a new instance (see [docs/BETA.md](../../docs/BETA.md)).
