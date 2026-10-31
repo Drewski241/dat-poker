@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DAT POKER on AWS</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        background: radial-gradient(circle at top, #1f6b46 0%, #0b1f16 45%, #070d0a 100%);
+        color: #e8f5ee;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+      }
+      main {
+        max-width: 40rem;
+        background: rgba(7, 18, 13, 0.78);
+        border: 1px solid rgba(120, 200, 160, 0.25);
+        border-radius: 1rem;
+        padding: 2rem;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        letter-spacing: 0.08em;
+      }
+      p {
+        line-height: 1.5;
+        color: #c5ddcf;
+      }
+      .status {
+        margin-top: 1.25rem;
+        padding: 0.85rem 1rem;
+        border-radius: 0.75rem;
+        background: #10261c;
+        font-family: ui-monospace, monospace;
+        font-size: 0.9rem;
+      }
+      a {
+        color: #8de0b3;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>DAT POKER</h1>
+      <p>
+        This Amazon EC2 instance is serving DAT POKER. The page you are reading
+        is nginx on Amazon Linux — the same “first web server” step as the AWS
+        Free Tier tutorial.
+      </p>
+      <p>
+        The Node API and web client continue installing in the background. When
+        <code>/health</code> returns OK, the full table UI replaces this page.
+      </p>
+      <div class="status" id="status">Checking API health…</div>
+    </main>
+    <script>
+      async function ping() {
+        const el = document.getElementById("status");
+        try {
+          const res = await fetch("/health", { cache: "no-store" });
+          const body = await res.json();
+          el.textContent =
+            "API " + (res.ok ? "ok" : "error") + " — " + JSON.stringify(body);
+        } catch (err) {
+          el.textContent =
+            "API not up yet (nginx is serving this page). Bootstrap log: /var/log/dat-poker-bootstrap.log";
+        }
+      }
+      ping();
+      setInterval(ping, 5000);
+    </script>
+  </body>
+</html>

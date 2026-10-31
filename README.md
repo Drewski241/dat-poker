@@ -32,7 +32,7 @@ Configure `.env` from `.env.example`:
 
 See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (connect → daily redeem → play poker or slots on one stack → withdraw).
 
-Spirit Slots: `/slots` — **1 DAT per spin**, shared table stack with poker, progressive jackpot ([docs/DEPLOY_EC2.md](./docs/DEPLOY_EC2.md) for production).
+Spirit Slots: `/slots` — **1 DAT per spin**, shared table stack with poker, progressive jackpot. EC2 redeploy: [docs/DEPLOY_EC2.md](./docs/DEPLOY_EC2.md) / [deploy/aws-ec2/DEPLOY.md](./deploy/aws-ec2/DEPLOY.md).
 
 For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a **separate treasury host**; copy `.env.treasury.example` → `.env`, run `pnpm treasury:check`, then point the game API at it with `DAT_TREASURY_PAYOUT_URL`. See [docs/TREASURY.md](./docs/TREASURY.md).
 

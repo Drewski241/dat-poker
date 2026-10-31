@@ -1,125 +1,32 @@
-# Deploy DAT Spirit Poker to EC2
+# Deploy / redeploy on EC2
 
-This guide covers a simple production layout for **datspiritpoker.com**:
+Production deploys use the kit under **`deploy/aws-ec2/`** (Caddy/nginx, systemd, bootstrap).
 
-- **Nginx** — TLS, static web (`apps/web/dist`), SPA fallback for `/slots`
-- **Node** — `@dat-poker/api` on port 4000 (systemd)
-- **Optional** — treasury payout on a separate host ([TREASURY.md](./TREASURY.md))
+Full runbook: **[deploy/aws-ec2/DEPLOY.md](../deploy/aws-ec2/DEPLOY.md)** and **[docs/BETA.md](./BETA.md)**.
 
-## 1. EC2 instance
+## Redeploy (your usual pattern)
 
-- Ubuntu 22.04+ or Amazon Linux 2023
-- Security group: `443`, `80` from the world; `4000` only from localhost (or VPC if split)
-- Elastic IP recommended
-
-## 2. One-time server setup
+On the beta host (Session Manager or SSH), set the git ref and run `up.sh`:
 
 ```bash
-sudo apt update && sudo apt install -y nginx git
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-sudo corepack enable
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/spirit-slots-game-4501; bash /opt/dat-poker/deploy/aws-ec2/up.sh'
 ```
 
-Clone the repo (or pull from your deploy user):
+Wait for **`beta redeploy ok`**.
+
+- `DAT_POKER_REPO_REF` — branch or tag to fetch (shallow `git fetch --depth 1`)
+- `INSTALL_ROOT` — defaults to `/opt/dat-poker`
+- `up.sh` checks out the ref, then runs `redeploy.sh` (build API + web, copy dist to nginx/html, restart `dat-poker-api`)
+
+Other branches (example):
 
 ```bash
-git clone https://github.com/Drewski241/dat-poker.git /opt/dat-poker
-cd /opt/dat-poker
-cp .env.example .env
-# Edit .env: WALLETCONNECT_PROJECT_ID, DAT_GOVERNANCE_TOKEN_ASSET_ID,
-# DAT_TREASURY_PAYOUT_URL, DAT_DAILY_REDEEM_MOJOS, DAT_SPIN_COST_MOJOS, etc.
-pnpm install
-pnpm build
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/trust-rails-fairness-7c36; bash /opt/dat-poker/deploy/aws-ec2/up.sh'
 ```
 
-Build the web client with your public API URL:
+## Spirit Slots env (appended on redeploy if missing)
 
-```bash
-VITE_API_URL=https://datspiritpoker.com pnpm --filter @dat-poker/web build
-sudo mkdir -p /var/www/datspiritpoker
-sudo rsync -a apps/web/dist/ /var/www/datspiritpoker/
-```
+- `DAT_DAILY_REDEEM_MOJOS=5000000` — 5000 DAT play chips / UTC day
+- `DAT_SPIN_COST_MOJOS=1000` — 1 DAT per spin
 
-## 3. systemd (API)
-
-Create `/etc/systemd/system/dat-poker-api.service`:
-
-```ini
-[Unit]
-Description=DAT Poker API
-After=network.target
-
-[Service]
-Type=simple
-User=ubuntu
-WorkingDirectory=/opt/dat-poker
-Environment=NODE_ENV=production
-ExecStart=/usr/bin/node services/api/dist/index.js
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now dat-poker-api
-```
-
-## 4. Nginx
-
-Example `/etc/nginx/sites-available/datspiritpoker`:
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name datspiritpoker.com;
-
-    root /var/www/datspiritpoker;
-    index index.html;
-
-    location /v1/ {
-        proxy_pass http://127.0.0.1:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    location /health {
-        proxy_pass http://127.0.0.1:4000;
-    }
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-
-Enable the site and reload nginx after obtaining TLS certificates (e.g. certbot).
-
-## 5. Redeploy (routine)
-
-From the repo root on the server:
-
-```bash
-./scripts/deploy-ec2.sh
-```
-
-Or manually:
-
-```bash
-git pull
-pnpm install
-pnpm build
-VITE_API_URL=https://datspiritpoker.com pnpm --filter @dat-poker/web build
-sudo rsync -a apps/web/dist/ /var/www/datspiritpoker/
-sudo systemctl restart dat-poker-api
-```
-
-## Notes
-
-- In-memory tables, jackpots, and sessions reset when the API restarts.
-- Set `DAT_ALLOW_DEV_BUYIN=false` in production.
-- Progressive jackpot and daily redeem amounts come from `DAT_DAILY_REDEEM_MOJOS` and spin cost from `DAT_SPIN_COST_MOJOS` (default **1 DAT** per spin).
+See root `.env.example` for WalletConnect, DAT asset id, and treasury URL.
