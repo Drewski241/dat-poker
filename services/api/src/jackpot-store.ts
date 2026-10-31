@@ -5,7 +5,7 @@ import { DAT_PLAY_DEFAULTS } from "@dat-poker/shared";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-let progressiveJackpotMojos = DAT_PLAY_DEFAULTS.jackpotSeedMojos;
+let progressiveJackpotMojos: bigint = DAT_PLAY_DEFAULTS.jackpotSeedMojos;
 let loaded = false;
 
 function defaultJackpotPath(): string {
