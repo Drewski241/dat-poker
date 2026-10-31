@@ -38,6 +38,38 @@ export function buildWithdrawMessage(params: {
   return `dat-poker:v1:withdraw:${params.tableId}:${params.stackMojos}:${params.address}`;
 }
 
+export function buildDailyRedeemMessage(params: {
+  utcDay: string;
+  redeemMojos: string;
+  address: string;
+}): string {
+  return `dat-poker:v1:daily-redeem:${params.utcDay}:${params.redeemMojos}:${params.address}`;
+}
+
+export function validateDailyRedeemProof(
+  proof: BuyInProof,
+  params: { playerId: string; redeemMojos: string; utcDay: string },
+): string | null {
+  if (proof.address !== params.playerId) {
+    return "Redeem address must match playerId";
+  }
+  const expected = buildDailyRedeemMessage({
+    utcDay: params.utcDay,
+    redeemMojos: params.redeemMojos,
+    address: proof.address,
+  });
+  if (proof.message !== expected) {
+    return "Invalid daily redeem message";
+  }
+  if (!proof.signature || !proof.pubkey) {
+    if (proof.datBalanceMojos) {
+      return null;
+    }
+    return "Daily redeem signature required (approve in Sage) or provide balance attestation";
+  }
+  return null;
+}
+
 export interface BuyInProof {
   address: string;
   message: string;

@@ -1,7 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import { randomUUID } from "node:crypto";
-import type { TableConfig } from "@dat-poker/shared";
-import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
 import { recordBuyIn } from "../buy-in-store.js";
 import {
@@ -9,8 +6,8 @@ import {
   readDatTokenConfig,
   validateBuyInProof,
 } from "../wallet-config.js";
+import { createSpiritTable, getTablesMap, resolveConfiguredMinBuyInMojos } from "../table-factory.js";
 
-const tables = new Map<string, NlheTableEngine>();
 const HOUSE_PLAYER_ID = "dat-poker:house";
 
 export function registerTableRoutes(app: FastifyInstance): void {
@@ -21,36 +18,13 @@ export function registerTableRoutes(app: FastifyInstance): void {
       bigBlindMojos?: string;
       maxSeats?: number;
     };
-  }>("/v1/tables", async (req) => {
-    const id = randomUUID();
-    const dat = readDatTokenConfig();
-    const useDatStakes = Boolean(dat.assetId);
-    const minBuyIn = useDatStakes
-      ? resolveDatMinBuyInMojos(dat.minBuyInMojos)
-      : DAT_TABLE_DEFAULTS.minBuyInMojos;
-    const config: TableConfig = {
-      id,
-      variant: "nlhe",
-      format: "cash",
-      maxSeats: req.body.maxSeats ?? 6,
-      smallBlindMojos: BigInt(
-        req.body.smallBlindMojos ??
-          (useDatStakes ? DAT_TABLE_DEFAULTS.smallBlindMojos : 50_000_000_000n),
-      ),
-      bigBlindMojos: BigInt(
-        req.body.bigBlindMojos ??
-          (useDatStakes ? DAT_TABLE_DEFAULTS.bigBlindMojos : 100_000_000_000n),
-      ),
-      minBuyInMojos: minBuyIn,
-      maxBuyInMojos: useDatStakes ? DAT_TABLE_DEFAULTS.maxBuyInMojos : 20_000_000_000_000n,
-      rakeBps: 500,
-    };
-    tables.set(id, new NlheTableEngine(config));
-    return { tableId: id, config };
+  }>("/v1/tables", async () => {
+    const { tableId, config } = createSpiritTable();
+    return { tableId, config };
   });
 
   app.get<{ Params: { tableId: string } }>("/v1/tables/:tableId", async (req, reply) => {
-    const table = tables.get(req.params.tableId);
+    const table = getTablesMap().get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
@@ -74,14 +48,14 @@ export function registerTableRoutes(app: FastifyInstance): void {
       devAck?: boolean;
     };
   }>("/v1/tables/:tableId/seat", async (req, reply) => {
-    const table = tables.get(req.params.tableId);
+    const table = getTablesMap().get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
 
     const dat = readDatTokenConfig();
     const buyInMojos = BigInt(req.body.buyInMojos);
-    const minBuyIn = resolveDatMinBuyInMojos(dat.minBuyInMojos);
+    const minBuyIn = resolveConfiguredMinBuyInMojos();
 
     if (buyInMojos < minBuyIn) {
       return reply.status(400).send({
@@ -143,11 +117,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
     Params: { tableId: string };
     Body: { buyInMojos?: string };
   }>("/v1/tables/:tableId/seat-house", async (req, reply) => {
-    const table = tables.get(req.params.tableId);
+    const table = getTablesMap().get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
-    const buyInMojos = BigInt(req.body.buyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString());
+    const buyInMojos = BigInt(req.body.buyInMojos ?? resolveConfiguredMinBuyInMojos().toString());
     try {
       table.seatPlayer(HOUSE_PLAYER_ID, 1, buyInMojos);
       return { ok: true, playerId: HOUSE_PLAYER_ID };
@@ -157,5 +131,5 @@ export function registerTableRoutes(app: FastifyInstance): void {
   });
 }
 export function getTableEngine(tableId: string): NlheTableEngine | undefined {
-  return tables.get(tableId);
+  return getTablesMap().get(tableId);
 }

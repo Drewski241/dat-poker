@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SlotMachine } from "./games/slot/SlotMachine.js";
 import { PokerApp } from "./PokerApp.js";
+import { PlaySessionProvider } from "./play/PlaySessionContext.js";
 
 export type SiteView = "poker" | "slots";
 
@@ -13,6 +14,7 @@ function viewFromPath(): SiteView {
 
 export function App() {
   const [view, setView] = useState<SiteView>(viewFromPath);
+  const [playerId, setPlayerId] = useState<string | null>(null);
 
   const go = (next: SiteView) => {
     setView(next);
@@ -29,6 +31,7 @@ export function App() {
   }, []);
 
   return (
+    <PlaySessionProvider playerId={playerId}>
     <div className={`app app-shell-wide${view === "poker" ? " poker-view" : ""}`}>
       <nav className="site-nav" aria-label="Games">
         <button
@@ -46,7 +49,12 @@ export function App() {
           Spirit Slots
         </button>
       </nav>
-      {view === "slots" ? <SlotMachine ticker="DAT" /> : <PokerApp />}
+      {view === "slots" ? (
+        <SlotMachine ticker="DAT" playerId={playerId} />
+      ) : (
+        <PokerApp onPlayerIdChange={setPlayerId} />
+      )}
     </div>
+    </PlaySessionProvider>
   );
 }

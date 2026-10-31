@@ -103,6 +103,26 @@ export class NlheTableEngine {
       }));
   }
 
+  /** Adjust seated stack when no hand is active (e.g. slot wins/losses). */
+  adjustPlayerStack(playerId: PlayerId, deltaMojos: bigint): bigint {
+    if (this.hand) {
+      throw new Error("Cannot adjust stack during an active hand");
+    }
+    const current = this.stacks.get(playerId);
+    if (current === undefined) {
+      throw new Error("Player not seated");
+    }
+    const next = current + deltaMojos;
+    if (next < 0n) {
+      throw new Error("Insufficient stack");
+    }
+    if (next > this.config.maxBuyInMojos) {
+      throw new Error("Stack exceeds table maximum");
+    }
+    this.stacks.set(playerId, next);
+    return next;
+  }
+
   cashOutPlayer(playerId: PlayerId): { stackMojos: bigint; seatIndex: number } {
     if (this.hand) {
       throw new Error("Cannot cash out during an active hand");

@@ -9,6 +9,7 @@ import {
 } from "../treasury-payout.js";
 import { getTableEngine } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
+import { clearPlaySession } from "../play-session-store.js";
 import {
   buildBuyInMessage,
   buildWithdrawMessage,
@@ -215,6 +216,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       createdAt: new Date().toISOString(),
     });
     clearBuyIn(tableId, playerId);
+    clearPlaySession(playerId);
 
     return {
       ok: true,

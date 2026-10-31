@@ -61,6 +61,14 @@ describe("NlheTableEngine", () => {
     expect(flop?.board).toHaveLength(3);
   });
 
+  it("adjusts stack between hands for side games", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    const next = table.adjustPlayerStack("alice", -1_000_000_000n);
+    expect(next).toBe(4_999_000_000_000n);
+  });
+
   it("cashes out player stack when no hand is active", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

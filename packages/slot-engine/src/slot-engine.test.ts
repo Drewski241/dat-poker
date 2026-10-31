@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateSpin, gridFromRows, winTier } from "./slot-engine.js";
+import { evaluateSpin, gridFromRows, isProgressiveJackpotGrid, winTier } from "./slot-engine.js";
 
 describe("slot-engine", () => {
   it("pays a middle-line three-of-a-kind", () => {
@@ -13,6 +13,17 @@ describe("slot-engine", () => {
     const result = evaluateSpin(grid, 10);
     expect(result.lineWins.length).toBeGreaterThan(0);
     expect(result.totalPayout).toBeGreaterThan(0);
+  });
+
+  it("detects progressive grid", () => {
+    const grid = gridFromRows([
+      ["bell", "seven", "cherry"],
+      ["bell", "seven", "cherry"],
+      ["bell", "seven", "cherry"],
+      ["bell", "seven", "cherry"],
+      ["bell", "seven", "cherry"],
+    ]);
+    expect(isProgressiveJackpotGrid(grid)).toBe(true);
   });
 
   it("classifies jackpot tier", () => {

@@ -82,6 +82,37 @@ export interface TableSeat {
   stackMojos: string;
 }
 
+export interface PlaySessionState {
+  active: boolean;
+  tableId?: string;
+  stackMojos?: string;
+  redeemAvailable: boolean;
+  alreadyRedeemedToday?: boolean;
+  redeemUtcDay?: string;
+  dailyRedeemMojos: string;
+  spinCostMojos: string;
+  handInProgress?: boolean;
+  progressiveJackpotMojos: string;
+}
+
+export interface SlotSpinResult {
+  ok: boolean;
+  spinCostMojos: string;
+  lineWinMojos: string;
+  progressiveWinMojos: string;
+  wonProgressive: boolean;
+  netMojos: string;
+  stackMojos: string;
+  progressiveJackpotMojos: string;
+  result: {
+    grid: string[][];
+    lineWins: unknown[];
+    scatterCount: number;
+    totalPayoutMojos: string;
+    winTier: string;
+  };
+}
+
 export interface TableConfigResponse {
   id: string;
   minBuyInMojos: string;
@@ -106,6 +137,49 @@ export const api = {
     }>("/v1/wallet/config"),
 
   datToken: () => request<DatTokenInfo>("/v1/wallet/dat-token"),
+
+  getPlayConfig: () =>
+    request<{
+      dailyRedeemMojos: string;
+      spinCostMojos: string;
+      jackpotContributionBps: number;
+      progressiveJackpotMojos: string;
+    }>("/v1/play/config"),
+
+  getPlaySession: (playerId: string) =>
+    request<PlaySessionState>(`/v1/play/session?playerId=${encodeURIComponent(playerId)}`),
+
+  redeemDailyMessage: (address: string, redeemMojos?: string) => {
+    const q = new URLSearchParams({ address });
+    if (redeemMojos) q.set("redeemMojos", redeemMojos);
+    return request<{ message: string; redeemMojos: string; utcDay: string }>(
+      `/v1/play/redeem/message?${q}`,
+    );
+  },
+
+  redeemDaily: (
+    playerId: string,
+    options?: { redeemProof?: BuyInProof; devAck?: boolean },
+  ) =>
+    request<{
+      ok: boolean;
+      tableId: string;
+      stackMojos: string;
+      redeemMojos: string;
+      alreadyRedeemedToday: boolean;
+      spinCostMojos: string;
+      progressiveJackpotMojos: string;
+      note?: string;
+    }>("/v1/play/redeem-daily", {
+      method: "POST",
+      body: JSON.stringify({ playerId, ...options }),
+    }),
+
+  spinSlot: (tableId: string, playerId: string) =>
+    request<SlotSpinResult>("/v1/slots/spin", {
+      method: "POST",
+      body: JSON.stringify({ tableId, playerId }),
+    }),
 
   buyInMessage: (params: {
     tableId: string;

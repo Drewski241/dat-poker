@@ -1,33 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDatMojos } from "@dat-poker/shared";
-import { PAYLINES } from "./paylines.js";
-import {
-  spin,
-  winTier,
-  type Grid,
-  type LineWin,
-  type SpinResult,
-  type WinTier,
-} from "./slot-engine.js";
-import { REEL_STRIP, SLOT_SYMBOLS, type SymbolId } from "./symbols.js";
+import type { SymbolId } from "@dat-poker/slot-engine";
+import { SLOT_SYMBOLS } from "@dat-poker/slot-engine";
+import { usePlaySession } from "../../play/PlaySessionContext.js";
+import { api } from "../../api.js";
 import "./slot.css";
 
-const STARTING_CREDITS = 10_000n;
-const MOJOS_PER_CREDIT = 1000n;
-const DEFAULT_LINE_BET = 10n;
 const REEL_COUNT = 5;
 const ROW_COUNT = 3;
-
 const REEL_STOP_MS = [900, 1150, 1400, 1650, 1900];
 
-function randomStripSymbol(): SymbolId {
-  return REEL_STRIP[Math.floor(Math.random() * REEL_STRIP.length)]!;
-}
+type WinTier = "none" | "win" | "big" | "mega" | "jackpot";
 
 function tierLabel(tier: WinTier): string {
   switch (tier) {
     case "jackpot":
-      return "JACKPOT!";
+      return "PROGRESSIVE JACKPOT!";
     case "mega":
       return "MEGA WIN!";
     case "big":
@@ -51,7 +39,7 @@ function WinOverlay({
   onDone: () => void;
 }) {
   useEffect(() => {
-    const ms = tier === "jackpot" ? 5500 : tier === "mega" ? 4500 : tier === "big" ? 3500 : 2200;
+    const ms = tier === "jackpot" ? 6500 : tier === "mega" ? 4500 : tier === "big" ? 3500 : 2200;
     const t = window.setTimeout(onDone, ms);
     return () => window.clearTimeout(t);
   }, [tier, onDone]);
@@ -97,39 +85,36 @@ function SymbolCell({
   );
 }
 
-function buildHighlightSet(wins: LineWin[]): Set<string> {
-  const set = new Set<string>();
-  for (const w of wins) {
-    for (const c of w.cells) {
-      set.add(`${c.reel}-${c.row}`);
-    }
-  }
-  return set;
+function randomSymbol(): SymbolId {
+  const ids = Object.keys(SLOT_SYMBOLS) as SymbolId[];
+  return ids[Math.floor(Math.random() * ids.length)]!;
 }
 
-export function SlotMachine({ ticker = "DAT" }: { ticker?: string }) {
-  const [credits, setCredits] = useState(STARTING_CREDITS);
-  const [lineBet, setLineBet] = useState(DEFAULT_LINE_BET);
-  const [grid, setGrid] = useState<Grid>(() =>
-    Array.from({ length: REEL_COUNT }, () =>
-      Array.from({ length: ROW_COUNT }, () => randomStripSymbol()),
-    ),
+export function SlotMachine({
+  ticker = "DAT",
+  playerId,
+}: {
+  ticker?: string;
+  playerId: string | null;
+}) {
+  const { session, refreshSession } = usePlaySession();
+  const [grid, setGrid] = useState<SymbolId[][]>(() =>
+    Array.from({ length: REEL_COUNT }, () => Array.from({ length: ROW_COUNT }, () => randomSymbol())),
   );
   const [spinning, setSpinning] = useState(false);
   const [stoppedReels, setStoppedReels] = useState(REEL_COUNT);
-  const [lastResult, setLastResult] = useState<SpinResult | null>(null);
   const [overlayTier, setOverlayTier] = useState<WinTier>("none");
   const [overlayPayout, setOverlayPayout] = useState(0n);
+  const [status, setStatus] = useState("");
   const timersRef = useRef<number[]>([]);
 
-  const totalBet = lineBet * BigInt(PAYLINES.length);
-  const totalBetMojos = totalBet * MOJOS_PER_CREDIT;
-  const canSpin = !spinning && credits >= totalBet;
-
-  const highlights = useMemo(
-    () => (lastResult && !spinning ? buildHighlightSet(lastResult.lineWins) : new Set<string>()),
-    [lastResult, spinning],
-  );
+  const stackMojos = session?.stackMojos ? BigInt(session.stackMojos) : 0n;
+  const spinCost = session?.spinCostMojos ? BigInt(session.spinCostMojos) : 1000n;
+  const jackpotMojos = session?.progressiveJackpotMojos ?? "0";
+  const canSpin =
+    Boolean(playerId && session?.active && session.tableId && !session.handInProgress) &&
+    !spinning &&
+    stackMojos >= spinCost;
 
   const clearTimers = useCallback(() => {
     for (const t of timersRef.current) window.clearTimeout(t);
@@ -138,83 +123,96 @@ export function SlotMachine({ ticker = "DAT" }: { ticker?: string }) {
 
   useEffect(() => () => clearTimers(), [clearTimers]);
 
-  const finishSpin = useCallback(
-    (result: SpinResult) => {
-      setGrid(result.grid);
-      setLastResult(result);
-      setSpinning(false);
-      setStoppedReels(REEL_COUNT);
+  const highlights = useMemo(() => new Set<string>(), []);
 
-      if (result.totalPayout > 0) {
-        const winCredits = BigInt(result.totalPayout);
-        setCredits((c) => c - totalBet + winCredits);
-        const tier = winTier(result.totalMultiplier);
-        if (tier !== "none" && tier !== "win") {
-          setOverlayTier(tier);
-          setOverlayPayout(winCredits * MOJOS_PER_CREDIT);
-        } else if (result.totalPayout > 0) {
-          setOverlayTier("win");
-          setOverlayPayout(winCredits * MOJOS_PER_CREDIT);
-        }
-      } else {
-        setCredits((c) => c - totalBet);
-      }
-    },
-    [totalBet],
-  );
-
-  const onSpin = useCallback(() => {
-    if (!canSpin) return;
+  const onSpin = useCallback(async () => {
+    if (!canSpin || !playerId || !session?.tableId) return;
     clearTimers();
     setOverlayTier("none");
-    setLastResult(null);
     setSpinning(true);
     setStoppedReels(0);
+    setStatus("Spinning…");
 
-    const result = spin(Number(lineBet));
+    try {
+      const response = await api.spinSlot(session.tableId, playerId);
+      const resultGrid = response.result.grid as SymbolId[][];
 
-    const tick = window.setInterval(() => {
-      setGrid(
-        Array.from({ length: REEL_COUNT }, () =>
-          Array.from({ length: ROW_COUNT }, () => randomStripSymbol()),
-        ),
-      );
-    }, 80);
-    timersRef.current.push(tick);
+      const tick = window.setInterval(() => {
+        setGrid(
+          Array.from({ length: REEL_COUNT }, () =>
+            Array.from({ length: ROW_COUNT }, () => randomSymbol()),
+          ),
+        );
+      }, 80);
+      timersRef.current.push(tick);
 
-    REEL_STOP_MS.forEach((delay, reelIndex) => {
-      const t = window.setTimeout(() => {
-        setStoppedReels(reelIndex + 1);
-        setGrid((prev) => {
-          const next = prev.map((col) => [...col]) as Grid;
-          for (let row = 0; row < ROW_COUNT; row++) {
-            next[reelIndex]![row] = result.grid[reelIndex]![row]!;
+      REEL_STOP_MS.forEach((delay, reelIndex) => {
+        const t = window.setTimeout(() => {
+          setStoppedReels(reelIndex + 1);
+          setGrid((prev) => {
+            const next = prev.map((col) => [...col]) as SymbolId[][];
+            for (let row = 0; row < ROW_COUNT; row++) {
+              next[reelIndex]![row] = resultGrid[reelIndex]![row]!;
+            }
+            return next;
+          });
+          if (reelIndex === REEL_COUNT - 1) {
+            window.clearInterval(tick);
+            setSpinning(false);
+            setStatus("");
+            void refreshSession(playerId);
+
+            const winMojos =
+              BigInt(response.lineWinMojos) + BigInt(response.progressiveWinMojos);
+            const tier = response.result.winTier as WinTier;
+            if (winMojos > 0n) {
+              setOverlayTier(tier === "none" ? "win" : tier);
+              setOverlayPayout(winMojos);
+            }
           }
-          return next;
-        });
-        if (reelIndex === REEL_COUNT - 1) {
-          window.clearInterval(tick);
-          finishSpin(result);
-        }
-      }, delay);
-      timersRef.current.push(t);
-    });
-  }, [canSpin, clearTimers, finishSpin, lineBet]);
-
-  const displayGrid = grid;
+        }, delay);
+        timersRef.current.push(t);
+      });
+    } catch (e) {
+      setSpinning(false);
+      setStatus("");
+      setOverlayTier("none");
+      setStatus((e as Error).message);
+    }
+  }, [canSpin, clearTimers, playerId, refreshSession, session?.tableId]);
 
   return (
     <div className="slot-page">
       <header className="slot-header">
         <div>
           <h1 className="slot-title">Spirit Slots</h1>
-          <p className="slot-tagline">DAT Spirit Poker · neon reels · chase the Lucky 7</p>
+          <p className="slot-tagline">
+            Same play chips as poker · {formatDatMojos(spinCost.toString(), ticker)} per spin · 5× Lucky 7
+            center line wins the progressive
+          </p>
         </div>
         <div className="slot-credits">
-          <span className="slot-credits-label">Credits</span>
-          <strong>{formatDatMojos((credits * MOJOS_PER_CREDIT).toString(), ticker)}</strong>
+          <span className="slot-credits-label">Play stack</span>
+          <strong>{formatDatMojos(stackMojos.toString(), ticker)}</strong>
         </div>
       </header>
+
+      <div className="slot-progressive panel">
+        <h2>Progressive jackpot</h2>
+        <p className="slot-jackpot-amount">{formatDatMojos(jackpotMojos, ticker)}</p>
+        <p className="muted small">5% of each spin feeds the pot</p>
+      </div>
+
+      {!playerId && (
+        <p className="banner info">Connect Sage on the Poker tab and load your wallet to play.</p>
+      )}
+      {playerId && session && !session.active && (
+        <p className="banner info">Redeem today&apos;s 5000 DAT play chips from the Poker tab first.</p>
+      )}
+      {session?.handInProgress && (
+        <p className="banner error">Finish your poker hand before spinning.</p>
+      )}
+      {status && !spinning && status.includes(" ") && <div className="banner error">{status}</div>}
 
       <div className={`slot-cabinet${spinning ? " spinning" : ""}${overlayTier !== "none" ? " celebrate" : ""}`}>
         <div className="slot-marquee">
@@ -231,7 +229,7 @@ export function SlotMachine({ ticker = "DAT" }: { ticker?: string }) {
                 {Array.from({ length: ROW_COUNT }).map((_, row) => (
                   <SymbolCell
                     key={row}
-                    symbolId={displayGrid[reel]![row]!}
+                    symbolId={grid[reel]![row]!}
                     highlighted={highlights.has(`${reel}-${row}`)}
                     spinning={spinning && reel >= stoppedReels}
                   />
@@ -239,84 +237,17 @@ export function SlotMachine({ ticker = "DAT" }: { ticker?: string }) {
               </div>
             ))}
           </div>
-          <div className="slot-payline-hint">{PAYLINES.length} paylines · Wild substitutes · 3+ Scatters pay anywhere</div>
         </div>
-
-        {lastResult && !spinning && lastResult.totalPayout > 0 && overlayTier === "none" && (
-          <p className="slot-last-win">
-            Last win:{" "}
-            <strong>
-              {formatDatMojos((BigInt(lastResult.totalPayout) * MOJOS_PER_CREDIT).toString(), ticker)}
-            </strong>
-            {lastResult.scatterCount >= 3 && (
-              <span className="slot-scatter-note"> · {lastResult.scatterCount} scatters!</span>
-            )}
-          </p>
-        )}
 
         <div className="slot-controls">
-          <label className="slot-bet-control">
-            Line bet
-            <select
-              value={String(lineBet)}
-              disabled={spinning}
-              onChange={(e) => setLineBet(BigInt(e.target.value))}
-            >
-              {[1n, 2n, 5n, 10n, 20n, 50n].map((b) => (
-                <option key={String(b)} value={String(b)}>
-                  {formatDatMojos((b * MOJOS_PER_CREDIT).toString(), ticker)} / line
-                </option>
-              ))}
-            </select>
-          </label>
           <p className="slot-total-bet">
-            Total bet: <strong>{formatDatMojos(totalBetMojos.toString(), ticker)}</strong>
+            Spin cost: <strong>{formatDatMojos(spinCost.toString(), ticker)}</strong>
           </p>
-          <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={onSpin}>
+          <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
             {spinning ? "Spinning…" : "SPIN"}
           </button>
-          <button
-            type="button"
-            className="slot-secondary-btn"
-            disabled={spinning}
-            onClick={() => setCredits(STARTING_CREDITS)}
-          >
-            Refill demo credits
-          </button>
-          {import.meta.env.DEV && (
-            <button
-              type="button"
-              className="slot-secondary-btn"
-              disabled={spinning || overlayTier !== "none"}
-              onClick={() => {
-                setOverlayTier("mega");
-                setOverlayPayout(2500n * MOJOS_PER_CREDIT);
-              }}
-            >
-              Preview big win FX
-            </button>
-          )}
         </div>
       </div>
-
-      <section className="slot-paytable panel">
-        <h2>Paytable (per line bet)</h2>
-        <ul className="slot-paytable-list">
-          <li>
-            <span>7️⃣ Lucky 7</span> <span>×25 · ×100 · ×500</span>
-          </li>
-          <li>
-            <span>🂮 King</span> <span>×12 · ×35 · ×75</span>
-          </li>
-          <li>
-            <span>🂡 Ace</span> <span>×10 · ×30 · ×60</span>
-          </li>
-          <li>
-            <span>💎 Scatter (anywhere)</span> <span>3=×5 · 4=×20 · 5=×100</span>
-          </li>
-        </ul>
-        <p className="muted small">Demo mode — credits are local only, not wired to Sage yet.</p>
-      </section>
 
       {overlayTier !== "none" && (
         <WinOverlay

@@ -132,6 +132,12 @@ export function spin(lineBet: number): SpinResult {
   return evaluateSpin(spinGrid(), lineBet);
 }
 
+/** Five Lucky 7s on the center payline wins the progressive jackpot. */
+export function isProgressiveJackpotGrid(grid: Grid): boolean {
+  const centerLine = PAYLINES[0]!;
+  return centerLine.every((row, reel) => grid[reel]![row] === "seven");
+}
+
 /** Deterministic grid for demos / tests. */
 export function gridFromRows(rows: [SymbolId, SymbolId, SymbolId][]): Grid {
   const grid: Grid = [[], [], [], [], []];

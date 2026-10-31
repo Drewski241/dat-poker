@@ -18,9 +18,28 @@ export function datTokensToMojos(tokens: bigint | number | string): bigint {
 export const DAT_TABLE_DEFAULTS = {
   minBuyInMojos: 1_000_000n, // 1,000 DAT
   maxBuyInMojos: 50_000_000n, // 50,000 DAT
-  smallBlindMojos: 5_000n, // 5 DAT
-  bigBlindMojos: 10_000n, // 10 DAT
+  /** ~0.5 / 1 DAT blinds — about one DAT in play per hand. */
+  smallBlindMojos: 500n,
+  bigBlindMojos: 1_000n,
 } as const;
+
+/** Spirit play session — daily redeem + slots (1 DAT per spin). */
+export const DAT_PLAY_DEFAULTS = {
+  dailyRedeemMojos: 5_000_000n, // 5,000 DAT play chips / day
+  spinCostMojos: 1_000n, // 1 DAT per spin
+  jackpotSeedMojos: 100_000n, // 100 DAT progressive seed
+  jackpotContributionBps: 500, // 5% of each spin feeds the progressive
+} as const;
+
+export function resolveDatDailyRedeemMojos(raw: string | undefined): bigint {
+  if (!raw?.trim()) return DAT_PLAY_DEFAULTS.dailyRedeemMojos;
+  return BigInt(raw.trim());
+}
+
+export function resolveDatSpinCostMojos(raw: string | undefined): bigint {
+  if (!raw?.trim()) return DAT_PLAY_DEFAULTS.spinCostMojos;
+  return BigInt(raw.trim());
+}
 
 /** Legacy XCH-style table minimum (10^12 mojos) — not valid for DAT CAT buy-ins. */
 export const XCH_LEGACY_MIN_BUY_IN_MOJOS = 2_000_000_000_000n;

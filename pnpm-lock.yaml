@@ -13,6 +13,9 @@ importers:
       '@dat-poker/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@dat-poker/slot-engine':
+        specifier: workspace:*
+        version: link:../../packages/slot-engine
       '@walletconnect/sign-client':
         specifier: ^2.21.0
         version: 2.23.9(typescript@5.9.3)
@@ -86,6 +89,15 @@ importers:
         specifier: ^3.2.4
         version: 3.2.6(@types/node@22.19.19)(tsx@4.22.4)
 
+  packages/slot-engine:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/node@22.19.19)(tsx@4.22.4)
+
   services/api:
     dependencies:
       '@dat-poker/chia-bridge':
@@ -97,6 +109,9 @@ importers:
       '@dat-poker/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@dat-poker/slot-engine':
+        specifier: workspace:*
+        version: link:../../packages/slot-engine
       '@fastify/cors':
         specifier: ^11.0.1
         version: 11.2.0

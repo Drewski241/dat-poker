@@ -29,6 +29,21 @@
   font-size: 0.95rem;
 }
 
+.slot-progressive {
+  margin-bottom: 1rem;
+  text-align: center;
+  border: 1px solid rgba(255, 229, 102, 0.35);
+  background: linear-gradient(145deg, rgba(255, 229, 102, 0.08), rgba(61, 214, 140, 0.06));
+}
+
+.slot-jackpot-amount {
+  margin: 0.25rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #ffe566;
+  text-shadow: 0 0 16px rgba(255, 229, 102, 0.45);
+}
+
 .slot-credits {
   text-align: right;
   padding: 0.65rem 1rem;
