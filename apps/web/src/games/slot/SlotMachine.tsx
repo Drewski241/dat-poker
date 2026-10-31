@@ -4,6 +4,8 @@ import type { SymbolId } from "@dat-poker/slot-engine";
 import { SLOT_SYMBOLS } from "@dat-poker/slot-engine";
 import { usePlaySession } from "../../play/PlaySessionContext.js";
 import { api } from "../../api.js";
+import { paylineDisplayName, SlotPaylineOverlay } from "./SlotPaylineOverlay.js";
+import { PAYLINE_COUNT } from "@dat-poker/slot-engine";
 import "./slot.css";
 
 const REEL_COUNT = 5;
@@ -107,7 +109,9 @@ function buildSpinResultMessage(
   }
   const parts: string[] = [];
   for (const w of response.result.lineWins) {
-    parts.push(`${symbolWinLabel(w.symbol, w.count)} (${w.multiplier}×)`);
+    parts.push(
+      `${paylineDisplayName(w.lineIndex)}: ${symbolWinLabel(w.symbol, w.count)} (${w.multiplier}×)`,
+    );
   }
   if (response.result.scatterCount >= 3 && response.result.scatterMultiplier > 0) {
     parts.push(`Scatter ×${response.result.scatterCount} (${response.result.scatterMultiplier}×)`);
@@ -155,6 +159,8 @@ export function SlotMachine({
   const [status, setStatus] = useState("");
   const [spinResult, setSpinResult] = useState<{ text: string; ok: boolean } | null>(null);
   const [highlights, setHighlights] = useState<Set<string>>(() => new Set());
+  const [winningLineIndices, setWinningLineIndices] = useState<ReadonlySet<number>>(() => new Set());
+  const [showPaylines, setShowPaylines] = useState(true);
   const timersRef = useRef<number[]>([]);
 
   const balanceMojos = BigInt(
@@ -181,6 +187,7 @@ export function SlotMachine({
     setOverlayTier("none");
     setSpinResult(null);
     setHighlights(new Set());
+    setWinningLineIndices(new Set());
     setSpinning(true);
     setStoppedReels(0);
     setStatus("Spinning…");
@@ -215,12 +222,15 @@ export function SlotMachine({
             void refreshSession(playerId);
 
             const winCells = new Set<string>();
+            const winLines = new Set<number>();
             for (const w of response.result.lineWins) {
+              winLines.add(w.lineIndex);
               for (const cell of w.cells) {
                 winCells.add(`${cell.reel}-${cell.row}`);
               }
             }
             setHighlights(winCells);
+            setWinningLineIndices(winLines);
             setSpinResult(buildSpinResultMessage(response, ticker));
 
             const winMojos =
@@ -293,26 +303,44 @@ export function SlotMachine({
         </div>
 
         <div className="slot-window">
-          <div className="slot-reels">
-            {Array.from({ length: REEL_COUNT }).map((_, reel) => (
-              <div
-                key={reel}
-                className={`slot-reel${reel >= stoppedReels && spinning ? " active" : ""}`}
-              >
-                {Array.from({ length: ROW_COUNT }).map((_, row) => (
-                  <SymbolCell
-                    key={row}
-                    symbolId={grid[reel]![row]!}
-                    highlighted={highlights.has(`${reel}-${row}`)}
-                    spinning={spinning && reel >= stoppedReels}
-                  />
-                ))}
-              </div>
-            ))}
+          <label className="slot-payline-toggle">
+            <input
+              type="checkbox"
+              checked={showPaylines}
+              onChange={(e) => setShowPaylines(e.target.checked)}
+            />
+            Show all {PAYLINE_COUNT} paylines (your wager covers every line)
+          </label>
+          <div className="slot-reels-wrap">
+            <div className="slot-reels">
+              {Array.from({ length: REEL_COUNT }).map((_, reel) => (
+                <div
+                  key={reel}
+                  className={`slot-reel${reel >= stoppedReels && spinning ? " active" : ""}`}
+                >
+                  {Array.from({ length: ROW_COUNT }).map((_, row) => (
+                    <SymbolCell
+                      key={row}
+                      symbolId={grid[reel]![row]!}
+                      highlighted={highlights.has(`${reel}-${row}`)}
+                      spinning={spinning && reel >= stoppedReels}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+            <SlotPaylineOverlay
+              showLines={showPaylines && !spinning}
+              winningLineIndices={winningLineIndices}
+            />
           </div>
         </div>
 
         <div className="slot-controls">
+          <p className="slot-payline-legend">
+            {formatDatMojos(selectedBetMojos, ticker)} total wager · split across {PAYLINE_COUNT}{" "}
+            lines · match 3+ from the left on any line (✨ wild)
+          </p>
           <p className="slot-bet-label">Bet per spin</p>
           <div className="slot-bet-options" role="group" aria-label="Bet per spin">
             {betOptions.map((mojos) => {

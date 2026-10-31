@@ -26,6 +26,19 @@ describe("slot-engine", () => {
     expect(isProgressiveJackpotGrid(grid)).toBe(true);
   });
 
+  it("pays four kings on the center row when wilds pad the run", () => {
+    const grid = gridFromRows([
+      ["ace", "wild", "king"],
+      ["wild", "king", "cherry"],
+      ["cherry", "wild", "wild"],
+      ["lemon", "wild", "king"],
+      ["lemon", "lemon", "bell"],
+    ]);
+    const result = evaluateSpin(grid, 1);
+    const middle = result.lineWins.find((w) => w.lineIndex === 0);
+    expect(middle).toMatchObject({ symbol: "king", count: 4, multiplier: 35 });
+  });
+
   it("pays three aces when wilds lead on the middle payline", () => {
     const grid = gridFromRows([
       ["king", "wild", "king"],
