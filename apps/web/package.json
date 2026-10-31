@@ -9,9 +9,10 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'no lint configured'",
-    "test": "echo 'no web tests yet'"
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@dat-poker/game-engine": "workspace:*",
     "@dat-poker/shared": "workspace:*",
     "@dat-poker/slot-engine": "workspace:*",
     "@walletconnect/sign-client": "^2.21.0",

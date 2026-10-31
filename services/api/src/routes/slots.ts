@@ -13,6 +13,7 @@ import {
   payoutProgressiveJackpot,
   readProgressiveJackpotMojos,
 } from "../jackpot-store.js";
+import { NlheTableEngine } from "@dat-poker/game-engine";
 import { getTableEngine } from "./tables.js";
 
 function spinResultToClient(result: SpinResult, lineBetMojos: bigint) {
@@ -46,6 +47,9 @@ export function registerSlotsRoutes(app: FastifyInstance): void {
     const table = getTableEngine(tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
+    }
+    if (!(table instanceof NlheTableEngine)) {
+      return reply.status(400).send({ error: "Spirit Slots requires a Hold'em cash table session" });
     }
     if (table.isHandInProgress()) {
       return reply.status(400).send({ error: "Finish your poker hand before spinning" });

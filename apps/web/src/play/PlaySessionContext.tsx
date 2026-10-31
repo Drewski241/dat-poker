@@ -50,7 +50,7 @@ export function PlaySessionProvider({
 
   const redeemDaily = useCallback(
     async (id: string, options?: { redeemProof?: BuyInProof; devAck?: boolean }) => {
-      const result = await api.redeemDaily(id, options);
+      const result = await api.redeemDailyPlay(id, options);
       setSession({
         active: true,
         tableId: result.tableId,

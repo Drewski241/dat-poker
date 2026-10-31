@@ -72,7 +72,15 @@ if ! grep -rq "redeem-daily" "$WEB_ROOT" 2>/dev/null; then
   echo "ERROR: daily play redeem client missing from web dist" >&2
   exit 1
 fi
-echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (poker + Spirit Slots + daily redeem OK)"
+if ! grep -rq "Create account" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: account login UI missing from web dist (expected trust-rails AuthPanel)" >&2
+  exit 1
+fi
+if ! grep -rq "Choose your game" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: post-login game chooser missing from web dist" >&2
+  exit 1
+fi
+echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (login + poker + Spirit Slots OK)"
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 mkdir -p "$INSTALL_ROOT/data/feedback"
 if [[ ! -f "$INSTALL_ROOT/data/accounts.json" ]]; then

@@ -12,7 +12,8 @@ import {
   validateDailyRedeemProof,
 } from "../wallet-config.js";
 import { clearPlaySession, getPlaySession, setPlaySession, utcDayKey } from "../play-session-store.js";
-import { createSpiritTable, getTablesMap, resolveConfiguredDailyRedeemMojos } from "../table-factory.js";
+import { createSpiritTable, resolveConfiguredDailyRedeemMojos } from "../table-factory.js";
+import { unregisterTableEngine } from "./tables.js";
 import { getTableEngine } from "./tables.js";
 import { readProgressiveJackpotMojos } from "../jackpot-store.js";
 
@@ -159,7 +160,7 @@ export function registerPlayRoutes(app: FastifyInstance): void {
       engine.seatPlayer(playerId, 0, redeemMojos);
       engine.seatPlayer(HOUSE_PLAYER_ID, 1, redeemMojos);
     } catch (e) {
-      getTablesMap().delete(tableId);
+      unregisterTableEngine(tableId);
       return reply.status(400).send({ error: (e as Error).message });
     }
 

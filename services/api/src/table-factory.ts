@@ -3,13 +3,8 @@ import type { TableConfig } from "@dat-poker/shared";
 import { DAT_TABLE_DEFAULTS, resolveDatDailyRedeemMojos } from "@dat-poker/shared";
 import { resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
+import { registerTableEngine } from "./routes/tables.js";
 import { readDatTokenConfig } from "./wallet-config.js";
-
-const tables = new Map<string, NlheTableEngine>();
-
-export function getTablesMap(): Map<string, NlheTableEngine> {
-  return tables;
-}
 
 export function createSpiritTable(): { tableId: string; engine: NlheTableEngine; config: TableConfig } {
   const id = randomUUID();
@@ -31,7 +26,7 @@ export function createSpiritTable(): { tableId: string; engine: NlheTableEngine;
   };
 
   const engine = new NlheTableEngine(config);
-  tables.set(id, engine);
+  registerTableEngine(id, engine);
   return { tableId: id, engine, config };
 }
 
