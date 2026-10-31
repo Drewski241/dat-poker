@@ -5,6 +5,7 @@ import { SLOT_SYMBOLS } from "@dat-poker/slot-engine";
 import { usePlaySession } from "../../play/PlaySessionContext.js";
 import { api } from "../../api.js";
 import { paylineDisplayName, SlotPaylineOverlay } from "./SlotPaylineOverlay.js";
+import { grossWinMojosFromSpin, resolveSpinDisplayWins, type SpinDisplayWin } from "./spin-display.js";
 import { PAYLINE_COUNT } from "@dat-poker/slot-engine";
 import "./slot.css";
 
@@ -101,31 +102,40 @@ function symbolWinLabel(symbolId: string, count: number): string {
 function buildSpinResultMessage(
   response: Awaited<ReturnType<typeof api.spinSlot>>,
   ticker: string,
-): { text: string; ok: boolean } {
-  const winMojos = BigInt(response.lineWinMojos) + BigInt(response.progressiveWinMojos);
-  const net = BigInt(response.netMojos);
-  if (winMojos <= 0n) {
-    return { text: "No win this spin — need 3+ matching symbols on a payline from the left (wilds count).", ok: false };
+  wins: SpinDisplayWin[],
+  grossWinMojos: bigint,
+  serverAuthoritative: boolean,
+): { text: string; ok: boolean; warn?: boolean } {
+  if (grossWinMojos <= 0n || wins.length === 0) {
+    return {
+      text: "No win this spin — need 3+ matching symbols on a payline from the left (wilds count).",
+      ok: false,
+    };
   }
-  const parts: string[] = [];
-  for (const w of response.result.lineWins) {
-    parts.push(
-      `${paylineDisplayName(w.lineIndex)}: ${symbolWinLabel(w.symbol, w.count)} (${w.multiplier}×)`,
-    );
-  }
+  const parts: string[] = wins.map(
+    (w) => `${paylineDisplayName(w.lineIndex)}: ${symbolWinLabel(w.symbol, w.count)} (${w.multiplier}×)`,
+  );
   if (response.result.scatterCount >= 3 && response.result.scatterMultiplier > 0) {
     parts.push(`Scatter ×${response.result.scatterCount} (${response.result.scatterMultiplier}×)`);
   }
   if (response.wonProgressive) {
     parts.push("Progressive jackpot");
   }
-  const detail = parts.length > 0 ? parts.join(" · ") : "Win";
+  const detail = parts.join(" · ");
+  if (!serverAuthoritative) {
+    return {
+      text: `${detail} — Should pay about ${formatDatMojos(grossWinMojos.toString(), ticker)}. If your balance did not change, restart the API after redeploy (old slot-engine).`,
+      ok: true,
+      warn: true,
+    };
+  }
+  const net = BigInt(response.netMojos);
   const netLabel =
     net >= 0n
       ? `Net +${formatDatMojos(net.toString(), ticker)}`
       : `Net ${formatDatMojos(net.toString(), ticker)}`;
   return {
-    text: `${detail} — Won ${formatDatMojos(winMojos.toString(), ticker)} · ${netLabel} after ${formatDatMojos(response.betMojos, ticker)} wager`,
+    text: `${detail} — Won ${formatDatMojos(grossWinMojos.toString(), ticker)} · ${netLabel} after ${formatDatMojos(response.betMojos, ticker)} wager`,
     ok: true,
   };
 }
@@ -157,7 +167,9 @@ export function SlotMachine({
   const [overlayTier, setOverlayTier] = useState<WinTier>("none");
   const [overlayPayout, setOverlayPayout] = useState(0n);
   const [status, setStatus] = useState("");
-  const [spinResult, setSpinResult] = useState<{ text: string; ok: boolean } | null>(null);
+  const [spinResult, setSpinResult] = useState<{ text: string; ok: boolean; warn?: boolean } | null>(
+    null,
+  );
   const [highlights, setHighlights] = useState<Set<string>>(() => new Set());
   const [winningLineIndices, setWinningLineIndices] = useState<ReadonlySet<number>>(() => new Set());
   const [showPaylines, setShowPaylines] = useState(true);
@@ -221,9 +233,11 @@ export function SlotMachine({
             setStatus("");
             void refreshSession(playerId);
 
+            const { wins, serverAuthoritative } = resolveSpinDisplayWins(response, resultGrid);
+            const grossWinMojos = grossWinMojosFromSpin(response, betMojos);
             const winCells = new Set<string>();
             const winLines = new Set<number>();
-            for (const w of response.result.lineWins) {
+            for (const w of wins) {
               winLines.add(w.lineIndex);
               for (const cell of w.cells) {
                 winCells.add(`${cell.reel}-${cell.row}`);
@@ -231,10 +245,11 @@ export function SlotMachine({
             }
             setHighlights(winCells);
             setWinningLineIndices(winLines);
-            setSpinResult(buildSpinResultMessage(response, ticker));
+            setSpinResult(
+              buildSpinResultMessage(response, ticker, wins, grossWinMojos, serverAuthoritative),
+            );
 
-            const winMojos =
-              BigInt(response.lineWinMojos) + BigInt(response.progressiveWinMojos);
+            const winMojos = grossWinMojos;
             const tier = response.result.winTier as WinTier;
             if (winMojos > 0n) {
               setOverlayTier(tier === "none" ? "win" : tier);
@@ -291,7 +306,15 @@ export function SlotMachine({
       <div className="slot-spin-result-slot" role="status" aria-live="polite">
         <div
           className={`banner slot-spin-result${
-            spinning ? " pending" : spinResult?.ok ? " ok" : spinResult ? " miss" : " idle"
+            spinning
+              ? " pending"
+              : spinResult?.warn
+                ? " warn"
+                : spinResult?.ok
+                  ? " ok"
+                  : spinResult
+                    ? " miss"
+                    : " idle"
           }`}
         >
           {spinning

@@ -41,6 +41,8 @@ export function registerSlotsRoutes(app: FastifyInstance): void {
     progressiveJackpotMojos: readProgressiveJackpotMojos().toString(),
     betOptionsMojos: DAT_SLOT_BET_MOJOS.map((m) => m.toString()),
     defaultBetMojos: DAT_SLOT_BET_MOJOS[0]!.toString(),
+    /** Bumped when payline evaluation changes (left-run + wild rules). */
+    paylineEvalVersion: 2,
   }));
 
   app.post<{

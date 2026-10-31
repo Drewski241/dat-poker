@@ -54,6 +54,10 @@ corepack prepare pnpm@9.15.0 --activate
 pnpm install --frozen-lockfile
 pnpm --filter @dat-poker/api^... build
 pnpm --filter @dat-poker/api build
+if ! grep -q paylineBaseSymbol "$INSTALL_ROOT/packages/slot-engine/dist/slot-engine.js" 2>/dev/null; then
+  echo "ERROR: slot-engine dist missing paylineBaseSymbol (stale Spirit Slots math)" >&2
+  exit 1
+fi
 export VITE_BUILD_ID="$(git rev-parse --short HEAD)"
 export VITE_APP_STAGE="${DAT_POKER_STAGE:-beta}"
 pnpm --filter @dat-poker/web build
@@ -93,6 +97,10 @@ if [[ ! -f "$INSTALL_ROOT/data/ledger.json" ]]; then
 fi
 # Progressive jackpot persists in slots-jackpot.json (created on first spin if missing).
 chown -R ec2-user:ec2-user "$INSTALL_ROOT/data"
+if [[ -f "$INSTALL_ROOT/deploy/aws-ec2/dat-poker-api.service" ]]; then
+  cp "$INSTALL_ROOT/deploy/aws-ec2/dat-poker-api.service" /etc/systemd/system/dat-poker-api.service
+  systemctl daemon-reload
+fi
 systemctl reset-failed dat-poker-api 2>/dev/null || true
 systemctl restart dat-poker-api
 # Parse KEY=VALUE; do not `source` caddy.env. An unquoted
