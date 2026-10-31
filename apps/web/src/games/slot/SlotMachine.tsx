@@ -287,15 +287,19 @@ export function SlotMachine({
         <p className="banner error">Finish your poker hand before spinning.</p>
       )}
       {status && !spinning && status.length > 0 && <div className="banner error">{status}</div>}
-      {spinResult && !spinning && (
+
+      <div className="slot-spin-result-slot" role="status" aria-live="polite">
         <div
-          className={`banner slot-spin-result${spinResult.ok ? " ok" : ""}`}
-          role="status"
-          aria-live="polite"
+          className={`banner slot-spin-result${
+            spinning ? " pending" : spinResult?.ok ? " ok" : spinResult ? " miss" : " idle"
+          }`}
         >
-          {spinResult.text}
+          {spinning
+            ? "Spinning…"
+            : spinResult?.text ??
+              "Results show here after each spin — 3+ on a payline from the left (wilds count)."}
         </div>
-      )}
+      </div>
 
       <div className={`slot-cabinet${spinning ? " spinning" : ""}${overlayTier !== "none" ? " celebrate" : ""}`}>
         <div className="slot-marquee">

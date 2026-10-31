@@ -322,10 +322,42 @@
   cursor: not-allowed;
 }
 
-.banner.slot-spin-result {
+.slot-spin-result-slot {
+  min-height: 4.75rem;
   margin-bottom: 1rem;
+  display: flex;
+  align-items: stretch;
+}
+
+.slot-spin-result-slot .banner.slot-spin-result {
+  flex: 1;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   font-size: 0.95rem;
   line-height: 1.45;
+  padding: 0.65rem 0.85rem;
+}
+
+.banner.slot-spin-result.idle {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.banner.slot-spin-result.pending {
+  border-color: rgba(94, 203, 255, 0.35);
+  background: rgba(94, 203, 255, 0.08);
+  color: #b8e4ff;
+}
+
+.banner.slot-spin-result.miss {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
 }
 
 .banner.slot-spin-result.ok {
