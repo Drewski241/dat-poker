@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDatMojos } from "@dat-poker/shared";
 import type { SymbolId } from "@dat-poker/slot-engine";
 import { SLOT_SYMBOLS } from "@dat-poker/slot-engine";
@@ -91,6 +91,41 @@ function randomSymbol(): SymbolId {
   return ids[Math.floor(Math.random() * ids.length)]!;
 }
 
+function symbolWinLabel(symbolId: string, count: number): string {
+  const label = SLOT_SYMBOLS[symbolId as SymbolId]?.label ?? symbolId;
+  return `${label} ×${count}`;
+}
+
+function buildSpinResultMessage(
+  response: Awaited<ReturnType<typeof api.spinSlot>>,
+  ticker: string,
+): { text: string; ok: boolean } {
+  const winMojos = BigInt(response.lineWinMojos) + BigInt(response.progressiveWinMojos);
+  const net = BigInt(response.netMojos);
+  if (winMojos <= 0n) {
+    return { text: "No win this spin — need 3+ matching symbols on a payline from the left (wilds count).", ok: false };
+  }
+  const parts: string[] = [];
+  for (const w of response.result.lineWins) {
+    parts.push(`${symbolWinLabel(w.symbol, w.count)} (${w.multiplier}×)`);
+  }
+  if (response.result.scatterCount >= 3 && response.result.scatterMultiplier > 0) {
+    parts.push(`Scatter ×${response.result.scatterCount} (${response.result.scatterMultiplier}×)`);
+  }
+  if (response.wonProgressive) {
+    parts.push("Progressive jackpot");
+  }
+  const detail = parts.length > 0 ? parts.join(" · ") : "Win";
+  const netLabel =
+    net >= 0n
+      ? `Net +${formatDatMojos(net.toString(), ticker)}`
+      : `Net ${formatDatMojos(net.toString(), ticker)}`;
+  return {
+    text: `${detail} — Won ${formatDatMojos(winMojos.toString(), ticker)} · ${netLabel} after ${formatDatMojos(response.betMojos, ticker)} wager`,
+    ok: true,
+  };
+}
+
 export function SlotMachine({
   ticker = "DAT",
   playerId,
@@ -118,6 +153,8 @@ export function SlotMachine({
   const [overlayTier, setOverlayTier] = useState<WinTier>("none");
   const [overlayPayout, setOverlayPayout] = useState(0n);
   const [status, setStatus] = useState("");
+  const [spinResult, setSpinResult] = useState<{ text: string; ok: boolean } | null>(null);
+  const [highlights, setHighlights] = useState<Set<string>>(() => new Set());
   const timersRef = useRef<number[]>([]);
 
   const balanceMojos = BigInt(
@@ -138,12 +175,12 @@ export function SlotMachine({
 
   useEffect(() => () => clearTimers(), [clearTimers]);
 
-  const highlights = useMemo(() => new Set<string>(), []);
-
   const onSpin = useCallback(async () => {
     if (!canSpin || !playerId) return;
     clearTimers();
     setOverlayTier("none");
+    setSpinResult(null);
+    setHighlights(new Set());
     setSpinning(true);
     setStoppedReels(0);
     setStatus("Spinning…");
@@ -176,6 +213,15 @@ export function SlotMachine({
             setSpinning(false);
             setStatus("");
             void refreshSession(playerId);
+
+            const winCells = new Set<string>();
+            for (const w of response.result.lineWins) {
+              for (const cell of w.cells) {
+                winCells.add(`${cell.reel}-${cell.row}`);
+              }
+            }
+            setHighlights(winCells);
+            setSpinResult(buildSpinResultMessage(response, ticker));
 
             const winMojos =
               BigInt(response.lineWinMojos) + BigInt(response.progressiveWinMojos);
@@ -231,6 +277,15 @@ export function SlotMachine({
         <p className="banner error">Finish your poker hand before spinning.</p>
       )}
       {status && !spinning && status.length > 0 && <div className="banner error">{status}</div>}
+      {spinResult && !spinning && (
+        <div
+          className={`banner slot-spin-result${spinResult.ok ? " ok" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          {spinResult.text}
+        </div>
+      )}
 
       <div className={`slot-cabinet${spinning ? " spinning" : ""}${overlayTier !== "none" ? " celebrate" : ""}`}>
         <div className="slot-marquee">

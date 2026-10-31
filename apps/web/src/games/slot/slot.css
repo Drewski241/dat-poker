@@ -289,6 +289,18 @@
   cursor: not-allowed;
 }
 
+.banner.slot-spin-result {
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.banner.slot-spin-result.ok {
+  border-color: rgba(61, 214, 140, 0.55);
+  background: rgba(61, 214, 140, 0.12);
+  color: #c8f5e0;
+}
+
 .slot-bet-control {
   display: flex;
   flex-direction: column;

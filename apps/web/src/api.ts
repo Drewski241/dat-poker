@@ -1080,6 +1080,16 @@ export const api = {
       progressiveJackpotMojos: string;
       result: {
         grid: string[][];
+        lineWins: {
+          lineIndex: number;
+          symbol: string;
+          count: number;
+          multiplier: number;
+          payout: string;
+          cells: { reel: number; row: number }[];
+        }[];
+        scatterCount: number;
+        scatterMultiplier: number;
         totalPayoutMojos: string;
         winTier: string;
       };

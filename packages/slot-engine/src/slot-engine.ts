@@ -44,12 +44,13 @@ export function spinGrid(): Grid {
   return grid;
 }
 
-function resolveLineSymbol(symbols: SymbolId[]): SymbolId | null {
-  const nonWild = symbols.filter((s) => s !== "wild" && s !== "scatter");
-  if (nonWild.length === 0) return null;
-  const base = nonWild[0]!;
-  if (nonWild.some((s) => s !== base)) return null;
-  return base;
+/** First paying symbol on the line (left → right); wilds before it still count toward the run. */
+function paylineBaseSymbol(symbols: SymbolId[]): SymbolId | null {
+  for (const s of symbols) {
+    if (s === "wild" || s === "scatter") continue;
+    return s;
+  }
+  return null;
 }
 
 function countRun(symbols: SymbolId[], base: SymbolId): number {
@@ -67,8 +68,8 @@ export function evaluateSpin(grid: Grid, lineBet: number): SpinResult {
   for (let li = 0; li < PAYLINES.length; li++) {
     const pattern = PAYLINES[li]!;
     const symbols: SymbolId[] = pattern.map((row, reel) => grid[reel]![row]!);
-    const base = resolveLineSymbol(symbols);
-    if (!base || base === "scatter") continue;
+    const base = paylineBaseSymbol(symbols);
+    if (!base) continue;
     const table = PAYTABLE[base];
     if (!table) continue;
 

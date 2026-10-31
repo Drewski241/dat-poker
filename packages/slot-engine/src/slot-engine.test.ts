@@ -26,6 +26,20 @@ describe("slot-engine", () => {
     expect(isProgressiveJackpotGrid(grid)).toBe(true);
   });
 
+  it("pays three aces when wilds lead on the middle payline", () => {
+    const grid = gridFromRows([
+      ["king", "wild", "king"],
+      ["king", "wild", "ace"],
+      ["ace", "ace", "chip"],
+      ["scatter", "seven", "bell"],
+      ["seven", "cherry", "lemon"],
+    ]);
+    const result = evaluateSpin(grid, 1);
+    const middle = result.lineWins.find((w) => w.lineIndex === 0);
+    expect(middle).toMatchObject({ symbol: "ace", count: 3, multiplier: 10 });
+    expect(result.totalPayout).toBeGreaterThanOrEqual(10);
+  });
+
   it("classifies jackpot tier", () => {
     expect(winTier(100)).toBe("jackpot");
     expect(winTier(25)).toBe("mega");
