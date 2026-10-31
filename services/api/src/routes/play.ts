@@ -11,11 +11,13 @@ import {
   type BuyInProof,
   validateDailyRedeemProof,
 } from "../wallet-config.js";
-import { clearPlaySession, getPlaySession, setPlaySession, utcDayKey } from "../play-session-store.js";
+import { getAccountBalance } from "../account-store.js";
+import { getPlaySession, setPlaySession, utcDayKey } from "../play-session-store.js";
 import { createSpiritTable, resolveConfiguredDailyRedeemMojos } from "../table-factory.js";
 import { unregisterTableEngine } from "./tables.js";
-import { getTableEngine } from "./tables.js";
+import { findSeatedPlayerTable, getTableEngine } from "./tables.js";
 import { readProgressiveJackpotMojos } from "../jackpot-store.js";
+import { DAT_SLOT_BET_MOJOS } from "@dat-poker/shared";
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
 
@@ -26,52 +28,24 @@ export function registerPlayRoutes(app: FastifyInstance): void {
       return reply.status(400).send({ error: "playerId required" });
     }
 
-    const session = getPlaySession(playerId);
-    const today = utcDayKey();
-    const spinCostMojos = resolveDatSpinCostMojos(process.env.DAT_SPIN_COST_MOJOS).toString();
-    const dailyRedeemMojos = resolveConfiguredDailyRedeemMojos().toString();
-
-    if (!session) {
-      return {
-        active: false,
-        redeemAvailable: true,
-        redeemUtcDay: today,
-        dailyRedeemMojos,
-        spinCostMojos,
-        progressiveJackpotMojos: readProgressiveJackpotMojos().toString(),
-      };
-    }
-
-    const table = getTableEngine(session.tableId);
-    if (!table) {
-      clearPlaySession(playerId);
-      return {
-        active: false,
-        redeemAvailable: true,
-        redeemUtcDay: today,
-        dailyRedeemMojos,
-        spinCostMojos,
-        progressiveJackpotMojos: readProgressiveJackpotMojos().toString(),
-      };
-    }
-
-    const stack = table.getPlayerStack(playerId);
-    const active = stack !== null;
-    if (!active) {
-      clearPlaySession(playerId);
-    }
+    const accountBalanceMojos = getAccountBalance(playerId);
+    const seated = findSeatedPlayerTable(playerId);
+    const handInProgress = seated?.table.isHandInProgress() ?? false;
+    const defaultBetMojos = DAT_SLOT_BET_MOJOS[0]!.toString();
+    const betOptionsMojos = DAT_SLOT_BET_MOJOS.map((m) => m.toString());
+    const spinCostMojos = defaultBetMojos;
 
     return {
-      active,
-      tableId: session.tableId,
-      stackMojos: stack?.toString() ?? "0",
-      redeemUtcDay: session.redeemUtcDay,
-      redeemAvailable: session.redeemUtcDay !== today && !active,
-      alreadyRedeemedToday: session.redeemUtcDay === today,
-      dailyRedeemMojos,
+      active: true,
+      stackMojos: accountBalanceMojos.toString(),
+      accountBalanceMojos: accountBalanceMojos.toString(),
+      betOptionsMojos,
+      defaultBetMojos,
       spinCostMojos,
-      handInProgress: table.isHandInProgress(),
+      handInProgress,
       progressiveJackpotMojos: readProgressiveJackpotMojos().toString(),
+      dailyRedeemMojos: resolveConfiguredDailyRedeemMojos().toString(),
+      redeemAvailable: false,
     };
   });
 
@@ -198,7 +172,9 @@ export function registerPlayRoutes(app: FastifyInstance): void {
     const dailyRedeemMojos = resolveDatDailyRedeemMojos(process.env.DAT_DAILY_REDEEM_MOJOS).toString();
     return {
       dailyRedeemMojos,
-      spinCostMojos: resolveDatSpinCostMojos(process.env.DAT_SPIN_COST_MOJOS).toString(),
+      spinCostMojos: DAT_SLOT_BET_MOJOS[0]!.toString(),
+      betOptionsMojos: DAT_SLOT_BET_MOJOS.map((m) => m.toString()),
+      defaultBetMojos: DAT_SLOT_BET_MOJOS[0]!.toString(),
       jackpotContributionBps: DAT_PLAY_DEFAULTS.jackpotContributionBps,
       progressiveJackpotMojos: readProgressiveJackpotMojos().toString(),
     };

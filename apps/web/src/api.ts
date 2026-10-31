@@ -191,6 +191,9 @@ export interface PlaySessionState {
   active: boolean;
   tableId?: string;
   stackMojos?: string;
+  accountBalanceMojos?: string;
+  betOptionsMojos?: string[];
+  defaultBetMojos?: string;
   redeemAvailable: boolean;
   alreadyRedeemedToday?: boolean;
   redeemUtcDay?: string;
@@ -1039,6 +1042,8 @@ export const api = {
     request<{
       dailyRedeemMojos: string;
       spinCostMojos: string;
+      betOptionsMojos: string[];
+      defaultBetMojos: string;
       jackpotContributionBps: number;
       progressiveJackpotMojos: string;
     }>("/v1/play/config"),
@@ -1063,15 +1068,15 @@ export const api = {
       body: JSON.stringify({ playerId, ...options }),
     }),
 
-  spinSlot: (tableId: string, playerId: string) =>
+  spinSlot: (playerId: string, betMojos: string) =>
     request<{
       ok: boolean;
-      spinCostMojos: string;
+      betMojos: string;
       lineWinMojos: string;
       progressiveWinMojos: string;
       wonProgressive: boolean;
       netMojos: string;
-      stackMojos: string;
+      accountBalanceMojos: string;
       progressiveJackpotMojos: string;
       result: {
         grid: string[][];
@@ -1080,7 +1085,7 @@ export const api = {
       };
     }>("/v1/slots/spin", {
       method: "POST",
-      body: JSON.stringify({ tableId, playerId }),
+      body: JSON.stringify({ playerId, betMojos }),
     }),
 
   submitFeedback: (body: {

@@ -9,6 +9,7 @@ import "./slot.css";
 const REEL_COUNT = 5;
 const ROW_COUNT = 3;
 const REEL_STOP_MS = [900, 1150, 1400, 1650, 1900];
+const DEFAULT_BET_OPTIONS = ["1000", "2000", "5000", "10000", "20000"];
 
 type WinTier = "none" | "win" | "big" | "mega" | "jackpot";
 
@@ -98,6 +99,17 @@ export function SlotMachine({
   playerId: string | null;
 }) {
   const { session, refreshSession } = usePlaySession();
+  const betOptions = session?.betOptionsMojos ?? DEFAULT_BET_OPTIONS;
+  const [selectedBetMojos, setSelectedBetMojos] = useState(
+    session?.defaultBetMojos ?? betOptions[0] ?? "1000",
+  );
+
+  useEffect(() => {
+    if (session?.defaultBetMojos) {
+      setSelectedBetMojos(session.defaultBetMojos);
+    }
+  }, [session?.defaultBetMojos]);
+
   const [grid, setGrid] = useState<SymbolId[][]>(() =>
     Array.from({ length: REEL_COUNT }, () => Array.from({ length: ROW_COUNT }, () => randomSymbol())),
   );
@@ -108,13 +120,16 @@ export function SlotMachine({
   const [status, setStatus] = useState("");
   const timersRef = useRef<number[]>([]);
 
-  const stackMojos = session?.stackMojos ? BigInt(session.stackMojos) : 0n;
-  const spinCost = session?.spinCostMojos ? BigInt(session.spinCostMojos) : 1000n;
+  const balanceMojos = BigInt(
+    session?.accountBalanceMojos ?? session?.stackMojos ?? "0",
+  );
+  const betMojos = BigInt(selectedBetMojos);
   const jackpotMojos = session?.progressiveJackpotMojos ?? "0";
   const canSpin =
-    Boolean(playerId && session?.active && session.tableId && !session.handInProgress) &&
+    Boolean(playerId && session?.active) &&
     !spinning &&
-    stackMojos >= spinCost;
+    !session?.handInProgress &&
+    balanceMojos >= betMojos;
 
   const clearTimers = useCallback(() => {
     for (const t of timersRef.current) window.clearTimeout(t);
@@ -126,7 +141,7 @@ export function SlotMachine({
   const highlights = useMemo(() => new Set<string>(), []);
 
   const onSpin = useCallback(async () => {
-    if (!canSpin || !playerId || !session?.tableId) return;
+    if (!canSpin || !playerId) return;
     clearTimers();
     setOverlayTier("none");
     setSpinning(true);
@@ -134,7 +149,7 @@ export function SlotMachine({
     setStatus("Spinning…");
 
     try {
-      const response = await api.spinSlot(session.tableId, playerId);
+      const response = await api.spinSlot(playerId, selectedBetMojos);
       const resultGrid = response.result.grid as SymbolId[][];
 
       const tick = window.setInterval(() => {
@@ -179,7 +194,7 @@ export function SlotMachine({
       setOverlayTier("none");
       setStatus((e as Error).message);
     }
-  }, [canSpin, clearTimers, playerId, refreshSession, session?.tableId]);
+  }, [canSpin, clearTimers, playerId, refreshSession, selectedBetMojos]);
 
   return (
     <div className="slot-page">
@@ -187,13 +202,13 @@ export function SlotMachine({
         <div>
           <h1 className="slot-title">Spirit Slots</h1>
           <p className="slot-tagline">
-            Same play chips as poker · {formatDatMojos(spinCost.toString(), ticker)} per spin · 5× Lucky 7
-            center line wins the progressive
+            Uses your table account DAT · pick 1–20 {ticker} per spin · prizes scale with your bet ·
+            5× Lucky 7 center line wins the progressive
           </p>
         </div>
         <div className="slot-credits">
-          <span className="slot-credits-label">Play stack</span>
-          <strong>{formatDatMojos(stackMojos.toString(), ticker)}</strong>
+          <span className="slot-credits-label">Account balance</span>
+          <strong>{formatDatMojos(balanceMojos.toString(), ticker)}</strong>
         </div>
       </header>
 
@@ -204,15 +219,18 @@ export function SlotMachine({
       </div>
 
       {!playerId && (
-        <p className="banner info">Connect Sage on the Poker tab and load your wallet to play.</p>
+        <p className="banner info">Sign in on the Play tab to use your account DAT.</p>
       )}
-      {playerId && session && !session.active && (
-        <p className="banner info">Redeem today&apos;s 5000 DAT play chips from the Poker tab first.</p>
+      {playerId && balanceMojos < betMojos && (
+        <p className="banner info">
+          Not enough DAT for a {formatDatMojos(selectedBetMojos, ticker)} spin. Redeem or cash out
+          chips on the Play tab.
+        </p>
       )}
       {session?.handInProgress && (
         <p className="banner error">Finish your poker hand before spinning.</p>
       )}
-      {status && !spinning && status.includes(" ") && <div className="banner error">{status}</div>}
+      {status && !spinning && status.length > 0 && <div className="banner error">{status}</div>}
 
       <div className={`slot-cabinet${spinning ? " spinning" : ""}${overlayTier !== "none" ? " celebrate" : ""}`}>
         <div className="slot-marquee">
@@ -240,8 +258,26 @@ export function SlotMachine({
         </div>
 
         <div className="slot-controls">
+          <p className="slot-bet-label">Bet per spin</p>
+          <div className="slot-bet-options" role="group" aria-label="Bet per spin">
+            {betOptions.map((mojos) => {
+              const active = mojos === selectedBetMojos;
+              return (
+                <button
+                  key={mojos}
+                  type="button"
+                  className={`slot-bet-chip${active ? " active" : ""}`}
+                  disabled={spinning}
+                  aria-pressed={active}
+                  onClick={() => setSelectedBetMojos(mojos)}
+                >
+                  {formatDatMojos(mojos, ticker)}
+                </button>
+              );
+            })}
+          </div>
           <p className="slot-total-bet">
-            Spin cost: <strong>{formatDatMojos(spinCost.toString(), ticker)}</strong>
+            Wager: <strong>{formatDatMojos(selectedBetMojos, ticker)}</strong>
           </p>
           <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
             {spinning ? "Spinning…" : "SPIN"}

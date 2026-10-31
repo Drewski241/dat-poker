@@ -59,7 +59,7 @@ export function SpiritSlotsApp({ onNavigate }: { onNavigate: (next: SitePage) =>
         ) : (
           <>
             <p className="muted small">
-              Signed in as <strong>{username ?? playerId}</strong> · same stack as poker
+              Signed in as <strong>{username ?? playerId}</strong> · spins use your table account DAT
             </p>
             <SlotMachine ticker={datToken?.ticker ?? "DAT"} playerId={playerId} />
           </>

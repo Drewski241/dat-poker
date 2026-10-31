@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { DAT_PLAY_DEFAULTS, resolveDatSpinCostMojos } from "@dat-poker/shared";
+import {
+  DAT_PLAY_DEFAULTS,
+  DAT_SLOT_BET_MOJOS,
+  parseSlotBetMojos,
+} from "@dat-poker/shared";
 import {
   evaluateSpin,
   isProgressiveJackpotGrid,
@@ -8,13 +12,14 @@ import {
   type SpinResult,
   winTier,
 } from "@dat-poker/slot-engine";
+import { creditAccount, debitAccount, getAccountBalance } from "../account-store.js";
 import {
   contributeToJackpot,
   payoutProgressiveJackpot,
   readProgressiveJackpotMojos,
 } from "../jackpot-store.js";
-import { NlheTableEngine } from "@dat-poker/game-engine";
-import { getTableEngine } from "./tables.js";
+import { requirePlayer, sessionMatchesClaim } from "../player-session.js";
+import { findSeatedPlayerTable } from "./tables.js";
 
 function spinResultToClient(result: SpinResult, lineBetMojos: bigint) {
   return {
@@ -34,40 +39,44 @@ function spinResultToClient(result: SpinResult, lineBetMojos: bigint) {
 export function registerSlotsRoutes(app: FastifyInstance): void {
   app.get("/v1/slots/jackpot", async () => ({
     progressiveJackpotMojos: readProgressiveJackpotMojos().toString(),
+    betOptionsMojos: DAT_SLOT_BET_MOJOS.map((m) => m.toString()),
+    defaultBetMojos: DAT_SLOT_BET_MOJOS[0]!.toString(),
   }));
 
   app.post<{
-    Body: { tableId: string; playerId: string };
+    Body: { playerId?: string; betMojos?: string };
   }>("/v1/slots/spin", async (req, reply) => {
-    const { tableId, playerId } = req.body;
-    if (!tableId || !playerId) {
-      return reply.status(400).send({ error: "tableId and playerId required" });
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+
+    const { playerId, betMojos: betRaw } = req.body ?? {};
+    if (!playerId) {
+      return reply.status(400).send({ error: "playerId required" });
+    }
+    if (!sessionMatchesClaim(session, playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
     }
 
-    const table = getTableEngine(tableId);
-    if (!table) {
-      return reply.status(404).send({ error: "Table not found" });
+    const betMojos = parseSlotBetMojos(betRaw);
+    if (betMojos === null) {
+      return reply.status(400).send({
+        error: `Invalid bet. Choose one of: ${DAT_SLOT_BET_MOJOS.map((m) => m.toString()).join(", ")} mojos`,
+      });
     }
-    if (!(table instanceof NlheTableEngine)) {
-      return reply.status(400).send({ error: "Spirit Slots requires a Hold'em cash table session" });
-    }
-    if (table.isHandInProgress()) {
+
+    const seated = findSeatedPlayerTable(playerId);
+    if (seated?.table.isHandInProgress()) {
       return reply.status(400).send({ error: "Finish your poker hand before spinning" });
     }
 
-    const spinCostMojos = resolveDatSpinCostMojos(process.env.DAT_SPIN_COST_MOJOS);
-    const stack = table.getPlayerStack(playerId);
-    if (stack === null) {
-      return reply.status(400).send({ error: "Redeem daily play chips first" });
-    }
-    if (stack < spinCostMojos) {
-      return reply.status(400).send({ error: "Insufficient stack for spin" });
+    const balance = getAccountBalance(playerId);
+    if (balance < betMojos) {
+      return reply.status(400).send({ error: "Insufficient account DAT for this bet" });
     }
 
-    const lineBetMojos = spinCostMojos / BigInt(PAYLINES.length);
-    const lineBet = Number(lineBetMojos > 0n ? lineBetMojos : 1n);
+    const lineBetMojos = betMojos / BigInt(PAYLINES.length);
     const grid = spinGrid();
-    const result = evaluateSpin(grid, lineBet);
+    const result = evaluateSpin(grid, 1);
 
     let progressiveWinMojos = 0n;
     let wonProgressive = false;
@@ -75,32 +84,37 @@ export function registerSlotsRoutes(app: FastifyInstance): void {
       progressiveWinMojos = payoutProgressiveJackpot();
       wonProgressive = true;
     } else {
-      contributeToJackpot(spinCostMojos, DAT_PLAY_DEFAULTS.jackpotContributionBps);
+      contributeToJackpot(betMojos, DAT_PLAY_DEFAULTS.jackpotContributionBps);
     }
 
     const lineWinMojos = BigInt(result.totalPayout) * lineBetMojos;
-    const netMojos = lineWinMojos + progressiveWinMojos - spinCostMojos;
+    const grossWinMojos = lineWinMojos + progressiveWinMojos;
 
     try {
-      const newStack = table.adjustPlayerStack(playerId, netMojos);
-      const client = spinResultToClient(result, lineBetMojos);
-
-      return {
-        ok: true,
-        spinCostMojos: spinCostMojos.toString(),
-        lineWinMojos: lineWinMojos.toString(),
-        progressiveWinMojos: progressiveWinMojos.toString(),
-        wonProgressive,
-        netMojos: netMojos.toString(),
-        stackMojos: newStack.toString(),
-        progressiveJackpotMojos: readProgressiveJackpotMojos().toString(),
-        result: {
-          ...client,
-          winTier: wonProgressive ? "jackpot" : client.winTier,
-        },
-      };
+      debitAccount(playerId, betMojos, { type: "debit", ref: "slots-spin" });
+      if (grossWinMojos > 0n) {
+        creditAccount(playerId, grossWinMojos, { type: "credit", ref: "slots-win" });
+      }
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
     }
+
+    const accountBalanceMojos = getAccountBalance(playerId);
+    const client = spinResultToClient(result, lineBetMojos);
+
+    return {
+      ok: true,
+      betMojos: betMojos.toString(),
+      lineWinMojos: lineWinMojos.toString(),
+      progressiveWinMojos: progressiveWinMojos.toString(),
+      wonProgressive,
+      netMojos: (grossWinMojos - betMojos).toString(),
+      accountBalanceMojos: accountBalanceMojos.toString(),
+      progressiveJackpotMojos: readProgressiveJackpotMojos().toString(),
+      result: {
+        ...client,
+        winTier: wonProgressive ? "jackpot" : client.winTier,
+      },
+    };
   });
 }

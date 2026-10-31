@@ -81,6 +81,31 @@ export function resolveDatSpinCostMojos(raw: string | undefined): bigint {
   return value;
 }
 
+/** Total wager per Spirit Slots spin (whole DAT tokens). Prizes scale with this bet. */
+export const DAT_SLOT_BET_MOJOS = [
+  1_000n,
+  2_000n,
+  5_000n,
+  10_000n,
+  20_000n,
+] as const;
+
+export function isAllowedSlotBetMojos(betMojos: bigint): boolean {
+  return (DAT_SLOT_BET_MOJOS as readonly bigint[]).includes(betMojos);
+}
+
+export function parseSlotBetMojos(raw: string | undefined): bigint | null {
+  if (!raw?.trim()) {
+    return DAT_SLOT_BET_MOJOS[0]!;
+  }
+  try {
+    const value = BigInt(raw.trim());
+    return isAllowedSlotBetMojos(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Minimum time between daily redeems (rolling window, not UTC midnight). */
 export const DAT_DAILY_REDEEM_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 

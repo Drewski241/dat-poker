@@ -12,6 +12,8 @@ import {
   resolveDatMinBuyInMojos,
   nextRedeemAtIso,
   DAT_DAILY_REDEEM_COOLDOWN_MS,
+  isAllowedSlotBetMojos,
+  parseSlotBetMojos,
 } from "./dat-units.js";
 
 describe("formatDatMojos", () => {
@@ -92,5 +94,15 @@ describe("daily redeem cooldown", () => {
     expect(redeemCooldownRemainingMs(last, t0 + 1000)).toBe(DAT_DAILY_REDEEM_COOLDOWN_MS - 1000);
     expect(redeemCooldownRemainingMs(last, t0 + DAT_DAILY_REDEEM_COOLDOWN_MS)).toBe(0);
     expect(nextRedeemAtIso(last, t0 + 1000)).toBe(new Date(t0 + DAT_DAILY_REDEEM_COOLDOWN_MS).toISOString());
+  });
+});
+
+describe("Spirit Slots bet menu", () => {
+  it("allows 1–20 DAT total wagers only", () => {
+    expect(isAllowedSlotBetMojos(1_000n)).toBe(true);
+    expect(isAllowedSlotBetMojos(20_000n)).toBe(true);
+    expect(isAllowedSlotBetMojos(3_000n)).toBe(false);
+    expect(parseSlotBetMojos("10000")).toBe(10_000n);
+    expect(parseSlotBetMojos("3000")).toBeNull();
   });
 });

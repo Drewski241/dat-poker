@@ -362,6 +362,13 @@ function findPlayerTable(playerId: string): { tableId: string; table: TableEngin
   return null;
 }
 
+/** First table the player is seated at (poker / tournaments). */
+export function findSeatedPlayerTable(
+  playerId: string,
+): { tableId: string; table: TableEngine } | null {
+  return findPlayerTable(playerId);
+}
+
 export function pickJoinableTable(
   variant: PokerVariant = "nlhe",
 ): { tableId: string; table: TableEngine } | null {
