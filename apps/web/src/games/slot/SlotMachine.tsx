@@ -231,7 +231,7 @@ export function SlotMachine({
               response.result.winTier,
               "spirit",
             );
-            if (shouldShowCelebration(tier)) {
+            if (shouldShowCelebration(tier, grossWinMojos, betMojos)) {
               setCelebration({
                 tier,
                 variant: pickCelebrationVariant("spirit", tier),

@@ -155,7 +155,7 @@ export function AltSlotMachine({
         response.result.winTier,
         gameId,
       );
-      if (shouldShowCelebration(tier)) {
+      if (shouldShowCelebration(tier, grossWin, spinBet)) {
         setCelebration({
           tier,
           variant: pickCelebrationVariant(gameId, tier),

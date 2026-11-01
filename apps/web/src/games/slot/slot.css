@@ -955,8 +955,8 @@ button.slot-paytable-link:hover {
   animation: rays-spin 4s linear infinite;
 }
 
-.celeb-v2 .slot-win-confetti .confetti-piece {
-  animation-duration: 1.8s;
+.celeb-v2 .slot-win-card {
+  border-color: rgba(255, 229, 102, 0.75);
 }
 
 .celeb-v3 .slot-win-card {
