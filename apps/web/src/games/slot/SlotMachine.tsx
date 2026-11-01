@@ -183,6 +183,8 @@ export function SlotMachine({
   const [showPaylines, setShowPaylines] = useState(true);
   const [paytableOpen, setPaytableOpen] = useState(false);
   const timersRef = useRef<number[]>([]);
+  /** Reels already locked to the server result; interval must not overwrite them. */
+  const stoppedReelsRef = useRef(0);
 
   const balanceMojos = BigInt(
     session?.accountBalanceMojos ?? session?.stackMojos ?? "0",
@@ -211,6 +213,7 @@ export function SlotMachine({
     setWinningLineIndices(new Set());
     setSpinning(true);
     setStoppedReels(0);
+    stoppedReelsRef.current = 0;
     setStatus("Spinning…");
 
     try {
@@ -218,16 +221,20 @@ export function SlotMachine({
       const resultGrid = response.result.grid as SymbolId[][];
 
       const tick = window.setInterval(() => {
-        setGrid(
-          Array.from({ length: REEL_COUNT }, () =>
-            Array.from({ length: ROW_COUNT }, () => randomSymbol()),
-          ),
+        const lockedReels = stoppedReelsRef.current;
+        if (lockedReels >= REEL_COUNT) return;
+        setGrid((prev) =>
+          prev.map((col, reelIndex) => {
+            if (reelIndex < lockedReels) return col;
+            return Array.from({ length: ROW_COUNT }, () => randomSymbol());
+          }) as SymbolId[][],
         );
       }, 80);
       timersRef.current.push(tick);
 
       REEL_STOP_MS.forEach((delay, reelIndex) => {
         const t = window.setTimeout(() => {
+          stoppedReelsRef.current = reelIndex + 1;
           setStoppedReels(reelIndex + 1);
           setGrid((prev) => {
             const next = prev.map((col) => [...col]) as SymbolId[][];
@@ -238,6 +245,8 @@ export function SlotMachine({
           });
           if (reelIndex === REEL_COUNT - 1) {
             window.clearInterval(tick);
+            stoppedReelsRef.current = REEL_COUNT;
+            setGrid(resultGrid.map((col) => [...col]) as SymbolId[][]);
             setSpinning(false);
             setStatus("");
             void refreshSession(playerId);
