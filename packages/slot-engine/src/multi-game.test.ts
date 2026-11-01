@@ -6,11 +6,11 @@ import { spinForGame } from "./game-registry.js";
 describe("multi-game slot engines", () => {
   it("mine-mojo cascades increase payout", () => {
     const grid = mineGridFromRows([
-      ["ruby", "lemon", "bell"],
-      ["ruby", "lemon", "bell"],
-      ["ruby", "lemon", "bell"],
-      ["emerald", "lemon", "bell"],
-      ["bell", "lemon", "bell"],
+      ["ruby", "sapphire", "pick"],
+      ["ruby", "sapphire", "pick"],
+      ["ruby", "sapphire", "pick"],
+      ["emerald", "sapphire", "pick"],
+      ["sapphire", "sapphire", "pick"],
     ]);
     const result = evaluateMineSpin(grid, 1);
     expect(result.totalPayout).toBeGreaterThan(0);
