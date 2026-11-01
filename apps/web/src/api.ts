@@ -90,6 +90,37 @@ export interface TableConfigResponse {
   bigBlindMojos: string;
 }
 
+export interface SlotsPaytableRow {
+  symbol: string;
+  label: string;
+  multiplier: number;
+}
+
+export interface SlotsSessionInfo {
+  playerId: string;
+  displayName: string;
+  bankrollMojos: string;
+  lines: number;
+  betOptionsMojos: string[];
+  defaultBetPerLineMojos: string;
+  paytable: SlotsPaytableRow[];
+}
+
+export interface SlotsSpinResponse {
+  grid: string[][];
+  wins: Array<{
+    lineIndex: number;
+    symbol: string;
+    multiplier: number;
+    payoutMojos: string;
+    cells: Array<{ row: number; col: number }>;
+  }>;
+  totalBetMojos: string;
+  payoutMojos: string;
+  bigWin: boolean;
+  bankrollMojos: string;
+}
+
 export const api = {
   health: () => request<{ status: string }>("/health"),
 
@@ -210,4 +241,16 @@ export const api = {
         body: JSON.stringify({ playerId, action, amountMojos }),
       },
     ),
+
+  slotsLogin: (displayName: string) =>
+    request<SlotsSessionInfo>("/v1/slots/login", {
+      method: "POST",
+      body: JSON.stringify({ displayName }),
+    }),
+
+  slotsSpin: (playerId: string, betPerLineMojos: string) =>
+    request<SlotsSpinResponse>("/v1/slots/spin", {
+      method: "POST",
+      body: JSON.stringify({ playerId, betPerLineMojos }),
+    }),
 };
