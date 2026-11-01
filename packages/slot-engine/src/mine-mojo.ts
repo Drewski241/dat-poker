@@ -39,7 +39,7 @@ const MINE_STRIP: MineSymbolId[] = [
   "emerald",
 ];
 
-const MINE_PAYTABLE: Partial<Record<MineSymbolId, [number, number, number]>> = {
+export const MINE_LINE_PAYTABLE: Partial<Record<MineSymbolId, [number, number, number]>> = {
   ruby: [2, 5, 12],
   emerald: [3, 7, 15],
   sapphire: [5, 12, 25],
@@ -93,7 +93,7 @@ function evaluateMineGrid(grid: Grid, lineBet: number, cascadeMultiplier: number
     const symbols = pattern.map((row, reel) => grid[reel]![row]! as string);
     const base = paylineBaseMine(symbols);
     if (!base) continue;
-    const table = MINE_PAYTABLE[base];
+    const table = MINE_LINE_PAYTABLE[base];
     if (!table) continue;
     const count = countMineRun(symbols, base);
     if (count < 3) continue;

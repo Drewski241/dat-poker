@@ -2,6 +2,7 @@ import { SLOT_SYMBOLS, type SymbolId } from "@dat-poker/slot-engine";
 import { CARD_EMOJI, cardLabel, type CardCode } from "@dat-poker/slot-engine";
 import { HOUSE_SYMBOLS, type HouseSymbolId } from "@dat-poker/slot-engine";
 import { MINE_SYMBOLS, type MineSymbolId } from "@dat-poker/slot-engine";
+import { STAMPEDE_SYMBOLS, type StampedeSymbolId } from "@dat-poker/slot-engine";
 import type { SlotGameId } from "@dat-poker/shared";
 
 export function symbolDisplay(gameId: SlotGameId, id: string): { emoji: string; label: string } {
@@ -20,7 +21,7 @@ export function symbolDisplay(gameId: SlotGameId, id: string): { emoji: string; 
     return { emoji: "🂠", label: id };
   }
   if (gameId === "spirit-stampede") {
-    const sym = SLOT_SYMBOLS[id as SymbolId];
+    const sym = STAMPEDE_SYMBOLS[id as StampedeSymbolId];
     return sym ? { emoji: sym.emoji, label: sym.label } : { emoji: "?", label: id };
   }
   if (gameId === "house-edge") {

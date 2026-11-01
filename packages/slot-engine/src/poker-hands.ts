@@ -68,17 +68,25 @@ type HandCategory =
   | "straight_flush"
   | "royal";
 
-const HAND_PAYOUT: Partial<Record<HandCategory, number>> = {
-  pair: 1,
-  two_pair: 2,
-  trips: 5,
-  straight: 10,
-  flush: 15,
-  full_house: 25,
-  quads: 50,
-  straight_flush: 200,
-  royal: 500,
-};
+export const POKER_HAND_PAYTABLE: {
+  id: HandCategory;
+  label: string;
+  multiplier: number;
+}[] = [
+  { id: "pair", label: "Pair", multiplier: 1 },
+  { id: "two_pair", label: "Two pair", multiplier: 2 },
+  { id: "trips", label: "Three of a kind", multiplier: 5 },
+  { id: "straight", label: "Straight", multiplier: 10 },
+  { id: "flush", label: "Flush", multiplier: 15 },
+  { id: "full_house", label: "Full house", multiplier: 25 },
+  { id: "quads", label: "Four of a kind", multiplier: 50 },
+  { id: "straight_flush", label: "Straight flush", multiplier: 200 },
+  { id: "royal", label: "Royal flush", multiplier: 500 },
+];
+
+const HAND_PAYOUT: Partial<Record<HandCategory, number>> = Object.fromEntries(
+  POKER_HAND_PAYTABLE.map((r) => [r.id, r.multiplier]),
+) as Partial<Record<HandCategory, number>>;
 
 function parseCard(code: string): { rank: CardRank; suit: CardSuit; value: number } {
   const suit = code[0] as CardSuit;

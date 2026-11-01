@@ -8,6 +8,7 @@ import { api } from "../../api.js";
 import { paylineDisplayName, SlotPaylineOverlay } from "./SlotPaylineOverlay.js";
 import { symbolDisplay } from "./symbol-display.js";
 import type { SlotSpinApiResult } from "./slot-api-types.js";
+import { SlotGamePaytableModal } from "./SlotGamePaytableModal.js";
 import "./slot.css";
 
 const REEL_COUNT = 5;
@@ -84,6 +85,7 @@ export function AltSlotMachine({
   const [highlights, setHighlights] = useState<Set<string>>(() => new Set());
   const [winningLineIndices, setWinningLineIndices] = useState<ReadonlySet<number>>(() => new Set());
   const [showPaylines, setShowPaylines] = useState(gameId !== "spirit-stampede");
+  const [paytableOpen, setPaytableOpen] = useState(false);
   const timersRef = useRef<number[]>([]);
   const stoppedReelsRef = useRef(0);
 
@@ -228,7 +230,14 @@ export function AltSlotMachine({
             {meta.emoji} {meta.title}
           </h1>
           <p className="slot-tagline">
-            {meta.tagline} · {meta.progressiveHint}
+            {meta.tagline} · {meta.progressiveHint} ·{" "}
+            <button
+              type="button"
+              className="slot-paytable-link"
+              onClick={() => setPaytableOpen(true)}
+            >
+              Paytable &amp; rules
+            </button>
           </p>
         </div>
         <div className="slot-credits">
@@ -350,6 +359,15 @@ export function AltSlotMachine({
           )}
         </div>
       </div>
+
+      <SlotGamePaytableModal
+        gameId={gameId}
+        open={paytableOpen}
+        onClose={() => setPaytableOpen(false)}
+        totalBetMojos={betMojos}
+        ticker={ticker}
+        progressiveJackpotMojos={jackpotMojos}
+      />
     </div>
   );
 }

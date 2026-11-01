@@ -34,7 +34,7 @@ const HOUSE_STRIP: HouseSymbolId[] = [
   "dealer",
 ];
 
-const HOUSE_PAYTABLE: Partial<Record<HouseSymbolId, [number, number, number]>> = {
+export const HOUSE_LINE_PAYTABLE: Partial<Record<HouseSymbolId, [number, number, number]>> = {
   chip: [2, 5, 10],
   cards: [3, 8, 16],
   dice: [4, 10, 20],
@@ -97,7 +97,7 @@ export function evaluateHouseSpin(
     const symbols = pattern.map((row, reel) => grid[reel]![row]! as string);
     const base = paylineBase(symbols);
     if (!base) continue;
-    const table = HOUSE_PAYTABLE[base];
+    const table = HOUSE_LINE_PAYTABLE[base];
     if (!table) continue;
     const count = countRun(symbols, base);
     if (count < 3) continue;
