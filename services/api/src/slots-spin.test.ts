@@ -63,6 +63,8 @@ describe("Spirit Slots account balance", () => {
     process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
     process.env.DAT_ACCOUNTS_PATH = "memory";
     process.env.DAT_LEDGER_JOURNAL_PATH = "memory";
+    process.env.DAT_SLOTS_JACKPOT_PATH = "memory";
+    process.env.DAT_SLOT_PLAYER_STATE_PATH = "memory";
     resetAccountsForTests();
     resetUsersForTests();
     resetMailOutboxForTests();
