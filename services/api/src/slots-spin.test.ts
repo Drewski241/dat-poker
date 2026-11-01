@@ -11,7 +11,11 @@ import { resetMailOutboxForTests } from "./mail.js";
 import { resetPlayerSessionsForTests } from "./player-session.js";
 import { resetIpRateLimitsForTests } from "./ip-rate-limit.js";
 import { authComplianceHeaders, authCompliancePayload } from "./auth-test-helpers.js";
-import { resetJackpotForTests } from "./jackpot-store.js";
+import {
+  contributeToJackpot,
+  readProgressiveJackpotMojos,
+  resetJackpotForTests,
+} from "./jackpot-store.js";
 
 async function buildApp() {
   const app = Fastify();
@@ -91,6 +95,42 @@ describe("Spirit Slots account balance", () => {
     const spinBody = JSON.parse(spin.body) as { betMojos: string; accountBalanceMojos: string };
     expect(spinBody.betMojos).toBe("5000");
     expect(getAccountBalance(created.playerId)).toBe(BigInt(spinBody.accountBalanceMojos));
+    await app.close();
+  });
+
+  it("lists five slot games with separate progressives", async () => {
+    resetJackpotForTests();
+    const app = await buildApp();
+    const spiritBefore = readProgressiveJackpotMojos("spirit");
+    contributeToJackpot("mine-mojo", 20_000n, 500);
+    expect(readProgressiveJackpotMojos("mine-mojo")).toBe(101_000n);
+    expect(readProgressiveJackpotMojos("spirit")).toBe(spiritBefore);
+    const catalog = await app.inject({ method: "GET", url: "/v1/slots/catalog" });
+    expect(catalog.statusCode).toBe(200);
+    const body = JSON.parse(catalog.body) as { games: { id: string }[] };
+    expect(body.games.map((g) => g.id).sort()).toEqual([
+      "house-edge",
+      "mine-mojo",
+      "poker-hands",
+      "spirit",
+      "spirit-stampede",
+    ]);
+    await app.close();
+  });
+
+  it("spins mine-mojo via game route", async () => {
+    const app = await buildApp();
+    const created = await registerAndLogin(app, "miner");
+    creditAccount(created.playerId, 50_000n);
+    const spin = await app.inject({
+      method: "POST",
+      url: "/v1/slots/mine-mojo/spin",
+      headers: auth(created.token),
+      payload: { playerId: created.playerId, betMojos: "1000" },
+    });
+    expect(spin.statusCode).toBe(200);
+    const spinBody = JSON.parse(spin.body) as { gameId: string; result: { meta?: { cascadeSteps?: number } } };
+    expect(spinBody.gameId).toBe("mine-mojo");
     await app.close();
   });
 

@@ -2310,7 +2310,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         <section className="panel game-mode-chooser">
           <h2>Choose your game</h2>
           <p className="muted small">
-            Redeem daily DAT above, then pick poker tables or Spirit Slots (same account stack when
+            Redeem daily DAT above, then pick poker tables or the slot floor (five games, same account
             seated).
           </p>
           <div className="row">
@@ -2323,7 +2323,7 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
               disabled={busy}
               onClick={() => onNavigate("slots")}
             >
-              ✨ Spirit Slots
+              🎰 DAT Slots
             </button>
           </div>
         </section>

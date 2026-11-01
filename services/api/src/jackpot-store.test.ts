@@ -25,13 +25,13 @@ describe("jackpot-store persistence", () => {
 
   it("writes and reloads progressive jackpot across process restarts", () => {
     resetJackpotForTests(100_000n);
-    contributeToJackpot(20_000n, 500); // 5% of 20 DAT = 1 DAT
-    expect(readProgressiveJackpotMojos()).toBe(101_000n);
+    contributeToJackpot("spirit", 20_000n, 500); // 5% of 20 DAT = 1 DAT
+    expect(readProgressiveJackpotMojos("spirit")).toBe(101_000n);
 
     const raw = readFileSync(join(dir, "slots-jackpot.json"), "utf8");
-    expect(JSON.parse(raw).progressiveJackpotMojos).toBe("101000");
+    expect(JSON.parse(raw).spirit).toBe("101000");
 
     reloadJackpotFromDiskForTests();
-    expect(readProgressiveJackpotMojos()).toBe(101_000n);
+    expect(readProgressiveJackpotMojos("spirit")).toBe(101_000n);
   });
 });

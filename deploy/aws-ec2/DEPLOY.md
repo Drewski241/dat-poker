@@ -59,7 +59,7 @@ Later deploys (after this branch is checked out on the host):
 sudo bash /opt/dat-poker/deploy/aws-ec2/pull-spirit-slots.sh
 ```
 
-Wait for **`beta redeploy ok`**, then open **`/slots`** or use the **✨ Spirit Slots** tab at **`/play`**.
+Wait for **`beta redeploy ok`**, then open **`/slots`** (five games, five separate progressives) or use **DAT Slots** at **`/play`**.
 
 If `up.sh` is missing locally, bootstrap once with `git fetch` + `checkout`, or paste
 [console-user-data.sh](./console-user-data.sh) on a new instance (see [docs/BETA.md](../../docs/BETA.md)).

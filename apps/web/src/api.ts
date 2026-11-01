@@ -1068,6 +1068,90 @@ export const api = {
       body: JSON.stringify({ playerId, ...options }),
     }),
 
+  getSlotsCatalog: () =>
+    request<{
+      games: {
+        id: string;
+        title: string;
+        tagline: string;
+        progressiveHint: string;
+        emoji: string;
+        progressiveJackpotMojos: string;
+      }[];
+      betOptionsMojos: string[];
+      defaultBetMojos: string;
+    }>("/v1/slots/catalog"),
+
+  getSlotJackpot: (gameId: string) =>
+    request<{
+      gameId: string;
+      progressiveJackpotMojos: string;
+      betOptionsMojos: string[];
+      defaultBetMojos: string;
+      title: string;
+    }>(`/v1/slots/${encodeURIComponent(gameId)}/jackpot`),
+
+  spinSlotGame: (gameId: string, playerId: string, betMojos: string) =>
+    request<{
+      ok: boolean;
+      gameId: string;
+      betMojos: string;
+      lineWinMojos: string;
+      progressiveWinMojos: string;
+      wonProgressive: boolean;
+      netMojos: string;
+      accountBalanceMojos: string;
+      progressiveJackpotMojos: string;
+      freeSpin?: boolean;
+      holdDrawOffer?: { heldReels: number[] };
+      result: {
+        grid: string[][];
+        lineWins: {
+          lineIndex: number;
+          symbol: string;
+          count: number;
+          multiplier: number;
+          payout: string;
+          cells: { reel: number; row: number }[];
+        }[];
+        waysWins?: {
+          symbol: string;
+          reelCount: number;
+          ways: number;
+          multiplier: number;
+          payout: string;
+        }[];
+        scatterCount: number;
+        scatterMultiplier: number;
+        totalPayoutMojos: string;
+        winTier: string;
+        meta?: Record<string, unknown>;
+      };
+    }>(`/v1/slots/${encodeURIComponent(gameId)}/spin`, {
+      method: "POST",
+      body: JSON.stringify({ playerId, betMojos }),
+    }),
+
+  pokerHandsDraw: (playerId: string, heldReels: number[]) =>
+    request<{
+      ok: boolean;
+      result: { grid: string[][]; lineWins: unknown[]; totalPayoutMojos: string; meta?: Record<string, unknown> };
+      lineWinMojos: string;
+      progressiveWinMojos: string;
+      wonProgressive: boolean;
+      netMojos: string;
+      progressiveJackpotMojos: string;
+    }>("/v1/slots/poker-hands/draw", {
+      method: "POST",
+      body: JSON.stringify({ playerId, heldReels }),
+    }),
+
+  skipPokerDraw: (playerId: string) =>
+    request<{ ok: boolean }>("/v1/slots/poker-hands/skip-draw", {
+      method: "POST",
+      body: JSON.stringify({ playerId }),
+    }),
+
   spinSlot: (playerId: string, betMojos: string) =>
     request<{
       ok: boolean;

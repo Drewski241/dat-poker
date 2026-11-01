@@ -17,6 +17,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'no lint configured'"
   },
+  "dependencies": {
+    "@dat-poker/shared": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

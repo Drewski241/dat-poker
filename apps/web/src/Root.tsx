@@ -3,14 +3,18 @@ import { App } from "./App.js";
 import { Feedback } from "./Feedback.js";
 import { Landing } from "./Landing.js";
 import { Privacy } from "./Privacy.js";
-import { SpiritSlotsApp } from "./SpiritSlotsApp.js";
+import { SlotsApp } from "./SlotsApp.js";
 import { pageToPath, pathToPage, type SitePage } from "./site-route.js";
 
 export function Root() {
   const [page, setPage] = useState<SitePage>(() => pathToPage(window.location.pathname));
+  const [pathname, setPathname] = useState(() => window.location.pathname);
 
   useEffect(() => {
-    const onPop = () => setPage(pathToPage(window.location.pathname));
+    const onPop = () => {
+      setPathname(window.location.pathname);
+      setPage(pathToPage(window.location.pathname));
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
@@ -20,6 +24,7 @@ export function Root() {
     if (window.location.pathname !== path) {
       window.history.pushState({}, "", path);
     }
+    setPathname(path);
     setPage(next);
   }, []);
 
@@ -27,7 +32,7 @@ export function Root() {
     return <App onNavigate={onNavigate} />;
   }
   if (page === "slots") {
-    return <SpiritSlotsApp onNavigate={onNavigate} />;
+    return <SlotsApp onNavigate={onNavigate} pathname={pathname} />;
   }
   if (page === "feedback") {
     return <Feedback onNavigate={onNavigate} />;

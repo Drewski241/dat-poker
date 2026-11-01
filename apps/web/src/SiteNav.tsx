@@ -23,7 +23,7 @@ export function SiteNav({
         Play
       </a>
       <a href={pageToPath("slots")} className={page === "slots" ? "active" : ""} onClick={go("slots")}>
-        Spirit Slots
+        DAT Slots
       </a>
       <a href={pageToPath("feedback")} className={page === "feedback" ? "active" : ""} onClick={go("feedback")}>
         Feedback

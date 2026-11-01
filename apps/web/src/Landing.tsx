@@ -48,7 +48,7 @@ export function Landing({ onNavigate }: { onNavigate: (next: SitePage) => void }
             Add an email if you want to reset a forgotten password. You do not need Sage to play.
           </li>
           <li>
-            After sign-in, choose <strong>Poker</strong> or <strong>Spirit Slots</strong> — same daily
+            After sign-in, choose <strong>Poker</strong> or <strong>DAT Slots</strong> (five progressives) — same daily
             redeem and play stack.
           </li>
           <li>

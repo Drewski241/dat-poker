@@ -5,25 +5,16 @@ import {
   SCATTER_PAY_ANYWHERE,
   type SymbolId,
 } from "./symbols.js";
+import type { Grid, LineWin as CoreLineWin } from "./types.js";
 
-export type Grid = SymbolId[][];
+export type { Grid };
 
-export interface LineWin {
-  lineIndex: number;
+export interface LineWin extends CoreLineWin {
   symbol: SymbolId;
-  count: number;
-  multiplier: number;
-  payout: number;
-  cells: { reel: number; row: number }[];
 }
 
-export interface SpinResult {
-  grid: Grid;
+export interface SpinResult extends Omit<import("./types.js").SlotSpinCore, "meta"> {
   lineWins: LineWin[];
-  scatterCount: number;
-  scatterMultiplier: number;
-  totalMultiplier: number;
-  totalPayout: number;
 }
 
 function randomInt(max: number): number {
@@ -67,7 +58,7 @@ export function evaluateSpin(grid: Grid, lineBet: number): SpinResult {
 
   for (let li = 0; li < PAYLINES.length; li++) {
     const pattern = PAYLINES[li]!;
-    const symbols: SymbolId[] = pattern.map((row, reel) => grid[reel]![row]!);
+    const symbols: SymbolId[] = pattern.map((row, reel) => grid[reel]![row]! as SymbolId);
     const base = paylineBaseSymbol(symbols);
     if (!base) continue;
     const table = PAYTABLE[base];
@@ -112,6 +103,7 @@ export function evaluateSpin(grid: Grid, lineBet: number): SpinResult {
   return {
     grid,
     lineWins,
+    waysWins: [],
     scatterCount,
     scatterMultiplier,
     totalMultiplier,
