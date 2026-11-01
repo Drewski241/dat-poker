@@ -10,6 +10,7 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerSlotsRoutes } from "./routes/slots.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
   registerWalletRoutes(app, chiaClient);
   registerTableRoutes(app);
   registerHandRoutes(app);
+  registerSlotsRoutes(app);
 
   app.get("/v1/variants", async () => ({
     variants: POKER_VARIANTS,

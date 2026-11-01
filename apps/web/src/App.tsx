@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type SlotsSessionInfo, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
+import { Lobby } from "./Lobby.js";
+import { LoginScreen } from "./LoginScreen.js";
+import { PlayerCharacter, type PlayerPose } from "./slots/PlayerCharacter.js";
+import { SlotsScreen } from "./slots/SlotsScreen.js";
 import {
   beginWalletConnect,
   disconnectWallet,
@@ -54,6 +58,9 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+  const [screen, setScreen] = useState<"login" | "lobby" | "poker" | "slots">("login");
+  const [slotsSession, setSlotsSession] = useState<SlotsSessionInfo | null>(null);
+  const [pose, setPose] = useState<PlayerPose>("seated");
 
   useEffect(() => {
     void (async () => {
@@ -380,11 +387,93 @@ export function App() {
     betRange.canBetOrRaise,
   ]);
 
-  return (
-    <div className="app">
+  const submitLogin = (displayName: string) => {
+    setPose("reaching");
+    void run("Logging in…", async () => {
+      try {
+        const next = await api.slotsLogin(displayName);
+        setSlotsSession(next);
+        setScreen("lobby");
+      } finally {
+        setPose("seated");
+      }
+    });
+  };
+
+  const withPlayer = (content: ReactNode) => (
+    <div className="shell">
+      <PlayerCharacter pose={pose} name={slotsSession?.displayName ?? null} />
+      <div className="app">{content}</div>
+    </div>
+  );
+
+  if (screen === "login") {
+    return withPlayer(
+      <LoginScreen
+        busy={busy}
+        error={error}
+        status={status}
+        apiOk={apiOk}
+        onPose={setPose}
+        onLogin={submitLogin}
+      />,
+    );
+  }
+
+  if (screen === "lobby" && slotsSession) {
+    return withPlayer(
+      <Lobby
+        session={slotsSession}
+        onPose={setPose}
+        onSlots={() => {
+          setPose("seated");
+          setScreen("slots");
+        }}
+        onPoker={() => {
+          setPose("seated");
+          setScreen("poker");
+        }}
+        onLogout={() => {
+          setError(null);
+          setSlotsSession(null);
+          setPose("seated");
+          setScreen("login");
+        }}
+      />,
+    );
+  }
+
+  if (screen === "slots" && slotsSession) {
+    return withPlayer(
+      <SlotsScreen
+        session={slotsSession}
+        onSession={setSlotsSession}
+        onPose={setPose}
+        onLobby={() => {
+          setPose("seated");
+          setScreen("lobby");
+        }}
+      />,
+    );
+  }
+
+  return withPlayer(
+    <>
       <header>
         <h1>DAT Poker</h1>
         <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
+        <div className="row">
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => {
+              setPose("seated");
+              setScreen("lobby");
+            }}
+          >
+            Lobby
+          </button>
+        </div>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -582,6 +671,6 @@ export function App() {
           <code>pnpm dev:treasury</code>, and <code>pnpm dev:web</code>.
         </p>
       </footer>
-    </div>
+    </>
   );
 }
