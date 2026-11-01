@@ -24,6 +24,9 @@ export const STAMPEDE_SYMBOLS: Record<
   moon: { label: "Moon Scatter", emoji: "🌙", tier: "special" },
 };
 
+/** Total bet is split across 9 line-units; 243-way wins scale by bet/243 not bet/9. */
+export const STAMPEDE_WAYS_BET_DIVISOR = 8;
+
 const STAMPEDE_STRIP: StampedeSymbolId[] = [
   "cactus",
   "cactus",
@@ -106,10 +109,11 @@ export function evaluateStampedeSpin(grid: Grid, lineBet: number): SlotSpinCore 
   for (const sym of symbols) {
     const w = waysForSymbol(grid, sym);
     if (w) {
+      const scaledMult = w.multiplier / STAMPEDE_WAYS_BET_DIVISOR;
       waysWins.push({
         ...w,
-        payout: w.payout * lineBet,
-        multiplier: w.multiplier,
+        payout: (w.payout * lineBet) / STAMPEDE_WAYS_BET_DIVISOR,
+        multiplier: scaledMult,
       });
     }
   }
@@ -125,7 +129,7 @@ export function evaluateStampedeSpin(grid: Grid, lineBet: number): SlotSpinCore 
 
   const waysMultiplier = waysWins.reduce((s, w) => s + w.multiplier, 0);
   const waysPayout = waysWins.reduce((s, w) => s + w.payout, 0);
-  const scatterPayout = scatterMultiplier * lineBet;
+  const scatterPayout = (scatterMultiplier * lineBet) / STAMPEDE_WAYS_BET_DIVISOR;
 
   return {
     grid,
@@ -166,10 +170,11 @@ export function spinStampedeRound(lineBet: number): SlotSpinCore {
     return { ...first, meta: { expandingWild: false } };
   }
   const second = evaluateStampedeSpin(expanded.grid, lineBet);
+  const respinScale = 0.5;
   return {
     ...second,
-    totalMultiplier: first.totalMultiplier + second.totalMultiplier,
-    totalPayout: first.totalPayout + second.totalPayout,
+    totalMultiplier: first.totalMultiplier + second.totalMultiplier * respinScale,
+    totalPayout: first.totalPayout + second.totalPayout * respinScale,
     waysWins: [...first.waysWins, ...second.waysWins],
     meta: { expandingWild: true, preRespinGrid: grid },
   };

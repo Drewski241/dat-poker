@@ -40,10 +40,10 @@ const MINE_STRIP: MineSymbolId[] = [
 ];
 
 export const MINE_LINE_PAYTABLE: Partial<Record<MineSymbolId, [number, number, number]>> = {
-  ruby: [2, 5, 12],
-  emerald: [3, 7, 15],
-  sapphire: [5, 12, 25],
-  motherlode: [15, 40, 100],
+  ruby: [1, 2, 5],
+  emerald: [1, 3, 6],
+  sapphire: [2, 5, 10],
+  motherlode: [5, 15, 40],
 };
 
 function randomInt(max: number): number {
@@ -80,10 +80,16 @@ function countMineRun(symbols: string[], base: MineSymbolId): number {
   return n;
 }
 
-function evaluateMineGrid(grid: Grid, lineBet: number, cascadeMultiplier: number): {
+function evaluateMineGrid(
+  grid: Grid,
+  lineBet: number,
+  cascadeMultiplier: number,
+  includeScatter: boolean,
+): {
   lineWins: LineWin[];
   scatterCount: number;
   scatterMultiplier: number;
+  linePayout: number;
   totalMultiplier: number;
   totalPayout: number;
 } {
@@ -110,15 +116,17 @@ function evaluateMineGrid(grid: Grid, lineBet: number, cascadeMultiplier: number
   }
 
   let scatterCount = 0;
-  for (let reel = 0; reel < 5; reel++) {
-    for (let row = 0; row < 3; row++) {
-      if (grid[reel]![row] === "dynamite") scatterCount++;
-    }
-  }
   let scatterMultiplier = 0;
-  if (scatterCount >= 5) scatterMultiplier = 100;
-  else if (scatterCount >= 4) scatterMultiplier = 20;
-  else if (scatterCount >= 3) scatterMultiplier = 5;
+  if (includeScatter) {
+    for (let reel = 0; reel < 5; reel++) {
+      for (let row = 0; row < 3; row++) {
+        if (grid[reel]![row] === "dynamite") scatterCount++;
+      }
+    }
+    if (scatterCount >= 5) scatterMultiplier = 40;
+    else if (scatterCount >= 4) scatterMultiplier = 12;
+    else if (scatterCount >= 3) scatterMultiplier = 4;
+  }
 
   const lineMultiplier = lineWins.reduce((s, w) => s + w.multiplier, 0);
   const linePayout = lineWins.reduce((s, w) => s + w.payout, 0);
@@ -127,6 +135,7 @@ function evaluateMineGrid(grid: Grid, lineBet: number, cascadeMultiplier: number
     lineWins,
     scatterCount,
     scatterMultiplier,
+    linePayout,
     totalMultiplier: lineMultiplier + scatterMultiplier,
     totalPayout: linePayout + scatterPayout,
   };
@@ -157,17 +166,27 @@ export function evaluateMineSpin(grid: Grid, lineBet: number): SlotSpinCore {
   let cascadeMultiplier = 1;
 
   for (let step = 0; step < 8; step++) {
-    const round = evaluateMineGrid(working, lineBet, cascadeMultiplier);
-    if (round.lineWins.length === 0 && round.scatterMultiplier === 0) break;
+    const round = evaluateMineGrid(working, lineBet, cascadeMultiplier, step === 0);
+    if (round.lineWins.length === 0) {
+      if (step === 0 && round.scatterMultiplier > 0) {
+        cascadeSteps = 1;
+        totalPayout += round.scatterMultiplier * lineBet;
+        totalMultiplier += round.scatterMultiplier;
+      }
+      break;
+    }
     cascadeSteps++;
-    totalPayout += round.totalPayout;
-    totalMultiplier += round.totalMultiplier;
+    totalPayout += round.linePayout;
+    totalMultiplier += round.lineWins.reduce((s, w) => s + w.multiplier, 0);
+    if (step === 0 && round.scatterMultiplier > 0) {
+      totalPayout += round.scatterMultiplier * lineBet;
+      totalMultiplier += round.scatterMultiplier;
+    }
     allLineWins.push(...round.lineWins);
 
     const cells = round.lineWins.flatMap((w) => w.cells);
-    if (cells.length === 0) break;
     working = removeWinCells(working, cells);
-    cascadeMultiplier = Math.min(cascadeMultiplier + 1, 6);
+    cascadeMultiplier = Math.min(1 + step * 0.15, 1.75);
   }
 
   let scatterCount = 0;

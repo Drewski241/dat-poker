@@ -75,13 +75,13 @@ export const POKER_HAND_PAYTABLE: {
 }[] = [
   { id: "pair", label: "Pair", multiplier: 1 },
   { id: "two_pair", label: "Two pair", multiplier: 2 },
-  { id: "trips", label: "Three of a kind", multiplier: 5 },
-  { id: "straight", label: "Straight", multiplier: 10 },
-  { id: "flush", label: "Flush", multiplier: 15 },
-  { id: "full_house", label: "Full house", multiplier: 25 },
-  { id: "quads", label: "Four of a kind", multiplier: 50 },
-  { id: "straight_flush", label: "Straight flush", multiplier: 200 },
-  { id: "royal", label: "Royal flush", multiplier: 500 },
+  { id: "trips", label: "Three of a kind", multiplier: 4 },
+  { id: "straight", label: "Straight", multiplier: 8 },
+  { id: "flush", label: "Flush", multiplier: 12 },
+  { id: "full_house", label: "Full house", multiplier: 20 },
+  { id: "quads", label: "Four of a kind", multiplier: 40 },
+  { id: "straight_flush", label: "Straight flush", multiplier: 150 },
+  { id: "royal", label: "Royal flush", multiplier: 400 },
 ];
 
 const HAND_PAYOUT: Partial<Record<HandCategory, number>> = Object.fromEntries(
