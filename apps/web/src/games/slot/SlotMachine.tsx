@@ -7,6 +7,7 @@ import { api } from "../../api.js";
 import { paylineDisplayName, SlotPaylineOverlay } from "./SlotPaylineOverlay.js";
 import { grossWinMojosFromSpin, resolveSpinDisplayWins, type SpinDisplayWin } from "./spin-display.js";
 import { PAYLINE_COUNT } from "@dat-poker/slot-engine";
+import { SlotPaytableModal } from "./SlotPaytableModal.js";
 import "./slot.css";
 
 const REEL_COUNT = 5;
@@ -173,6 +174,7 @@ export function SlotMachine({
   const [highlights, setHighlights] = useState<Set<string>>(() => new Set());
   const [winningLineIndices, setWinningLineIndices] = useState<ReadonlySet<number>>(() => new Set());
   const [showPaylines, setShowPaylines] = useState(true);
+  const [paytableOpen, setPaytableOpen] = useState(false);
   const timersRef = useRef<number[]>([]);
 
   const balanceMojos = BigInt(
@@ -274,7 +276,14 @@ export function SlotMachine({
           <h1 className="slot-title">Spirit Slots</h1>
           <p className="slot-tagline">
             Uses your table account DAT · pick 1–20 {ticker} per spin · prizes scale with your bet ·
-            5× Lucky 7 center line wins the progressive
+            5× Lucky 7 center line wins the progressive ·{" "}
+            <button
+              type="button"
+              className="slot-paytable-link"
+              onClick={() => setPaytableOpen(true)}
+            >
+              Paytable &amp; rules
+            </button>
           </p>
         </div>
         <div className="slot-credits">
@@ -403,6 +412,14 @@ export function SlotMachine({
           onDone={() => setOverlayTier("none")}
         />
       )}
+
+      <SlotPaytableModal
+        open={paytableOpen}
+        onClose={() => setPaytableOpen(false)}
+        totalBetMojos={betMojos}
+        ticker={ticker}
+        progressiveJackpotMojos={jackpotMojos}
+      />
     </div>
   );
 }

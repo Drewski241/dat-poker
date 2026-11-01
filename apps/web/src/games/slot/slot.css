@@ -639,6 +639,129 @@
   color: var(--accent);
 }
 
+button.slot-paytable-link {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  color: #5ecbff;
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+button.slot-paytable-link:hover {
+  color: #ffe566;
+}
+
+.slot-paytable-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(4, 8, 14, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.slot-paytable-modal {
+  width: min(36rem, 100%);
+  max-height: min(90vh, 52rem);
+  overflow: auto;
+  margin: 0;
+}
+
+.slot-paytable-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.slot-paytable-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.slot-paytable-close {
+  flex-shrink: 0;
+}
+
+.slot-paytable-lede {
+  margin: 0 0 1rem;
+}
+
+.slot-paytable-modal h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+.slot-paytable-scroll {
+  overflow-x: auto;
+}
+
+.slot-paytable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.slot-paytable th,
+.slot-paytable td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+
+.slot-paytable th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.slot-paytable-mult {
+  display: block;
+  font-weight: 700;
+  color: #ffe566;
+}
+
+.slot-paytable-amt {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.slot-paytable-sym {
+  font-size: 1.1rem;
+}
+
+.slot-paytable-scatter {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.slot-paytable-scatter li {
+  margin-bottom: 0.35rem;
+}
+
+.slot-paytable-lines {
+  margin: 0;
+  padding-left: 1.25rem;
+  columns: 2;
+  column-gap: 1.5rem;
+}
+
+@media (max-width: 480px) {
+  .slot-paytable-lines {
+    columns: 1;
+  }
+}
+
 .site-nav button.nav-tab.slot-tab {
   border-color: rgba(255, 229, 102, 0.35);
 }
