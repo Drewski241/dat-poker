@@ -845,3 +845,168 @@ button.slot-paytable-link:hover {
   justify-content: center;
   flex-wrap: wrap;
 }
+
+/* Poker Hand Reels — card faces */
+.slot-cell-poker {
+  background: linear-gradient(160deg, #faf8f2 0%, #e8e4dc 100%);
+  color: #1a1a1a;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.slot-cell-poker.poker-red .slot-poker-rank,
+.slot-cell-poker.poker-red .slot-poker-suit {
+  color: #c62828;
+}
+
+.slot-cell-poker.poker-black .slot-poker-rank,
+.slot-cell-poker.poker-black .slot-poker-suit {
+  color: #212121;
+}
+
+.slot-poker-rank {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.slot-poker-suit {
+  font-size: 1.1rem;
+}
+
+.slot-cell-poker.win {
+  box-shadow: 0 0 16px rgba(255, 229, 102, 0.85);
+}
+
+/* Win celebration — 5 visual variants + per-game accents */
+.slot-win-aurora {
+  position: absolute;
+  inset: -20%;
+  background: radial-gradient(circle at 30% 40%, rgba(94, 203, 255, 0.2), transparent 55%),
+    radial-gradient(circle at 70% 60%, rgba(255, 229, 102, 0.18), transparent 50%);
+  animation: aurora-drift 6s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: scale(1) rotate(0deg);
+    opacity: 0.7;
+  }
+  to {
+    transform: scale(1.08) rotate(6deg);
+    opacity: 1;
+  }
+}
+
+.spark.emoji-spark {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: clamp(1rem, 3vw, 1.75rem);
+}
+
+.slot-win-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.confetti-piece {
+  position: absolute;
+  left: calc(50% + (var(--i) - 10) * 3%);
+  top: -10%;
+  width: 8px;
+  height: 14px;
+  background: hsl(calc(var(--i) * 32), 85%, 58%);
+  opacity: 0;
+  animation: confetti-fall 2.4s ease-in infinite;
+  animation-delay: calc(var(--i) * 0.08s);
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(0) rotate(0deg);
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(110vh) rotate(720deg);
+  }
+}
+
+.slot-win-variant-hint {
+  margin: 0.75rem 0 0;
+  font-size: 1.25rem;
+  letter-spacing: 0.15em;
+}
+
+.celeb-v0 .slot-win-card {
+  animation: win-card-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1), win-card-shake 0.4s ease 0.55s;
+}
+
+.celeb-v1 .slot-win-rays {
+  animation: rays-spin 4s linear infinite;
+}
+
+.celeb-v2 .slot-win-confetti .confetti-piece {
+  animation-duration: 1.8s;
+}
+
+.celeb-v3 .slot-win-card {
+  border-color: rgba(94, 203, 255, 0.85);
+  box-shadow: 0 0 80px rgba(94, 203, 255, 0.35);
+}
+
+.celeb-v4 .slot-win-aurora {
+  animation-duration: 3s;
+}
+
+@keyframes win-card-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+.game-mine-mojo.celeb-v0 .slot-win-title {
+  background: linear-gradient(90deg, #ffe566, #c0a060, #3dd68c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.game-spirit-stampede.tier-mega .slot-win-title,
+.game-spirit-stampede.tier-jackpot .slot-win-title {
+  background: linear-gradient(90deg, #ffe566, #e8b923, #8bc34a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.game-poker-hands .slot-win-card {
+  border-color: rgba(198, 40, 40, 0.5);
+}
+
+.game-house-edge.tier-big .slot-win-card,
+.game-house-edge.tier-mega .slot-win-card {
+  border-color: rgba(255, 80, 80, 0.55);
+  box-shadow: 0 0 70px rgba(255, 80, 80, 0.2);
+}
+
+.tier-mega .slot-win-sparks .emoji-spark,
+.tier-jackpot .slot-win-sparks .emoji-spark {
+  animation-duration: 1.2s;
+}

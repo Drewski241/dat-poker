@@ -9,6 +9,13 @@ import { paylineDisplayName, SlotPaylineOverlay } from "./SlotPaylineOverlay.js"
 import { symbolDisplay } from "./symbol-display.js";
 import type { SlotSpinApiResult } from "./slot-api-types.js";
 import { SlotGamePaytableModal } from "./SlotGamePaytableModal.js";
+import { SlotWinCelebration } from "./SlotWinCelebration.js";
+import {
+  pickCelebrationVariant,
+  resolveWinTier,
+  shouldShowCelebration,
+  type WinTier,
+} from "./win-celebration.js";
 import "./slot.css";
 
 const REEL_COUNT = 5;
@@ -86,6 +93,11 @@ export function AltSlotMachine({
   const [winningLineIndices, setWinningLineIndices] = useState<ReadonlySet<number>>(() => new Set());
   const [showPaylines, setShowPaylines] = useState(gameId !== "spirit-stampede");
   const [paytableOpen, setPaytableOpen] = useState(false);
+  const [celebration, setCelebration] = useState<{
+    tier: WinTier;
+    variant: number;
+    payoutMojos: bigint;
+  } | null>(null);
   const timersRef = useRef<number[]>([]);
   const stoppedReelsRef = useRef(0);
 
@@ -132,8 +144,27 @@ export function AltSlotMachine({
         setSpinResult((prev) => `${prev ?? ""} · Hold up to 2 reels, then Draw (free)`);
       }
       setGrid(resultGrid.map((col) => [...col]));
+
+      const grossWin =
+        BigInt(response.lineWinMojos ?? "0") + BigInt(response.progressiveWinMojos ?? "0");
+      const spinBet = BigInt(response.betMojos ?? selectedBetMojos);
+      const tier = resolveWinTier(
+        grossWin,
+        spinBet,
+        response.wonProgressive,
+        response.result.winTier,
+      );
+      if (shouldShowCelebration(tier)) {
+        setCelebration({
+          tier,
+          variant: pickCelebrationVariant(gameId, tier),
+          payoutMojos: grossWin,
+        });
+      } else {
+        setCelebration(null);
+      }
     },
-    [gameId, ticker],
+    [gameId, selectedBetMojos, ticker],
   );
 
   const animateToGrid = useCallback(
@@ -181,6 +212,7 @@ export function AltSlotMachine({
   const onSpin = useCallback(async () => {
     if (!canSpin) return;
     setHoldDrawActive(false);
+    setCelebration(null);
     setSpinResult(null);
     setHighlights(new Set());
     setWinningLineIndices(new Set());
@@ -271,7 +303,7 @@ export function AltSlotMachine({
         </div>
       </div>
 
-      <div className={`slot-cabinet${spinning ? " spinning" : ""}`}>
+      <div className={`slot-cabinet${spinning ? " spinning" : ""}${celebration ? " celebrate" : ""}`}>
         <div className="slot-marquee">
           <span className="slot-marquee-glow">
             ★ {meta.title.toUpperCase()} ★
@@ -299,10 +331,19 @@ export function AltSlotMachine({
                     return (
                       <div
                         key={row}
-                        className={`slot-cell sym-${id}${highlights.has(`${reel}-${row}`) ? " win" : ""}${spinning && reel >= stoppedReels ? " blur" : ""}`}
+                        className={`slot-cell sym-${id}${gameId === "poker-hands" ? " slot-cell-poker" : ""}${gameId === "poker-hands" && sym.pokerRed ? " poker-red" : ""}${gameId === "poker-hands" && sym.pokerRed === false ? " poker-black" : ""}${highlights.has(`${reel}-${row}`) ? " win" : ""}${spinning && reel >= stoppedReels ? " blur" : ""}`}
                       >
-                        <span className="slot-emoji">{sym.emoji}</span>
-                        <span className="slot-sym-label">{sym.label}</span>
+                        {gameId === "poker-hands" && sym.pokerRank ? (
+                          <>
+                            <span className="slot-poker-rank">{sym.pokerRank}</span>
+                            <span className="slot-emoji slot-poker-suit">{sym.emoji}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="slot-emoji">{sym.emoji}</span>
+                            <span className="slot-sym-label">{sym.label}</span>
+                          </>
+                        )}
                       </div>
                     );
                   })}
@@ -359,6 +400,17 @@ export function AltSlotMachine({
           )}
         </div>
       </div>
+
+      {celebration && (
+        <SlotWinCelebration
+          gameId={gameId}
+          tier={celebration.tier}
+          variant={celebration.variant}
+          payoutMojos={celebration.payoutMojos}
+          ticker={ticker}
+          onDone={() => setCelebration(null)}
+        />
+      )}
 
       <SlotGamePaytableModal
         gameId={gameId}

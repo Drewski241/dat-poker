@@ -8,65 +8,19 @@ import { paylineDisplayName, SlotPaylineOverlay } from "./SlotPaylineOverlay.js"
 import { grossWinMojosFromSpin, resolveSpinDisplayWins, type SpinDisplayWin } from "./spin-display.js";
 import { PAYLINE_COUNT } from "@dat-poker/slot-engine";
 import { SlotPaytableModal } from "./SlotPaytableModal.js";
+import { SlotWinCelebration } from "./SlotWinCelebration.js";
+import {
+  pickCelebrationVariant,
+  resolveWinTier,
+  shouldShowCelebration,
+  type WinTier,
+} from "./win-celebration.js";
 import "./slot.css";
 
 const REEL_COUNT = 5;
 const ROW_COUNT = 3;
 const REEL_STOP_MS = [900, 1150, 1400, 1650, 1900];
 const DEFAULT_BET_OPTIONS = ["1000", "2000", "5000", "10000", "20000"];
-
-type WinTier = "none" | "win" | "big" | "mega" | "jackpot";
-
-function tierLabel(tier: WinTier): string {
-  switch (tier) {
-    case "jackpot":
-      return "PROGRESSIVE JACKPOT!";
-    case "mega":
-      return "MEGA WIN!";
-    case "big":
-      return "BIG WIN!";
-    case "win":
-      return "WINNER!";
-    default:
-      return "";
-  }
-}
-
-function WinOverlay({
-  tier,
-  payoutMojos,
-  ticker,
-  onDone,
-}: {
-  tier: WinTier;
-  payoutMojos: bigint;
-  ticker?: string;
-  onDone: () => void;
-}) {
-  useEffect(() => {
-    const ms = tier === "jackpot" ? 6500 : tier === "mega" ? 4500 : tier === "big" ? 3500 : 2200;
-    const t = window.setTimeout(onDone, ms);
-    return () => window.clearTimeout(t);
-  }, [tier, onDone]);
-
-  if (tier === "none") return null;
-
-  return (
-    <div className={`slot-win-overlay tier-${tier}`} role="status" aria-live="polite">
-      <div className="slot-win-rays" />
-      <div className="slot-win-sparks" aria-hidden>
-        {Array.from({ length: tier === "jackpot" ? 48 : 24 }).map((_, i) => (
-          <span key={i} className="spark" style={{ ["--i" as string]: i }} />
-        ))}
-      </div>
-      <div className="slot-win-card">
-        <p className="slot-win-kicker">DAT Spirit Slots</p>
-        <h2 className="slot-win-title">{tierLabel(tier)}</h2>
-        <p className="slot-win-amount">+{formatDatMojos(payoutMojos.toString(), ticker)}</p>
-      </div>
-    </div>
-  );
-}
 
 function SymbolCell({
   symbolId,
@@ -172,8 +126,11 @@ export function SlotMachine({
   );
   const [spinning, setSpinning] = useState(false);
   const [stoppedReels, setStoppedReels] = useState(REEL_COUNT);
-  const [overlayTier, setOverlayTier] = useState<WinTier>("none");
-  const [overlayPayout, setOverlayPayout] = useState(0n);
+  const [celebration, setCelebration] = useState<{
+    tier: WinTier;
+    variant: number;
+    payoutMojos: bigint;
+  } | null>(null);
   const [status, setStatus] = useState("");
   const [spinResult, setSpinResult] = useState<{ text: string; ok: boolean; warn?: boolean } | null>(
     null,
@@ -207,7 +164,7 @@ export function SlotMachine({
   const onSpin = useCallback(async () => {
     if (!canSpin || !playerId) return;
     clearTimers();
-    setOverlayTier("none");
+    setCelebration(null);
     setSpinResult(null);
     setHighlights(new Set());
     setWinningLineIndices(new Set());
@@ -267,11 +224,20 @@ export function SlotMachine({
               buildSpinResultMessage(response, ticker, wins, grossWinMojos, serverAuthoritative),
             );
 
-            const winMojos = grossWinMojos;
-            const tier = response.result.winTier as WinTier;
-            if (winMojos > 0n) {
-              setOverlayTier(tier === "none" ? "win" : tier);
-              setOverlayPayout(winMojos);
+            const tier = resolveWinTier(
+              grossWinMojos,
+              betMojos,
+              response.wonProgressive,
+              response.result.winTier,
+            );
+            if (shouldShowCelebration(tier)) {
+              setCelebration({
+                tier,
+                variant: pickCelebrationVariant("spirit", tier),
+                payoutMojos: grossWinMojos,
+              });
+            } else {
+              setCelebration(null);
             }
           }
         }, delay);
@@ -280,7 +246,7 @@ export function SlotMachine({
     } catch (e) {
       setSpinning(false);
       setStatus("");
-      setOverlayTier("none");
+      setCelebration(null);
       setStatus((e as Error).message);
     }
   }, [canSpin, clearTimers, playerId, refreshSession, selectedBetMojos]);
@@ -349,7 +315,7 @@ export function SlotMachine({
         </div>
       </div>
 
-      <div className={`slot-cabinet${spinning ? " spinning" : ""}${overlayTier !== "none" ? " celebrate" : ""}`}>
+      <div className={`slot-cabinet${spinning ? " spinning" : ""}${celebration ? " celebrate" : ""}`}>
         <div className="slot-marquee">
           <span className="slot-marquee-glow">★ DAT SPIRIT SLOTS ★</span>
         </div>
@@ -420,12 +386,14 @@ export function SlotMachine({
         </div>
       </div>
 
-      {overlayTier !== "none" && (
-        <WinOverlay
-          tier={overlayTier}
-          payoutMojos={overlayPayout}
+      {celebration && (
+        <SlotWinCelebration
+          gameId="spirit"
+          tier={celebration.tier}
+          variant={celebration.variant}
+          payoutMojos={celebration.payoutMojos}
           ticker={ticker}
-          onDone={() => setOverlayTier("none")}
+          onDone={() => setCelebration(null)}
         />
       )}
 

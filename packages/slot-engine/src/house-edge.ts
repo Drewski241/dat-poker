@@ -7,13 +7,13 @@ export const HOUSE_SYMBOLS: Record<
   HouseSymbolId,
   { label: string; emoji: string }
 > = {
-  chip: { label: "Chip", emoji: "🪙" },
-  cards: { label: "Cards", emoji: "🃏" },
-  dice: { label: "Dice", emoji: "🎲" },
-  vault: { label: "Vault", emoji: "🏦" },
+  chip: { label: "High-Roller Stack", emoji: "🎰" },
+  cards: { label: "Marked Deck", emoji: "🃏" },
+  dice: { label: "Loaded Dice", emoji: "🎲" },
+  vault: { label: "House Vault", emoji: "🔐" },
   dealer: { label: "The House", emoji: "🎩" },
-  wild: { label: "Wild", emoji: "✨" },
-  skull: { label: "Skull", emoji: "💀" },
+  wild: { label: "Inside Job", emoji: "🎭" },
+  skull: { label: "The Rake", emoji: "☠️" },
 };
 
 const HOUSE_STRIP: HouseSymbolId[] = [

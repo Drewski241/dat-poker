@@ -13,12 +13,12 @@ export const MINE_SYMBOLS: Record<
   MineSymbolId,
   { label: string; emoji: string; tier: "low" | "mid" | "high" | "special" }
 > = {
-  ruby: { label: "Ruby", emoji: "🔴", tier: "low" },
-  emerald: { label: "Emerald", emoji: "🟢", tier: "low" },
-  sapphire: { label: "Sapphire", emoji: "🔵", tier: "mid" },
-  pick: { label: "Pickaxe", emoji: "⛏️", tier: "special" },
-  dynamite: { label: "Dynamite", emoji: "🧨", tier: "special" },
-  motherlode: { label: "Mother Lode", emoji: "💎", tier: "high" },
+  ruby: { label: "Gold Nugget", emoji: "🪙", tier: "low" },
+  emerald: { label: "Mojo Ore", emoji: "💚", tier: "low" },
+  sapphire: { label: "Cave Crystal", emoji: "💠", tier: "mid" },
+  pick: { label: "Pickaxe Wild", emoji: "⛏️", tier: "special" },
+  dynamite: { label: "Blast Charge", emoji: "🧨", tier: "special" },
+  motherlode: { label: "Mother Lode", emoji: "🏆", tier: "high" },
 };
 
 const MINE_STRIP: MineSymbolId[] = [
