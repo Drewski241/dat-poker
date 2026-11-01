@@ -65,7 +65,11 @@ export function resolveSpinDisplayWins(
   };
 }
 
-export function grossWinMojosFromSpin(response: SpinResponsePayload, betMojos: bigint): bigint {
+export function grossWinMojosFromSpin(
+  response: SpinResponsePayload,
+  betMojos: bigint,
+  resultGrid?: SymbolId[][],
+): bigint {
   const progressive = BigInt(response.progressiveWinMojos ?? "0");
   const line = BigInt(response.lineWinMojos ?? "0");
   if (line + progressive > 0n) {
@@ -76,8 +80,10 @@ export function grossWinMojosFromSpin(response: SpinResponsePayload, betMojos: b
     return fromTotal + progressive;
   }
   const lineBetMojos = betMojos / BigInt(PAYLINES.length);
-  const grid = response.result.grid as SymbolId[][];
-  if (grid?.length === 5) {
+  const grid =
+    resultGrid ??
+    (response.result.grid?.length === 5 ? (response.result.grid as SymbolId[][]) : null);
+  if (grid) {
     const local = evaluateSpin(grid, 1);
     if (local.totalPayout > 0) {
       return BigInt(local.totalPayout) * lineBetMojos + progressive;

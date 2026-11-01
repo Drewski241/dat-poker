@@ -107,10 +107,17 @@ function buildSpinResultMessage(
   grossWinMojos: bigint,
   serverAuthoritative: boolean,
 ): { text: string; ok: boolean; warn?: boolean } {
-  if (grossWinMojos <= 0n || wins.length === 0) {
+  if (wins.length === 0) {
     return {
       text: "No win this spin — need 3+ matching symbols on a payline from the left (wilds count).",
       ok: false,
+    };
+  }
+  if (grossWinMojos <= 0n) {
+    return {
+      text: `${wins.map((w) => `${paylineDisplayName(w.lineIndex)}: ${symbolWinLabel(w.symbol, w.count)} (${w.multiplier}×)`).join(" · ")} — Win detected on the reels; balance follows the server response.`,
+      ok: true,
+      warn: true,
     };
   }
   const parts: string[] = wins.map(
@@ -236,7 +243,7 @@ export function SlotMachine({
             void refreshSession(playerId);
 
             const { wins, serverAuthoritative } = resolveSpinDisplayWins(response, resultGrid);
-            const grossWinMojos = grossWinMojosFromSpin(response, betMojos);
+            const grossWinMojos = grossWinMojosFromSpin(response, betMojos, resultGrid);
             const winCells = new Set<string>();
             const winLines = new Set<number>();
             for (const w of wins) {

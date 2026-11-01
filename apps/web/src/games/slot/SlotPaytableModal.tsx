@@ -88,6 +88,10 @@ export function SlotPaytableModal({
         </p>
 
         <h3>Line wins (left → right, wild ✨ substitutes)</h3>
+        <p className="muted small">
+          Example: Bell · Wild · Wild on Line 1 (center) counts as <strong>three Bells</strong> and
+          pays the 3-in-a-row Bell prize.
+        </p>
         <div className="slot-paytable-scroll">
           <table className="slot-paytable">
             <thead>
