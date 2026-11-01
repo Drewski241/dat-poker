@@ -40,10 +40,10 @@ const MINE_STRIP: MineSymbolId[] = [
 ];
 
 export const MINE_LINE_PAYTABLE: Partial<Record<MineSymbolId, [number, number, number]>> = {
-  ruby: [1, 2, 5],
-  emerald: [1, 3, 6],
-  sapphire: [2, 5, 10],
-  motherlode: [5, 15, 40],
+  ruby: [2, 4, 10],
+  emerald: [2, 5, 12],
+  sapphire: [3, 8, 18],
+  motherlode: [8, 22, 55],
 };
 
 function randomInt(max: number): number {

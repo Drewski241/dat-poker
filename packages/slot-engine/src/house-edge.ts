@@ -35,11 +35,11 @@ const HOUSE_STRIP: HouseSymbolId[] = [
 ];
 
 export const HOUSE_LINE_PAYTABLE: Partial<Record<HouseSymbolId, [number, number, number]>> = {
-  chip: [2, 5, 10],
-  cards: [3, 8, 16],
-  dice: [4, 10, 20],
-  vault: [6, 15, 30],
-  dealer: [10, 25, 60],
+  chip: [3, 8, 18],
+  cards: [5, 12, 28],
+  dice: [6, 16, 35],
+  vault: [10, 24, 50],
+  dealer: [15, 38, 90],
 };
 
 function randomInt(max: number): number {

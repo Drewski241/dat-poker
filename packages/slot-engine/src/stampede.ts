@@ -25,7 +25,7 @@ export const STAMPEDE_SYMBOLS: Record<
 };
 
 /** Total bet is split across 9 line-units; 243-way wins scale by bet/243 not bet/9. */
-export const STAMPEDE_WAYS_BET_DIVISOR = 8;
+export const STAMPEDE_WAYS_BET_DIVISOR = 7;
 
 const STAMPEDE_STRIP: StampedeSymbolId[] = [
   "cactus",

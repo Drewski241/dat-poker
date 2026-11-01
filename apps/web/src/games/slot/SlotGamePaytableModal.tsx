@@ -196,7 +196,7 @@ export function SlotGamePaytableModal({
           <>
             <h3>Line wins (left → right)</h3>
             <p className="muted small">
-              ✨ Wild substitutes. 💀 Skull scatter 3+ pays 8× (16× during boss bonus). Drain the boss HP bar
+              🎭 Inside Job wild substitutes. ☠️ The Rake scatter 3+ pays 8× (16× during boss bonus). Drain the boss HP bar
               for 5 free spins at 2× line pays.
             </p>
             <PaylineTable
