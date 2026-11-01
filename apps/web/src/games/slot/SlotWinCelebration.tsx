@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { formatDatMojos } from "@dat-poker/shared";
 import type { SlotGameId } from "@dat-poker/shared";
 import {
@@ -44,7 +45,7 @@ export function SlotWinCelebration({
 
   if (tier === "none") return null;
 
-  return (
+  return createPortal(
     <div
       className={`slot-win-overlay tier-${tier} game-${gameId} celeb-v${v}`}
       role="status"
@@ -74,6 +75,7 @@ export function SlotWinCelebration({
           {emojis.join(" ")}
         </p>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -25,21 +25,25 @@ export function resolveWinTier(
   betMojos: bigint,
   wonProgressive: boolean,
   serverTier?: string,
+  gameId?: SlotGameId,
 ): WinTier {
   if (wonProgressive || serverTier === "jackpot") return "jackpot";
   if (grossMojos <= 0n) return "none";
 
   const ratio = betMojos > 0n ? Number((grossMojos * 100n) / betMojos) / 100 : 0;
+  const megaAt = gameId === "spirit-stampede" ? 8 : 15;
+  const bigAt = gameId === "spirit-stampede" ? 3 : 5;
 
-  if (ratio >= 15 || serverTier === "mega" || serverTier === "jackpot") return "mega";
-  if (ratio >= 5 || serverTier === "big") return "big";
+  if (ratio >= megaAt || serverTier === "mega") return "mega";
+  if (ratio >= bigAt || serverTier === "big") return "big";
   if (ratio >= 1.5 || serverTier === "win") return "win";
   if (grossMojos > 0n) return "win";
   return "none";
 }
 
+/** Full-screen overlay for meaningful wins; small hits stay in the result banner only. */
 export function shouldShowCelebration(tier: WinTier): boolean {
-  return tier !== "none";
+  return tier === "big" || tier === "mega" || tier === "jackpot";
 }
 
 export function pickCelebrationVariant(gameId: SlotGameId, tier: WinTier): number {

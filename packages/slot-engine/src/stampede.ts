@@ -19,7 +19,7 @@ export const STAMPEDE_SYMBOLS: Record<
   coyote: { label: "Coyote", emoji: "🐺", tier: "mid" },
   eagle: { label: "Eagle", emoji: "🦅", tier: "mid" },
   bison: { label: "Spirit Bison", emoji: "🦬", tier: "high" },
-  horseshoe: { label: "Lucky Horseshoe", emoji: "🍀", tier: "high" },
+  horseshoe: { label: "Spirit Mustang", emoji: "🐴", tier: "high" },
   dust: { label: "Dust Wild", emoji: "🌪️", tier: "special" },
   moon: { label: "Moon Scatter", emoji: "🌙", tier: "special" },
 };

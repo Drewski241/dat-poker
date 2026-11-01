@@ -153,6 +153,7 @@ export function AltSlotMachine({
         spinBet,
         response.wonProgressive,
         response.result.winTier,
+        gameId,
       );
       if (shouldShowCelebration(tier)) {
         setCelebration({
@@ -394,9 +395,19 @@ export function AltSlotMachine({
               </button>
             </div>
           ) : (
-            <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
-              {spinning ? "Spinning…" : freeSpins > 0 && gameId === "house-edge" ? "Free spin" : "SPIN"}
-            </button>
+            <div className="slot-spin-row">
+              <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
+                {spinning ? "Spinning…" : freeSpins > 0 && gameId === "house-edge" ? "Free spin" : "SPIN"}
+              </button>
+              <button
+                type="button"
+                className="slot-paytable-btn secondary"
+                disabled={spinning}
+                onClick={() => setPaytableOpen(true)}
+              >
+                Paytable
+              </button>
+            </div>
           )}
         </div>
       </div>

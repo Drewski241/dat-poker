@@ -229,6 +229,7 @@ export function SlotMachine({
               betMojos,
               response.wonProgressive,
               response.result.winTier,
+              "spirit",
             );
             if (shouldShowCelebration(tier)) {
               setCelebration({
@@ -380,9 +381,19 @@ export function SlotMachine({
           <p className="slot-total-bet">
             Wager: <strong>{formatDatMojos(selectedBetMojos, ticker)}</strong>
           </p>
-          <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
-            {spinning ? "Spinning…" : "SPIN"}
-          </button>
+          <div className="slot-spin-row">
+            <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
+              {spinning ? "Spinning…" : "SPIN"}
+            </button>
+            <button
+              type="button"
+              className="slot-paytable-btn secondary"
+              disabled={spinning}
+              onClick={() => setPaytableOpen(true)}
+            >
+              Paytable
+            </button>
+          </div>
         </div>
       </div>
 
