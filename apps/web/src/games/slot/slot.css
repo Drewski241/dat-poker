@@ -846,21 +846,6 @@ button.slot-paytable-link:hover {
   flex-wrap: wrap;
 }
 
-.slot-spin-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  justify-content: center;
-  align-items: center;
-}
-
-button.slot-paytable-btn {
-  min-width: 7rem;
-  padding: 0.65rem 1.25rem;
-  border-radius: 999px;
-  font-weight: 600;
-}
-
 /* Poker Hand Reels — card faces */
 .slot-cell-poker {
   background: linear-gradient(160deg, #faf8f2 0%, #e8e4dc 100%);

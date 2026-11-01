@@ -395,19 +395,9 @@ export function AltSlotMachine({
               </button>
             </div>
           ) : (
-            <div className="slot-spin-row">
-              <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
-                {spinning ? "Spinning…" : freeSpins > 0 && gameId === "house-edge" ? "Free spin" : "SPIN"}
-              </button>
-              <button
-                type="button"
-                className="slot-paytable-btn secondary"
-                disabled={spinning}
-                onClick={() => setPaytableOpen(true)}
-              >
-                Paytable
-              </button>
-            </div>
+            <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
+              {spinning ? "Spinning…" : freeSpins > 0 && gameId === "house-edge" ? "Free spin" : "SPIN"}
+            </button>
           )}
         </div>
       </div>
