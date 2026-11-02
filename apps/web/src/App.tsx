@@ -3,6 +3,7 @@ import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-po
 import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
+import { TournamentPanel } from "./components/TournamentPanel.js";
 import {
   beginWalletConnect,
   disconnectWallet,
@@ -433,6 +434,16 @@ export function App() {
           </p>
         )}
       </section>
+
+      <TournamentPanel
+        apiOk={apiOk}
+        busy={busy}
+        ticker={datToken?.ticker ?? "DAT"}
+        session={session}
+        wcConfig={wcConfig}
+        walletAddress={walletAddress}
+        run={run}
+      />
 
       <section className="panel">
         <h2>Table</h2>

@@ -57,11 +57,11 @@ sequenceDiagram
 - Types support `CurrencyUnit = "dat"`.
 - Wallet / escrow wiring is **not yet implemented** — tables still use mojo amounts in the engine API.
 
-### Phase 2 (next)
+### Phase 2
 
-- `packages/chia-bridge` DAT wallet adapter
-- Offer-based buy-in: player signs offer, escrow coin locked on-chain
-- Balance checks before `POST /v1/tables/:id/seat`
+- Cash tables: signed buy-in plus treasury offers for net winnings
+- Sit-and-go / MTT: one DAT CAT pool coin per entry (`docs/TOURNAMENT_POOL.md`)
+- Optional site DAT faucet for promotional entries that are not pool coins
 
 ## XCH vs DAT
 

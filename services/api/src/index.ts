@@ -10,6 +10,8 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerSiteDatRoutes } from "./routes/site-dat.js";
+import { registerTournamentRoutes } from "./routes/tournaments.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -41,6 +43,8 @@ async function main(): Promise<void> {
 
   registerHealthRoutes(app, chiaClient);
   registerWalletRoutes(app, chiaClient);
+  registerSiteDatRoutes(app);
+  registerTournamentRoutes(app);
   registerTableRoutes(app);
   registerHandRoutes(app);
 
