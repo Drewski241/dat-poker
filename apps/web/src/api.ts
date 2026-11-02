@@ -1192,4 +1192,141 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  siteDat: (address: string) =>
+    request<SiteDatBalance>(`/v1/wallet/site-dat?address=${encodeURIComponent(address)}`),
+
+  siteRedeemMessage: (address: string, amountMojos: string, nonce: string) => {
+    const q = new URLSearchParams({ address, amountMojos, nonce });
+    return request<{ message: string }>(`/v1/wallet/site-dat/redeem/message?${q}`);
+  },
+
+  redeemSiteDat: (body: {
+    address: string;
+    amountMojos: string;
+    nonce: string;
+    proof: BuyInProof;
+  }) =>
+    request<{ ok: boolean; balanceMojos: string }>("/v1/wallet/site-dat/redeem", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  createTournament: (body: {
+    format: "sng" | "mtt";
+    buyInMojos: string;
+    maxEntries?: number;
+  }) =>
+    request<TournamentView>("/v1/tournaments", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  fillHouse: (tournamentId: string, seats?: number) =>
+    request<TournamentView>(`/v1/tournaments/${tournamentId}/fill-house`, {
+      method: "POST",
+      body: JSON.stringify(seats == null ? {} : { seats }),
+    }),
+
+  settleTournament: (tournamentId: string, body: { playerWinsAddress: string }) =>
+    request<TournamentView>(`/v1/tournaments/${tournamentId}/settle`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  getTournament: (tournamentId: string) => request<TournamentView>(`/v1/tournaments/${tournamentId}`),
+
+  tournamentJoinMessage: (tournamentId: string, address: string, custody: TournamentCustody) => {
+    const q = new URLSearchParams({ address, custody });
+    return request<{ message: string; puzzleHash: string; buyInMojos: string }>(
+      `/v1/tournaments/${tournamentId}/join/message?${q}`,
+    );
+  },
+
+  joinTournament: (
+    tournamentId: string,
+    body: { address: string; custody: TournamentCustody; proof: BuyInProof },
+  ) =>
+    request<TournamentView>(`/v1/tournaments/${tournamentId}/join`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  tournamentLockMessage: (tournamentId: string, entryId: string, coinId: string) =>
+    request<{ message: string }>(
+      `/v1/tournaments/${tournamentId}/entries/${entryId}/lock/message?coinId=${coinId}`,
+    ),
+
+  lockTournamentCoin: (
+    tournamentId: string,
+    entryId: string,
+    body: { coinId: string; proof: BuyInProof },
+  ) =>
+    request<TournamentView>(`/v1/tournaments/${tournamentId}/entries/${entryId}/lock`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  cancelTournament: (tournamentId: string) =>
+    request<TournamentView>(`/v1/tournaments/${tournamentId}/cancel`, {
+      method: "POST",
+      body: "{}",
+    }),
 };
+
+export type TournamentCustody = "pool_coin" | "site_ledger";
+
+export interface SiteDatBalance {
+  address: string;
+  balanceMojos: string;
+  redeemedMojos: string;
+  redeemEnabled: boolean;
+  maxRedeemMojos: string;
+  capMojos: string;
+  note: string;
+}
+
+export interface TournamentEntryView {
+  entryId: string;
+  address: string;
+  puzzleHash: string;
+  custody: TournamentCustody;
+  house: boolean;
+  status: string;
+  coinId?: string;
+  innerPuzzleHash?: string;
+  catPuzzleHash?: string | null;
+}
+
+export interface TournamentView {
+  id: string;
+  format: "sng" | "mtt";
+  buyInMojos: string;
+  maxEntries: number;
+  fieldLabel: string;
+  payoutBasis: number | null;
+  paidPlaces: number;
+  payoutBps: number[];
+  payoutNote: string;
+  houseCount: number;
+  houseMojos: string;
+  refundAfterSeconds: number;
+  status: string;
+  prizePoolMojos: string;
+  lockedPoolMojos: string;
+  siteLedgerMojos: string;
+  custodyNote: string;
+  entries: TournamentEntryView[];
+  siteCredits?: Array<{ address: string; amountMojos: string }>;
+  spends?: Array<{
+    entryId: string;
+    address: string;
+    timeoutRefund?: { solutionHex: string };
+    immediateRefund?: { authorizerMessage: string | null };
+    settle?: {
+      solutionHex: string;
+      authorizerMessage: string | null;
+      outputs: Array<{ puzzleHash: string; amountMojos: string }>;
+    };
+  }>;
+}

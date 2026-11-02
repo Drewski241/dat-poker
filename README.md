@@ -41,7 +41,8 @@ For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a 
 | Path | Purpose |
 |------|---------|
 | `packages/game-engine` | NLHE engine, commit-reveal shuffle, hand evaluation |
-| `packages/chia-bridge` | chia-gaming adapter, CAT payout offers, settlement proofs |
+| `packages/chia-bridge` | chia-gaming adapter, CAT payout offers, tournament pool spends |
+| `puzzles/tournament_pool.clsp` | Per-entry DAT CAT inner puzzle for sit-and-go and MTT buy-ins |
 | `packages/shared` | Types, variant catalog, DAT units, bet sizing |
 | `services/api` | REST API (tables, hands, wallet, withdraw) |
 | `services/treasury-payout` | Treasury offer builder for on-chain DAT payouts |

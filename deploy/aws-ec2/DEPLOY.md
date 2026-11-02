@@ -43,14 +43,15 @@ Use the **ElasticIp** output as your public URL.
 
 Open **EC2 → Instances → select beta host → Connect → Session Manager**.
 
-Spirit Slots ship on **`cursor/spirit-slots-game-4501` only**. Do **not** redeploy
-`cursor/trust-rails-fairness-7c36` if you want the slot machine — that branch is
-the MTT/lobby client without slots.
+Spirit Slots and the tournament pool coin ship on **`cursor/fix-stampede-bigint-payout-6e1e`**.
+Do **not** redeploy `cursor/trust-rails-fairness-7c36` if you want the slot machine — that branch is
+the MTT/lobby client without slots. Do **not** redeploy `cursor/tournament-pool-coin-b930` by itself:
+that branch has the Chialisp puzzle but not Spirit Slots.
 
 **First time / `pull-spirit-slots.sh` missing** — paste this single line (downloads `up.sh` from GitHub):
 
 ```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/spirit-slots-game-4501; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/spirit-slots-game-4501/deploy/aws-ec2/up.sh" | bash'
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/fix-stampede-bigint-payout-6e1e; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/fix-stampede-bigint-payout-6e1e/deploy/aws-ec2/up.sh" | bash'
 ```
 
 Later deploys (after this branch is checked out on the host):

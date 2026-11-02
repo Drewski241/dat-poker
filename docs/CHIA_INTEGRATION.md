@@ -46,13 +46,15 @@ Best for: cash games, SNGs.
 - Hand ends → `buildSettlementProof()` → settlement worker submits Chia tx
 - Event log + `stateRootHash` enable third-party audit
 
-### Mode C — Tournament pools (100k+ players)
+### Mode C — Tournament pools
 
-Best for: MTTs.
+Best for: sit-and-gos and MTTs. See [TOURNAMENT_POOL.md](./TOURNAMENT_POOL.md).
 
-- Registration opens tournament pool coin on Chia
-- Payout table executed after final table settlement
-- Off-chain blind/level schedule with on-chain prize pool lock
+- Each paid entry is its own DAT CAT locked to `puzzles/tournament_pool.clsp`
+- The prize pool is the set of those coins, not one coin that grows
+- Wallet signature is required to join
+- Free site DAT redeems are a separate ledger and do not create a pool coin
+- Settlement spends every entry coin; odd mojos go to first place
 
 ## Network configuration
 
@@ -67,5 +69,5 @@ WalletConnect project ID is required for production wallet flows. See [WALLETCON
 
 1. Wire real lobby API paths from chia-gaming OpenAPI (alpha APIs may change).
 2. Add settlement worker service consuming Kafka hand-complete events.
-3. Implement Chialisp escrow puzzle templates for ring-game buy-ins.
+3. Broadcast tournament pool spends (lock, refund, settle) through a wallet or coinset client. The puzzle and spend builder are in `puzzles/tournament_pool.clsp`.
 4. Simulator E2E test harness in CI (Docker compose profile).

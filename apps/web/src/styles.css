@@ -3678,3 +3678,25 @@ html.play-table-screen body {
     transform: rotate(180deg);
   }
 }
+
+.choice {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  margin-top: 0.35rem;
+}
+
+.text-input.seats {
+  width: 6rem;
+}
+
+.text-input {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #2d3a4f;
+  background: #0f1419;
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+}
