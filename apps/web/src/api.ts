@@ -230,8 +230,24 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  createTournament: (body: { format: "sng" | "mtt"; buyInMojos: string; maxEntries: number }) =>
+  createTournament: (body: {
+    format: "sng" | "mtt";
+    buyInMojos: string;
+    maxEntries?: number;
+  }) =>
     request<TournamentView>("/v1/tournaments", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  fillHouse: (tournamentId: string, seats?: number) =>
+    request<TournamentView>(`/v1/tournaments/${tournamentId}/fill-house`, {
+      method: "POST",
+      body: JSON.stringify(seats == null ? {} : { seats }),
+    }),
+
+  settleTournament: (tournamentId: string, body: { playerWinsAddress: string }) =>
+    request<TournamentView>(`/v1/tournaments/${tournamentId}/settle`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -294,6 +310,7 @@ export interface TournamentEntryView {
   address: string;
   puzzleHash: string;
   custody: TournamentCustody;
+  house: boolean;
   status: string;
   coinId?: string;
   innerPuzzleHash?: string;
@@ -305,7 +322,13 @@ export interface TournamentView {
   format: "sng" | "mtt";
   buyInMojos: string;
   maxEntries: number;
+  fieldLabel: string;
+  payoutBasis: number | null;
+  paidPlaces: number;
   payoutBps: number[];
+  payoutNote: string;
+  houseCount: number;
+  houseMojos: string;
   refundAfterSeconds: number;
   status: string;
   prizePoolMojos: string;
@@ -313,9 +336,16 @@ export interface TournamentView {
   siteLedgerMojos: string;
   custodyNote: string;
   entries: TournamentEntryView[];
+  siteCredits?: Array<{ address: string; amountMojos: string }>;
   spends?: Array<{
     entryId: string;
+    address: string;
     timeoutRefund?: { solutionHex: string };
     immediateRefund?: { authorizerMessage: string | null };
+    settle?: {
+      solutionHex: string;
+      authorizerMessage: string | null;
+      outputs: Array<{ puzzleHash: string; amountMojos: string }>;
+    };
   }>;
 }

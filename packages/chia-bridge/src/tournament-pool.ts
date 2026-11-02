@@ -192,6 +192,50 @@ export function buildSiteRedeemMessage(params: {
   return `dat-poker:v1:site-dat-redeem:${params.address}:${params.amountMojos}:${params.nonce}`;
 }
 
+/** Sit-and-gos are these two fields. Anything else is an open tournament. */
+export const SNG_FIELD_SIZES = [8, 16] as const;
+
+/**
+ * Paid places are the top 20% of the field, at least one.
+ * `round` is half away from zero, done in integers so 0.2's binary
+ * expansion cannot move a boundary.
+ */
+export function paidPlaceCount(field: number): number {
+  if (!Number.isInteger(field) || field < 1) {
+    throw new Error("Field size must be a positive integer");
+  }
+  return Math.max(1, Math.floor((field * 2 + 5) / 10));
+}
+
+/**
+ * Linear weights `places … 1`, scaled to 10_000 bps.
+ * Leftover bps go to first so the table sums to exactly 10_000.
+ * An 8-max pays 2 places (6667 / 3333). A 16-max pays 3 (5001 / 3333 / 1666).
+ */
+export function payoutBpsForField(field: number): number[] {
+  const places = paidPlaceCount(field);
+  const weightSum = (places * (places + 1)) / 2;
+  const bps: number[] = [];
+  let assigned = 0;
+  for (let index = 0; index < places; index += 1) {
+    const share = Math.floor(((places - index) * 10_000) / weightSum);
+    bps.push(share);
+    assigned += share;
+  }
+  bps[0] = (bps[0] ?? 0) + (10_000 - assigned);
+  return bps;
+}
+
+/** Operator seat used to fill a field when no other player is available. */
+export function houseEntryAddress(tournamentId: string, index: number): string {
+  return `dat-poker:house:${tournamentId}:${index}`;
+}
+
+/** Not a wallet puzzle hash. House prizes must not be the on-chain output. */
+export function housePuzzleHash(address: string): string {
+  return createHash("sha256").update(address, "utf8").digest("hex");
+}
+
 export function prizesForFinish(
   totalMojos: bigint,
   payoutBps: number[],

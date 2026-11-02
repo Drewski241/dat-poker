@@ -6,6 +6,7 @@ import { readAuthorizerPublicKey } from "../tournament-config.js";
 import {
   cancelTournament,
   createTournament,
+  fillHouse,
   getTournament,
   joinMessage,
   joinTournament,
@@ -31,6 +32,7 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
       variant?: string;
       buyInMojos?: string;
       maxEntries?: number;
+      /** Rejected. Payouts are the top 20% of the field. */
       payoutBps?: number[];
       refundAfterSeconds?: number;
     };
@@ -126,9 +128,21 @@ export function registerTournamentRoutes(app: FastifyInstance): void {
 
   app.post<{
     Params: { tournamentId: string };
+    Body: { seats?: number };
+  }>("/v1/tournaments/:tournamentId/fill-house", async (req, reply) => {
+    try {
+      return fillHouse(req.params.tournamentId, req.body?.seats);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{
+    Params: { tournamentId: string };
     Body: {
       finishOrder?: string[];
       payouts?: Array<{ address: string; amountMojos: string; puzzleHash?: string }>;
+      playerWinsAddress?: string;
     };
   }>("/v1/tournaments/:tournamentId/settle", async (req, reply) => {
     try {

@@ -38,6 +38,7 @@ export function TournamentPanel({
   const [tournament, setTournament] = useState<TournamentView | null>(null);
   const [coinId, setCoinId] = useState("");
   const [custody, setCustody] = useState<TournamentCustody>("pool_coin");
+  const [houseSeats, setHouseSeats] = useState("1");
 
   useEffect(() => {
     if (!walletAddress) {
@@ -62,16 +63,54 @@ export function TournamentPanel({
   };
 
   const myEntry = tournament?.entries.find((entry) => entry.address === walletAddress);
+  const players = tournament?.entries.filter((entry) => !entry.house) ?? [];
+  const houseCount = tournament?.houseCount ?? 0;
+  const paidCount =
+    tournament?.entries.filter((entry) => entry.status === "locked" || entry.status === "seated").length ??
+    0;
+  const waitingOnCoin = tournament?.entries.some((entry) => entry.status === "awaiting_lock") ?? false;
+  const fieldReady =
+    tournament != null &&
+    !waitingOnCoin &&
+    (tournament.format === "sng" ? paidCount === tournament.maxEntries : paidCount >= 2);
+  const canTestPayout =
+    fieldReady && (myEntry?.status === "locked" || myEntry?.status === "seated");
 
-  const create = (format: "sng" | "mtt") =>
-    run(format === "sng" ? "Creating sit & go…" : "Creating tournament…", async () => {
+  const createSng = (maxEntries: 8 | 16) =>
+    run(`Creating ${maxEntries}-player sit & go…`, async () => {
       const created = await api.createTournament({
-        format,
+        format: "sng",
         buyInMojos: "1000000",
-        maxEntries: format === "sng" ? 6 : 18,
+        maxEntries,
       });
       setTournament(created);
       setCoinId("");
+    });
+
+  const createOpen = () =>
+    run("Creating open tournament…", async () => {
+      const created = await api.createTournament({
+        format: "mtt",
+        buyInMojos: "1000000",
+      });
+      setTournament(created);
+      setCoinId("");
+    });
+
+  const seatHouse = () =>
+    run("Seating the house…", async () => {
+      if (!tournament) return;
+      const seats = tournament.format === "mtt" ? Number(houseSeats) : undefined;
+      if (tournament.format === "mtt" && (!Number.isInteger(seats) || (seats ?? 0) < 1)) {
+        throw new Error("House seats must be a positive whole number");
+      }
+      setTournament(await api.fillHouse(tournament.id, seats));
+    });
+
+  const testPayout = () =>
+    run("Settling a test payout with you in 1st…", async () => {
+      if (!tournament || !walletAddress) throw new Error("Connect Sage and join first");
+      setTournament(await api.settleTournament(tournament.id, { playerWinsAddress: walletAddress }));
     });
 
   const redeem = () =>
@@ -164,11 +203,14 @@ export function TournamentPanel({
         </p>
       )}
       <div className="row">
-        <button type="button" className="secondary" disabled={busy || !apiOk} onClick={() => create("sng")}>
-          Create 6-max sit &amp; go
+        <button type="button" className="secondary" disabled={busy || !apiOk} onClick={() => createSng(8)}>
+          Create 8-player sit &amp; go
         </button>
-        <button type="button" className="secondary" disabled={busy || !apiOk} onClick={() => create("mtt")}>
-          Create 18-seat tournament
+        <button type="button" className="secondary" disabled={busy || !apiOk} onClick={() => createSng(16)}>
+          Create 16-player sit &amp; go
+        </button>
+        <button type="button" className="secondary" disabled={busy || !apiOk} onClick={createOpen}>
+          Create open tournament
         </button>
         <button
           type="button"
@@ -183,22 +225,30 @@ export function TournamentPanel({
       {tournament && (
         <>
           <p className="mono">
-            {tournament.format.toUpperCase()} {tournament.id}
+            {tournament.fieldLabel} {tournament.id}
+            <br />
+            {tournament.payoutNote}
             <br />
             Buy-in {formatDatMojos(tournament.buyInMojos, ticker)} · prize pool{" "}
             {formatDatMojos(tournament.prizePoolMojos, ticker)} · {tournament.status}
             <br />
             On-chain {formatDatMojos(tournament.lockedPoolMojos, ticker)} · site ledger{" "}
-            {formatDatMojos(tournament.siteLedgerMojos, ticker)}
+            {formatDatMojos(tournament.siteLedgerMojos, ticker)} · house{" "}
+            {formatDatMojos(tournament.houseMojos, ticker)}
           </p>
-          {tournament.entries.length > 0 && (
+          {(players.length > 0 || houseCount > 0) && (
             <ul className="players">
-              {tournament.entries.map((entry) => (
+              {players.map((entry) => (
                 <li key={entry.entryId}>
                   {entry.address === walletAddress ? "You" : `${entry.address.slice(0, 8)}…`} ·{" "}
                   {entry.custody === "pool_coin" ? "pool coin" : "site DAT"} · {entry.status}
                 </li>
               ))}
+              {houseCount > 0 && (
+                <li>
+                  House × {tournament.houseCount} · operator collateral
+                </li>
+              )}
             </ul>
           )}
           {tournament.status === "registering" && !myEntry && (
@@ -252,19 +302,65 @@ export function TournamentPanel({
             </>
           )}
           {tournament.status === "registering" && (
-            <div className="row">
-              <button type="button" className="secondary" disabled={busy} onClick={cancel}>
-                Cancel and refund
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={busy}
-                onClick={() => void refresh(tournament.id)}
-              >
-                Refresh
-              </button>
-            </div>
+            <>
+              <div className="row">
+                {tournament.format === "mtt" && (
+                  <input
+                    className="text-input seats"
+                    inputMode="numeric"
+                    value={houseSeats}
+                    aria-label="House seats"
+                    onChange={(event) => setHouseSeats(event.target.value)}
+                  />
+                )}
+                <button type="button" className="secondary" disabled={busy} onClick={seatHouse}>
+                  {tournament.format === "sng"
+                    ? `Seat the house (${Math.max(tournament.maxEntries - tournament.entries.length, 0)} seats)`
+                    : "Seat the house"}
+                </button>
+                <button type="button" disabled={busy || !canTestPayout} onClick={testPayout}>
+                  Test payout (you finish 1st)
+                </button>
+              </div>
+              {!canTestPayout && (
+                <p className="muted small">
+                  {tournament.format === "sng"
+                    ? "Lock your pool coin, then seat the house in the other seats. The test payout spends that one coin and credits the rest of 1st place."
+                    : "An open tournament pays the top 20% of whoever has bought in. Seat as many house players as you want, from 1 up, then lock your coin before the test payout."}
+                </p>
+              )}
+              <div className="row">
+                <button type="button" className="secondary" disabled={busy} onClick={cancel}>
+                  Cancel and refund
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => void refresh(tournament.id)}
+                >
+                  Refresh
+                </button>
+              </div>
+            </>
+          )}
+          {tournament.status === "settled" && tournament.spends && tournament.spends.length > 0 && (
+            <p className="small">
+              Your pool coin settles with solution{" "}
+              <span className="mono">{tournament.spends[0]?.settle?.solutionHex}</span>
+              {" "}and authorizer message{" "}
+              <span className="mono">{tournament.spends[0]?.settle?.authorizerMessage}</span>.
+              {tournament.siteCredits && tournament.siteCredits.length > 0 && (
+                <>
+                  {" "}
+                  Site ledger credit{" "}
+                  {tournament.siteCredits
+                    .map((credit) => formatDatMojos(credit.amountMojos, ticker))
+                    .join(", ")}
+                  .
+                </>
+              )}
+            </p>
           )}
           {tournament.status === "cancelled" && tournament.spends && tournament.spends.length > 0 && (
             <p className="small">

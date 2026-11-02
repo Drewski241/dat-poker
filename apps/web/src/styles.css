@@ -217,6 +217,10 @@ button.secondary {
   margin-top: 0.35rem;
 }
 
+.text-input.seats {
+  width: 6rem;
+}
+
 .text-input {
   width: 100%;
   margin-top: 0.5rem;

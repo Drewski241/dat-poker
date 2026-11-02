@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   TOURNAMENT_POOL_MOD_HASH,
+  MAX_PAYOUTS,
   buildRefundSpend,
   buildSettleSpend,
   compiledPuzzleModHash,
+  paidPlaceCount,
+  payoutBpsForField,
   planTournamentDisbursement,
   prizesForFinish,
   tournamentCatPuzzleHash,
@@ -133,5 +136,65 @@ describe("prize disbursement", () => {
       { puzzleHash: "bb".repeat(32), amountMojos: 600n },
     ]);
     expect(plan.siteCredits).toEqual([]);
+  });
+});
+
+describe("top 20% payout curve", () => {
+  it("pays one place under 8 and scales with the field", () => {
+    expect(paidPlaceCount(2)).toBe(1);
+    expect(paidPlaceCount(7)).toBe(1);
+    expect(paidPlaceCount(8)).toBe(2);
+    expect(paidPlaceCount(9)).toBe(2);
+    expect(paidPlaceCount(16)).toBe(3);
+    expect(paidPlaceCount(100)).toBe(20);
+    expect(payoutBpsForField(2)).toEqual([10_000]);
+    expect(payoutBpsForField(8)).toEqual([6667, 3333]);
+    expect(payoutBpsForField(16)).toEqual([5001, 3333, 1666]);
+    expect(payoutBpsForField(100)).toHaveLength(20);
+    for (const field of [2, 8, 16, 100]) {
+      const bps = payoutBpsForField(field);
+      expect(bps.reduce((sum, share) => sum + share, 0)).toBe(10_000);
+      expect(bps.every((share) => share > 0)).toBe(true);
+    }
+  });
+
+  it("keeps each entry coin within the puzzle's 16 outputs", () => {
+    for (const field of [2, 8, 16, 100]) {
+      const bps = payoutBpsForField(field);
+      const finish = bps.map((_, index) => ({
+        address: `p${index}`,
+        puzzleHash: (index + 1).toString(16).padStart(64, "0"),
+      }));
+      const prizes = prizesForFinish(1_000n * BigInt(field), bps, finish);
+      const plan = planTournamentDisbursement({
+        buyInMojos: 1_000n,
+        poolPlayerPuzzleHashes: Array.from({ length: field }, (_, index) =>
+          (index + 1).toString(16).padStart(64, "f"),
+        ),
+        siteMojos: 0n,
+        payouts: prizes,
+      });
+      const widest = Math.max(...plan.coinSpends.map((coin) => coin.outputs.length));
+      expect(widest).toBeLessThanOrEqual(MAX_PAYOUTS);
+    }
+  });
+
+  it("pays a single real coin in one output when the house covers the rest", () => {
+    const field = 500;
+    const bps = payoutBpsForField(field);
+    const finish = bps.map((_, index) => ({
+      address: `p${index}`,
+      puzzleHash: (index + 1).toString(16).padStart(64, "0"),
+    }));
+    const prizes = prizesForFinish(1_000n * BigInt(field), bps, finish);
+    const plan = planTournamentDisbursement({
+      buyInMojos: 1_000n,
+      poolPlayerPuzzleHashes: ["d".repeat(32)],
+      siteMojos: 1_000n * BigInt(field - 1),
+      payouts: prizes,
+    });
+    expect(plan.coinSpends[0]?.outputs).toEqual([
+      { puzzleHash: "1".padStart(64, "0"), amountMojos: 1_000n },
+    ]);
   });
 });

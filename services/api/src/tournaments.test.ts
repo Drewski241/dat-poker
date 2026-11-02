@@ -21,7 +21,7 @@ async function createSng(app: Awaited<ReturnType<typeof buildApp>>, buyInMojos =
   const response = await app.inject({
     method: "POST",
     url: "/v1/tournaments",
-    payload: { format: "sng", buyInMojos, maxEntries: 6, payoutBps: [5000, 3000, 2000] },
+    payload: { format: "sng", buyInMojos, maxEntries: 8 },
   });
   expect(response.statusCode).toBe(200);
   return response.json() as { id: string; chainTournamentId: string; buyInMojos: string };
@@ -160,9 +160,63 @@ describe("tournament pool and site DAT", () => {
     expect(balance.json().balanceMojos).toBe("4000");
   });
 
+  it("rejects a 6-max sit and go and a payout table chosen at create", async () => {
+    const app = await buildApp();
+    const six = await app.inject({
+      method: "POST",
+      url: "/v1/tournaments",
+      payload: { format: "sng", buyInMojos: "1000", maxEntries: 6 },
+    });
+    expect(six.statusCode).toBe(400);
+    expect(six.json().error).toMatch(/8 or 16/);
+
+    const custom = await app.inject({
+      method: "POST",
+      url: "/v1/tournaments",
+      payload: { format: "sng", buyInMojos: "1000", maxEntries: 8, payoutBps: [10_000] },
+    });
+    expect(custom.statusCode).toBe(400);
+    expect(custom.json().error).toMatch(/top 20%/);
+
+    const sixteen = await app.inject({
+      method: "POST",
+      url: "/v1/tournaments",
+      payload: { format: "sng", buyInMojos: "1000", maxEntries: 16 },
+    });
+    expect(sixteen.statusCode).toBe(200);
+    expect(sixteen.json().paidPlaces).toBe(3);
+    expect(sixteen.json().payoutBps).toEqual([5001, 3333, 1666]);
+    expect(sixteen.json().payoutNote).toBe("Pays 3 places (top 20% of 16)");
+
+    const open = await app.inject({
+      method: "POST",
+      url: "/v1/tournaments",
+      payload: { format: "mtt", buyInMojos: "1000" },
+    });
+    expect(open.statusCode).toBe(200);
+    expect(open.json().maxEntries).toBe(100_000);
+    expect(open.json().fieldLabel).toBe("Open tournament");
+    expect(open.json().payoutNote).toBe("Pays the top 20% of the paid field at settle");
+    expect(open.json().paidPlaces).toBe(0);
+    const seated = await app.inject({
+      method: "POST",
+      url: `/v1/tournaments/${open.json().id}/fill-house`,
+      payload: { seats: 3 },
+    });
+    expect(seated.statusCode).toBe(200);
+    expect(seated.json().payoutNote).toBe("Pays 1 place (top 20% of 3 entered)");
+    expect(seated.json().paidPlaces).toBe(1);
+  });
+
   it("settles pool coins and site DAT as separate collateral", async () => {
     const app = await buildApp();
-    const tournament = await createSng(app, "1000");
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/tournaments",
+      payload: { format: "mtt", buyInMojos: "1000", maxEntries: 2 },
+    });
+    expect(created.statusCode).toBe(200);
+    const tournament = created.json() as { id: string };
 
     for (const [address, nonce] of [
       [PLAYER_A, "a"],
@@ -207,6 +261,7 @@ describe("tournament pool and site DAT", () => {
       payload: { finishOrder: [PLAYER_A, PLAYER_B] },
     });
     expect(settled.statusCode).toBe(400);
+    expect(settled.json().error).toMatch(/one player per payout place/);
 
     const threePlaces = await app.inject({
       method: "POST",
@@ -282,5 +337,111 @@ describe("tournament pool and site DAT", () => {
 
     const balance = await app.inject({ method: "GET", url: `/v1/wallet/site-dat?address=${PLAYER_B}` });
     expect(balance.json().balanceMojos).toBe("1000");
+  });
+
+  it("fills an 8-max with the house and pays the one real pool coin to first", async () => {
+    const app = await buildApp();
+    const tournament = await createSng(app, "1000");
+    expect(tournament).toMatchObject({
+      paidPlaces: 2,
+      payoutBps: [6667, 3333],
+      payoutNote: "Pays 2 places (top 20% of 8)",
+    });
+
+    const early = await app.inject({
+      method: "POST",
+      url: `/v1/tournaments/${tournament.id}/settle`,
+      payload: { playerWinsAddress: PLAYER_A },
+    });
+    expect(early.statusCode).toBe(400);
+    expect(early.json().error).toMatch(/all 8 seats/);
+
+    const pool = await signJoin(app, tournament.id, PLAYER_A, "pool_coin");
+    const entry = (pool.body.entries as Array<Record<string, string>>)[0]!;
+    const coinId = "ab".repeat(32);
+    const lockMessage = await app.inject({
+      method: "GET",
+      url: `/v1/tournaments/${tournament.id}/entries/${entry.entryId}/lock/message?coinId=${coinId}`,
+    });
+    await app.inject({
+      method: "POST",
+      url: `/v1/tournaments/${tournament.id}/entries/${entry.entryId}/lock`,
+      payload: {
+        coinId,
+        proof: { message: lockMessage.json().message, signature: SIG, pubkey: PUBKEY },
+      },
+    });
+
+    const filled = await app.inject({
+      method: "POST",
+      url: `/v1/tournaments/${tournament.id}/fill-house`,
+      payload: {},
+    });
+    expect(filled.statusCode).toBe(200);
+    const field = filled.json();
+    expect(field.houseCount).toBe(7);
+    expect(field.houseMojos).toBe("7000");
+    expect(field.siteLedgerMojos).toBe("0");
+    expect(field.prizePoolMojos).toBe("8000");
+    expect(field.lockedPoolMojos).toBe("1000");
+
+    const won = await app.inject({
+      method: "POST",
+      url: `/v1/tournaments/${tournament.id}/settle`,
+      payload: { playerWinsAddress: PLAYER_A },
+    });
+    expect(won.statusCode).toBe(200);
+    const body = won.json();
+    expect(body.status).toBe("settled");
+    expect(body.payoutNote).toBe("Paid 2 places (top 20% of 8)");
+    expect(body.spends).toHaveLength(1);
+    expect(body.spends[0].settle.outputs).toEqual([
+      { puzzleHash: "22".repeat(32), amountMojos: "1000" },
+    ]);
+    expect(body.spends[0].settle.solutionHex.startsWith("ff01")).toBe(true);
+    expect(body.spends[0].settle.authorizerMessage).toMatch(/^[0-9a-f]{64}$/);
+    expect(body.siteCredits).toEqual([{ address: PLAYER_A, amountMojos: "4334" }]);
+
+    const balance = await app.inject({ method: "GET", url: `/v1/wallet/site-dat?address=${PLAYER_A}` });
+    expect(balance.json().balanceMojos).toBe("4334");
+  });
+
+  it("does not refund house collateral onto the site ledger", async () => {
+    const app = await buildApp();
+    const tournament = await createSng(app, "1000");
+    const message = await app.inject({
+      method: "GET",
+      url: `/v1/wallet/site-dat/redeem/message?address=${PLAYER_B}&amountMojos=1000&nonce=house-cancel`,
+    });
+    await app.inject({
+      method: "POST",
+      url: "/v1/wallet/site-dat/redeem",
+      payload: {
+        address: PLAYER_B,
+        amountMojos: "1000",
+        nonce: "house-cancel",
+        proof: { message: message.json().message, signature: SIG, pubkey: PUBKEY },
+      },
+    });
+    await signJoin(app, tournament.id, PLAYER_B, "site_ledger");
+    const filled = await app.inject({
+      method: "POST",
+      url: `/v1/tournaments/${tournament.id}/fill-house`,
+      payload: {},
+    });
+    expect(filled.json().houseCount).toBe(7);
+
+    const cancelled = await app.inject({
+      method: "POST",
+      url: `/v1/tournaments/${tournament.id}/cancel`,
+    });
+    expect(cancelled.statusCode).toBe(200);
+    const balance = await app.inject({ method: "GET", url: `/v1/wallet/site-dat?address=${PLAYER_B}` });
+    expect(balance.json().balanceMojos).toBe("1000");
+    const houseBalance = await app.inject({
+      method: "GET",
+      url: `/v1/wallet/site-dat?address=${encodeURIComponent(`dat-poker:house:${tournament.id}:0`)}`,
+    });
+    expect(houseBalance.json().balanceMojos).toBe("0");
   });
 });

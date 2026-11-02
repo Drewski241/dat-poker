@@ -12,6 +12,10 @@ import {
   buildTournamentJoinMessage,
   buildTournamentLockMessage,
   chainTournamentId,
+  houseEntryAddress,
+  housePuzzleHash,
+  paidPlaceCount,
+  payoutBpsForField,
   planTournamentDisbursement,
   prizesForFinish,
   tournamentCatPuzzleHash,
@@ -53,6 +57,8 @@ interface StoredEntry {
   address: string;
   puzzleHash: string;
   custody: EntryCustody;
+  /** Operator collateral. No wallet, no site-ledger debit, no refund credit. */
+  house: boolean;
   status: EntryStatus;
   signature: string;
   pubkey: string;
@@ -86,8 +92,9 @@ interface StoredTournament {
   variant: string;
   buyInMojos: bigint;
   maxEntries: number;
-  payoutBps: number[];
   refundAfterSeconds: number;
+  settledField?: number;
+  settledPayoutBps?: number[];
   authorizerPublicKey: string;
   chainTournamentId: string;
   assetId: string | null;
@@ -159,7 +166,14 @@ export interface TournamentView {
   variant: string;
   buyInMojos: string;
   maxEntries: number;
+  fieldLabel: string;
+  /** Field size the displayed table was computed from. Null until an MTT has an entry. */
+  payoutBasis: number | null;
+  paidPlaces: number;
   payoutBps: number[];
+  payoutNote: string;
+  houseCount: number;
+  houseMojos: string;
   refundAfterSeconds: number;
   authorizerPublicKey: string;
   chainTournamentId: string;
@@ -174,6 +188,7 @@ export interface TournamentView {
     address: string;
     puzzleHash: string;
     custody: EntryCustody;
+    house: boolean;
     status: EntryStatus;
     coinId?: string;
     innerPuzzleHash?: string;
@@ -187,20 +202,83 @@ export interface TournamentView {
 }
 
 const CUSTODY_NOTE =
-  "pool_coin locks a DAT CAT after a wallet signature. site_ledger spends free on-site DAT and does not create a pool coin.";
+  "pool_coin locks a DAT CAT after a wallet signature. site_ledger spends free on-site DAT and does not create a pool coin. House seats are operator collateral for a solo test: they fill the field and are not a wallet or a site-ledger debit.";
+
+/** Open tournaments stop at this so one process cannot allocate forever. */
+export const MTT_FIELD_CAP = 100_000;
+
+function placesLabel(count: number): string {
+  return `${count} ${count === 1 ? "place" : "places"}`;
+}
+
+function fieldLabel(tournament: StoredTournament): string {
+  if (tournament.format === "sng") return `${tournament.maxEntries}-player sit & go`;
+  if (tournament.maxEntries >= MTT_FIELD_CAP) return "Open tournament";
+  return `${tournament.maxEntries}-player tournament`;
+}
+
+function payoutPreview(tournament: StoredTournament): {
+  payoutBasis: number | null;
+  payoutBps: number[];
+  paidPlaces: number;
+  payoutNote: string;
+} {
+  if (tournament.settledField && tournament.settledPayoutBps) {
+    return {
+      payoutBasis: tournament.settledField,
+      payoutBps: tournament.settledPayoutBps,
+      paidPlaces: tournament.settledPayoutBps.length,
+      payoutNote: `Paid ${placesLabel(tournament.settledPayoutBps.length)} (top 20% of ${tournament.settledField})`,
+    };
+  }
+  if (tournament.format === "sng") {
+    const bps = payoutBpsForField(tournament.maxEntries);
+    return {
+      payoutBasis: tournament.maxEntries,
+      payoutBps: bps,
+      paidPlaces: bps.length,
+      payoutNote: `Pays ${placesLabel(bps.length)} (top 20% of ${tournament.maxEntries})`,
+    };
+  }
+  const paid = paidEntries(tournament).length;
+  if (paid < 1) {
+    return {
+      payoutBasis: null,
+      payoutBps: [],
+      paidPlaces: 0,
+      payoutNote: "Pays the top 20% of the paid field at settle",
+    };
+  }
+  const bps = payoutBpsForField(paid);
+  return {
+    payoutBasis: paid,
+    payoutBps: bps,
+    paidPlaces: bps.length,
+    payoutNote: `Pays ${placesLabel(bps.length)} (top 20% of ${paid} entered)`,
+  };
+}
 
 function toView(tournament: StoredTournament): TournamentView {
   const locked = tournament.entries.filter((entry) => entry.status === "locked");
-  const seated = tournament.entries.filter((entry) => entry.status === "seated");
+  const seatedPlayers = tournament.entries.filter((entry) => entry.status === "seated" && !entry.house);
+  const houseSeated = tournament.entries.filter((entry) => entry.status === "seated" && entry.house);
   const lockedPool = tournament.buyInMojos * BigInt(locked.length);
-  const site = tournament.buyInMojos * BigInt(seated.length);
+  const site = tournament.buyInMojos * BigInt(seatedPlayers.length);
+  const house = tournament.buyInMojos * BigInt(houseSeated.length);
+  const preview = payoutPreview(tournament);
   return {
     id: tournament.id,
     format: tournament.format,
     variant: tournament.variant,
     buyInMojos: tournament.buyInMojos.toString(),
     maxEntries: tournament.maxEntries,
-    payoutBps: tournament.payoutBps,
+    fieldLabel: fieldLabel(tournament),
+    payoutBasis: preview.payoutBasis,
+    paidPlaces: preview.paidPlaces,
+    payoutBps: preview.payoutBps,
+    payoutNote: preview.payoutNote,
+    houseCount: tournament.entries.filter((entry) => entry.house).length,
+    houseMojos: house.toString(),
     refundAfterSeconds: tournament.refundAfterSeconds,
     authorizerPublicKey: tournament.authorizerPublicKey,
     chainTournamentId: tournament.chainTournamentId,
@@ -209,12 +287,13 @@ function toView(tournament: StoredTournament): TournamentView {
     entryCount: tournament.entries.length,
     lockedPoolMojos: lockedPool.toString(),
     siteLedgerMojos: site.toString(),
-    prizePoolMojos: (lockedPool + site).toString(),
+    prizePoolMojos: (lockedPool + site + house).toString(),
     entries: tournament.entries.map((entry) => ({
       entryId: entry.entryId,
       address: entry.address,
       puzzleHash: entry.puzzleHash,
       custody: entry.custody,
+      house: entry.house,
       status: entry.status,
       coinId: entry.coinId,
       innerPuzzleHash: entry.innerPuzzleHash,
@@ -226,6 +305,21 @@ function toView(tournament: StoredTournament): TournamentView {
     createdAt: tournament.createdAt,
     custodyNote: CUSTODY_NOTE,
   };
+}
+
+function resolveMaxEntries(format: "sng" | "mtt", raw: number | undefined): number {
+  if (format === "sng") {
+    const maxEntries = raw ?? 8;
+    if (maxEntries !== 8 && maxEntries !== 16) {
+      throw new TournamentError("Sit-and-go maxEntries must be 8 or 16", 400);
+    }
+    return maxEntries;
+  }
+  const maxEntries = raw ?? MTT_FIELD_CAP;
+  if (!Number.isInteger(maxEntries) || maxEntries < 2 || maxEntries > MTT_FIELD_CAP) {
+    throw new TournamentError(`Tournament maxEntries must be an integer from 2 to ${MTT_FIELD_CAP}`, 400);
+  }
+  return maxEntries;
 }
 
 function requireTournament(id: string): StoredTournament {
@@ -256,19 +350,13 @@ export function createTournament(input: {
   }
   const variant = (input.variant ?? "nlhe") as PokerVariant;
   if (!getVariantMeta(variant)) throw new TournamentError("Unknown variant", 400);
-  const maxEntries = input.maxEntries ?? (format === "sng" ? 6 : 18);
-  if (!Number.isInteger(maxEntries) || maxEntries < 2 || maxEntries > 500) {
-    throw new TournamentError("maxEntries must be an integer from 2 to 500", 400);
+  if (input.payoutBps) {
+    throw new TournamentError(
+      "Payouts are the top 20% of the field at settle and cannot be set at create",
+      400,
+    );
   }
-  const payoutBps = input.payoutBps ?? (maxEntries <= 2 ? [10_000] : [5000, 3000, 2000]);
-  if (
-    payoutBps.length < 1 ||
-    payoutBps.length > 16 ||
-    payoutBps.some((bps) => !Number.isInteger(bps) || bps <= 0) ||
-    payoutBps.reduce((sum, bps) => sum + bps, 0) !== 10_000
-  ) {
-    throw new TournamentError("payoutBps must be positive integers that sum to 10000", 400);
-  }
+  const maxEntries = resolveMaxEntries(format, input.maxEntries);
   const refundAfterSeconds = input.refundAfterSeconds ?? 86_400;
   if (!Number.isInteger(refundAfterSeconds) || refundAfterSeconds < 60 || refundAfterSeconds > 2_592_000) {
     throw new TournamentError("refundAfterSeconds must be from 60 to 2592000", 400);
@@ -281,7 +369,6 @@ export function createTournament(input: {
     variant,
     buyInMojos,
     maxEntries,
-    payoutBps,
     refundAfterSeconds,
     authorizerPublicKey: input.authorizerPublicKey,
     chainTournamentId: chainTournamentId(id),
@@ -369,6 +456,7 @@ export function joinTournament(
     address: input.address,
     puzzleHash,
     custody: input.custody,
+    house: false,
     status: input.custody === "site_ledger" ? "seated" : "awaiting_lock",
     signature: input.proof.signature,
     pubkey: input.proof.pubkey,
@@ -449,6 +537,10 @@ export function cancelTournament(id: string): TournamentView {
   assertStillOpen(tournament);
   const spends: EntrySpendView[] = [];
   for (const entry of tournament.entries) {
+    if (entry.house) {
+      entry.status = "refunded";
+      continue;
+    }
     if (entry.custody === "site_ledger" && entry.status === "seated") {
       creditSiteDat(entry.address, tournament.buyInMojos);
       entry.status = "refunded";
@@ -494,14 +586,17 @@ function resolvePayouts(
     throw new TournamentError("Pass finishOrder or payouts, not both", 400);
   }
   if (input.finishOrder) {
+    const seen = new Set<string>();
     const finish = input.finishOrder.map((address) => {
+      if (seen.has(address)) throw new TournamentError("Finish order has a duplicate address", 400);
+      seen.add(address);
       const entry = byAddress.get(address);
       if (!entry) throw new TournamentError(`No paid entry for ${address}`, 400);
       return { address, puzzleHash: entry.puzzleHash };
     });
     const total = tournament.buyInMojos * BigInt(paid.length);
     try {
-      return prizesForFinish(total, tournament.payoutBps, finish);
+      return prizesForFinish(total, payoutBpsForField(paid.length), finish);
     } catch (error) {
       throw new TournamentError((error as Error).message, 400);
     }
@@ -523,22 +618,90 @@ function resolvePayouts(
   });
 }
 
+export function fillHouse(id: string, seats?: number): TournamentView {
+  const tournament = requireTournament(id);
+  assertStillOpen(tournament);
+  const open = tournament.maxEntries - tournament.entries.length;
+  if (open <= 0) throw new TournamentError("Tournament is full", 400);
+  let count: number;
+  if (tournament.format === "sng") {
+    if (seats != null && seats !== open) {
+      throw new TournamentError(`Sit-and-go house fill takes the remaining ${open} seats`, 400);
+    }
+    count = open;
+  } else {
+    count = seats ?? 1;
+    if (!Number.isInteger(count) || count < 1) {
+      throw new TournamentError("seats must be a positive integer", 400);
+    }
+    if (count > open) throw new TournamentError(`Only ${open} seats left`, 400);
+  }
+  let nextIndex = tournament.entries.filter((entry) => entry.house).length;
+  for (let i = 0; i < count; i += 1) {
+    const address = houseEntryAddress(tournament.id, nextIndex);
+    nextIndex += 1;
+    tournament.entries.push({
+      entryId: randomUUID(),
+      address,
+      puzzleHash: housePuzzleHash(address),
+      custody: "site_ledger",
+      house: true,
+      status: "seated",
+      signature: "",
+      pubkey: "",
+      createdAt: new Date().toISOString(),
+    });
+  }
+  return toView(tournament);
+}
+
+function assertReadyToSettle(tournament: StoredTournament): StoredEntry[] {
+  assertStillOpen(tournament);
+  const waiting = tournament.entries.filter((entry) => entry.status === "awaiting_lock");
+  if (waiting.length > 0) {
+    throw new TournamentError("Lock pool coins before settling", 400);
+  }
+  const paid = paidEntries(tournament);
+  if (tournament.format === "sng" && paid.length !== tournament.maxEntries) {
+    throw new TournamentError(
+      `Sit-and-go settles when all ${tournament.maxEntries} seats are paid (${paid.length} paid)`,
+      400,
+    );
+  }
+  if (tournament.format === "mtt" && paid.length < 2) {
+    throw new TournamentError("Tournament settles with at least 2 paid entries", 400);
+  }
+  return paid;
+}
+
 export function settleTournament(
   id: string,
   input: {
     finishOrder?: string[];
     payouts?: Array<{ address: string; amountMojos: string; puzzleHash?: string }>;
+    /** Puts this paid player first, then other players, then the house. */
+    playerWinsAddress?: string;
   },
 ): TournamentView {
   const tournament = requireTournament(id);
-  assertStillOpen(tournament);
-  const waiting = tournament.entries.filter((entry) => entry.status === "awaiting_lock");
-  if (waiting.length > 0) {
-    throw new TournamentError("Lock or remove entries still awaiting a pool coin before settling", 400);
+  const paid = assertReadyToSettle(tournament);
+  let request = input;
+  if (input.playerWinsAddress) {
+    if (input.finishOrder || input.payouts) {
+      throw new TournamentError("Pass playerWinsAddress, finishOrder, or payouts, not a mix", 400);
+    }
+    const winner = paid.find((entry) => entry.address === input.playerWinsAddress && !entry.house);
+    if (!winner) {
+      throw new TournamentError("Test payout needs a paid player entry in first place", 400);
+    }
+    const rest = paid.filter((entry) => !entry.house && entry.address !== winner.address);
+    const house = paid.filter((entry) => entry.house);
+    const places = paidPlaceCount(paid.length);
+    request = {
+      finishOrder: [winner, ...rest, ...house].slice(0, places).map((entry) => entry.address),
+    };
   }
-  const paid = paidEntries(tournament);
-  if (paid.length === 0) throw new TournamentError("No paid entries to settle", 400);
-  const prizes = resolvePayouts(tournament, input);
+  const prizes = resolvePayouts(tournament, request);
   const poolEntries = paid.filter((entry) => entry.custody === "pool_coin");
   const siteEntries = paid.filter((entry) => entry.custody === "site_ledger");
   let plan;
@@ -572,13 +735,17 @@ export function settleTournament(
     entry.status = "settled";
   });
 
+  const houseAddresses = new Set(paid.filter((entry) => entry.house).map((entry) => entry.address));
   const credits: Array<{ address: string; amountMojos: string }> = [];
   for (const credit of plan.siteCredits) {
+    if (houseAddresses.has(credit.address)) continue;
     creditSiteDat(credit.address, credit.amountMojos);
     credits.push({ address: credit.address, amountMojos: credit.amountMojos.toString() });
   }
   for (const entry of siteEntries) entry.status = "settled";
 
+  tournament.settledField = paid.length;
+  tournament.settledPayoutBps = payoutBpsForField(paid.length);
   tournament.status = "settled";
   tournament.spends = spends;
   tournament.siteCredits = credits;
