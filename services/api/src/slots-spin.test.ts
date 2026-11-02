@@ -136,6 +136,33 @@ describe("Spirit Slots account balance", () => {
     await app.close();
   });
 
+  it("credits Spirit Stampede ways wins in whole mojos", async () => {
+    const app = await buildApp();
+    const created = await registerAndLogin(app, "stampede");
+    creditAccount(created.playerId, 80_000n);
+    let sawLineWin = false;
+    for (let i = 0; i < 40; i++) {
+      const spin = await app.inject({
+        method: "POST",
+        url: "/v1/slots/spirit-stampede/spin",
+        headers: auth(created.token),
+        payload: { playerId: created.playerId, betMojos: "1000" },
+      });
+      expect(spin.statusCode, spin.body).toBe(200);
+      const body = JSON.parse(spin.body) as {
+        lineWinMojos: string;
+        accountBalanceMojos: string;
+        error?: string;
+      };
+      expect(body.error).toBeUndefined();
+      expect(() => BigInt(body.lineWinMojos)).not.toThrow();
+      expect(getAccountBalance(created.playerId)).toBe(BigInt(body.accountBalanceMojos));
+      if (BigInt(body.lineWinMojos) > 0n) sawLineWin = true;
+    }
+    expect(sawLineWin).toBe(true);
+    await app.close();
+  });
+
   it("rejects bets outside the allowed 1–20 DAT menu", async () => {
     const app = await buildApp();
     const created = await registerAndLogin(app, "badbet");
