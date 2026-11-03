@@ -1,13 +1,22 @@
 /** Chia CAT tokens use 1000 mojos per whole token (not XCH's 10^12). */
 export const CAT_MOJOS_PER_TOKEN = 1000n;
 
+function splitSignedMojos(n: bigint): { sign: string; whole: bigint; frac: bigint } {
+  const negative = n < 0n;
+  const abs = negative ? -n : n;
+  return {
+    sign: negative ? "-" : "",
+    whole: abs / CAT_MOJOS_PER_TOKEN,
+    frac: abs % CAT_MOJOS_PER_TOKEN,
+  };
+}
+
 export function formatDatMojos(mojos: bigint | string, ticker = "DAT"): string {
   const n = typeof mojos === "string" ? BigInt(mojos) : mojos;
-  const whole = n / CAT_MOJOS_PER_TOKEN;
-  const frac = n % CAT_MOJOS_PER_TOKEN;
-  if (frac === 0n) return `${whole} ${ticker}`;
+  const { sign, whole, frac } = splitSignedMojos(n);
+  if (frac === 0n) return `${sign}${whole} ${ticker}`;
   const fracStr = frac.toString().padStart(3, "0").replace(/0+$/, "");
-  return `${whole}.${fracStr} ${ticker}`;
+  return `${sign}${whole}.${fracStr} ${ticker}`;
 }
 
 export function datTokensToMojos(tokens: bigint | number | string): bigint {
@@ -17,10 +26,9 @@ export function datTokensToMojos(tokens: bigint | number | string): bigint {
 /** DAT amount for an input box (no ticker), e.g. `10` or `1.5`. */
 export function formatDatAmount(mojos: bigint | string): string {
   const n = typeof mojos === "string" ? BigInt(mojos) : mojos;
-  const whole = n / CAT_MOJOS_PER_TOKEN;
-  const frac = n % CAT_MOJOS_PER_TOKEN;
-  if (frac === 0n) return whole.toString();
-  return `${whole}.${frac.toString().padStart(3, "0").replace(/0+$/, "")}`;
+  const { sign, whole, frac } = splitSignedMojos(n);
+  if (frac === 0n) return `${sign}${whole}`;
+  return `${sign}${whole}.${frac.toString().padStart(3, "0").replace(/0+$/, "")}`;
 }
 
 /** Parse a typed DAT amount (`10`, `10.5`, `10 DAT`) into CAT mojos. */
