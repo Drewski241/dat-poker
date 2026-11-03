@@ -44,6 +44,7 @@ import {
   type DailyRitualInfo,
 } from "./components/DailyRitualPanel.js";
 import { AccountAuditPanel } from "./components/AccountAuditPanel.js";
+import { TournamentPanel } from "./components/TournamentPanel.js";
 import { groupLobbyTables } from "./lobby-mtt.js";
 import { HandHistoryModal } from "./components/HandHistoryModal.js";
 import { YourTurnSloth } from "./components/YourTurnSloth.js";
@@ -2222,6 +2223,16 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           </p>
         </section>
       )}
+
+      <TournamentPanel
+        apiOk={apiOk}
+        busy={busy}
+        ticker={datToken?.ticker ?? "DAT"}
+        session={session}
+        wcConfig={wcConfig}
+        walletAddress={walletAddress}
+        run={run}
+      />
 
       {tableId && (
         <section className="panel seated-return">

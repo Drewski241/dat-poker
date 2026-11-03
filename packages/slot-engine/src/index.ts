@@ -1,4 +1,5 @@
 export * from "./paylines.js";
+export * from "./payout-mojos.js";
 export * from "./slot-engine.js";
 export * from "./symbols.js";
 export type { Grid, WaysWin, SlotSpinCore, HouseEdgeState } from "./types.js";

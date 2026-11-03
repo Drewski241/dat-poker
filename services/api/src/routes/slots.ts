@@ -12,6 +12,8 @@ import { PAYLINES, type SlotSpinCore } from "@dat-poker/slot-engine";
 import {
   evaluatePokerSpin,
   isProgressiveWin,
+  payoutDenominatorOf,
+  payoutUnitsToMojos,
   redrawPokerGrid,
   shouldOfferHoldDraw,
   spinForGame,
@@ -34,21 +36,25 @@ import {
 import { requirePlayer, sessionMatchesClaim } from "../player-session.js";
 import { findSeatedPlayerTable } from "./tables.js";
 
+function spinPayoutMojos(result: SlotSpinCore, lineBetMojos: bigint): bigint {
+  return payoutUnitsToMojos(result.totalPayout, lineBetMojos, payoutDenominatorOf(result.meta));
+}
+
 function spinResultToClient(result: SlotSpinCore, lineBetMojos: bigint) {
   return {
     grid: result.grid,
     lineWins: result.lineWins.map((w) => ({
       ...w,
-      payout: (BigInt(w.payout) * lineBetMojos).toString(),
+      payout: payoutUnitsToMojos(w.payout, lineBetMojos).toString(),
     })),
     waysWins: result.waysWins.map((w) => ({
       ...w,
-      payout: (BigInt(w.payout) * lineBetMojos).toString(),
+      payout: payoutUnitsToMojos(w.payout, lineBetMojos, w.payoutDenominator).toString(),
     })),
     scatterCount: result.scatterCount,
     scatterMultiplier: result.scatterMultiplier,
     totalMultiplier: result.totalMultiplier,
-    totalPayoutMojos: (BigInt(result.totalPayout) * lineBetMojos).toString(),
+    totalPayoutMojos: spinPayoutMojos(result, lineBetMojos).toString(),
     winTier: tierForResult(result),
     meta: result.meta ?? {},
   };
@@ -83,7 +89,7 @@ async function handleSpin(
     contributeToJackpot(gameId, betMojos, DAT_PLAY_DEFAULTS.jackpotContributionBps);
   }
 
-  const lineWinMojos = BigInt(result.totalPayout) * lineBetMojos;
+  const lineWinMojos = spinPayoutMojos(result, lineBetMojos);
   const grossWinMojos = lineWinMojos + progressiveWinMojos;
 
   if (!opts?.skipDebit && !isFreeBossSpin) {
@@ -237,7 +243,7 @@ export function registerSlotsRoutes(app: FastifyInstance): void {
     const lineBetMojos = betMojos / BigInt(PAYLINES.length);
     const grid = redrawPokerGrid(pending.grid, holds);
     const result = evaluatePokerSpin(grid, 1);
-    const lineWinMojos = BigInt(result.totalPayout) * lineBetMojos;
+    const lineWinMojos = spinPayoutMojos(result, lineBetMojos);
 
     let progressiveWinMojos = 0n;
     let wonProgressive = false;

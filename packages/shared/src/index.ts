@@ -6,3 +6,4 @@ export * from "./slot-games.js";
 export * from "./bet-sizing.js";
 export * from "./sng.js";
 export * from "./player-action-limit.js";
+export * from "./chia-address.js";

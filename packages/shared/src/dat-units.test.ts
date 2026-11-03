@@ -27,6 +27,12 @@ describe("formatDatMojos", () => {
     expect(formatDatMojos(1n)).toBe("0.001 DAT");
   });
 
+  it("keeps the minus on a fractional loss", () => {
+    expect(formatDatMojos(-683n)).toBe("-0.683 DAT");
+    expect(formatDatMojos("-1000")).toBe("-1 DAT");
+    expect(formatDatAmount(-683n)).toBe("-0.683");
+  });
+
   it("parses typed DAT amounts to mojos", () => {
     expect(parseDatTokensToMojos("10")).toBe(10_000n);
     expect(parseDatTokensToMojos("10 DAT")).toBe(10_000n);

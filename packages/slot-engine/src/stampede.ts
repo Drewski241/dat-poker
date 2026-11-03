@@ -24,7 +24,11 @@ export const STAMPEDE_SYMBOLS: Record<
   moon: { label: "Moon Scatter", emoji: "🌙", tier: "special" },
 };
 
-/** Total bet is split across 9 line-units; 243-way wins scale by bet/243 not bet/9. */
+/**
+ * Ways pays are (base × ways × line stake) / 7, in whole mojos.
+ * The engine stores the integer numerator; settlement divides by this.
+ * A float divide (60/7 = 8.5714…) cannot be passed to BigInt.
+ */
 export const STAMPEDE_WAYS_BET_DIVISOR = 7;
 
 const STAMPEDE_STRIP: StampedeSymbolId[] = [
@@ -79,14 +83,16 @@ export function spinStampedeGrid(): Grid {
 function waysForSymbol(grid: Grid, symbol: StampedeSymbolId): WaysWin | null {
   let reel = 0;
   let ways = 1;
+  const cells: { reel: number; row: number }[] = [];
   while (reel < 5) {
-    let hits = 0;
+    const reelCells: { reel: number; row: number }[] = [];
     for (let row = 0; row < 3; row++) {
       const cell = grid[reel]![row]!;
-      if (cell === symbol || cell === "dust") hits++;
+      if (cell === symbol || cell === "dust") reelCells.push({ reel, row });
     }
-    if (hits === 0) break;
-    ways *= hits;
+    if (reelCells.length === 0) break;
+    cells.push(...reelCells);
+    ways *= reelCells.length;
     reel++;
   }
   if (reel < 3) return null;
@@ -100,6 +106,8 @@ function waysForSymbol(grid: Grid, symbol: StampedeSymbolId): WaysWin | null {
     ways,
     multiplier: mult * ways,
     payout: mult * ways,
+    cells,
+    phase: "base",
   };
 }
 
@@ -109,27 +117,30 @@ export function evaluateStampedeSpin(grid: Grid, lineBet: number): SlotSpinCore 
   for (const sym of symbols) {
     const w = waysForSymbol(grid, sym);
     if (w) {
-      const scaledMult = w.multiplier / STAMPEDE_WAYS_BET_DIVISOR;
       waysWins.push({
         ...w,
-        payout: (w.payout * lineBet) / STAMPEDE_WAYS_BET_DIVISOR,
-        multiplier: scaledMult,
+        payout: w.payout * lineBet,
+        payoutDenominator: STAMPEDE_WAYS_BET_DIVISOR,
       });
     }
   }
 
   let scatterCount = 0;
+  const scatterCells: { reel: number; row: number }[] = [];
   for (let reel = 0; reel < 5; reel++) {
     for (let row = 0; row < 3; row++) {
-      if (grid[reel]![row] === "moon") scatterCount++;
+      if (grid[reel]![row] === "moon") {
+        scatterCount++;
+        scatterCells.push({ reel, row });
+      }
     }
   }
   let scatterMultiplier = 0;
   if (scatterCount >= 3) scatterMultiplier = 10;
 
-  const waysMultiplier = waysWins.reduce((s, w) => s + w.multiplier, 0);
   const waysPayout = waysWins.reduce((s, w) => s + w.payout, 0);
-  const scatterPayout = (scatterMultiplier * lineBet) / STAMPEDE_WAYS_BET_DIVISOR;
+  const scatterPayout = scatterMultiplier * lineBet;
+  const totalPayout = waysPayout + scatterPayout;
 
   return {
     grid,
@@ -137,8 +148,49 @@ export function evaluateStampedeSpin(grid: Grid, lineBet: number): SlotSpinCore 
     waysWins,
     scatterCount,
     scatterMultiplier,
-    totalMultiplier: waysMultiplier + scatterMultiplier,
-    totalPayout: waysPayout + scatterPayout,
+    totalMultiplier: totalPayout / STAMPEDE_WAYS_BET_DIVISOR,
+    totalPayout,
+    meta: { payoutDenominator: STAMPEDE_WAYS_BET_DIVISOR, scatterCells },
+  };
+}
+
+/** First spin pays /7; the respin pays half of that. Common denominator is 14. */
+export function combineStampedeRespin(
+  first: SlotSpinCore,
+  second: SlotSpinCore,
+  preRespinGrid: Grid,
+): SlotSpinCore {
+  const totalDen = STAMPEDE_WAYS_BET_DIVISOR * 2;
+  const totalPayout = first.totalPayout * 2 + second.totalPayout;
+  return {
+    grid: second.grid,
+    lineWins: [],
+    waysWins: [
+      ...first.waysWins.map((w) => ({
+        ...w,
+        payout: w.payout * 2,
+        payoutDenominator: totalDen,
+        phase: "base" as const,
+      })),
+      ...second.waysWins.map((w) => ({
+        ...w,
+        payoutDenominator: totalDen,
+        phase: "respin" as const,
+      })),
+    ],
+    scatterCount: second.scatterCount,
+    scatterMultiplier: second.scatterMultiplier,
+    totalMultiplier: totalPayout / totalDen,
+    totalPayout,
+    meta: {
+      expandingWild: true,
+      preRespinGrid,
+      payoutDenominator: totalDen,
+      baseScatterCount: first.scatterCount,
+      baseScatterMultiplier: first.scatterMultiplier,
+      baseScatterCells: first.meta?.scatterCells ?? [],
+      scatterCells: second.meta?.scatterCells ?? [],
+    },
   };
 }
 
@@ -167,17 +219,10 @@ export function spinStampedeRound(lineBet: number): SlotSpinCore {
   const first = evaluateStampedeSpin(grid, lineBet);
   const expanded = applyStampedeExpandingWild(grid);
   if (!expanded.respun) {
-    return { ...first, meta: { expandingWild: false } };
+    return { ...first, meta: { ...first.meta, expandingWild: false } };
   }
   const second = evaluateStampedeSpin(expanded.grid, lineBet);
-  const respinScale = 0.5;
-  return {
-    ...second,
-    totalMultiplier: first.totalMultiplier + second.totalMultiplier * respinScale,
-    totalPayout: first.totalPayout + second.totalPayout * respinScale,
-    waysWins: [...first.waysWins, ...second.waysWins],
-    meta: { expandingWild: true, preRespinGrid: grid },
-  };
+  return combineStampedeRespin(first, second, grid);
 }
 
 export function isStampedeProgressiveGrid(grid: Grid): boolean {

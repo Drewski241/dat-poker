@@ -17,6 +17,8 @@ import { registerSessionRoutes } from "./routes/session.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerPlayRoutes } from "./routes/play.js";
 import { registerSlotsRoutes } from "./routes/slots.js";
+import { registerSiteDatRoutes } from "./routes/site-dat.js";
+import { registerTournamentRoutes } from "./routes/tournaments.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -53,6 +55,8 @@ async function main(): Promise<void> {
   registerAuthRoutes(app);
   registerSessionRoutes(app);
   registerWalletRoutes(app, chiaClient);
+  registerSiteDatRoutes(app);
+  registerTournamentRoutes(app);
   registerFeedbackRoutes(app);
   registerTableRoutes(app);
   registerHandRoutes(app);

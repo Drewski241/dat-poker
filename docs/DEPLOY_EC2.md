@@ -6,9 +6,11 @@ Full runbook: **[deploy/aws-ec2/DEPLOY.md](../deploy/aws-ec2/DEPLOY.md)** and **
 
 ## Redeploy (Spirit Slots — required ref)
 
-Spirit Slots **only exist on** `cursor/spirit-slots-game-4501`. Redeploying
+Spirit Slots and the tournament pool puzzle ship together on
+`cursor/fix-stampede-bigint-payout-6e1e`. Redeploying
 `cursor/trust-rails-fairness-7c36` (or the old MTT branch) replaces the UI with
-the lobby/MTT client and **removes** the slot machine.
+the lobby/MTT client and **removes** the slot machine. The tournament Chialisp
+is not on `cursor/spirit-slots-game-4501` by itself.
 
 On the beta host (Session Manager or SSH).
 
@@ -16,13 +18,13 @@ On the beta host (Session Manager or SSH).
 **one** of these — they fetch `up.sh` from GitHub and do not need new local files:
 
 ```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/spirit-slots-game-4501; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/spirit-slots-game-4501/deploy/aws-ec2/up.sh" | bash'
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/fix-stampede-bigint-payout-6e1e; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/fix-stampede-bigint-payout-6e1e/deploy/aws-ec2/up.sh" | bash'
 ```
 
 Or, if `/opt/dat-poker/deploy/aws-ec2/up.sh` already exists:
 
 ```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/spirit-slots-game-4501; bash /opt/dat-poker/deploy/aws-ec2/up.sh'
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/fix-stampede-bigint-payout-6e1e; bash /opt/dat-poker/deploy/aws-ec2/up.sh'
 ```
 
 After the first successful deploy, you can use:

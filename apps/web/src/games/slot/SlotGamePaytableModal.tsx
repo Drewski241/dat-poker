@@ -11,7 +11,9 @@ import {
   PAYLINE_NAMES,
   POKER_HAND_PAYTABLE,
   STAMPEDE_SYMBOLS,
+  STAMPEDE_WAYS_BET_DIVISOR,
   STAMPEDE_WAYS_PAYTABLE,
+  payoutUnitsToMojos,
   type HouseSymbolId,
   type MineSymbolId,
   type StampedeSymbolId,
@@ -21,8 +23,13 @@ function lineBetMojos(totalBetMojos: bigint): bigint {
   return totalBetMojos / BigInt(PAYLINE_COUNT);
 }
 
-function payoutForMultiplier(multiplier: number, totalBetMojos: bigint, ticker: string): string {
-  const mojos = BigInt(multiplier) * lineBetMojos(totalBetMojos);
+function payoutForMultiplier(
+  multiplier: number,
+  totalBetMojos: bigint,
+  ticker: string,
+  denominator = 1,
+): string {
+  const mojos = payoutUnitsToMojos(multiplier, lineBetMojos(totalBetMojos), denominator);
   return formatDatMojos(mojos.toString(), ticker);
 }
 
@@ -76,7 +83,10 @@ export function SlotGamePaytableModal({
         <p className="slot-paytable-lede muted small">
           Wager <strong>{formatDatMojos(totalBetMojos.toString(), ticker)}</strong>
           {gameId === "spirit-stampede" ? (
-            <> · line stake ~{formatDatMojos(lineBet.toString(), ticker)} (÷ {PAYLINE_COUNT} for ways math)</>
+            <>
+              {" "}
+              · each way pays (base × {formatDatMojos(lineBet.toString(), ticker)}) ÷ {STAMPEDE_WAYS_BET_DIVISOR}
+            </>
           ) : (
             <>
               {" "}
@@ -172,7 +182,7 @@ export function SlotGamePaytableModal({
                         <td key={i}>
                           <span className="slot-paytable-mult">{row[i]!}×</span>
                           <span className="slot-paytable-amt">
-                            {payoutForMultiplier(row[i]!, totalBetMojos, ticker)} per way
+                            {payoutForMultiplier(row[i]!, totalBetMojos, ticker, STAMPEDE_WAYS_BET_DIVISOR)} per way
                           </span>
                         </td>
                       ))}
@@ -182,7 +192,8 @@ export function SlotGamePaytableModal({
               </tbody>
             </table>
             <p className="muted small">
-              Total win = base × ways (e.g. 2 matching rows on reel 1 and 1 on reel 2 ⇒ 2 ways).
+              Total win = (base × ways × line stake) ÷ {STAMPEDE_WAYS_BET_DIVISOR}, in whole mojos. Two
+              matching rows on reel 1 and one on reel 2 is 2 ways.
             </p>
             <h3>Progressive</h3>
             <p className="muted small">
