@@ -23,6 +23,10 @@ export interface WaysWin {
   payout: number;
   /** Defaults to 1 (payout is already in line-stake units). */
   payoutDenominator?: number;
+  /** Cells that formed the way, so the client can light them up. */
+  cells?: { reel: number; row: number }[];
+  /** Stampede: opening board vs expanding-wild respin. */
+  phase?: "base" | "respin";
 }
 
 export interface SlotSpinCore {

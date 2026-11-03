@@ -26,6 +26,8 @@ export type SlotSpinApiResult = {
       ways: number;
       multiplier: number;
       payout: string;
+      phase?: "base" | "respin";
+      cells?: { reel: number; row: number }[];
     }[];
     scatterCount: number;
     scatterMultiplier: number;

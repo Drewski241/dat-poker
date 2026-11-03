@@ -58,6 +58,7 @@ describe("Spirit Stampede ways settlement", () => {
     expect(Number.isInteger(result.totalPayout)).toBe(true);
     const mojos = payoutUnitsToMojos(result.totalPayout, lineBetMojos, 7);
     expect(mojos).toBe(951n);
+    expect(result.waysWins[0]?.cells).toHaveLength(5);
     expect(mojos).toBe((60n * lineBetMojos) / BigInt(STAMPEDE_WAYS_BET_DIVISOR));
   });
 
@@ -84,7 +85,12 @@ describe("Spirit Stampede ways settlement", () => {
     );
     expect(second.totalPayout).toBe(5);
     const combined = combineStampedeRespin(first, second, first.grid);
+    expect(combined.waysWins.every((w, i) => w.phase === (i < first.waysWins.length ? "base" : "respin"))).toBe(
+      true,
+    );
     expect(combined.meta?.payoutDenominator).toBe(14);
+    expect(combined.meta?.baseScatterCells).toEqual(first.meta?.scatterCells);
+    expect(combined.meta?.scatterCells).toEqual(second.meta?.scatterCells);
     expect(combined.totalPayout).toBe(60 * 2 + 5);
     expect(Number.isInteger(combined.totalPayout)).toBe(true);
     expect(payoutUnitsToMojos(combined.totalPayout, lineBetMojos, 14)).toBe(

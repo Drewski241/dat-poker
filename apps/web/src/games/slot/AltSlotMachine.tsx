@@ -16,12 +16,21 @@ import {
   shouldShowCelebration,
   type WinTier,
 } from "./win-celebration.js";
+import { readStampedeShow, stampedeTimeline, type StampedeCue } from "./stampede-presentation.js";
 import "./slot.css";
 
 const REEL_COUNT = 5;
 const ROW_COUNT = 3;
 const REEL_STOP_MS = [900, 1150, 1400, 1650, 1900];
 const DEFAULT_BET_OPTIONS = ["1000", "2000", "5000", "10000", "20000"];
+
+function allReelsLanded(): Set<number> {
+  return new Set([0, 1, 2, 3, 4]);
+}
+
+function cellKeys(cells: { reel: number; row: number }[]): Set<string> {
+  return new Set(cells.map((cell) => `${cell.reel}-${cell.row}`));
+}
 
 function buildResultText(
   gameId: SlotGameId,
@@ -36,9 +45,27 @@ function buildResultText(
     const sym = symbolDisplay(gameId, w.symbol);
     parts.push(`${paylineDisplayName(w.lineIndex)}: ${sym.label} ×${w.count} (${w.multiplier}×)`);
   }
-  for (const w of ways) {
-    const sym = symbolDisplay(gameId, w.symbol);
-    parts.push(`${sym.label} ${w.reelCount}-reel · ${w.ways} ways (${w.multiplier}×)`);
+  const phased = ways.some((w) => w.phase === "respin");
+  if (phased) {
+    const fmt = (w: (typeof ways)[number]) => {
+      const sym = symbolDisplay(gameId, w.symbol);
+      const wayWord = w.ways === 1 ? "way" : "ways";
+      return `${sym.label} ${w.reelCount}-reel · ${w.ways} ${wayWord} (${w.multiplier}×)`;
+    };
+    const opening = ways.filter((w) => w.phase !== "respin");
+    const respin = ways.filter((w) => w.phase === "respin");
+    if (opening.length > 0) parts.push(`Opening: ${opening.map(fmt).join(" · ")}`);
+    const baseScatter = response.result.meta?.baseScatterCount;
+    if (typeof baseScatter === "number" && baseScatter >= 3) {
+      parts.push(`Opening moon scatter ×${baseScatter}`);
+    }
+    if (respin.length > 0) parts.push(`Respin: ${respin.map(fmt).join(" · ")}`);
+  } else {
+    for (const w of ways) {
+      const sym = symbolDisplay(gameId, w.symbol);
+      const wayWord = w.ways === 1 ? "way" : "ways";
+      parts.push(`${sym.label} ${w.reelCount}-reel · ${w.ways} ${wayWord} (${w.multiplier}×)`);
+    }
   }
   if (response.result.scatterCount >= 3 && response.result.scatterMultiplier > 0) {
     parts.push(`Scatter ×${response.result.scatterCount}`);
@@ -87,7 +114,10 @@ export function AltSlotMachine({
     Array.from({ length: REEL_COUNT }, () => Array.from({ length: ROW_COUNT }, () => "?")),
   );
   const [spinning, setSpinning] = useState(false);
-  const [stoppedReels, setStoppedReels] = useState(REEL_COUNT);
+  const [presenting, setPresenting] = useState(false);
+  const [reelStatus, setReelStatus] = useState<string | null>(null);
+  const [lockedReels, setLockedReels] = useState<ReadonlySet<number>>(() => new Set());
+  const [landedReels, setLandedReels] = useState<ReadonlySet<number>>(() => allReelsLanded());
   const [spinResult, setSpinResult] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<Set<string>>(() => new Set());
   const [winningLineIndices, setWinningLineIndices] = useState<ReadonlySet<number>>(() => new Set());
@@ -99,7 +129,7 @@ export function AltSlotMachine({
     payoutMojos: bigint;
   } | null>(null);
   const timersRef = useRef<number[]>([]);
-  const stoppedReelsRef = useRef(0);
+  const spinLockRef = useRef(false);
 
   const balanceMojos = BigInt(session?.accountBalanceMojos ?? session?.stackMojos ?? "0");
   const betMojos = BigInt(selectedBetMojos);
@@ -108,6 +138,7 @@ export function AltSlotMachine({
     !spinning &&
     !session?.handInProgress &&
     !holdDrawActive &&
+    !presenting &&
     (balanceMojos >= betMojos || (gameId === "house-edge" && freeSpins > 0));
 
   useEffect(() => {
@@ -115,7 +146,10 @@ export function AltSlotMachine({
   }, [gameId]);
 
   const clearTimers = useCallback(() => {
-    for (const t of timersRef.current) window.clearTimeout(t);
+    for (const t of timersRef.current) {
+      window.clearTimeout(t);
+      window.clearInterval(t);
+    }
     timersRef.current = [];
   }, []);
 
@@ -129,6 +163,27 @@ export function AltSlotMachine({
         winLines.add(w.lineIndex);
         for (const c of w.cells) winCells.add(`${c.reel}-${c.row}`);
       }
+      const ways = response.result.waysWins ?? [];
+      const expanding = response.result.meta?.expandingWild === true;
+      const waysToLight = expanding ? ways.filter((w) => w.phase === "respin") : ways;
+      for (const w of waysToLight) {
+        for (const c of w.cells ?? []) winCells.add(`${c.reel}-${c.row}`);
+      }
+      if (response.result.scatterCount >= 3) {
+        const raw = response.result.meta?.scatterCells;
+        if (Array.isArray(raw)) {
+          for (const c of raw) {
+            if (!c || typeof c !== "object") continue;
+            const reel = (c as { reel?: unknown }).reel;
+            const row = (c as { row?: unknown }).row;
+            if (typeof reel === "number" && typeof row === "number") winCells.add(`${reel}-${row}`);
+          }
+        }
+      }
+      setPresenting(false);
+      setReelStatus(null);
+      setLockedReels(new Set());
+      setLandedReels(allReelsLanded());
       setHighlights(winCells);
       setWinningLineIndices(winLines);
       setJackpotMojos(response.progressiveJackpotMojos);
@@ -169,62 +224,161 @@ export function AltSlotMachine({
   );
 
   const animateToGrid = useCallback(
-    (resultGrid: string[][], onDone: () => void) => {
+    (
+      resultGrid: string[][],
+      onDone: () => void,
+      options?: { lockedReels?: readonly number[]; stopMs?: readonly number[] },
+    ) => {
       clearTimers();
+      const locked = new Set(options?.lockedReels ?? []);
+      const stopMs = options?.stopMs ?? REEL_STOP_MS;
+      const landed = new Set<number>(locked);
+      setLockedReels(locked);
+      setLandedReels(new Set(landed));
       setSpinning(true);
-      setStoppedReels(0);
-      stoppedReelsRef.current = 0;
+      setHighlights(new Set());
+      setGrid((prev) =>
+        prev.map((col, reelIndex) => (locked.has(reelIndex) ? [...(resultGrid[reelIndex] ?? col)] : col)),
+      );
+      const moving: number[] = [];
+      for (let reel = 0; reel < REEL_COUNT; reel++) {
+        if (!locked.has(reel)) moving.push(reel);
+      }
+      if (moving.length === 0) {
+        setGrid(resultGrid.map((col) => [...col]));
+        setSpinning(false);
+        setLandedReels(allReelsLanded());
+        onDone();
+        return;
+      }
       const tick = window.setInterval(() => {
-        const locked = stoppedReelsRef.current;
-        if (locked >= REEL_COUNT) return;
         setGrid((prev) =>
           prev.map((col, reelIndex) => {
-            if (reelIndex < locked) return col;
+            if (landed.has(reelIndex)) return col;
             return Array.from({ length: ROW_COUNT }, () => "?");
           }),
         );
       }, 80);
       timersRef.current.push(tick);
-      REEL_STOP_MS.forEach((delay, reelIndex) => {
+      let remaining = moving.length;
+      for (const reelIndex of moving) {
+        const delay = stopMs[reelIndex] ?? REEL_STOP_MS[reelIndex] ?? 1000;
         const t = window.setTimeout(() => {
-          stoppedReelsRef.current = reelIndex + 1;
-          setStoppedReels(reelIndex + 1);
+          landed.add(reelIndex);
+          setLandedReels(new Set(landed));
           setGrid((prev) => {
-            const next = prev.map((c) => [...c]);
+            const next = prev.map((col) => [...col]);
             for (let row = 0; row < ROW_COUNT; row++) {
               next[reelIndex]![row] = resultGrid[reelIndex]![row]!;
             }
             return next;
           });
-          if (reelIndex === REEL_COUNT - 1) {
+          remaining -= 1;
+          if (remaining === 0) {
             window.clearInterval(tick);
-            stoppedReelsRef.current = REEL_COUNT;
-            setGrid(resultGrid.map((c) => [...c]));
+            setGrid(resultGrid.map((col) => [...col]));
             setSpinning(false);
+            setLandedReels(allReelsLanded());
             onDone();
           }
         }, delay);
         timersRef.current.push(t);
-      });
+      }
     },
     [clearTimers],
   );
 
   const onSpin = useCallback(async () => {
-    if (!canSpin) return;
+    if (!canSpin || spinLockRef.current) return;
+    spinLockRef.current = true;
     setHoldDrawActive(false);
     setCelebration(null);
     setSpinResult(null);
     setHighlights(new Set());
     setWinningLineIndices(new Set());
+    setLockedReels(new Set());
+    const stampede = gameId === "spirit-stampede";
+    if (stampede) {
+      setPresenting(true);
+      setReelStatus("Spinning…");
+      setSpinning(true);
+      setLandedReels(new Set());
+    }
+    const release = () => {
+      spinLockRef.current = false;
+    };
     try {
       const response = await api.spinSlotGame(gameId, playerId, selectedBetMojos);
-      animateToGrid(response.result.grid, () => {
+      if (!stampede) {
+        animateToGrid(response.result.grid, () => {
+          release();
+          void refreshSession(playerId);
+          applySpinResult(response, response.result.grid);
+        });
+        return;
+      }
+      const show = readStampedeShow({
+        waysWins: response.result.waysWins,
+        meta: response.result.meta,
+        scatterCount: response.result.scatterCount,
+        scatterMultiplier: response.result.scatterMultiplier,
+      });
+      const cues = stampedeTimeline({
+        show,
+        finalGrid: response.result.grid,
+        wonProgressive: response.wonProgressive,
+      });
+      const finish = () => {
+        release();
         void refreshSession(playerId);
         applySpinResult(response, response.result.grid);
-      });
+      };
+      const playAt = (index: number) => {
+        const cue: StampedeCue | undefined = cues[index];
+        if (!cue) {
+          finish();
+          return;
+        }
+        if (cue.kind === "spin") {
+          setReelStatus(cue.banner);
+          animateToGrid(cue.grid, () => playAt(index + 1), {
+            lockedReels: cue.lockedReels,
+            stopMs: cue.stopMs,
+          });
+          return;
+        }
+        if (cue.kind === "expand") {
+          setSpinning(false);
+          setReelStatus(null);
+          setLockedReels(new Set([2]));
+          setLandedReels(allReelsLanded());
+          setGrid((prev) => {
+            const next = prev.map((col) => [...col]);
+            next[2] = ["dust", "dust", "dust"];
+            return next;
+          });
+          setHighlights(cellKeys(cue.cells));
+          setSpinResult(cue.banner);
+          const hold = window.setTimeout(() => playAt(index + 1), cue.ms);
+          timersRef.current.push(hold);
+          return;
+        }
+        setSpinning(false);
+        setReelStatus(null);
+        setLandedReels(allReelsLanded());
+        setHighlights(cellKeys(cue.cells));
+        setSpinResult(cue.label);
+        const hold = window.setTimeout(() => playAt(index + 1), cue.ms);
+        timersRef.current.push(hold);
+      };
+      playAt(0);
     } catch (e) {
+      release();
+      setPresenting(false);
       setSpinning(false);
+      setReelStatus(null);
+      setLockedReels(new Set());
+      setLandedReels(allReelsLanded());
       setSpinResult((e as Error).message);
     }
   }, [animateToGrid, applySpinResult, canSpin, gameId, playerId, refreshSession, selectedBetMojos]);
@@ -299,8 +453,11 @@ export function AltSlotMachine({
       </div>
 
       <div className="slot-spin-result-slot">
-        <div className={`banner slot-spin-result${spinning ? " pending" : spinResult ? " ok" : " idle"}`}>
-          {spinning ? "Spinning…" : spinResult ?? "Results appear here after each spin."}
+        <div
+          className={`banner slot-spin-result${spinning ? " pending" : spinResult ? " ok" : " idle"}`}
+          aria-live="polite"
+        >
+          {spinning ? (reelStatus ?? "Spinning…") : spinResult ?? "Results appear here after each spin."}
         </div>
       </div>
 
@@ -319,10 +476,12 @@ export function AltSlotMachine({
           )}
           <div className="slot-reels-wrap">
             <div className="slot-reels">
-              {Array.from({ length: REEL_COUNT }).map((_, reel) => (
+              {Array.from({ length: REEL_COUNT }).map((_, reel) => {
+                const moving = spinning && !lockedReels.has(reel) && !landedReels.has(reel);
+                return (
                 <div
                   key={reel}
-                  className={`slot-reel${reel >= stoppedReels && spinning ? " active" : ""}${holdDrawActive && heldReels.has(reel) ? " held" : ""}`}
+                  className={`slot-reel${moving ? " active" : ""}${lockedReels.has(reel) ? " locked" : ""}${holdDrawActive && heldReels.has(reel) ? " held" : ""}`}
                   onClick={() => toggleHold(reel)}
                   role={holdDrawActive ? "button" : undefined}
                 >
@@ -332,7 +491,7 @@ export function AltSlotMachine({
                     return (
                       <div
                         key={row}
-                        className={`slot-cell sym-${id}${gameId === "poker-hands" ? " slot-cell-poker" : ""}${gameId === "poker-hands" && sym.pokerRed ? " poker-red" : ""}${gameId === "poker-hands" && sym.pokerRed === false ? " poker-black" : ""}${highlights.has(`${reel}-${row}`) ? " win" : ""}${spinning && reel >= stoppedReels ? " blur" : ""}`}
+                        className={`slot-cell sym-${id}${gameId === "poker-hands" ? " slot-cell-poker" : ""}${gameId === "poker-hands" && sym.pokerRed ? " poker-red" : ""}${gameId === "poker-hands" && sym.pokerRed === false ? " poker-black" : ""}${highlights.has(`${reel}-${row}`) ? " win" : ""}${moving ? " blur" : ""}`}
                       >
                         {gameId === "poker-hands" && sym.pokerRank ? (
                           <>
@@ -349,7 +508,8 @@ export function AltSlotMachine({
                     );
                   })}
                 </div>
-              ))}
+              );
+              })}
             </div>
             {showPaylines && (
               <SlotPaylineOverlay showLines={showPaylines && !spinning} winningLineIndices={winningLineIndices} />
@@ -371,7 +531,7 @@ export function AltSlotMachine({
                 key={mojos}
                 type="button"
                 className={`slot-bet-chip${mojos === selectedBetMojos ? " active" : ""}`}
-                disabled={spinning || holdDrawActive}
+                disabled={spinning || holdDrawActive || presenting}
                 onClick={() => setSelectedBetMojos(mojos)}
               >
                 {formatDatMojos(mojos, ticker)}
@@ -396,7 +556,7 @@ export function AltSlotMachine({
             </div>
           ) : (
             <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
-              {spinning ? "Spinning…" : freeSpins > 0 && gameId === "house-edge" ? "Free spin" : "SPIN"}
+              {spinning ? "Spinning…" : presenting ? "Showing win…" : freeSpins > 0 && gameId === "house-edge" ? "Free spin" : "SPIN"}
             </button>
           )}
         </div>

@@ -83,14 +83,16 @@ export function spinStampedeGrid(): Grid {
 function waysForSymbol(grid: Grid, symbol: StampedeSymbolId): WaysWin | null {
   let reel = 0;
   let ways = 1;
+  const cells: { reel: number; row: number }[] = [];
   while (reel < 5) {
-    let hits = 0;
+    const reelCells: { reel: number; row: number }[] = [];
     for (let row = 0; row < 3; row++) {
       const cell = grid[reel]![row]!;
-      if (cell === symbol || cell === "dust") hits++;
+      if (cell === symbol || cell === "dust") reelCells.push({ reel, row });
     }
-    if (hits === 0) break;
-    ways *= hits;
+    if (reelCells.length === 0) break;
+    cells.push(...reelCells);
+    ways *= reelCells.length;
     reel++;
   }
   if (reel < 3) return null;
@@ -104,6 +106,8 @@ function waysForSymbol(grid: Grid, symbol: StampedeSymbolId): WaysWin | null {
     ways,
     multiplier: mult * ways,
     payout: mult * ways,
+    cells,
+    phase: "base",
   };
 }
 
@@ -122,9 +126,13 @@ export function evaluateStampedeSpin(grid: Grid, lineBet: number): SlotSpinCore 
   }
 
   let scatterCount = 0;
+  const scatterCells: { reel: number; row: number }[] = [];
   for (let reel = 0; reel < 5; reel++) {
     for (let row = 0; row < 3; row++) {
-      if (grid[reel]![row] === "moon") scatterCount++;
+      if (grid[reel]![row] === "moon") {
+        scatterCount++;
+        scatterCells.push({ reel, row });
+      }
     }
   }
   let scatterMultiplier = 0;
@@ -142,7 +150,7 @@ export function evaluateStampedeSpin(grid: Grid, lineBet: number): SlotSpinCore 
     scatterMultiplier,
     totalMultiplier: totalPayout / STAMPEDE_WAYS_BET_DIVISOR,
     totalPayout,
-    meta: { payoutDenominator: STAMPEDE_WAYS_BET_DIVISOR },
+    meta: { payoutDenominator: STAMPEDE_WAYS_BET_DIVISOR, scatterCells },
   };
 }
 
@@ -162,10 +170,12 @@ export function combineStampedeRespin(
         ...w,
         payout: w.payout * 2,
         payoutDenominator: totalDen,
+        phase: "base" as const,
       })),
       ...second.waysWins.map((w) => ({
         ...w,
         payoutDenominator: totalDen,
+        phase: "respin" as const,
       })),
     ],
     scatterCount: second.scatterCount,
@@ -176,6 +186,10 @@ export function combineStampedeRespin(
       expandingWild: true,
       preRespinGrid,
       payoutDenominator: totalDen,
+      baseScatterCount: first.scatterCount,
+      baseScatterMultiplier: first.scatterMultiplier,
+      baseScatterCells: first.meta?.scatterCells ?? [],
+      scatterCells: second.meta?.scatterCells ?? [],
     },
   };
 }
