@@ -34,6 +34,8 @@ See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (co
 
 For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a **separate treasury host**; copy `.env.treasury.example` → `.env`, run `pnpm treasury:check`, then point the game API at it with `DAT_TREASURY_PAYOUT_URL`. See [docs/TREASURY.md](./docs/TREASURY.md).
 
+Set `DAT_TREASURY_BANKROLL_MOJOS` to that treasury's DAT balance before testers join heads-up. Each heads-up seat locks the house buy-in until the tester leaves. A shared test deploy is described in [docs/AWS_TEST.md](./docs/AWS_TEST.md).
+
 ## Monorepo layout
 
 | Path | Purpose |

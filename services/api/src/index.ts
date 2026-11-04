@@ -1,8 +1,10 @@
 import { config as loadEnv } from "dotenv";
+import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
 import { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import { POKER_VARIANTS } from "@dat-poker/shared";
 import { registerTableRoutes } from "./routes/tables.js";
@@ -47,6 +49,17 @@ async function main(): Promise<void> {
   app.get("/v1/variants", async () => ({
     variants: POKER_VARIANTS,
   }));
+
+  const webDist = process.env.WEB_DIST?.trim();
+  if (webDist && existsSync(webDist)) {
+    await app.register(fastifyStatic, { root: webDist });
+    app.setNotFoundHandler((req, reply) => {
+      if (req.url.startsWith("/v1") || req.url.startsWith("/health")) {
+        return reply.status(404).send({ error: "Not found" });
+      }
+      return reply.sendFile("index.html");
+    });
+  }
 
   await app.listen({ port, host });
   app.log.info(`API listening on http://${host}:${port}`);

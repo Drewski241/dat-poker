@@ -2,15 +2,18 @@ FROM node:22-alpine AS base
 RUN corepack enable
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages ./packages
 COPY services/api ./services/api
+COPY apps/web ./apps/web
 
-RUN pnpm install --frozen-lockfile=false
+RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @dat-poker/shared build \
  && pnpm --filter @dat-poker/game-engine build \
  && pnpm --filter @dat-poker/chia-bridge build \
- && pnpm --filter @dat-poker/api build
+ && pnpm --filter @dat-poker/api build \
+ && pnpm --filter @dat-poker/web build
 
+ENV WEB_DIST=/app/apps/web/dist
 EXPOSE 4000
 CMD ["pnpm", "--filter", "@dat-poker/api", "start"]
