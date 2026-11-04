@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos, POKER_VARIANTS } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type HybridSnapshot, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type HouseLockView, type HybridSnapshot, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { HybridStatus } from "./components/HybridStatus.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
@@ -48,6 +48,7 @@ export function App() {
   const [maxSeats, setMaxSeats] = useState<2 | 6 | 9>(2);
   const [format, setFormat] = useState<"cash" | "sng" | "mtt">("cash");
   const [hybrid, setHybrid] = useState<HybridSnapshot | null>(null);
+  const [houseLock, setHouseLock] = useState<HouseLockView | null>(null);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
   const [handInProgress, setHandInProgress] = useState(false);
   const [withdrawResult, setWithdrawResult] = useState<WithdrawResult | null>(null);
@@ -64,8 +65,13 @@ export function App() {
       try {
         await api.health();
         setApiOk(true);
-        const [config, dat] = await Promise.all([api.walletConfig(), api.datToken()]);
+        const [config, dat, treasury] = await Promise.all([
+          api.walletConfig(),
+          api.datToken(),
+          api.houseTreasury().catch(() => null),
+        ]);
         setDatToken(dat);
+        if (treasury) setHouseLock(treasury);
         if (config.walletConnect) {
           setWcConfig(config.walletConnect);
           const existing = await restoreSession(config.walletConnect.projectId);
@@ -99,6 +105,7 @@ export function App() {
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
     setHybrid(t.hybrid);
+    setHouseLock(t.houseLock);
     if (t.lastHandResult) setHandResult(t.lastHandResult);
   }, []);
 
@@ -192,6 +199,7 @@ export function App() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    let createdId: string | null = null;
     try {
       if (!playerId) throw new Error("Connect Sage and load DAT balance first");
       const ticker = datToken?.ticker ?? "DAT";
@@ -203,6 +211,7 @@ export function App() {
         maxSeats,
         unit: "dat",
       });
+      createdId = id;
       const buyIn = tableConfig.minBuyInMojos;
 
       if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
@@ -250,12 +259,19 @@ export function App() {
         devAck: datToken?.devBuyInEnabled,
       });
       if (maxSeats === 2) {
-        setStatus("Opening the chia-gaming heads-up channel…");
+        setStatus("Locking the house buy-in in the DAT treasury…");
         await api.seatHouse(id, buyIn);
       }
       setTableId(id);
       await refreshTable(id);
     } catch (e) {
+      if (createdId && playerId) {
+        try {
+          await api.cancelJoin(createdId, playerId);
+        } catch {
+          // The seat was not kept.
+        }
+      }
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -318,7 +334,8 @@ export function App() {
   const tableStackMojos = myTableSeat?.stackMojos ?? null;
 
   const withdrawToSage = () => {
-    if (!tableId || !playerId || !walletAddress) return;
+    if (!tableId || !playerId) return;
+    if (!walletAddress && !datToken?.devBuyInEnabled) return;
     run("Withdrawing to Sage…", async () => {
       await refreshTable(tableId);
       const seat = (await api.getTable(tableId)).seats.find((s) => s.playerId === playerId);
@@ -371,6 +388,8 @@ export function App() {
       setHybrid(null);
       setHand(null);
       setHandResult(null);
+      const treasury = await api.houseTreasury().catch(() => null);
+      if (treasury) setHouseLock(treasury);
 
       if (session && wcConfig && datToken?.assetId) {
         const { balance } = await findDatCatWallet(
@@ -539,6 +558,18 @@ export function App() {
                 </select>
               </label>
             </div>
+            {maxSeats === 2 && houseLock?.configured && (
+              <p className="muted small">
+                House treasury free: {formatDatMojos(houseLock.availableMojos, datToken?.ticker)}. Each
+                heads-up seat locks this buy-in until that tester leaves.
+              </p>
+            )}
+            {maxSeats === 2 && houseLock && !houseLock.configured && (
+              <p className="muted small">
+                House buy-in is not locked yet. Set DAT_TREASURY_BANKROLL_MOJOS to the treasury DAT balance
+                before testers sit down.
+              </p>
+            )}
             <button
               type="button"
               disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
@@ -557,6 +588,12 @@ export function App() {
               </p>
             )}
             {hybrid && <HybridStatus hybrid={hybrid} />}
+            {houseLock?.tableLockedMojos && (
+              <p className="muted small">
+                House buy-in locked from the DAT treasury:{" "}
+                {formatDatMojos(houseLock.tableLockedMojos, datToken?.ticker)}
+              </p>
+            )}
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawToSage}>

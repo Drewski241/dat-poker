@@ -116,6 +116,14 @@ export interface HybridVault {
   lastCoSigned: { handId: string; stateRootHash: string; stacks: Record<string, string> } | null;
 }
 
+export interface HouseLockView {
+  configured: boolean;
+  spendableMojos: string;
+  lockedMojos: string;
+  availableMojos: string;
+  tableLockedMojos: string | null;
+}
+
 export interface HybridSnapshot {
   mode: "waiting" | "chia-gaming-heads-up" | "dat-table-vault";
   wagerAsset: "dat";
@@ -142,6 +150,8 @@ export const api = {
     }>("/v1/wallet/config"),
 
   datToken: () => request<DatTokenInfo>("/v1/wallet/dat-token"),
+
+  houseTreasury: () => request<HouseLockView>("/v1/treasury/house"),
 
   buyInMessage: (params: {
     tableId: string;
@@ -204,7 +214,14 @@ export const api = {
       hand: HandState | null;
       lastHandResult: HandResult | null;
       hybrid: HybridSnapshot;
+      houseLock: HouseLockView;
     }>(`/v1/tables/${tableId}`),
+
+  cancelJoin: (tableId: string, playerId: string) =>
+    request<{ ok: boolean }>(`/v1/tables/${tableId}/cancel-join`, {
+      method: "POST",
+      body: JSON.stringify({ playerId }),
+    }),
 
   cosignVault: (tableId: string, playerId: string) =>
     request<{ ok: boolean; completed: boolean; hybrid: HybridSnapshot }>(

@@ -7,7 +7,8 @@ import {
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
 } from "../treasury-payout.js";
-import { getTableEngine, syncTableHybrid } from "./tables.js";
+import { houseLockView } from "../house-lock.js";
+import { getTableEngine, releaseHouseIfAlone, syncTableHybrid } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import {
   buildBuyInMessage,
@@ -46,6 +47,8 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
   });
 
   app.get("/v1/wallet/dat-token", async () => readDatTokenConfig());
+
+  app.get("/v1/treasury/house", async () => houseLockView());
 
   app.get("/v1/wallet/status", async () => {
     const dat = readDatTokenConfig();
@@ -215,6 +218,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       createdAt: new Date().toISOString(),
     });
     clearBuyIn(tableId, playerId);
+    await releaseHouseIfAlone(tableId, payoutMojos);
     syncTableHybrid(tableId);
 
     return {

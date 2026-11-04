@@ -24,7 +24,13 @@ import {
   resolveHybridPlay,
   WagerPolicyError,
 } from "@dat-poker/shared";
-import { recordBuyIn } from "../buy-in-store.js";
+import { clearBuyIn, recordBuyIn } from "../buy-in-store.js";
+import {
+  houseLockView,
+  InsufficientHouseBankrollError,
+  lockHouseBuyIn,
+  settleHouseTable,
+} from "../house-lock.js";
 import {
   type BuyInProof,
   readDatTokenConfig,
@@ -37,7 +43,7 @@ const sessions = new Map<string, DatHeadsUpSession>();
 const vaults = new Map<string, TableVault>();
 let chiaClient: ChiaGamingClient | null = null;
 
-const HOUSE_PLAYER_ID = "dat-poker:house";
+export const HOUSE_PLAYER_ID = "dat-poker:house";
 
 export interface TableMeta {
   variant: PokerVariant;
@@ -244,6 +250,13 @@ export function registerTableRoutes(app: FastifyInstance, chia: ChiaGamingClient
       hand: table.getHandState(),
       lastHandResult: table.getLastHandResult(),
       hybrid: syncTableHybrid(req.params.tableId),
+      houseLock: await houseLockView(req.params.tableId).catch(() => ({
+        configured: false,
+        spendableMojos: "0",
+        lockedMojos: "0",
+        availableMojos: "0",
+        tableLockedMojos: null,
+      })),
     };
   });
 
@@ -367,20 +380,85 @@ export function registerTableRoutes(app: FastifyInstance, chia: ChiaGamingClient
 
   app.post<{
     Params: { tableId: string };
+    Body: { playerId?: string; devAck?: boolean };
+  }>("/v1/tables/:tableId/cancel-join", async (req, reply) => {
+    const table = tables.get(req.params.tableId);
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+    if (table.isHandInProgress() || table.getLastHandResult()) {
+      return reply.status(400).send({ error: "Play has started; withdraw instead of cancelling the join" });
+    }
+    const playerId = req.body.playerId;
+    if (!playerId) {
+      return reply.status(400).send({ error: "playerId required" });
+    }
+    if (table.getSeatedPlayers().some((seat) => seat.playerId === playerId)) {
+      try {
+        table.cashOutPlayer(playerId);
+      } catch (e) {
+        return reply.status(400).send({ error: (e as Error).message });
+      }
+      clearBuyIn(req.params.tableId, playerId);
+    }
+    await releaseHouseIfAlone(req.params.tableId, 0n);
+    return { ok: true, hybrid: syncTableHybrid(req.params.tableId) };
+  });
+
+  app.post<{
+    Params: { tableId: string };
     Body: { buyInMojos?: string };
   }>("/v1/tables/:tableId/seat-house", async (req, reply) => {
     const table = tables.get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
+    if (table.getSeatedPlayers().some((seat) => seat.playerId === HOUSE_PLAYER_ID)) {
+      return {
+        ok: true,
+        playerId: HOUSE_PLAYER_ID,
+        hybrid: syncTableHybrid(req.params.tableId),
+        houseLock: await houseLockView(req.params.tableId),
+      };
+    }
     const buyInMojos = BigInt(req.body.buyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString());
+    let locked = false;
     try {
+      locked = (await lockHouseBuyIn(req.params.tableId, buyInMojos)) !== null;
       table.seatPlayer(HOUSE_PLAYER_ID, 1, buyInMojos);
     } catch (e) {
-      return reply.status(400).send({ error: (e as Error).message });
+      if (locked) {
+        await settleHouseTable(req.params.tableId, 0n);
+      }
+      const message = (e as Error).message;
+      const status =
+        e instanceof InsufficientHouseBankrollError || message.includes("not have enough free DAT")
+          ? 409
+          : 400;
+      return reply.status(status).send({ error: message });
     }
-    return { ok: true, playerId: HOUSE_PLAYER_ID, hybrid: syncTableHybrid(req.params.tableId) };
+    return {
+      ok: true,
+      playerId: HOUSE_PLAYER_ID,
+      hybrid: syncTableHybrid(req.params.tableId),
+      houseLock: await houseLockView(req.params.tableId),
+    };
   });
+}
+
+export async function releaseHouseIfAlone(tableId: string, spentMojos: bigint): Promise<void> {
+  const table = tables.get(tableId);
+  if (!table || table.isHandInProgress()) return;
+  const seats = table.getSeatedPlayers();
+  const houseSeated = seats.some((seat) => seat.playerId === HOUSE_PLAYER_ID);
+  const humans = seats.filter((seat) => seat.playerId !== HOUSE_PLAYER_ID);
+  if (!houseSeated || humans.length > 0) return;
+  try {
+    table.cashOutPlayer(HOUSE_PLAYER_ID);
+  } catch {
+    // The house seat is already empty.
+  }
+  await settleHouseTable(tableId, spentMojos);
 }
 
 export function getTableEngine(tableId: string): NlheTableEngine | undefined {
