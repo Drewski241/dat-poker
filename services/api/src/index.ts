@@ -41,7 +41,7 @@ async function main(): Promise<void> {
 
   registerHealthRoutes(app, chiaClient);
   registerWalletRoutes(app, chiaClient);
-  registerTableRoutes(app);
+  registerTableRoutes(app, chiaClient);
   registerHandRoutes(app);
 
   app.get("/v1/variants", async () => ({

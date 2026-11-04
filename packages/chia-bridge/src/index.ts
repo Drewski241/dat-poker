@@ -1,5 +1,6 @@
 export * from "./types.js";
 export * from "./chia-gaming-client.js";
+export * from "./hybrid-session.js";
 export * from "./settlement.js";
 export * from "./sage-wallet-rpc.js";
 export * from "./sage-payout-offer.js";

@@ -67,10 +67,10 @@ sequenceDiagram
 
 | Asset | Use in DAT POKER |
 |-------|------------------|
-| **DAT** | Player buy-ins, pots, payouts |
-| **XCH** | Network fees only (mempool fees for opens/settles) |
+| **DAT** | Player buy-ins, pots, payouts, heads-up channel stakes, table-vault bonds |
+| **XCH** | Network fees only (mempool fees for opens/settles). Never a wager. |
 
-Head-to-head **chia-gaming** sessions may still lock XCH or CAT per room config; DAT POKER will standardize on DAT for ring games and MTTs.
+Heads-up **chia-gaming** sessions record `wagerAsset: "dat"` and `xchWagerMojos: 0`. A request to stake XCH or a different CAT is rejected. Upstream channel coins do not yet custody CATs, so DAT value stays in our session bond or table vault until that primitive exists.
 
 ## Governance (future)
 

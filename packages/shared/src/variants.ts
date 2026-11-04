@@ -6,7 +6,10 @@ export interface VariantMeta {
   holeCards: number;
   communityCards: number;
   bettingStructure: "no-limit" | "pot-limit" | "fixed-limit";
+  /** True when chia-gaming already ships the on-chain referee for this variant. */
   chiaGamingNative: boolean;
+  /** Every variant's heads-up match uses a chia-gaming channel. The stake is still DAT. */
+  headsUpViaChiaGaming: boolean;
   notes?: string;
 }
 
@@ -19,6 +22,8 @@ export const POKER_VARIANTS: VariantMeta[] = [
     communityCards: 5,
     bettingStructure: "no-limit",
     chiaGamingNative: false,
+    headsUpViaChiaGaming: true,
+    notes: "Heads-up uses a chia-gaming channel. Rules run here until a matching referee ships. Stake is DAT.",
   },
   {
     id: "plhe",
@@ -27,6 +32,7 @@ export const POKER_VARIANTS: VariantMeta[] = [
     communityCards: 5,
     bettingStructure: "pot-limit",
     chiaGamingNative: false,
+    headsUpViaChiaGaming: true,
   },
   {
     id: "plo4",
@@ -35,6 +41,7 @@ export const POKER_VARIANTS: VariantMeta[] = [
     communityCards: 5,
     bettingStructure: "pot-limit",
     chiaGamingNative: false,
+    headsUpViaChiaGaming: true,
   },
   {
     id: "plo5",
@@ -43,6 +50,7 @@ export const POKER_VARIANTS: VariantMeta[] = [
     communityCards: 5,
     bettingStructure: "pot-limit",
     chiaGamingNative: false,
+    headsUpViaChiaGaming: true,
   },
   {
     id: "plo6",
@@ -51,6 +59,7 @@ export const POKER_VARIANTS: VariantMeta[] = [
     communityCards: 5,
     bettingStructure: "pot-limit",
     chiaGamingNative: false,
+    headsUpViaChiaGaming: true,
   },
   {
     id: "calpoker",
@@ -59,7 +68,8 @@ export const POKER_VARIANTS: VariantMeta[] = [
     communityCards: 5,
     bettingStructure: "no-limit",
     chiaGamingNative: true,
-    notes: "Reference implementation in chia-gaming; head-to-head state channels.",
+    headsUpViaChiaGaming: true,
+    notes: "Upstream chia-gaming referee. Heads-up channel stake is DAT, not XCH.",
   },
   {
     id: "stud",
@@ -68,6 +78,7 @@ export const POKER_VARIANTS: VariantMeta[] = [
     communityCards: 0,
     bettingStructure: "fixed-limit",
     chiaGamingNative: false,
+    headsUpViaChiaGaming: true,
   },
   {
     id: "razz",
@@ -76,6 +87,7 @@ export const POKER_VARIANTS: VariantMeta[] = [
     communityCards: 0,
     bettingStructure: "fixed-limit",
     chiaGamingNative: false,
+    headsUpViaChiaGaming: true,
   },
   {
     id: "horse",
@@ -84,7 +96,8 @@ export const POKER_VARIANTS: VariantMeta[] = [
     communityCards: 5,
     bettingStructure: "fixed-limit",
     chiaGamingNative: false,
-    notes: "Mixed rotation; engine delegates per street round.",
+    headsUpViaChiaGaming: true,
+    notes: "Mixed rotation; engine delegates per street round. Heads-up still uses a chia-gaming channel.",
   },
 ];
 

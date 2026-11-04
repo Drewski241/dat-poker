@@ -84,10 +84,46 @@ export interface TableSeat {
 
 export interface TableConfigResponse {
   id: string;
+  variant: string;
+  format: "cash" | "sng" | "mtt";
+  maxSeats: number;
   minBuyInMojos: string;
   maxBuyInMojos: string;
   smallBlindMojos: string;
   bigBlindMojos: string;
+}
+
+export interface HybridSession {
+  sessionId: string;
+  variant: string;
+  rules: "chia-gaming-referee" | "engine-result-on-channel";
+  playerA: string;
+  playerB: string;
+  playerAStakeMojos: string;
+  playerBStakeMojos: string;
+  assetId: string | null;
+  wagerAsset: "dat";
+  xchWagerMojos: "0";
+  hubPageUrl: string;
+  gameRelayUrl: string;
+  status: "ready" | "closed";
+}
+
+export interface HybridVault {
+  status: "open" | "frozen-for-heads-up";
+  seats: Array<{ playerId: string; seatIndex: number; bondMojos: string }>;
+  pendingConsent: { handId: string; stateRootHash: string; signedBy: string[] } | null;
+  lastCoSigned: { handId: string; stateRootHash: string; stacks: Record<string, string> } | null;
+}
+
+export interface HybridSnapshot {
+  mode: "waiting" | "chia-gaming-heads-up" | "dat-table-vault";
+  wagerAsset: "dat";
+  xchWagerMojos: "0";
+  headsUpPromotion: boolean;
+  reason: string;
+  session: HybridSession | null;
+  vault: HybridVault | null;
 }
 
 export const api = {
@@ -145,21 +181,36 @@ export const api = {
       }),
     }),
 
-  createTable: () =>
-    request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
+  createTable: (body?: {
+    variant?: string;
+    format?: "cash" | "sng" | "mtt";
+    maxSeats?: number;
+    unit?: "dat";
+  }) =>
+    request<{ tableId: string; config: TableConfigResponse; hybrid: HybridSnapshot }>("/v1/tables", {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify(body ?? {}),
     }),
 
   getTable: (tableId: string) =>
     request<{
       tableId: string;
+      variant: string;
+      format: "cash" | "sng" | "mtt";
+      maxSeats: number;
       players: number;
       handInProgress: boolean;
       seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;
+      hybrid: HybridSnapshot;
     }>(`/v1/tables/${tableId}`),
+
+  cosignVault: (tableId: string, playerId: string) =>
+    request<{ ok: boolean; completed: boolean; hybrid: HybridSnapshot }>(
+      `/v1/tables/${tableId}/vault/cosign`,
+      { method: "POST", body: JSON.stringify({ playerId }) },
+    ),
 
   seatPlayer: (
     tableId: string,

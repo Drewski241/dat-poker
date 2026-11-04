@@ -219,6 +219,47 @@ button.secondary {
   margin-top: 0.75rem;
 }
 
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+select {
+  background: #0f1419;
+  color: var(--text);
+  border: 1px solid #2d3a4f;
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+}
+
+.hybrid {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 6px;
+}
+
+.hybrid p {
+  margin: 0.25rem 0;
+}
+
+.catalog {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

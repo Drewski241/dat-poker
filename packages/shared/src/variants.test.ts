@@ -6,5 +6,9 @@ describe("variants", () => {
     expect(POKER_VARIANTS.length).toBeGreaterThan(5);
     expect(getVariantMeta("nlhe")?.bettingStructure).toBe("no-limit");
     expect(getVariantMeta("calpoker")?.chiaGamingNative).toBe(true);
+    expect(POKER_VARIANTS.every((variant) => variant.headsUpViaChiaGaming)).toBe(true);
+    expect(POKER_VARIANTS.filter((variant) => variant.chiaGamingNative).map((variant) => variant.id)).toEqual([
+      "calpoker",
+    ]);
   });
 });

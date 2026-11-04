@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type PlayerAction } from "@dat-poker/game-engine";
-import { getTableEngine } from "./tables.js";
+import { getTableEngine, getTableMeta } from "./tables.js";
 
 export function registerHandRoutes(app: FastifyInstance): void {
   app.post<{ Params: { tableId: string }; Body: { handId?: string } }>(
@@ -9,6 +9,12 @@ export function registerHandRoutes(app: FastifyInstance): void {
     async (req, reply) => {
       const table = getTableEngine(req.params.tableId);
       if (!table) return reply.status(404).send({ error: "Table not found" });
+      const meta = getTableMeta(req.params.tableId);
+      if (meta && meta.variant !== "nlhe") {
+        return reply.status(400).send({
+          error: `${meta.variant} uses hybrid DAT settlement, but only NLHE can be dealt right now`,
+        });
+      }
       try {
         const handId = req.body.handId ?? randomUUID();
         const { commitHash } = table.startHand(handId);

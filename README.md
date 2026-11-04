@@ -1,6 +1,6 @@
 # DAT POKER
 
-Global-scale poker on the **Chia blockchain** with off-chain gameplay and on-chain settlement via [chia-gaming](https://github.com/Chia-Network/chia-gaming) state channels.
+Global-scale poker on the **Chia blockchain**. Every heads-up game uses a [chia-gaming](https://github.com/Chia-Network/chia-gaming) state channel. Tables of three or more settle in a DAT vault and move onto that channel when two players remain. Wagers are the **DAT governance token**. XCH is a network fee, not a stake.
 
 **Account funding:** player buy-ins and bankrolls use the **DAT Governance Token** (Chia CAT). See [docs/DAT_TOKEN.md](./docs/DAT_TOKEN.md).
 

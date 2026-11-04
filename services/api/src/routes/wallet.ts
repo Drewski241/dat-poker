@@ -7,7 +7,7 @@ import {
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
 } from "../treasury-payout.js";
-import { getTableEngine } from "./tables.js";
+import { getTableEngine, syncTableHybrid } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import {
   buildBuyInMessage,
@@ -215,6 +215,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       createdAt: new Date().toISOString(),
     });
     clearBuyIn(tableId, playerId);
+    syncTableHybrid(tableId);
 
     return {
       ok: true,

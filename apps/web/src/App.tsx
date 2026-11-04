@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos, POKER_VARIANTS } from "@dat-poker/shared";
+import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type HybridSnapshot, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
+import { HybridStatus } from "./components/HybridStatus.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
   beginWalletConnect,
@@ -44,6 +45,9 @@ export function App() {
   const [datBalance, setDatBalance] = useState<string | null>(null);
 
   const [tableId, setTableId] = useState<string | null>(null);
+  const [maxSeats, setMaxSeats] = useState<2 | 6 | 9>(2);
+  const [format, setFormat] = useState<"cash" | "sng" | "mtt">("cash");
+  const [hybrid, setHybrid] = useState<HybridSnapshot | null>(null);
   const [tableSeats, setTableSeats] = useState<TableSeat[]>([]);
   const [handInProgress, setHandInProgress] = useState(false);
   const [withdrawResult, setWithdrawResult] = useState<WithdrawResult | null>(null);
@@ -94,6 +98,7 @@ export function App() {
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
+    setHybrid(t.hybrid);
     if (t.lastHandResult) setHandResult(t.lastHandResult);
   }, []);
 
@@ -108,27 +113,27 @@ export function App() {
   useEffect(() => {
     if (!tableId || !hand || !playerId || busy) return;
     const actor = hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded);
-    if (!actor || actor.playerId !== HOUSE_PLAYER_ID) return;
+    if (!actor || actor.playerId === playerId) return;
 
+    const actorId = actor.playerId;
     const timer = window.setTimeout(() => {
       void (async () => {
         setBusy(true);
         try {
           const currentBet = BigInt(hand.currentBetMojos);
-          const house = hand.players.find((p) => p.playerId === HOUSE_PLAYER_ID);
-          const houseBet = BigInt(house?.betThisStreetMojos ?? 0);
-          const toCall = currentBet - houseBet;
+          const actorBet = BigInt(actor.betThisStreetMojos ?? 0);
+          const toCall = currentBet - actorBet;
           let response;
           if (toCall > 0n) {
-            response = await api.action(tableId, HOUSE_PLAYER_ID, "call");
+            response = await api.action(tableId, actorId, "call");
           } else {
-            response = await api.action(tableId, HOUSE_PLAYER_ID, "check");
+            response = await api.action(tableId, actorId, "check");
           }
           applyActionResponse(response);
           if (!response.hand) await refreshTable(tableId);
         } catch {
           try {
-            const response = await api.action(tableId, HOUSE_PLAYER_ID, "fold");
+            const response = await api.action(tableId, actorId, "fold");
             applyActionResponse(response);
             if (!response.hand) await refreshTable(tableId);
           } catch {
@@ -192,7 +197,12 @@ export function App() {
       const ticker = datToken?.ticker ?? "DAT";
 
       setStatus("Creating table…");
-      const { tableId: id, config: tableConfig } = await api.createTable();
+      const { tableId: id, config: tableConfig } = await api.createTable({
+        variant: "nlhe",
+        format,
+        maxSeats,
+        unit: "dat",
+      });
       const buyIn = tableConfig.minBuyInMojos;
 
       if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
@@ -239,7 +249,10 @@ export function App() {
         buyInProof,
         devAck: datToken?.devBuyInEnabled,
       });
-      await api.seatHouse(id, buyIn);
+      if (maxSeats === 2) {
+        setStatus("Opening the chia-gaming heads-up channel…");
+        await api.seatHouse(id, buyIn);
+      }
       setTableId(id);
       await refreshTable(id);
     } catch (e) {
@@ -250,13 +263,43 @@ export function App() {
     }
   };
 
+  const addOpponent = () => {
+    if (!tableId || !datToken) return;
+    const openSeat = Array.from({ length: maxSeats }, (_, index) => index).find(
+      (index) => !tableSeats.some((seat) => seat.seatIndex === index),
+    );
+    if (openSeat == null) return;
+    run("Seating opponent…", async () => {
+      await api.seatPlayer(tableId, `dat-poker:opponent-${openSeat}`, openSeat, datToken.minBuyInMojos, {
+        devAck: true,
+      });
+      await refreshTable(tableId);
+    });
+  };
+
+  const cosignHand = () => {
+    if (!tableId || !playerId) return;
+    run("Co-signing stacks…", async () => {
+      const ids = datToken?.devBuyInEnabled ? tableSeats.map((seat) => seat.playerId) : [playerId];
+      let latest: Awaited<ReturnType<typeof api.cosignVault>> | null = null;
+      for (const id of ids) {
+        latest = await api.cosignVault(tableId, id);
+      }
+      if (latest) setHybrid(latest.hybrid);
+    });
+  };
+
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
     run("Starting hand…", async () => {
       setHandResult(null);
       await api.startHand(tableId);
       await api.submitSeed(tableId, playerId);
-      await api.submitSeed(tableId, HOUSE_PLAYER_ID);
+      for (const seat of tableSeats) {
+        if (seat.playerId !== playerId) {
+          await api.submitSeed(tableId, seat.playerId);
+        }
+      }
       const { hand: dealt } = await api.deal(tableId);
       setHand(dealt);
     });
@@ -325,6 +368,7 @@ export function App() {
       setWithdrawResult(result);
       setTableId(null);
       setTableSeats([]);
+      setHybrid(null);
       setHand(null);
       setHandResult(null);
 
@@ -384,7 +428,7 @@ export function App() {
     <div className="app">
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
+        <p className="tagline">DAT wagers only · heads-up on chia-gaming · three or more on the DAT vault</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -396,7 +440,14 @@ export function App() {
       <section className="panel">
         <h2>Wallet</h2>
         {!wcConfig ? (
-          <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage.</p>
+          <>
+            <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage.</p>
+            {datToken?.devBuyInEnabled && !playerId && (
+              <button type="button" disabled={busy || !apiOk} onClick={() => setPlayerId("dat-poker:dev-player")}>
+                Use dev player
+              </button>
+            )}
+          </>
         ) : !session ? (
           <button type="button" disabled={busy || !apiOk} onClick={connectSage}>
             Connect Sage (WalletConnect)
@@ -412,6 +463,11 @@ export function App() {
                 Disconnect
               </button>
             </div>
+            {datToken?.devBuyInEnabled && !playerId && (
+              <button type="button" disabled={busy} className="secondary" onClick={() => setPlayerId("dat-poker:dev-player")}>
+                Use dev player
+              </button>
+            )}
             {walletAddress && (
               <p className="mono">
                 Address: {shortAddress(walletAddress)}
@@ -425,6 +481,7 @@ export function App() {
             )}
           </>
         )}
+        {playerId && !walletAddress && <p className="ok-text">Playing as {playerId}</p>}
         {datToken && (
           <p className="muted small">
             Network buy-in mode:{" "}
@@ -435,15 +492,61 @@ export function App() {
       </section>
 
       <section className="panel">
+        <h2>Hybrid play</h2>
+        <p className="muted small">
+          Every variant plays heads-up on a chia-gaming channel. The pot is DAT. XCH is not a wager.
+          Three or more players lock DAT in the table vault and co-sign each hand. A Sit &amp; Go or
+          tournament table uses that vault, then moves onto a channel when two players remain.
+        </p>
+        <ul className="catalog">
+          {POKER_VARIANTS.map((variant) => (
+            <li key={variant.id}>
+              {variant.label}
+              {variant.chiaGamingNative ? " — upstream referee" : " — engine result on the channel"}
+            </li>
+          ))}
+        </ul>
+        <p className="muted small">The hand you can deal here is No-Limit Hold&apos;em. The other variants follow this same route.</p>
+      </section>
+
+      <section className="panel">
         <h2>Table</h2>
         {!tableId ? (
-          <button
-            type="button"
-            disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-            onClick={() => void joinTable()}
-          >
-            Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
-          </button>
+          <>
+            <div className="field-row">
+              <label className="field">
+                Seats
+                <select
+                  value={maxSeats}
+                  disabled={busy}
+                  onChange={(event) => setMaxSeats(Number(event.target.value) as 2 | 6 | 9)}
+                >
+                  <option value={2}>2 — heads-up channel</option>
+                  <option value={6}>6 — ring vault</option>
+                  <option value={9}>9 — tournament table</option>
+                </select>
+              </label>
+              <label className="field">
+                Format
+                <select
+                  value={format}
+                  disabled={busy}
+                  onChange={(event) => setFormat(event.target.value as "cash" | "sng" | "mtt")}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="sng">Sit &amp; Go</option>
+                  <option value="mtt">Tournament</option>
+                </select>
+              </label>
+            </div>
+            <button
+              type="button"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable()}
+            >
+              Buy in &amp; join ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+            </button>
+          </>
         ) : (
           <>
             <p className="mono">Table ID: {tableId}</p>
@@ -453,11 +556,22 @@ export function App() {
                 <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
               </p>
             )}
+            {hybrid && <HybridStatus hybrid={hybrid} />}
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawToSage}>
                   Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
                 </button>
+                {datToken?.devBuyInEnabled && tableSeats.length < maxSeats && (
+                  <button type="button" disabled={busy} className="secondary" onClick={addOpponent}>
+                    Add opponent
+                  </button>
+                )}
+                {hybrid?.vault?.status === "open" && handResult && (
+                  <button type="button" disabled={busy} className="secondary" onClick={cosignHand}>
+                    {datToken?.devBuyInEnabled ? "Co-sign stacks (all seats)" : "Co-sign hand stacks"}
+                  </button>
+                )}
               </div>
             )}
           </>
@@ -489,8 +603,8 @@ export function App() {
                   {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
                 </div>
               )}
-              <button type="button" disabled={busy} onClick={startHandFlow}>
-                {handResult ? "New hand" : "Start hand vs house"}
+              <button type="button" disabled={busy || tableSeats.length < 2} onClick={startHandFlow}>
+                {handResult ? "New hand" : maxSeats === 2 ? "Start hand vs house" : "Start hand"}
               </button>
             </>
           ) : (
