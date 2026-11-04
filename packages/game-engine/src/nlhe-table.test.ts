@@ -61,6 +61,34 @@ describe("NlheTableEngine", () => {
     expect(flop?.board).toHaveLength(3);
   });
 
+  it("gives the big blind an option and skips folded seats on the flop", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.seatPlayer("cara", 2, 5_000_000_000_000n);
+
+    table.startHand("hand-multi");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.submitPlayerSeed("cara", generateServerSeed());
+    table.revealAndDeal();
+
+    const pre = table.getHandState()!;
+    expect(pre.actionSeat).toBe(2);
+    table.applyAction("cara", "call");
+    table.applyAction("alice", "fold");
+
+    const stillPreflop = table.getHandState();
+    expect(stillPreflop?.street).toBe("preflop");
+    expect(stillPreflop?.actionSeat).toBe(1);
+
+    table.applyAction("bob", "check");
+    const flop = table.getHandState();
+    expect(flop?.street).toBe("flop");
+    expect(flop?.actionSeat).toBe(1);
+    expect(flop?.players.find((p) => p.seatIndex === flop.actionSeat)?.folded).toBe(false);
+  });
+
   it("cashes out player stack when no hand is active", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

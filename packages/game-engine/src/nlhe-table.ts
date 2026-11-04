@@ -27,6 +27,8 @@ export interface PlayerHandState {
   totalBetHandMojos: bigint;
   folded: boolean;
   allIn: boolean;
+  /** Voluntary action on this street. Cleared when a new street starts or someone raises. */
+  actedThisStreet: boolean;
 }
 
 export interface TableHandState {
@@ -148,6 +150,7 @@ export class NlheTableEngine {
       totalBetHandMojos: 0n,
       folded: false,
       allIn: false,
+      actedThisStreet: false,
     }));
 
     this.hand = {
@@ -214,6 +217,7 @@ export class NlheTableEngine {
     if (player.folded || player.allIn) {
       throw new Error("Player cannot act");
     }
+    const betBefore = h.currentBetMojos;
 
     switch (action) {
       case "fold":
@@ -253,6 +257,12 @@ export class NlheTableEngine {
     }
 
     h.seq++;
+    player.actedThisStreet = true;
+    if (h.currentBetMojos > betBefore) {
+      for (const other of h.players) {
+        if (other.playerId !== player.playerId) other.actedThisStreet = false;
+      }
+    }
 
     if (this.activePlayers(h).length <= 1) {
       this.awardToWinner(h);
@@ -319,7 +329,19 @@ export class NlheTableEngine {
   private bettingRoundComplete(h: TableHandState): boolean {
     const contenders = h.players.filter((p) => !p.folded && !p.allIn);
     if (contenders.length === 0) return true;
-    return contenders.every((p) => p.betThisStreetMojos === h.currentBetMojos);
+    return contenders.every((p) => p.actedThisStreet && p.betThisStreetMojos === h.currentBetMojos);
+  }
+
+  /** First player who can act, clockwise after `afterSeat`. */
+  private firstLiveSeat(h: TableHandState, afterSeat: number): number | null {
+    const ordered = [...h.players].sort((a, b) => a.seatIndex - b.seatIndex);
+    const start = ordered.findIndex((p) => p.seatIndex === afterSeat);
+    const from = start === -1 ? 0 : start;
+    for (let i = 1; i <= ordered.length; i++) {
+      const next = ordered[(from + i) % ordered.length];
+      if (!next.folded && !next.allIn) return next.seatIndex;
+    }
+    return null;
   }
 
   private advanceActionSeat(h: TableHandState, fromPlayerId: PlayerId): void {
@@ -342,6 +364,7 @@ export class NlheTableEngine {
   private advanceStreet(h: TableHandState): void {
     for (const p of h.players) {
       p.betThisStreetMojos = 0n;
+      p.actedThisStreet = false;
     }
     h.currentBetMojos = 0n;
 
@@ -364,8 +387,11 @@ export class NlheTableEngine {
     for (let i = 0; i < count; i++) {
       h.board.push(this.draw(h));
     }
-    h.actionSeat = h.dealerSeat;
+    h.actionSeat = this.firstLiveSeat(h, h.dealerSeat);
     h.seq++;
+    if (h.actionSeat === null) {
+      this.advanceStreet(h);
+    }
   }
 
   private runShowdown(h: TableHandState): void {
