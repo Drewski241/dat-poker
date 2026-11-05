@@ -1,37 +1,18 @@
-# AWS test deploy
+# EC2 test deploy
 
-Heads-up play for testers needs one public URL and a house buy-in lock against the DAT treasury. This repository is ready to build that image. A live stack was not created from the development environment: it has no AWS credentials, no AWS CLI, and no Docker daemon.
+One `t3.small` in `us-west-2` is enough. The app is in memory, so run a single container. Open TCP 80 on the instance security group to the testers. Leave the host up and the bill is about $21 a month (`t3.small` ~$15, public IPv4 ~$3.65, 20 GB gp3 ~$1.60). Stop the instance when the test is over.
 
-## What testers run
+SSH to the instance and run:
 
-One container, from `docker/Dockerfile.api`. It builds the API and the web client. When `WEB_DIST` is set, the API serves the site on the same origin, so the browser can call `/v1` without a separate host.
+```bash
+sudo dnf install -y git || sudo apt-get update && sudo apt-get install -y git
+git clone --branch cursor/hybrid-dat-chia-gaming-3c03 --depth 1 https://github.com/Drewski241/dat-poker.git
+cd dat-poker
+DAT_GOVERNANCE_TOKEN_ASSET_ID=<64-hex-asset-id> \
+DAT_TREASURY_BANKROLL_MOJOS=<treasury DAT balance in mojos> \
+  ./scripts/deploy-ec2.sh
+```
 
-- Region: `us-west-2`
-- Compute: one Fargate task, 0.5 vCPU and 1 GB
-- Network: public application load balancer, task in a private subnet, NAT gateway, one availability zone
-- Storage: no database. Tables and the house lock live in process memory, so run **one** API task
-- Encryption: SSE-S3 for any logs bucket, TLS on the load balancer
+`DAT_TREASURY_BANKROLL_MOJOS` is CAT mojos (1000 mojos = 1 DAT). That balance is what concurrent heads-up games lock against. `DAT_ALLOW_DEV_BUYIN` defaults to true for this test box. Sage stays on a machine you control; this container does not run a wallet.
 
-Sage cannot run inside that task. Keep the treasury wallet on a machine you control. For the test, set `DAT_TREASURY_BANKROLL_MOJOS` to the treasury DAT balance in CAT mojos (1000 mojos = 1 DAT). Leave `DAT_TREASURY_PAYOUT_URL` unset unless the treasury payout service is reachable from the task; when it is set, that service owns the lock book (`POST /locks`).
-
-`DAT_ALLOW_DEV_BUYIN=true` lets the closed tester group sit without a wallet signature. Turn it off before anyone outside that group can reach the URL.
-
-Restarting the API clears tables and, when the lock book is local, the reservations. Restart only while nobody is seated.
-
-## Cost if the stack is left running
-
-Public list prices in `us-west-2`, approximate:
-
-| Piece | Monthly |
-| --- | --- |
-| NAT gateway | $33 |
-| Application load balancer | $16 |
-| Fargate 0.5 vCPU / 1 GB | $18 |
-| Public IPv4 | $3.65 |
-| **Left running** | **about $70** |
-
-Destroy the stack after the test and the bill is the hours it was up, a few dollars for a short session.
-
-## Before a stack can be created
-
-The deploy needs AWS account access in `us-west-2` (credentials or an OIDC role) and a yes to the cost above. Do not start a push-triggered workflow until that access exists; it would fail on every push.
+The site is `http://<instance-public-ip>/`. Check `curl -s localhost/health` on the box.
