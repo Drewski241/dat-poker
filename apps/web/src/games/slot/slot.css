@@ -233,6 +233,33 @@
   }
 }
 
+.slot-cell.pop {
+  border-color: rgba(255, 229, 102, 0.9);
+  animation: cell-pop-out 0.46s ease forwards;
+}
+
+@keyframes cell-pop-out {
+  to {
+    transform: scale(0.12);
+    opacity: 0;
+  }
+}
+
+.slot-cell.fall {
+  animation: cell-fall-in 0.72s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+@keyframes cell-fall-in {
+  from {
+    transform: translateY(-85%);
+    opacity: 0.2;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 .slot-emoji {
   font-size: 1.85rem;
   line-height: 1.1;
