@@ -335,7 +335,8 @@ export function App() {
 
   const withdrawToSage = () => {
     if (!tableId || !playerId) return;
-    if (!walletAddress && !datToken?.devBuyInEnabled) return;
+    const sageAddress = walletAddress;
+    if (!sageAddress && !datToken?.devBuyInEnabled) return;
     run("Withdrawing to Sage…", async () => {
       await refreshTable(tableId);
       const seat = (await api.getTable(tableId)).seats.find((s) => s.playerId === playerId);
@@ -345,10 +346,10 @@ export function App() {
       const stackMojos = seat.stackMojos;
 
       let withdrawProof: BuyInProof | undefined;
-      if (!datToken?.devBuyInEnabled && session && wcConfig) {
+      if (!datToken?.devBuyInEnabled && session && wcConfig && sageAddress) {
         const { message } = await api.withdrawMessage({
           tableId,
-          address: walletAddress,
+          address: sageAddress,
           stackMojos,
         });
         setStatus("Approve withdraw in Sage (check your phone)…");
@@ -357,10 +358,10 @@ export function App() {
           wcConfig.projectId,
           wcConfig.chainId,
           message,
-          walletAddress,
+          sageAddress,
         );
         withdrawProof = {
-          address: walletAddress,
+          address: sageAddress,
           message,
           signature: signed.signature,
           pubkey: signed.pubkey,
