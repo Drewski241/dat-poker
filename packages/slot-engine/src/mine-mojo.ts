@@ -141,7 +141,35 @@ function evaluateMineGrid(
   };
 }
 
-function removeWinCells(grid: Grid, cells: { reel: number; row: number }[]): Grid {
+/** One board the player should see, with the wins that belong on it. */
+export type MineCascadeFrame = {
+  grid: string[][];
+  multiplier: number;
+  lineWins: LineWin[];
+  scatterCount: number;
+  scatterMultiplier: number;
+  scatterCells: { reel: number; row: number }[];
+};
+
+function cloneGrid(grid: Grid): string[][] {
+  return grid.map((col) => [...col]);
+}
+
+function dynamiteCells(grid: Grid): { reel: number; row: number }[] {
+  const cells: { reel: number; row: number }[] = [];
+  for (let reel = 0; reel < 5; reel++) {
+    for (let row = 0; row < 3; row++) {
+      if (grid[reel]![row] === "dynamite") cells.push({ reel, row });
+    }
+  }
+  return cells;
+}
+
+function removeWinCells(
+  grid: Grid,
+  cells: { reel: number; row: number }[],
+  rng: (max: number) => number,
+): Grid {
   const drop = new Set(cells.map((c) => `${c.reel}-${c.row}`));
   const next: Grid = [[], [], [], [], []];
   for (let reel = 0; reel < 5; reel++) {
@@ -150,18 +178,23 @@ function removeWinCells(grid: Grid, cells: { reel: number; row: number }[]): Gri
       if (!drop.has(`${reel}-${row}`)) remaining.push(grid[reel]![row]! as string);
     }
     while (remaining.length < 3) {
-      remaining.unshift(MINE_STRIP[randomInt(MINE_STRIP.length)]!);
+      remaining.unshift(MINE_STRIP[rng(MINE_STRIP.length)]!);
     }
     next[reel] = remaining.slice(-3) as Grid[number];
   }
   return next;
 }
 
-export function evaluateMineSpin(grid: Grid, lineBet: number): SlotSpinCore {
+export function evaluateMineSpin(
+  grid: Grid,
+  lineBet: number,
+  rng: (max: number) => number = randomInt,
+): SlotSpinCore {
   let working = grid.map((c) => [...c]) as Grid;
   let totalPayout = 0;
   let totalMultiplier = 0;
   const allLineWins: LineWin[] = [];
+  const cascades: MineCascadeFrame[] = [];
   let cascadeSteps = 0;
   let cascadeMultiplier = 1;
 
@@ -172,6 +205,14 @@ export function evaluateMineSpin(grid: Grid, lineBet: number): SlotSpinCore {
         cascadeSteps = 1;
         totalPayout += round.scatterMultiplier * lineBet;
         totalMultiplier += round.scatterMultiplier;
+        cascades.push({
+          grid: cloneGrid(working),
+          multiplier: cascadeMultiplier,
+          lineWins: [],
+          scatterCount: round.scatterCount,
+          scatterMultiplier: round.scatterMultiplier,
+          scatterCells: dynamiteCells(working),
+        });
       }
       break;
     }
@@ -183,9 +224,17 @@ export function evaluateMineSpin(grid: Grid, lineBet: number): SlotSpinCore {
       totalMultiplier += round.scatterMultiplier;
     }
     allLineWins.push(...round.lineWins);
+    cascades.push({
+      grid: cloneGrid(working),
+      multiplier: cascadeMultiplier,
+      lineWins: round.lineWins,
+      scatterCount: step === 0 ? round.scatterCount : 0,
+      scatterMultiplier: step === 0 ? round.scatterMultiplier : 0,
+      scatterCells: step === 0 ? dynamiteCells(working) : [],
+    });
 
     const cells = round.lineWins.flatMap((w) => w.cells);
-    working = removeWinCells(working, cells);
+    working = removeWinCells(working, cells, rng);
     cascadeMultiplier = Math.min(1 + step * 0.15, 1.75);
   }
 
@@ -204,7 +253,7 @@ export function evaluateMineSpin(grid: Grid, lineBet: number): SlotSpinCore {
     scatterMultiplier: 0,
     totalMultiplier,
     totalPayout,
-    meta: { cascadeSteps, finalCascadeMultiplier: cascadeMultiplier, initialGrid: grid },
+    meta: { cascadeSteps, finalCascadeMultiplier: cascadeMultiplier, initialGrid: grid, cascades },
   };
 }
 

@@ -17,6 +17,7 @@ import {
   resetJackpotForTests,
 } from "./jackpot-store.js";
 import { resetSlotPlayerStateForTests } from "./slot-player-state.js";
+import { resetSlotHistoryForTests } from "./slot-history-store.js";
 
 async function buildApp() {
   const app = Fastify();
@@ -66,8 +67,10 @@ describe("Spirit Slots account balance", () => {
     process.env.DAT_LEDGER_JOURNAL_PATH = "memory";
     process.env.DAT_SLOTS_JACKPOT_PATH = "memory";
     process.env.DAT_SLOT_PLAYER_STATE_PATH = "memory";
+    process.env.DAT_SLOT_HISTORY_PATH = "memory";
     process.env.DAT_VAULT_BONUS = "never";
     resetSlotPlayerStateForTests();
+    resetSlotHistoryForTests();
     resetAccountsForTests();
     resetUsersForTests();
     resetMailOutboxForTests();
@@ -188,7 +191,9 @@ describe("Crack the Vault bonus", () => {
     process.env.DAT_LEDGER_JOURNAL_PATH = "memory";
     process.env.DAT_SLOTS_JACKPOT_PATH = "memory";
     process.env.DAT_SLOT_PLAYER_STATE_PATH = "memory";
+    process.env.DAT_SLOT_HISTORY_PATH = "memory";
     process.env.DAT_VAULT_BONUS = "always";
+    resetSlotHistoryForTests();
     resetAccountsForTests();
     resetUsersForTests();
     resetMailOutboxForTests();
@@ -321,6 +326,55 @@ describe("Crack the Vault bonus", () => {
       settled = true;
     }
     expect(settled).toBe(true);
+    await app.close();
+  });
+});
+
+describe("slot spin history", () => {
+  beforeEach(() => {
+    process.env.DAT_SESSION_SECRET = "dat-poker-test-session";
+    process.env.DAT_ACCOUNTS_PATH = "memory";
+    process.env.DAT_LEDGER_JOURNAL_PATH = "memory";
+    process.env.DAT_SLOTS_JACKPOT_PATH = "memory";
+    process.env.DAT_SLOT_PLAYER_STATE_PATH = "memory";
+    process.env.DAT_SLOT_HISTORY_PATH = "memory";
+    process.env.DAT_VAULT_BONUS = "never";
+    resetSlotPlayerStateForTests();
+    resetSlotHistoryForTests();
+    resetAccountsForTests();
+    resetUsersForTests();
+    resetMailOutboxForTests();
+    resetPlayerSessionsForTests();
+    resetIpRateLimitsForTests();
+    resetJackpotForTests();
+  });
+
+  it("keeps a spin on the game that was played", async () => {
+    const app = await buildApp();
+    const created = await registerAndLogin(app, "historyplayer");
+    creditAccount(created.playerId, 50_000n);
+    const spin = await app.inject({
+      method: "POST",
+      url: "/v1/slots/house-edge/spin",
+      headers: auth(created.token),
+      payload: { playerId: created.playerId, betMojos: "1000" },
+    });
+    expect(spin.statusCode).toBe(200);
+    const mine = await app.inject({
+      method: "GET",
+      url: "/v1/slots/mine-mojo/history",
+      headers: auth(created.token),
+    });
+    expect(JSON.parse(mine.body)).toEqual({ gameId: "mine-mojo", spins: [] });
+    const house = await app.inject({
+      method: "GET",
+      url: "/v1/slots/house-edge/history",
+      headers: auth(created.token),
+    });
+    expect(house.statusCode).toBe(200);
+    const body = JSON.parse(house.body) as { spins: { gameId: string; betMojos: string }[] };
+    expect(body.spins).toHaveLength(1);
+    expect(body.spins[0]).toMatchObject({ gameId: "house-edge", betMojos: "1000" });
     await app.close();
   });
 });

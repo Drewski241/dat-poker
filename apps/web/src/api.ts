@@ -1186,6 +1186,11 @@ export const api = {
       body: JSON.stringify({}),
     }),
 
+  getSlotHistory: (gameId: string) =>
+    request<{ gameId: string; spins: import("./games/slot/slot-history.js").SlotHistoryEntry[] }>(
+      `/v1/slots/${encodeURIComponent(gameId)}/history`,
+    ),
+
   getSlotJackpot: (gameId: string) =>
     request<{
       gameId: string;

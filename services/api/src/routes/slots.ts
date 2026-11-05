@@ -44,6 +44,7 @@ import {
 } from "../slot-player-state.js";
 import { requirePlayer, sessionMatchesClaim } from "../player-session.js";
 import { findSeatedPlayerTable } from "./tables.js";
+import { listSlotHistory, recordSlotSpin } from "../slot-history-store.js";
 
 const VAULT_OPEN_ERROR = "The vault bonus is open. Flip your chips before the next spin.";
 
@@ -147,6 +148,7 @@ async function handleSpin(
 
   const lineWinMojos = spinPayoutMojos(result, lineBetMojos);
   const grossWinMojos = lineWinMojos + progressiveWinMojos;
+  const netMojos = (isFreeBossSpin ? grossWinMojos : grossWinMojos - betMojos).toString();
 
   if (!opts?.skipDebit && !isFreeBossSpin) {
     debitAccount(playerId, betMojos, { type: "debit", ref: `slots-${gameId}` });
@@ -156,6 +158,34 @@ async function handleSpin(
   }
 
   const client = spinResultToClient(result, lineBetMojos);
+  const meta = result.meta ?? {};
+  recordSlotSpin(playerId, {
+    gameId,
+    betMojos: betMojos.toString(),
+    lineWinMojos: lineWinMojos.toString(),
+    progressiveWinMojos: progressiveWinMojos.toString(),
+    netMojos,
+    wonProgressive,
+    freeSpin: isFreeBossSpin,
+    drawPhase: false,
+    lineWins: result.lineWins.map((win) => ({
+      lineIndex: win.lineIndex,
+      symbol: win.symbol,
+      count: win.count,
+      multiplier: win.multiplier,
+    })),
+    waysWins: result.waysWins.map((way) => ({
+      symbol: way.symbol,
+      reelCount: way.reelCount,
+      ways: way.ways,
+      multiplier: way.multiplier,
+      phase: way.phase,
+    })),
+    scatterCount: result.scatterCount,
+    scatterMultiplier: result.scatterMultiplier,
+    cascadeSteps: typeof meta.cascadeSteps === "number" ? meta.cascadeSteps : 0,
+    expandingWild: meta.expandingWild === true,
+  });
   let holdDrawOffer: { heldReels: number[] } | undefined;
   if (gameId === "poker-hands" && shouldOfferHoldDraw(result.lineWins)) {
     setPokerHoldPending(playerId, result.grid, betMojos.toString());
@@ -182,7 +212,7 @@ async function handleSpin(
     lineWinMojos: lineWinMojos.toString(),
     progressiveWinMojos: progressiveWinMojos.toString(),
     wonProgressive,
-    netMojos: ((isFreeBossSpin ? grossWinMojos : grossWinMojos - betMojos)).toString(),
+    netMojos,
     accountBalanceMojos: getAccountBalance(playerId).toString(),
     progressiveJackpotMojos: readProgressiveJackpotMojos(gameId).toString(),
     progressiveJackpots: readAllProgressiveJackpots(),
@@ -213,6 +243,16 @@ export function registerSlotsRoutes(app: FastifyInstance): void {
     defaultBetMojos: DAT_SLOT_BET_MOJOS[0]!.toString(),
     paylineEvalVersion: 2,
   }));
+
+  app.get<{ Params: { gameId: string } }>("/v1/slots/:gameId/history", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    const { gameId } = req.params;
+    if (!isSlotGameId(gameId)) {
+      return reply.status(404).send({ error: "Unknown slot game" });
+    }
+    return { gameId, spins: listSlotHistory(session.playerId, gameId) };
+  });
 
   app.get<{ Params: { gameId: string } }>("/v1/slots/:gameId/jackpot", async (req, reply) => {
     const { gameId } = req.params;
@@ -404,6 +444,27 @@ export function registerSlotsRoutes(app: FastifyInstance): void {
     if (grossWinMojos > 0n) {
       creditAccount(playerId, grossWinMojos, { type: "credit", ref: "slots-win-poker-hands-draw" });
     }
+    recordSlotSpin(playerId, {
+      gameId: "poker-hands",
+      betMojos: betMojos.toString(),
+      lineWinMojos: lineWinMojos.toString(),
+      progressiveWinMojos: progressiveWinMojos.toString(),
+      netMojos: grossWinMojos.toString(),
+      wonProgressive,
+      freeSpin: false,
+      drawPhase: true,
+      lineWins: result.lineWins.map((win) => ({
+        lineIndex: win.lineIndex,
+        symbol: win.symbol,
+        count: win.count,
+        multiplier: win.multiplier,
+      })),
+      waysWins: [],
+      scatterCount: 0,
+      scatterMultiplier: 0,
+      cascadeSteps: 0,
+      expandingWild: false,
+    });
 
     const client = spinResultToClient(result, lineBetMojos);
     return {
