@@ -4,7 +4,7 @@
 
 1. **Off-chain speed, on-chain trust** — Betting actions run on authoritative game servers (single-digit ms). Value custody, session open/close, and disputes use Chia.
 2. **Event-sourced hands** — Every action is an append-only event with monotonic `seq` for replay, audit, and settlement proofs.
-3. **Hybrid Chia modes** — Head-to-head (2-player) uses [chia-gaming](https://github.com/Chia-Network/chia-gaming) state channels; ring games and MTTs batch settlement to chain.
+3. **Hybrid Chia modes** — Every variant's heads-up play uses a [chia-gaming](https://github.com/Chia-Network/chia-gaming) state channel. The stake is DAT, never XCH. Three or more players use the DAT table vault and co-sign each hand. A ring, Sit & Go, or tournament table promotes to that same channel when two players remain.
 4. **Regional scale-out** — Game shards per geography; global control plane for identity, lobby, and treasury.
 
 ## Logical components
@@ -76,12 +76,19 @@ flowchart TB
 4. Actions validated by `game-engine`; events broadcast via gateway.
 5. Showdown → engine computes winners; settlement worker builds `SettlementProof` and optionally anchors on Chia.
 
-## Game loop (head-to-head / Calpoker)
+## Game loop (head-to-head, every variant)
 
-1. Platform creates chia-gaming lobby room via `ChiaGamingClient`.
-2. Players connect wallets (WalletConnect) and open state channel.
-3. Moves exchanged off-chain (potato protocol); platform mirrors events for analytics only.
-4. Session close → single on-chain payout transaction.
+1. Two seated players open a DAT chia-gaming session (`/ws/game` relay, XCH wager 0).
+2. Players connect wallets (WalletConnect). DAT bonds are the stake.
+3. Calpoker moves can use the upstream referee. Other variants play on the DAT POKER engine; the channel carries the co-signed result.
+4. Session close pays DAT. XCH is a network fee only.
+
+## Game loop (3+ players, ring / Sit & Go / tournament table)
+
+1. Seats lock DAT in the table vault.
+2. The engine deals and validates the hand.
+3. Every seated player co-signs the resulting stack vector. That vector is the fallback if a later signature is withheld.
+4. When the table shrinks to two players, the vault freezes and the match continues as a chia-gaming heads-up session.
 
 ## Trust model
 

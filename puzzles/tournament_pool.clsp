@@ -1,0 +1,119 @@
+; DAT tournament / sit-and-go pool coin (CAT inner puzzle).
+;
+; One coin per entry. The coin amount is the buy-in. Creating the coin is the
+; deposit: this puzzle does not grow a single vault, because a CAT parent cannot
+; emit more than it holds unless a CAT ring is balanced elsewhere.
+;
+; Curried parameters are fixed for the life of the coin. The solution selects:
+;   mode 0  refund  — after REFUND_AFTER_SECONDS, pay BUY_IN to PLAYER_PUZZLE_HASH
+;   mode 1  settle  — AUTHORIZER_PK signs the payout list; amounts must sum to BUY_IN
+;
+; Payout rows are cons pairs (puzzle_hash . amount), not proper lists.
+; Settle pays up to 16 outputs so one entry coin can be split across places.
+; A tournament bundle spends every entry coin. The driver, not this puzzle,
+; assigns slices of the prize table so each coin still conserves its buy-in.
+;
+; Run as the inner puzzle of a DAT CAT. CREATE_COIN puzzle hashes are wallet
+; inner puzzle hashes; the CAT layer wraps them back into DAT coins.
+; Do not put a singleton layer on this puzzle: settle emits one coin per paid place.
+;
+; Compiled mod hash (tree hash of puzzles/tournament_pool.hex):
+; 6e28b139a89c029cd0ea2caf8ee3bd9c08241e4315b336220bacfb9d28540c44
+
+(mod (
+    TOURNAMENT_ID
+    BUY_IN
+    PLAYER_PUZZLE_HASH
+    AUTHORIZER_PK
+    REFUND_AFTER_SECONDS
+    mode
+    payouts
+  )
+
+  (defconstant CREATE_COIN 51)
+  (defconstant AGG_SIG_ME 50)
+  (defconstant ASSERT_MY_AMOUNT 73)
+  (defconstant ASSERT_SECONDS_RELATIVE 80)
+  (defconstant MAX_PAYOUTS 16)
+
+  (defun sha256tree (TREE)
+    (if (l TREE)
+      (sha256 2 (sha256tree (f TREE)) (sha256tree (r TREE)))
+      (sha256 1 TREE)
+    )
+  )
+
+  (defun count_payouts (rows)
+    (if rows
+      (+ 1 (count_payouts (r rows)))
+      0
+    )
+  )
+
+  (defun sum_payouts (rows)
+    (if rows
+      (+ (r (f rows)) (sum_payouts (r rows)))
+      0
+    )
+  )
+
+  (defun payouts_are_positive (rows)
+    (if rows
+      (if (> (r (f rows)) 0)
+        (payouts_are_positive (r rows))
+        ()
+      )
+      1
+    )
+  )
+
+  (defun payout_coins (rows)
+    (if rows
+      (c (list CREATE_COIN (f (f rows)) (r (f rows))) (payout_coins (r rows)))
+      ()
+    )
+  )
+
+  ; Pass the curried atoms in. This compiler quotes a mod parameter by name
+  ; when a defun mentions it directly, which would drop the tournament id
+  ; and the player out of the authorizer message.
+  (defun settle_message (tournament_id player_puzzle_hash rows)
+    (sha256tree
+      (c "DAT_POKER_TOURNAMENT_SETTLE"
+        (c tournament_id
+          (c player_puzzle_hash rows)
+        )
+      )
+    )
+  )
+
+  (if (= mode 0)
+    (if (> BUY_IN 0)
+      (list
+        (list ASSERT_MY_AMOUNT BUY_IN)
+        (list ASSERT_SECONDS_RELATIVE REFUND_AFTER_SECONDS)
+        (list CREATE_COIN PLAYER_PUZZLE_HASH BUY_IN)
+      )
+      (x)
+    )
+    (if (= mode 1)
+      (if (payouts_are_positive payouts)
+        (if (> (count_payouts payouts) MAX_PAYOUTS)
+          (x)
+          (if (= (sum_payouts payouts) BUY_IN)
+            (c
+              (list ASSERT_MY_AMOUNT BUY_IN)
+              (c
+                (list AGG_SIG_ME AUTHORIZER_PK (settle_message TOURNAMENT_ID PLAYER_PUZZLE_HASH payouts))
+                (payout_coins payouts)
+              )
+            )
+            (x)
+          )
+        )
+        (x)
+      )
+      (x)
+    )
+  )
+)

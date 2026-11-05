@@ -1,0 +1,20 @@
+{
+  "users": [
+    {
+      "id": "user_13279b31129f9d84",
+      "username": "slotslogin",
+      "usernameKey": "slotslogin",
+      "email": "slotslogin@test.com",
+      "passwordSalt": "6d4f92ffdd3625074139f45109336c32",
+      "passwordHash": "51971fc78686af5ada60c7ba3052967bbfe20709a7bc3b1d8fe0cb5d33c4589d",
+      "sageAddress": "",
+      "sagePubkey": "",
+      "createdAt": "2026-10-31T06:26:11.238Z",
+      "emailVerifyHash": "",
+      "emailVerifyExpiresAt": "",
+      "emailVerifiedAt": "2026-10-31T06:31:08.748Z",
+      "playCountryCode": "US",
+      "playEligibilityAt": "2026-10-31T06:31:08.749Z"
+    }
+  ]
+}

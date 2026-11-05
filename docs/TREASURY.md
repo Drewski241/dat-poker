@@ -138,7 +138,21 @@ TREASURY_HOST=0.0.0.0                            # listen for API server
 TREASURY_PORT=4200
 ```
 
-Sage RPC (`9257`) stays **localhost-only**. Firewall `:4200` so **only the game API server IP** can call `/payout` — not the public internet.
+Sage RPC (`9257`) stays **localhost-only**. Firewall `:4200` so **only the game API server IP** can call `/payout` and `/locks` — not the public internet.
+
+## House buy-in lock
+
+A heads-up table seats the house from the DAT treasury. With many testers online, each of those seats reserves its buy-in until that tester leaves, so the games cannot all draw the same DAT.
+
+Set `DAT_TREASURY_BANKROLL_MOJOS` to the treasury DAT balance in CAT mojos (1000 mojos = 1 DAT). When that value is set on the game API, the API keeps the lock book itself. When it is unset and `DAT_TREASURY_PAYOUT_URL` points at this service, the API locks through it:
+
+- `POST /locks` `{ tableId, amountMojos }` reserves the house buy-in (409 when free DAT is short)
+- `POST /locks/settle` `{ tableId, spentMojos }` drops the reservation after the tester leaves. `spentMojos` is the DAT already paid out of the treasury
+- `GET /locks` shows spendable, locked, and free amounts
+
+This is a reservation ledger, not an on-chain coin lock. chia-gaming does not custody DAT. Restarting the treasury service clears the reservations, so restart it only when no heads-up game is sitting.
+
+If this service is an older build and `POST /locks` returns 404, the game API does not show that as “Not Found”. It locks on the game host instead, using `DAT_TREASURY_BANKROLL_MOJOS` or a 100,000 DAT ceiling until that value is set.
 
 ---
 

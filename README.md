@@ -1,6 +1,6 @@
 # DAT POKER
 
-Global-scale poker on the **Chia blockchain** with off-chain gameplay and on-chain settlement via [chia-gaming](https://github.com/Chia-Network/chia-gaming) state channels.
+Global-scale poker on the **Chia blockchain**. Every heads-up game uses a [chia-gaming](https://github.com/Chia-Network/chia-gaming) state channel. Tables of three or more settle in a DAT vault and move onto that channel when two players remain. Wagers are the **DAT governance token**. XCH is a network fee, not a stake.
 
 **Account funding:** player buy-ins and bankrolls use the **DAT Governance Token** (Chia CAT). See [docs/DAT_TOKEN.md](./docs/DAT_TOKEN.md).
 
@@ -30,21 +30,26 @@ Configure `.env` from `.env.example`:
 - `DAT_GOVERNANCE_TOKEN_ASSET_ID` — your DAT CAT asset id
 - `DAT_MIN_BUY_IN_MOJOS=1000000` — 1000 DAT (1000 mojos per whole token)
 
-See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (connect → buy in → play vs house → withdraw).
+See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (connect → daily redeem → play poker or slots on one stack → withdraw).
+
+Spirit Slots: `/slots` — **1 DAT per spin**, shared table stack with poker, progressive jackpot. EC2 redeploy: [docs/DEPLOY_EC2.md](./docs/DEPLOY_EC2.md) / [deploy/aws-ec2/DEPLOY.md](./deploy/aws-ec2/DEPLOY.md).
 
 For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a **separate treasury host**; copy `.env.treasury.example` → `.env`, run `pnpm treasury:check`, then point the game API at it with `DAT_TREASURY_PAYOUT_URL`. See [docs/TREASURY.md](./docs/TREASURY.md).
+
+Set `DAT_TREASURY_BANKROLL_MOJOS` to that treasury's DAT balance before testers join heads-up. Each heads-up seat locks the house buy-in until the tester leaves. A shared test deploy is described in [docs/AWS_TEST.md](./docs/AWS_TEST.md).
 
 ## Monorepo layout
 
 | Path | Purpose |
 |------|---------|
 | `packages/game-engine` | NLHE engine, commit-reveal shuffle, hand evaluation |
-| `packages/chia-bridge` | chia-gaming adapter, CAT payout offers, settlement proofs |
+| `packages/chia-bridge` | chia-gaming adapter, CAT payout offers, tournament pool spends |
+| `puzzles/tournament_pool.clsp` | Per-entry DAT CAT inner puzzle for sit-and-go and MTT buy-ins |
 | `packages/shared` | Types, variant catalog, DAT units, bet sizing |
 | `services/api` | REST API (tables, hands, wallet, withdraw) |
 | `services/treasury-payout` | Treasury offer builder for on-chain DAT payouts |
 | `services/gateway` | WebSocket realtime |
-| `apps/web` | Web client — Sage WalletConnect, NLHE vs house |
+| `apps/web` | Web client — Sage WalletConnect, NLHE vs house, Spirit Slots (`/slots`) |
 | `docs/` | Architecture, DAT token, Chia integration, roadmap |
 
 ## Create this repo on GitHub
