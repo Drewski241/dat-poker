@@ -1118,6 +1118,30 @@ button.slot-paytable-link:hover {
   text-align: center;
 }
 
+.slot-history {
+  margin-top: 1rem;
+}
+
+.slot-history-list {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.slot-history-list li {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.slot-history-meta {
+  margin: 0 0 0.2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 @media (max-width: 560px) {
   .vault-chips {
     grid-template-columns: repeat(3, minmax(0, 1fr));

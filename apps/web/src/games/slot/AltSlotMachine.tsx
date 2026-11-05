@@ -19,6 +19,8 @@ import {
 } from "./win-celebration.js";
 import { readStampedeShow, stampedeTimeline, type StampedeCue } from "./stampede-presentation.js";
 import { MINE_STOP_MS, mineTimeline, type MineCue } from "./mine-presentation.js";
+import { LINE_STOP_MS, lineWinCues, type LineCue } from "./line-presentation.js";
+import { SlotSpinHistory } from "./SlotSpinHistory.js";
 import "./slot.css";
 
 const REEL_COUNT = 5;
@@ -28,6 +30,12 @@ const DEFAULT_BET_OPTIONS = ["1000", "2000", "5000", "10000", "20000"];
 
 function allReelsLanded(): Set<number> {
   return new Set([0, 1, 2, 3, 4]);
+}
+
+function scatterSymbolFor(gameId: SlotGameId): string | undefined {
+  if (gameId === "house-edge") return "skull";
+  if (gameId === "spirit") return "scatter";
+  return undefined;
 }
 
 function cellKeys(cells: { reel: number; row: number }[]): Set<string> {
@@ -128,6 +136,7 @@ export function AltSlotMachine({
   const [motionCells, setMotionCells] = useState<Set<string>>(() => new Set());
   const [showPaylines, setShowPaylines] = useState(gameId !== "spirit-stampede");
   const [paytableOpen, setPaytableOpen] = useState(false);
+  const [historyRevision, setHistoryRevision] = useState(0);
   const [celebration, setCelebration] = useState<{
     tier: WinTier;
     variant: number;
@@ -212,6 +221,7 @@ export function AltSlotMachine({
       }
       if (response.vaultBonus) noteUnlock(response.vaultBonus);
       setGrid(resultGrid.map((col) => [...col]));
+      setHistoryRevision((revision) => revision + 1);
 
       const grossWin =
         BigInt(response.lineWinMojos ?? "0") + BigInt(response.progressiveWinMojos ?? "0");
@@ -301,6 +311,34 @@ export function AltSlotMachine({
     [clearTimers],
   );
 
+  const showBoard = useCallback(
+    (resultGrid: string[][], cues: LineCue[], onDone: () => void) => {
+      const step = (index: number) => {
+        const cue = cues[index];
+        if (!cue) {
+          onDone();
+          return;
+        }
+        setSpinning(false);
+        setReelStatus(null);
+        setLockedReels(new Set());
+        setLandedReels(allReelsLanded());
+        setGrid(resultGrid.map((col) => [...col]));
+        setHighlights(cellKeys(cue.cells));
+        setWinningLineIndices(cue.lineIndex == null ? new Set() : new Set([cue.lineIndex]));
+        setSpinResult(cue.label);
+        const hold = window.setTimeout(() => step(index + 1), cue.ms);
+        timersRef.current.push(hold);
+      };
+      setReelStatus("Spinning…");
+      animateToGrid(resultGrid, () => {
+        if (cues.length === 0) onDone();
+        else step(0);
+      }, { stopMs: LINE_STOP_MS });
+    },
+    [animateToGrid],
+  );
+
   const onSpin = useCallback(async () => {
     if (!canSpin || spinLockRef.current) return;
     spinLockRef.current = true;
@@ -314,19 +352,27 @@ export function AltSlotMachine({
     setMotionCells(new Set());
     const stampede = gameId === "spirit-stampede";
     const mine = gameId === "mine-mojo";
-    if (stampede || mine) {
-      setPresenting(true);
-      setReelStatus("Spinning…");
-      setSpinning(true);
-      setLandedReels(new Set());
-    }
+    setPresenting(true);
+    setReelStatus("Spinning…");
+    setSpinning(true);
+    setLandedReels(new Set());
     const release = () => {
       spinLockRef.current = false;
     };
     try {
       const response = await api.spinSlotGame(gameId, playerId, selectedBetMojos);
       if (!stampede && !mine) {
-        animateToGrid(response.result.grid, () => {
+        const cues = lineWinCues({
+          grid: response.result.grid,
+          lineWins: response.result.lineWins ?? [],
+          scatterCount: response.result.scatterCount,
+          scatterMultiplier: response.result.scatterMultiplier,
+          scatterSymbol: scatterSymbolFor(gameId),
+          wonProgressive: response.wonProgressive,
+          progressiveLabel: `Progressive jackpot! · ${meta.progressiveHint}`,
+          symbolLabel: (symbol) => symbolDisplay(gameId, symbol).label,
+        });
+        showBoard(response.result.grid, cues, () => {
           release();
           void refreshSession(playerId);
           applySpinResult(response, response.result.grid);
@@ -467,23 +513,34 @@ export function AltSlotMachine({
       setMotionCells(new Set());
       setSpinResult((e as Error).message);
     }
-  }, [animateToGrid, applySpinResult, canSpin, gameId, playerId, refreshSession, selectedBetMojos]);
+  }, [animateToGrid, applySpinResult, canSpin, gameId, meta.progressiveHint, playerId, refreshSession, selectedBetMojos, showBoard]);
 
   const onDraw = useCallback(async () => {
     if (!holdDrawActive) return;
+    setPresenting(true);
     setSpinning(true);
+    setCelebration(null);
     try {
       const response = await api.pokerHandsDraw(playerId, [...heldReels]);
       setHoldDrawActive(false);
-      animateToGrid(response.result.grid, () => {
+      const drawn = response as SlotSpinApiResult;
+      const cues = lineWinCues({
+        grid: drawn.result.grid,
+        lineWins: drawn.result.lineWins ?? [],
+        wonProgressive: drawn.wonProgressive,
+        progressiveLabel: "Progressive jackpot! · Royal flush on the center payline",
+        symbolLabel: (symbol) => symbolDisplay("poker-hands", symbol).label,
+      });
+      showBoard(drawn.result.grid, cues, () => {
         void refreshSession(playerId);
-        applySpinResult(response as SlotSpinApiResult, response.result.grid);
+        applySpinResult(drawn, drawn.result.grid);
       });
     } catch (e) {
+      setPresenting(false);
       setSpinning(false);
       setSpinResult((e as Error).message);
     }
-  }, [animateToGrid, applySpinResult, heldReels, holdDrawActive, playerId, refreshSession]);
+  }, [applySpinResult, heldReels, holdDrawActive, playerId, refreshSession, showBoard]);
 
   const toggleHold = (reel: number) => {
     if (!holdDrawActive || spinning) return;
@@ -653,6 +710,13 @@ export function AltSlotMachine({
           )}
         </div>
       </div>
+
+      <SlotSpinHistory
+        gameId={gameId}
+        playerId={playerId}
+        ticker={ticker}
+        revision={historyRevision}
+      />
 
       {celebration && (
         <SlotWinCelebration

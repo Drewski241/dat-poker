@@ -27,7 +27,7 @@ export type StampedeShow = {
 export const STAMPEDE_STOP_MS = [1500, 1950, 2400, 2850, 3300] as const;
 /** Respin leaves reel 3 (index 2) locked on the expanded Dust Wild. */
 export const STAMPEDE_RESPIN_STOP_MS = [1300, 1800, 0, 2300, 2800] as const;
-export const WIN_BEAT_MS = 1700;
+export const WIN_BEAT_MS = 2200;
 export const EXPAND_HOLD_MS = 1800;
 
 const EXPAND_CELLS: StampedeCell[] = [

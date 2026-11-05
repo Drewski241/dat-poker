@@ -16,11 +16,12 @@ import {
   shouldShowCelebration,
   type WinTier,
 } from "./win-celebration.js";
+import { LINE_STOP_MS, lineWinCues } from "./line-presentation.js";
+import { SlotSpinHistory } from "./SlotSpinHistory.js";
 import "./slot.css";
 
 const REEL_COUNT = 5;
 const ROW_COUNT = 3;
-const REEL_STOP_MS = [900, 1150, 1400, 1650, 1900];
 const DEFAULT_BET_OPTIONS = ["1000", "2000", "5000", "10000", "20000"];
 
 function SymbolCell({
@@ -127,6 +128,8 @@ export function SlotMachine({
     Array.from({ length: REEL_COUNT }, () => Array.from({ length: ROW_COUNT }, () => randomSymbol())),
   );
   const [spinning, setSpinning] = useState(false);
+  const [presenting, setPresenting] = useState(false);
+  const [historyRevision, setHistoryRevision] = useState(0);
   const [stoppedReels, setStoppedReels] = useState(REEL_COUNT);
   const [celebration, setCelebration] = useState<{
     tier: WinTier;
@@ -153,6 +156,7 @@ export function SlotMachine({
   const canSpin =
     Boolean(playerId && session?.active) &&
     !spinning &&
+    !presenting &&
     !bonusOpen &&
     !session?.handInProgress &&
     balanceMojos >= betMojos;
@@ -171,6 +175,7 @@ export function SlotMachine({
     setSpinResult(null);
     setHighlights(new Set());
     setWinningLineIndices(new Set());
+    setPresenting(false);
     setSpinning(true);
     setStoppedReels(0);
     stoppedReelsRef.current = 0;
@@ -192,7 +197,7 @@ export function SlotMachine({
       }, 80);
       timersRef.current.push(tick);
 
-      REEL_STOP_MS.forEach((delay, reelIndex) => {
+      LINE_STOP_MS.forEach((delay, reelIndex) => {
         const t = window.setTimeout(() => {
           stoppedReelsRef.current = reelIndex + 1;
           setStoppedReels(reelIndex + 1);
@@ -209,46 +214,76 @@ export function SlotMachine({
             setGrid(resultGrid.map((col) => [...col]) as SymbolId[][]);
             setSpinning(false);
             setStatus("");
-            void refreshSession(playerId);
 
             const { wins, serverAuthoritative } = resolveSpinDisplayWins(response, resultGrid);
             const grossWinMojos = grossWinMojosFromSpin(response, betMojos, resultGrid);
-            const winCells = new Set<string>();
-            const winLines = new Set<number>();
-            for (const w of wins) {
-              winLines.add(w.lineIndex);
-              for (const cell of w.cells) {
-                winCells.add(`${cell.reel}-${cell.row}`);
+            const cues = lineWinCues({
+              grid: resultGrid,
+              lineWins: wins,
+              scatterCount: response.result.scatterCount,
+              scatterMultiplier: response.result.scatterMultiplier,
+              scatterSymbol: "scatter",
+              wonProgressive: response.wonProgressive,
+              progressiveLabel: "Progressive jackpot! · 5× Lucky 7 on the center payline",
+              symbolLabel: (symbol) => SLOT_SYMBOLS[symbol as SymbolId]?.label ?? symbol,
+            });
+            const finish = () => {
+              const winCells = new Set<string>();
+              const winLines = new Set<number>();
+              for (const w of wins) {
+                winLines.add(w.lineIndex);
+                for (const cell of w.cells) winCells.add(`${cell.reel}-${cell.row}`);
               }
+              setPresenting(false);
+              setHighlights(winCells);
+              setWinningLineIndices(winLines);
+              setSpinResult(
+                buildSpinResultMessage(response, ticker, wins, grossWinMojos, serverAuthoritative),
+              );
+              setHistoryRevision((revision) => revision + 1);
+              void refreshSession(playerId);
+              if (response.vaultBonus) noteUnlock(response.vaultBonus);
+              const tier = resolveWinTier(
+                grossWinMojos,
+                betMojos,
+                response.wonProgressive,
+                response.result.winTier,
+                "spirit",
+              );
+              if (shouldShowCelebration(tier, grossWinMojos, betMojos)) {
+                setCelebration({
+                  tier,
+                  variant: pickCelebrationVariant("spirit", tier),
+                  payoutMojos: grossWinMojos,
+                });
+              } else {
+                setCelebration(null);
+              }
+            };
+            if (cues.length === 0) {
+              finish();
+              return;
             }
-            setHighlights(winCells);
-            setWinningLineIndices(winLines);
-            setSpinResult(
-              buildSpinResultMessage(response, ticker, wins, grossWinMojos, serverAuthoritative),
-            );
-            if (response.vaultBonus) noteUnlock(response.vaultBonus);
-
-            const tier = resolveWinTier(
-              grossWinMojos,
-              betMojos,
-              response.wonProgressive,
-              response.result.winTier,
-              "spirit",
-            );
-            if (shouldShowCelebration(tier, grossWinMojos, betMojos)) {
-              setCelebration({
-                tier,
-                variant: pickCelebrationVariant("spirit", tier),
-                payoutMojos: grossWinMojos,
-              });
-            } else {
-              setCelebration(null);
-            }
+            setPresenting(true);
+            const step = (index: number) => {
+              const cue = cues[index];
+              if (!cue) {
+                finish();
+                return;
+              }
+              setHighlights(new Set(cue.cells.map((cell) => `${cell.reel}-${cell.row}`)));
+              setWinningLineIndices(cue.lineIndex == null ? new Set() : new Set([cue.lineIndex]));
+              setSpinResult({ text: cue.label, ok: true });
+              const hold = window.setTimeout(() => step(index + 1), cue.ms);
+              timersRef.current.push(hold);
+            };
+            step(0);
           }
         }, delay);
         timersRef.current.push(t);
       });
     } catch (e) {
+      setPresenting(false);
       setSpinning(false);
       setStatus("");
       setCelebration(null);
@@ -373,7 +408,7 @@ export function SlotMachine({
                   key={mojos}
                   type="button"
                   className={`slot-bet-chip${active ? " active" : ""}`}
-                  disabled={spinning}
+                  disabled={spinning || presenting}
                   aria-pressed={active}
                   onClick={() => setSelectedBetMojos(mojos)}
                 >
@@ -386,10 +421,12 @@ export function SlotMachine({
             Wager: <strong>{formatDatMojos(selectedBetMojos, ticker)}</strong>
           </p>
           <button type="button" className="slot-spin-btn" disabled={!canSpin} onClick={() => void onSpin()}>
-            {spinning ? "Spinning…" : "SPIN"}
+            {spinning ? "Spinning…" : presenting ? "Showing win…" : "SPIN"}
           </button>
         </div>
       </div>
+
+      <SlotSpinHistory gameId="spirit" playerId={playerId} ticker={ticker} revision={historyRevision} />
 
       {celebration && (
         <SlotWinCelebration

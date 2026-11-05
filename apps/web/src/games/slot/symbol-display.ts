@@ -13,6 +13,18 @@ export type SymbolDisplay = {
   pokerRank?: string;
 };
 
+const POKER_HAND_LABELS: Record<string, string> = {
+  pair: "Pair",
+  two_pair: "Two pair",
+  trips: "Three of a kind",
+  straight: "Straight",
+  flush: "Flush",
+  full_house: "Full house",
+  quads: "Four of a kind",
+  straight_flush: "Straight flush",
+  royal: "Royal flush",
+};
+
 const RANK_DISPLAY: Record<CardRank, string> = {
   "2": "2",
   "3": "3",
@@ -39,6 +51,8 @@ export function symbolDisplay(gameId: SlotGameId, id: string): SymbolDisplay {
     return sym ? { emoji: sym.emoji, label: sym.label } : { emoji: "?", label: id };
   }
   if (gameId === "poker-hands") {
+    const hand = POKER_HAND_LABELS[id];
+    if (hand) return { emoji: "🂡", label: hand };
     if (id.length >= 2 && id[0]! in CARD_EMOJI) {
       const suit = id[0] as keyof typeof CARD_EMOJI;
       const rank = id.slice(1) as CardRank;
