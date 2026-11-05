@@ -84,19 +84,21 @@ async function remoteJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export async function houseLockView(tableId?: string): Promise<HouseLockView> {
+  const local = localBook();
+  if (local) return toView(local.snapshot(tableId), tableId);
   const remote = treasuryServiceBaseUrl();
   if (remote) {
     const query = tableId ? `?tableId=${encodeURIComponent(tableId)}` : "";
     const body = await remoteJson<HouseLockView>(`${remote}/locks${query}`);
     return { ...body, configured: true };
   }
-  const local = localBook();
-  if (!local) return toView(null);
-  return toView(local.snapshot(tableId), tableId);
+  return toView(null);
 }
 
 /** Reserve the house buy-in. Returns null when dev mode has no treasury configured. */
 export async function lockHouseBuyIn(tableId: string, amount: bigint): Promise<HouseLockSnapshot | null> {
+  const local = localBook();
+  if (local) return local.lock(tableId, amount);
   const remote = treasuryServiceBaseUrl();
   if (remote) {
     const body = await remoteJson<{
@@ -116,18 +118,22 @@ export async function lockHouseBuyIn(tableId: string, amount: bigint): Promise<H
     };
   }
 
-  const local = localBook();
-  if (!local) {
-    if (process.env.DAT_ALLOW_DEV_BUYIN === "true") return null;
-    throw new Error(
-      "House buy-in cannot be locked. Set DAT_TREASURY_BANKROLL_MOJOS or DAT_TREASURY_PAYOUT_URL to the DAT treasury.",
-    );
-  }
-  return local.lock(tableId, amount);
+  if (process.env.DAT_ALLOW_DEV_BUYIN === "true") return null;
+  throw new Error(
+    "House buy-in cannot be locked. Set DAT_TREASURY_BANKROLL_MOJOS or DAT_TREASURY_PAYOUT_URL to the DAT treasury.",
+  );
 }
 
 /** Drop the table reservation. `spentMojos` already left the treasury as a tester payout. */
 export async function settleHouseTable(tableId: string, spentMojos: bigint): Promise<void> {
+  const local = localBook();
+  if (local) {
+    const existing = local.snapshot(tableId).tableLockedMojos;
+    if (existing == null && spentMojos === 0n) return;
+    local.consume(tableId, spentMojos, false);
+    local.release(tableId);
+    return;
+  }
   const remote = treasuryServiceBaseUrl();
   if (remote) {
     await remoteJson(`${remote}/locks/settle`, {
@@ -136,12 +142,6 @@ export async function settleHouseTable(tableId: string, spentMojos: bigint): Pro
     });
     return;
   }
-  const local = localBook();
-  if (!local) return;
-  const existing = local.snapshot(tableId).tableLockedMojos;
-  if (existing == null && spentMojos === 0n) return;
-  local.consume(tableId, spentMojos, false);
-  local.release(tableId);
 }
 
 export { InsufficientHouseBankrollError };

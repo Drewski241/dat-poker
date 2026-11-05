@@ -30,36 +30,31 @@ CHIA_GAMING_GAME_URL=http://localhost:3000
 
 ## Integration modes
 
-Player wagers are **DAT only**. `xchWagerMojos` is always `0`. XCH may pay a Chia network fee; it is not a pot. chia-gaming's channel coin is still an XCH primitive upstream, and CAT stakes inside that coin are not available yet, so DAT stays in this platform's bonds. The hub (`/ws/game`) relays potato messages and does not hold the pot.
+### Mode A — Native state channel (2 players)
 
-`resolveHybridPlay()` in `@dat-poker/shared` picks the mode from who is seated. Every variant sets `headsUpViaChiaGaming`. Only Calpoker sets `chiaGamingNative` (the upstream referee). Other variants run on the DAT POKER engine; the channel carries the co-signed result.
+Best for: Calpoker, heads-up NLHE, high-trust P2P stakes.
 
-### Heads-up channel (exactly 2 players)
+- Use `ChiaGamingClient.createHeadToHeadRoom()`
+- Wallets open/close channel via chia-gaming UI
+- Platform records session metadata only
 
-Used for every variant, including the heads-up stretch of a Sit & Go or tournament.
+### Mode B — Platform escrow + batch settlement (3–10 players)
 
-- `POST /v1/tables` with `maxSeats: 2` (or any table once two players remain)
-- Session relay is `{CHIA_GAMING_LOBBY_URL}` → `ws://…/ws/game`
-- `ChiaGamingClient.createHeadToHeadRoom()` records the DAT stake and refuses `unit: "xch"`
-- Calpoker uses the upstream referee. NLHE and the other variants use `engine-result-on-channel`
+Best for: cash games, SNGs.
 
-### DAT table vault (3–10 players)
+- Buy-ins tracked in platform treasury service (future Chialisp escrow coins)
+- Hand ends → `buildSettlementProof()` → settlement worker submits Chia tx
+- Event log + `stateRootHash` enable third-party audit
 
-chia-gaming channels are pairwise, so a multiway pot cannot live in one channel. This vault is our table solution. It does not wait on upstream multi-table tournament work.
+### Mode C — Tournament pools
 
-- Each seat's DAT stack is the bond
-- After a hand, `POST /v1/tables/:id/vault/cosign` records acceptance of the stack vector
-- The vector sticks when every seated player has co-signed
-- A player who withholds a signature leaves balances on the last co-signed vector
-- Cash rings, Sit & Gos, and tournament tables all use this while three or more players remain
+Best for: sit-and-gos and MTTs. See [TOURNAMENT_POOL.md](./TOURNAMENT_POOL.md).
 
-### Heads-up promotion
-
-When a vault table drops to two players, the vault freezes (`frozen-for-heads-up`) and the same DAT stacks open a chia-gaming session. A later third player reopens a fresh vault. Tournament payouts stay DAT.
-
-### Not a wager
-
-`POST /v1/tables` with `unit: "xch"` or `unit: "cat"` returns 400. The only accepted unit is `dat`.
+- Each paid entry is its own DAT CAT locked to `puzzles/tournament_pool.clsp`
+- The prize pool is the set of those coins, not one coin that grows
+- Wallet signature is required to join
+- Free site DAT redeems are a separate ledger and do not create a pool coin
+- Settlement spends every entry coin; odd mojos go to first place
 
 ## Network configuration
 
@@ -72,7 +67,7 @@ WalletConnect project ID is required for production wallet flows. See [WALLETCON
 
 ## Next implementation steps
 
-1. Move DAT bonds into the channel coin when chia-gaming ships CAT stakes. Until then the channel records a zero XCH wager and DAT stays in the vault or session bond.
-2. Install per-variant referees so heads-up PLO, stud, and mixed games validate inside the channel, not only as an engine result.
-3. Add settlement worker service consuming hand-complete events.
+1. Wire real lobby API paths from chia-gaming OpenAPI (alpha APIs may change).
+2. Add settlement worker service consuming Kafka hand-complete events.
+3. Broadcast tournament pool spends (lock, refund, settle) through a wallet or coinset client. The puzzle and spend builder are in `puzzles/tournament_pool.clsp`.
 4. Simulator E2E test harness in CI (Docker compose profile).

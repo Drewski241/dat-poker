@@ -7,3 +7,4 @@ export * from "./sage-payout-offer.js";
 export * from "./cat-payout-offer.js";
 export * from "./treasury-payout-offer.js";
 export * from "./house-treasury-book.js";
+export * from "./tournament-pool.js";

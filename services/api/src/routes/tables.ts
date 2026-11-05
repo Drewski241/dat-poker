@@ -1,435 +1,1571 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
-import type { ChiaGamingClient } from "@dat-poker/chia-bridge";
-import {
-  freezeVaultForHeadsUp,
-  hashStackVector,
-  openDatHeadsUpSession,
-  openTableVault,
-  recordVaultConsent,
-  toGameRelayUrl,
-  withVaultSeats,
-  type DatHeadsUpSession,
-  type TableVault,
-} from "@dat-poker/chia-bridge";
-import { NlheTableEngine } from "@dat-poker/game-engine";
 import type { PokerVariant, TableConfig, TableFormat } from "@dat-poker/shared";
 import {
-  assertDatOnlyWager,
-  assertSeatCount,
+  DAT_DAILY_FREEROLL,
+  DAT_MTT_DEFAULTS,
+  DAT_PLO_MTT_16,
+  DAT_PLO_MTT_500,
+  DAT_PLO_SNG_8,
+  DAT_SNG_DEFAULTS,
   DAT_TABLE_DEFAULTS,
-  getVariantMeta,
-  isTableFormat,
+  formatDatMojos,
+  isHousePlayerId,
+  isTournamentFormat,
+  normalizePokerVariant,
+  playthroughHandsRequired,
+  playthroughUnlockedMojos,
   resolveDatMinBuyInMojos,
-  resolveHybridPlay,
-  WagerPolicyError,
 } from "@dat-poker/shared";
-import { clearBuyIn, recordBuyIn } from "../buy-in-store.js";
 import {
-  houseLockView,
-  InsufficientHouseBankrollError,
-  lockHouseBuyIn,
-  settleHouseTable,
-} from "../house-lock.js";
+  createTableEngine,
+  MttEvent,
+  NlheTableEngine,
+  SngTournament,
+  type TableEngine,
+} from "@dat-poker/game-engine";
+import {
+  applyBuyInPlaythrough,
+  creditAccount,
+  debitAccount,
+  getAccountBalance,
+  getPlaythrough,
+  hasRedeemedToday,
+  reducePlaythroughPool,
+  setPlaythroughHands,
+  syncPlaythroughHeld,
+} from "../account-store.js";
+import { recordBuyIn, clearBuyIn } from "../buy-in-store.js";
+import {
+  forgetHeadsUpTable,
+  headsUpSessionPublic,
+  isHeadsUpChannel,
+  markHeadsUpTable,
+  openHeadsUpChannel,
+  releaseHeadsUpHouse,
+  resetHeadsUpChannelsForTests,
+} from "../heads-up-channel.js";
+import { InsufficientHouseBankrollError } from "../house-lock.js";
+import { HOUSE_PLAYER_ID } from "../house-id.js";
+import {
+  readMtt16FieldSize,
+  readMtt16MaxHumans,
+  readMttFieldSize,
+  readMttMaxHumans,
+} from "../mtt-env.js";
+import { redactHandForViewer } from "../redact-hand.js";
+import { allowIpBucket } from "../ip-rate-limit.js";
+import { readPlayerSession, requirePlayer, sessionMatchesClaim } from "../player-session.js";
 import {
   type BuyInProof,
   readDatTokenConfig,
   validateBuyInProof,
 } from "../wallet-config.js";
+import {
+  clearPlayerActivity,
+  getLastPlayerActivity,
+  inactiveUnseatMs,
+  touchPlayerActivity,
+} from "../player-activity.js";
+import {
+  getHandHistory,
+  maybeRecordCompletedHand,
+  resetHandHistoryForTests,
+} from "../hand-history-store.js";
+import { playHouseIfDue } from "../house-play.js";
+import { playHumansIfDue, resetHumanTurnClockForTests } from "../human-play.js";
+import { maybeDealTournamentHandOnPoll } from "../tournament-poll-deal.js";
+import { advanceSiblingMttHouseTables } from "../mtt-house-advance.js";
+import {
+  getDailyRitual,
+  recordFreerollEntry,
+  recordFreerollFinish,
+  releaseFreerollEntry,
+  resetRitualForTests,
+} from "../ritual-store.js";
+import {
+  getMtt16NftPromoMeta,
+  loadMtt16NftChallengeStore,
+  mtt16NftChallengePublicView,
+  readMtt16NftChallengeConfig,
+  recordMtt16FirstPlaceWin,
+} from "../mtt16-nft-challenge-store.js";
+import {
+  getMtt500NftPromoMeta,
+  loadMtt500NftChallengeStore,
+  mtt500NftChallengePublicView,
+  readMtt500NftChallengeConfig,
+  recordMtt500FirstPlaceWin,
+} from "../mtt500-nft-challenge-store.js";
 
-const tables = new Map<string, NlheTableEngine>();
-const metas = new Map<string, TableMeta>();
-const sessions = new Map<string, DatHeadsUpSession>();
-const vaults = new Map<string, TableVault>();
-let chiaClient: ChiaGamingClient | null = null;
-
-export const HOUSE_PLAYER_ID = "dat-poker:house";
-
-export interface TableMeta {
-  variant: PokerVariant;
-  format: TableFormat;
-  maxSeats: number;
-  assetId: string | null;
+export interface UnseatedInactivePlayer {
+  playerId: string;
+  stackMojos: string;
+  inactiveForMs: number;
 }
 
-function samePair(session: DatHeadsUpSession, a: string, b: string): boolean {
-  return (
-    (session.playerA === a && session.playerB === b) ||
-    (session.playerA === b && session.playerB === a)
-  );
+export interface UnseatInactiveResult {
+  unseated: UnseatedInactivePlayer[];
 }
 
-function buildHybridView(tableId: string) {
-  const table = tables.get(tableId);
-  const meta = metas.get(tableId);
-  if (!table || !meta) return null;
-  const live = table.getSeatedPlayers().filter((seat) => seat.stackMojos > 0n);
-  const decision = resolveHybridPlay({
-    seated: live.length,
-    maxSeats: meta.maxSeats,
-    format: meta.format,
-    variant: meta.variant,
-  });
-  const session = sessions.get(tableId);
-  const vault = vaults.get(tableId);
+const tables = new Map<string, TableEngine>();
+const sngByTable = new Map<string, SngTournament>();
+const mttByTable = new Map<string, MttEvent>();
+const mtt16WinRecorded = new Set<string>();
+const mtt500WinRecorded = new Set<string>();
+const playerLabels = new Map<string, string>();
+export { HOUSE_PLAYER_ID };
+
+function rememberLabel(playerId: string, displayAddress: string): void {
+  if (displayAddress) playerLabels.set(playerId, displayAddress);
+}
+
+function humanCount(table: TableEngine): number {
+  return table.getSeatedPlayers().filter((s) => !isHousePlayerId(s.playerId)).length;
+}
+
+function isSngTable(table: TableEngine): boolean {
+  return isTournamentFormat(table.getConfig().format);
+}
+
+export function lobbyPresence(): {
+  seatedHumans: number;
+  humansInHand: number;
+  tableCount: number;
+} {
+  const seated = new Set<string>();
+  const inHand = new Set<string>();
+  for (const table of tables.values()) {
+    for (const s of table.getSeatedPlayers()) {
+      if (isHousePlayerId(s.playerId)) continue;
+      seated.add(s.playerId);
+    }
+    const hand = table.getHandState();
+    if (!hand) continue;
+    for (const p of hand.players) {
+      if (isHousePlayerId(p.playerId) || p.folded) continue;
+      inHand.add(p.playerId);
+    }
+  }
   return {
-    ...decision,
-    session: session?.status === "ready" ? session : null,
-    vault:
-      vault && (decision.mode === "dat-table-vault" || vault.status === "frozen-for-heads-up")
-        ? vault
-        : null,
+    seatedHumans: seated.size,
+    humansInHand: inHand.size,
+    tableCount: tables.size,
   };
 }
 
-/** Recompute channel vs vault from who is actually seated. */
-export function syncTableHybrid(tableId: string) {
-  const table = tables.get(tableId);
-  const meta = metas.get(tableId);
-  if (!table || !meta || !chiaClient) return null;
+function createTable(
+  maxSeats = 6,
+  variant: PokerVariant = "nlhe",
+): { tableId: string; table: TableEngine; config: TableConfig } {
+  const id = randomUUID();
+  const dat = readDatTokenConfig();
+  const useDatStakes = Boolean(dat.assetId) || dat.devBuyInEnabled;
+  const minBuyIn = useDatStakes
+    ? resolveDatMinBuyInMojos(dat.minBuyInMojos)
+    : DAT_TABLE_DEFAULTS.minBuyInMojos;
+  const config: TableConfig = {
+    id,
+    variant,
+    format: "cash",
+    maxSeats,
+    smallBlindMojos: BigInt(
+      useDatStakes ? DAT_TABLE_DEFAULTS.smallBlindMojos : 50_000_000_000n,
+    ),
+    bigBlindMojos: BigInt(useDatStakes ? DAT_TABLE_DEFAULTS.bigBlindMojos : 100_000_000_000n),
+    minBuyInMojos: minBuyIn,
+    maxBuyInMojos: useDatStakes ? DAT_TABLE_DEFAULTS.maxBuyInMojos : 20_000_000_000_000n,
+    rakeBps: 500,
+  };
+  const table = createTableEngine(config);
+  tables.set(id, table);
+  return { tableId: id, table, config };
+}
 
-  const seated = table.getSeatedPlayers().filter((seat) => seat.stackMojos > 0n);
-  const decision = resolveHybridPlay({
-    seated: seated.length,
-    maxSeats: meta.maxSeats,
-    format: meta.format,
-    variant: meta.variant,
-  });
+function defaultHouseBuyIn(): bigint {
+  const dat = readDatTokenConfig();
+  return resolveDatMinBuyInMojos(dat.minBuyInMojos);
+}
 
-  if (decision.mode === "waiting") {
-    const session = sessions.get(tableId);
-    if (session?.status === "ready") {
-      sessions.set(tableId, { ...session, status: "closed" });
+/**
+ * Remove human players who have not polled or acted recently. Only runs between hands;
+ * stacks are returned to the in-game account ledger (same as voluntary leave).
+ */
+export function unseatInactivePlayers(
+  tableId: string,
+  table: TableEngine,
+  nowMs: number,
+): UnseatInactiveResult {
+  const unseated: UnseatedInactivePlayer[] = [];
+  if (table.isHandInProgress() || isSngTable(table)) {
+    return { unseated };
+  }
+  const threshold = inactiveUnseatMs();
+  persistTablePlaythrough(table);
+  for (const seated of [...table.getSeatedPlayers()]) {
+    if (isHousePlayerId(seated.playerId)) continue;
+    const last = getLastPlayerActivity(seated.playerId);
+    if (last === undefined) {
+      touchPlayerActivity(seated.playerId, nowMs);
+      continue;
     }
-    vaults.delete(tableId);
-  } else if (decision.mode === "chia-gaming-heads-up") {
-    const [first, second] = seated;
-    if (!first || !second) {
-      throw new Error("Heads-up sync missing seats");
-    }
-    const existingVault = vaults.get(tableId);
-    if (existingVault) {
-      vaults.set(
-        tableId,
-        freezeVaultForHeadsUp({
-          ...existingVault,
-          seats: seated.map((seat) => ({
-            playerId: seat.playerId,
-            seatIndex: seat.seatIndex,
-            bondMojos: seat.stackMojos,
-          })),
-        }),
-      );
-    }
-    const prev = sessions.get(tableId);
-    if (prev && prev.status === "ready" && samePair(prev, first.playerId, second.playerId)) {
-      const stakeFor = (playerId: string) =>
-        playerId === first.playerId ? first.stackMojos : second.stackMojos;
-      sessions.set(tableId, {
-        ...prev,
-        playerAStakeMojos: stakeFor(prev.playerA),
-        playerBStakeMojos: stakeFor(prev.playerB),
+    const inactiveForMs = nowMs - last;
+    if (inactiveForMs < threshold) continue;
+    try {
+      const cash = table.cashOutPlayer(seated.playerId);
+      creditAccount(seated.playerId, cash.stackMojos, {
+        type: "table_return",
+        ref: tableId,
       });
+      syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId));
+      clearBuyIn(tableId, seated.playerId);
+      clearPlayerActivity(seated.playerId);
+      unseated.push({
+        playerId: seated.playerId,
+        stackMojos: cash.stackMojos.toString(),
+        inactiveForMs,
+      });
+    } catch {
+      /* already unseated or hand started */
+    }
+  }
+  if (unseated.length > 0) {
+    if (isHeadsUpChannel(tableId) && humanCount(table) === 0) {
+      void releaseHeadsUpHouse(tableId, table);
     } else {
-      sessions.set(
-        tableId,
-        openDatHeadsUpSession({
-          tableId,
-          variant: meta.variant,
-          playerA: first.playerId,
-          playerB: second.playerId,
-          playerAStakeMojos: first.stackMojos,
-          playerBStakeMojos: second.stackMojos,
-          assetId: meta.assetId,
-          hubPageUrl: `${chiaClient.lobbyBaseUrl}/`,
-          gameRelayUrl: toGameRelayUrl(chiaClient.lobbyBaseUrl),
-        }),
-      );
+      seatHouseIfNeeded(table, defaultHouseBuyIn());
+    }
+  }
+  return { unseated };
+}
+
+function maintainTable(
+  tableId: string,
+  table: TableEngine,
+  viewerId?: string,
+): UnseatInactiveResult {
+  const nowMs = Date.now();
+  const mtt = mttByTable.get(tableId);
+  const sng = sngByTable.get(tableId);
+  if (mtt) {
+    autoFillAndStartMtt(mtt);
+  }
+  if (sng) {
+    autoFillAndStartSng(sng);
+  }
+  sng?.syncBlindClock(nowMs);
+  mtt?.syncBlindClock(nowMs);
+  if (viewerId && table.hasPlayer(viewerId)) {
+    touchPlayerActivity(viewerId, nowMs);
+  }
+  if (table.isHandInProgress()) {
+    const hand = table.getHandState();
+    if (hand) {
+      const actor =
+        hand.actionSeat != null
+          ? hand.players.find((p) => p.seatIndex === hand.actionSeat)
+          : undefined;
+      if (actor && isHousePlayerId(actor.playerId)) {
+        playHouseIfDue(table);
+      } else if (actor && !isHousePlayerId(actor.playerId)) {
+        playHumansIfDue(tableId, table, nowMs);
+        playHouseIfDue(table);
+      } else if (actor?.allIn) {
+        table.advanceHandIfIdle();
+      }
+      persistTablePlaythrough(table);
+      maybeRecordCompletedHand(tableId, table);
+      finalizeSngIfNeeded(tableId, table);
     }
   } else {
-    const session = sessions.get(tableId);
-    if (session?.status === "ready") {
-      sessions.set(tableId, { ...session, status: "closed" });
+    ensureHouseFunded(table);
+    const dealHooks = {
+      onHandStarted: () => onTournamentHandStarted(tableId),
+      afterDeal: () => {
+        persistTablePlaythrough(table);
+        maybeRecordCompletedHand(tableId, table);
+        finalizeSngIfNeeded(tableId, table);
+      },
+    };
+    // Tournament engines are always Hold'em-family (NlheTableEngine).
+    maybeDealTournamentHandOnPoll(tableId, table as NlheTableEngine, mtt, sng, dealHooks);
+    // Clients often still poll the closed source table after final-table
+    // relocation; kick the destination so the first hand is not stuck waiting
+    // on a stale client-side runout flag.
+    const destId = mtt?.relocatedTo(tableId);
+    if (mtt && destId && destId !== tableId) {
+      registerMttTables(mtt);
+      const dest = tables.get(destId);
+      if (dest && !dest.isHandInProgress()) {
+        maybeDealTournamentHandOnPoll(destId, dest as NlheTableEngine, mtt, undefined, {
+          onHandStarted: () => onTournamentHandStarted(destId),
+          afterDeal: () => {
+            persistTablePlaythrough(dest);
+            maybeRecordCompletedHand(destId, dest);
+            finalizeSngIfNeeded(destId, dest);
+          },
+        });
+      }
     }
-    const existing = vaults.get(tableId);
-    if (!existing || existing.status === "frozen-for-heads-up") {
-      vaults.set(
-        tableId,
-        openTableVault({
-          tableId,
-          assetId: meta.assetId,
-          seats: seated,
-        }),
-      );
+    finalizeSngIfNeeded(tableId, table);
+  }
+  runMttHouseCatchup(tableId);
+  return unseatInactivePlayers(tableId, table, nowMs);
+}
+
+function tableSnapshot(
+  tableId: string,
+  table: TableEngine,
+  viewerId?: string,
+  maintenance?: UnseatInactiveResult,
+) {
+  return {
+    tableId,
+    maxSeats: table.getMaxSeats(),
+    players: table.getActivePlayerCount(),
+    humans: humanCount(table),
+    handInProgress: table.isHandInProgress(),
+    smallBlindMojos: table.getSmallBlindMojos().toString(),
+    bigBlindMojos: table.getBigBlindMojos().toString(),
+    format: table.getConfig().format,
+    variant: table.getConfig().variant,
+    headsUp: headsUpSessionPublic(tableId),
+    sng: tournamentSnapshot(tableId, viewerId),
+    houseSeatsAvailable: table.houseSeats().length,
+    full:
+      table.houseSeats().length === 0 &&
+      table.getActivePlayerCount() >= table.getMaxSeats(),
+    humanPlayerIds: table.getSeatedPlayers().filter((s) => !isHousePlayerId(s.playerId)).map((s) => s.playerId),
+    playthrough:
+      viewerId && !isHousePlayerId(viewerId)
+        ? playthroughFields(viewerId, table.getHandsPlayed(viewerId))
+        : null,
+    seats: table.getSeatedPlayers().map((s) => {
+      const house = isHousePlayerId(s.playerId);
+      const fields = house
+        ? {
+            handsPlayed: table.getHandsPlayed(s.playerId),
+            handsRequired: 0,
+            playthroughRemaining: 0,
+            unlockedMojos: "0",
+          }
+        : playthroughFields(s.playerId, table.getHandsPlayed(s.playerId));
+      return {
+        ...s,
+        displayAddress: playerLabels.get(s.playerId) ?? (house ? (s.playerId === HOUSE_PLAYER_ID ? "House" : s.playerId.replace("dat-poker:", "")) : s.playerId),
+        handsPlayed: fields.handsPlayed,
+        handsRequired: fields.handsRequired,
+        playthroughRemaining: fields.playthroughRemaining,
+        unlockedMojos: fields.unlockedMojos,
+      };
+    }),
+    hand: redactHandForViewer(table.getHandState(), viewerId),
+    lastHandResult: table.getLastHandResult(),
+    dealerButtonSeat: table.getDealerButtonSeat(),
+    ...(maintenance && maintenance.unseated.length > 0
+      ? { unseatedInactive: maintenance.unseated }
+      : {}),
+  };
+}
+
+function findPlayerTable(playerId: string): { tableId: string; table: TableEngine } | null {
+  for (const [tableId, table] of tables) {
+    if (table.hasPlayer(playerId)) {
+      return { tableId, table };
+    }
+  }
+  return null;
+}
+
+/** First table the player is seated at (poker / tournaments). */
+export function findSeatedPlayerTable(
+  playerId: string,
+): { tableId: string; table: TableEngine } | null {
+  return findPlayerTable(playerId);
+}
+
+export function pickJoinableTable(
+  variant: PokerVariant = "nlhe",
+): { tableId: string; table: TableEngine } | null {
+  const open = [...tables.entries()]
+    .filter(
+      ([id, table]) =>
+        !isSngTable(table) &&
+        !isHeadsUpChannel(id) &&
+        table.getMaxSeats() > 2 &&
+        table.getConfig().variant === variant &&
+        !table.isHandInProgress() &&
+        table.emptySeatIndex() !== null,
+    )
+    .sort((a, b) => humanCount(b[1]) - humanCount(a[1]));
+  if (open.length === 0) {
+    return null;
+  }
+  return { tableId: open[0][0], table: open[0][1] };
+}
+
+function seatHouseIfNeeded(table: TableEngine, buyInMojos: bigint): void {
+  if (isSngTable(table)) {
+    return;
+  }
+  if (table.isHandInProgress()) {
+    return;
+  }
+  if (humanCount(table) >= 2) {
+    if (table.hasPlayer(HOUSE_PLAYER_ID)) {
+      table.cashOutPlayer(HOUSE_PLAYER_ID);
+    }
+    return;
+  }
+  const buyIn = buyInMojos > 0n ? buyInMojos : defaultHouseBuyIn();
+
+  if (table.hasPlayer(HOUSE_PLAYER_ID)) {
+    const stack = table.getPlayerStack(HOUSE_PLAYER_ID) ?? 0n;
+    if (stack > 0n) {
+      return;
+    }
+    try {
+      table.rebuyStack(HOUSE_PLAYER_ID, buyIn);
+    } catch {
+      try {
+        table.cashOutPlayer(HOUSE_PLAYER_ID);
+      } catch {
+        /* already unseated */
+      }
+      const seat = table.emptySeatIndex();
+      if (seat !== null) {
+        table.seatPlayer(HOUSE_PLAYER_ID, seat, buyIn);
+      }
+    }
+    return;
+  }
+
+  const seat = table.emptySeatIndex();
+  if (seat === null) {
+    return;
+  }
+  table.seatPlayer(HOUSE_PLAYER_ID, seat, buyIn);
+}
+
+/** Top up or seat the house between hands (heads-up vs one human). */
+export function ensureHouseFunded(table: TableEngine): void {
+  seatHouseIfNeeded(table, defaultHouseBuyIn());
+}
+
+function takeBuyInFromAccountOrProof(params: {
+  tableId: string;
+  playerId: string;
+  displayAddress: string;
+  seatIndex: number;
+  buyInMojos: bigint;
+  buyInProof?: BuyInProof;
+  devAck?: boolean;
+}): { error: string | null; usedAccount: boolean; addedFreshMojos: bigint } {
+  const dat = readDatTokenConfig();
+  const minBuyIn = resolveDatMinBuyInMojos(dat.minBuyInMojos);
+  if (params.buyInMojos < minBuyIn) {
+    return { error: `Buy-in below minimum (${minBuyIn.toString()} mojos)`, usedAccount: false, addedFreshMojos: 0n };
+  }
+
+  const account = getAccountBalance(params.playerId);
+  if (account >= params.buyInMojos) {
+    const { addedFreshMojos } = applyBuyInPlaythrough(params.playerId, params.buyInMojos, true);
+    debitAccount(params.playerId, params.buyInMojos, {
+      type: "buy_in",
+      ref: params.tableId,
+    });
+    const buyInProof = params.buyInProof ?? {
+      address: params.displayAddress,
+      message: "account-credit",
+      signature: "",
+      pubkey: "",
+    };
+    recordBuyIn(params.tableId, params.playerId, buyInProof, params.buyInMojos.toString());
+    return { error: null, usedAccount: true, addedFreshMojos };
+  }
+
+  // Partial account balance must never fall through to a free full buy-in mint.
+  if (account > 0n && account < params.buyInMojos) {
+    return {
+      error: `Not enough DAT in your account — have ${formatDatMojos(account)}, need ${formatDatMojos(params.buyInMojos)} to buy in`,
+      usedAccount: false,
+      addedFreshMojos: 0n,
+    };
+  }
+
+  if (!dat.devBuyInEnabled) {
+    if (!dat.assetId) {
+      return { error: "DAT token not configured", usedAccount: false, addedFreshMojos: 0n };
+    }
+    if (!params.buyInProof) {
+      return {
+        error: "Redeem daily DAT or provide a wallet buy-in proof",
+        usedAccount: false,
+        addedFreshMojos: 0n,
+      };
+    }
+    const proofError = validateBuyInProof(params.buyInProof, {
+      tableId: params.tableId,
+      seatIndex: params.seatIndex,
+      buyInMojos: params.buyInMojos.toString(),
+      playerId: params.playerId,
+      address: params.displayAddress,
+    });
+    if (proofError) {
+      return { error: proofError, usedAccount: false, addedFreshMojos: 0n };
+    }
+    if (params.buyInProof.datBalanceMojos) {
+      const balance = BigInt(params.buyInProof.datBalanceMojos);
+      if (balance < params.buyInMojos) {
+        return {
+          error: "Insufficient DAT — redeem 5000 DAT / day or fund Sage",
+          usedAccount: false,
+          addedFreshMojos: 0n,
+        };
+      }
+    }
+  } else if (!params.devAck) {
+    // Empty account + dev buy-in still allowed with explicit ack; otherwise require redeem/proof.
+    if (dat.assetId && params.buyInProof) {
+      const proofError = validateBuyInProof(params.buyInProof, {
+        tableId: params.tableId,
+        seatIndex: params.seatIndex,
+        buyInMojos: params.buyInMojos.toString(),
+        playerId: params.playerId,
+        address: params.displayAddress,
+      });
+      if (proofError) {
+        return { error: proofError, usedAccount: false, addedFreshMojos: 0n };
+      }
     } else {
-      vaults.set(tableId, withVaultSeats(existing, seated));
+      return {
+        error: "Redeem daily DAT or provide a wallet buy-in proof",
+        usedAccount: false,
+        addedFreshMojos: 0n,
+      };
     }
   }
 
-  return buildHybridView(tableId);
+  const buyInProof = params.buyInProof ?? {
+    address: params.displayAddress,
+    message: "",
+    signature: "",
+    pubkey: "",
+  };
+  const { addedFreshMojos } = applyBuyInPlaythrough(params.playerId, params.buyInMojos, false);
+  recordBuyIn(params.tableId, params.playerId, buyInProof, params.buyInMojos.toString());
+  return { error: null, usedAccount: false, addedFreshMojos };
 }
 
-export function registerTableRoutes(app: FastifyInstance, chia: ChiaGamingClient): void {
-  chiaClient = chia;
+export function registerTableRoutes(app: FastifyInstance): void {
+  loadMtt16NftChallengeStore();
+  loadMtt500NftChallengeStore();
+
+  app.get("/v1/lobby/presence", async () => lobbyPresence());
+
+  app.get("/v1/lobby/mtt16-nft-promo", async (req) => {
+    const session = readPlayerSession(req);
+    await getMtt16NftPromoMeta();
+    return mtt16NftChallengePublicView(session?.playerId);
+  });
+
+  app.get<{ Querystring: { nft?: string } }>("/v1/lobby/mtt16-nft-image", async (req, reply) => {
+    const cfg = readMtt16NftChallengeConfig();
+    if (!cfg.enabled) {
+      return reply.status(404).send({ error: "NFT promo disabled" });
+    }
+    const requested = req.query.nft?.trim();
+    if (requested && requested !== cfg.nftId) {
+      return reply.status(404).send({ error: "NFT image does not match current prize" });
+    }
+    const meta = await getMtt16NftPromoMeta();
+    if (!meta?.imageUrl) {
+      return reply.status(404).send({ error: "NFT image metadata unavailable" });
+    }
+    try {
+      const upstream = await fetch(meta.imageUrl, { signal: AbortSignal.timeout(20_000) });
+      if (!upstream.ok) {
+        return reply.status(502).send({ error: "Could not fetch NFT image from Coinset" });
+      }
+      const body = Buffer.from(await upstream.arrayBuffer());
+      const type = upstream.headers.get("content-type") ?? "image/png";
+      return reply
+        .header("Cache-Control", "public, max-age=3600")
+        .header("Vary", "Accept")
+        .type(type)
+        .send(body);
+    } catch (e) {
+      return reply.status(502).send({ error: (e as Error).message });
+    }
+  });
+
+  app.get("/v1/lobby/mtt500-nft-promo", async (req) => {
+    const session = readPlayerSession(req);
+    await getMtt500NftPromoMeta();
+    return mtt500NftChallengePublicView(session?.playerId);
+  });
+
+  app.get<{ Querystring: { nft?: string } }>("/v1/lobby/mtt500-nft-image", async (req, reply) => {
+    const cfg = readMtt500NftChallengeConfig();
+    if (!cfg.enabled) {
+      return reply.status(404).send({ error: "NFT promo disabled" });
+    }
+    const requested = req.query.nft?.trim();
+    if (requested && requested !== cfg.nftId) {
+      return reply.status(404).send({ error: "NFT image does not match current prize" });
+    }
+    const meta = await getMtt500NftPromoMeta();
+    if (!meta?.imageUrl) {
+      return reply.status(404).send({ error: "NFT image metadata unavailable" });
+    }
+    try {
+      const upstream = await fetch(meta.imageUrl, { signal: AbortSignal.timeout(20_000) });
+      if (!upstream.ok) {
+        return reply.status(502).send({ error: "Could not fetch NFT image from Coinset" });
+      }
+      const body = Buffer.from(await upstream.arrayBuffer());
+      const type = upstream.headers.get("content-type") ?? "image/png";
+      return reply
+        .header("Cache-Control", "public, max-age=3600")
+        .header("Vary", "Accept")
+        .type(type)
+        .send(body);
+    } catch (e) {
+      return reply.status(502).send({ error: (e as Error).message });
+    }
+  });
+
+  app.get("/v1/tables", async (req) => {
+    const session = readPlayerSession(req);
+    return {
+      tables: [...tables.entries()].map(([tableId, table]) => {
+        const maintenance = maintainTable(tableId, table, session?.playerId);
+        return tableSnapshot(tableId, table, session?.playerId, maintenance);
+      }),
+    };
+  });
 
   app.post<{
     Body: {
       variant?: string;
-      format?: string;
-      unit?: string;
+      format?: TableFormat;
       smallBlindMojos?: string;
       bigBlindMojos?: string;
       maxSeats?: number;
+      fillHouse?: boolean;
+      minHumansToStart?: number;
     };
   }>("/v1/tables", async (req, reply) => {
-    let maxSeats: number;
-    let variant: PokerVariant;
-    let format: TableFormat;
-    try {
-      assertDatOnlyWager(req.body.unit);
-      maxSeats = req.body.maxSeats ?? 6;
-      assertSeatCount(maxSeats);
-      const requested = req.body.variant ?? "nlhe";
-      const found = getVariantMeta(requested as PokerVariant);
-      if (!found) {
-        return reply.status(400).send({ error: "Unknown variant" });
-      }
-      variant = found.id;
-      const requestedFormat = req.body.format ?? "cash";
-      if (!isTableFormat(requestedFormat)) {
-        return reply.status(400).send({ error: "format must be cash, sng, or mtt" });
-      }
-      format = requestedFormat;
-    } catch (e) {
-      const message = e instanceof WagerPolicyError || e instanceof Error ? e.message : "Invalid table";
-      return reply.status(400).send({ error: message });
+    if (!requirePlayer(req, reply)) return;
+    if (req.body.format === "sng") {
+      const created = createSngTable({
+        maxSeats: req.body.maxSeats,
+        fillHouse: req.body.fillHouse,
+        minHumansToStart: req.body.minHumansToStart,
+        variant: parsePokerVariant(req.body.variant),
+      });
+      return {
+        tableId: created.tableId,
+        config: created.sng.engine.getConfig(),
+        sng: created.sng.snapshot(),
+      };
+    }
+    const created = createTable(req.body.maxSeats ?? 6, parsePokerVariant(req.body.variant));
+    return { tableId: created.tableId, config: created.config, sng: null };
+  });
+
+  type JoinSngBody = {
+    playerId?: string;
+    buyInMojos?: string;
+    buyInProof?: BuyInProof;
+    devAck?: boolean;
+    maxSeats?: number;
+    variant?: string;
+  };
+
+  async function handleJoinSng(
+    req: { body: JoinSngBody; ip: string },
+    reply: Parameters<typeof requirePlayer>[1],
+    defaults: { maxSeats: number; variant: PokerVariant },
+  ) {
+    const session = requirePlayer(req as never, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many join requests from this network" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
+    const variant = parsePokerVariant(req.body.variant, defaults.variant);
+    const maxSeats = req.body.maxSeats ?? defaults.maxSeats;
+
+    const existing = findPlayerTable(playerId);
+    if (existing) {
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(existing.tableId, existing.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: true,
+        ...tableSnapshot(existing.tableId, existing.table, playerId, maintenance),
+      };
     }
 
-    const id = randomUUID();
     const dat = readDatTokenConfig();
-    const useDatStakes = Boolean(dat.assetId);
-    const minBuyIn = useDatStakes
-      ? resolveDatMinBuyInMojos(dat.minBuyInMojos)
-      : DAT_TABLE_DEFAULTS.minBuyInMojos;
-    const config: TableConfig = {
-      id,
-      variant,
-      format,
+    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+
+    const joinable = [...sngByTable.entries()].find(([, sng]) => {
+      if (sng.getStatus() === "finished") return false;
+      if (sng.engine.isHandInProgress()) return false;
+      if (sng.engine.getConfig().variant !== variant) return false;
+      if (sng.maxSeats !== maxSeats) return false;
+      return sng.engine.houseSeats().length > 0;
+    });
+
+    if (joinable) {
+      const [tableId, sng] = joinable;
+      const house = sng.engine.houseSeats()[0];
+      const buyIn = takeBuyInFromAccountOrProof({
+        tableId,
+        playerId,
+        displayAddress: session.displayAddress,
+        seatIndex: house.seatIndex,
+        buyInMojos,
+        buyInProof: req.body.buyInProof,
+        devAck: req.body.devAck,
+      });
+      if (buyIn.error) {
+        return reply.status(400).send({ error: buyIn.error });
+      }
+      try {
+        sng.claimHouseSeat(playerId, house.seatIndex);
+        sng.engine.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+        touchPlayerActivity(playerId);
+        const maintenance = maintainTable(tableId, sng.engine, playerId);
+        return {
+          ok: true,
+          joinedExisting: true,
+          ...tableSnapshot(tableId, sng.engine, playerId, maintenance),
+        };
+      } catch (e) {
+        if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
+        if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+        return reply.status(400).send({ error: (e as Error).message });
+      }
+    }
+
+    const created = createSngTable({
+      fillHouse: true,
+      minHumansToStart: 1,
       maxSeats,
-      smallBlindMojos: BigInt(
-        req.body.smallBlindMojos ??
-          (useDatStakes ? DAT_TABLE_DEFAULTS.smallBlindMojos : 50_000_000_000n),
-      ),
-      bigBlindMojos: BigInt(
-        req.body.bigBlindMojos ??
-          (useDatStakes ? DAT_TABLE_DEFAULTS.bigBlindMojos : 100_000_000_000n),
-      ),
-      minBuyInMojos: minBuyIn,
-      maxBuyInMojos: useDatStakes ? DAT_TABLE_DEFAULTS.maxBuyInMojos : 20_000_000_000_000n,
-      rakeBps: 500,
+      variant,
+    });
+    const seat = created.table.emptySeatIndex() ?? 0;
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: created.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: seat,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      tables.delete(created.tableId);
+      sngByTable.delete(created.tableId);
+      return reply.status(400).send({ error: buyIn.error });
+    }
+    try {
+      created.table.seatPlayer(playerId, seat, created.sng.startingStackMojos);
+      created.table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      autoFillAndStartSng(created.sng);
+      const maintenance = maintainTable(created.tableId, created.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: false,
+        ...tableSnapshot(created.tableId, created.table, playerId, maintenance),
+      };
+    } catch (e) {
+      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
+      if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+      tables.delete(created.tableId);
+      sngByTable.delete(created.tableId);
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  }
+
+  app.post<{ Body: JoinSngBody }>("/v1/tables/join-sng", async (req, reply) =>
+    handleJoinSng(req, reply, {
+      maxSeats: DAT_SNG_DEFAULTS.maxSeats,
+      variant: "nlhe",
+    }),
+  );
+
+  app.post<{ Body: JoinSngBody }>("/v1/tables/join-sng-plo8", async (req, reply) =>
+    handleJoinSng(req, reply, {
+      maxSeats: DAT_PLO_SNG_8.maxSeats,
+      variant: DAT_PLO_SNG_8.variant,
+    }),
+  );
+
+  app.get("/v1/ritual/daily", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    const ritual = getDailyRitual(session.playerId);
+    return {
+      ...ritual,
+      redeemedToday: hasRedeemedToday(session.playerId),
+      freeroll: {
+        maxSeats: DAT_DAILY_FREEROLL.maxSeats,
+        prizePoolMojos: DAT_DAILY_FREEROLL.prizePoolMojos.toString(),
+        startingStackMojos: DAT_DAILY_FREEROLL.startingStackMojos.toString(),
+      },
     };
-    tables.set(id, new NlheTableEngine(config));
-    metas.set(id, { variant, format, maxSeats, assetId: dat.assetId });
-    return { tableId: id, config, hybrid: syncTableHybrid(id) };
   });
 
-  app.get<{ Params: { tableId: string } }>("/v1/tables/:tableId", async (req, reply) => {
-    const table = tables.get(req.params.tableId);
-    const meta = metas.get(req.params.tableId);
-    if (!table || !meta) {
-      return reply.status(404).send({ error: "Table not found" });
+  app.post<{ Body: { playerId?: string } }>("/v1/tables/join-daily-freeroll", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
     }
-    return {
-      tableId: req.params.tableId,
-      variant: meta.variant,
-      format: meta.format,
-      maxSeats: meta.maxSeats,
-      players: table.getActivePlayerCount(),
-      handInProgress: table.isHandInProgress(),
-      seats: table.getSeatedPlayers(),
-      hand: table.getHandState(),
-      lastHandResult: table.getLastHandResult(),
-      hybrid: syncTableHybrid(req.params.tableId),
-      houseLock: await houseLockView(req.params.tableId).catch(() => ({
-        configured: false,
-        spendableMojos: "0",
-        lockedMojos: "0",
-        availableMojos: "0",
-        tableLockedMojos: null,
-      })),
-    };
+    if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many join requests from this network" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
+
+    const existing = findPlayerTable(playerId);
+    if (existing) {
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(existing.tableId, existing.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: true,
+        ritual: getDailyRitual(playerId),
+        ...tableSnapshot(existing.tableId, existing.table, playerId, maintenance),
+      };
+    }
+
+    const ritualBefore = getDailyRitual(playerId);
+    if (!ritualBefore.freerollAvailable) {
+      return reply.status(400).send({
+        error: "Daily freeroll already played today — come back tomorrow (UTC).",
+        ritual: ritualBefore,
+      });
+    }
+
+    const joinable = [...sngByTable.entries()].find(([, sng]) => {
+      if (!sng.freeroll) return false;
+      if (sng.getStatus() === "finished") return false;
+      if (sng.engine.isHandInProgress()) return false;
+      return sng.engine.houseSeats().length > 0 || sng.engine.emptySeatIndex() !== null;
+    });
+
+    const utcDay = ritualBefore.utcDay;
+    if (!recordFreerollEntry(playerId)) {
+      return reply.status(400).send({
+        error: "Daily freeroll already played today — come back tomorrow (UTC).",
+        ritual: getDailyRitual(playerId),
+      });
+    }
+
+    if (joinable) {
+      const [tableId, sng] = joinable;
+      try {
+        const house = sng.engine.houseSeats()[0];
+        if (house) {
+          sng.claimHouseSeat(playerId, house.seatIndex);
+        } else {
+          const seat = sng.engine.emptySeatIndex() ?? 0;
+          sng.engine.seatPlayer(playerId, seat, sng.startingStackMojos);
+        }
+        sng.engine.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+        touchPlayerActivity(playerId);
+        autoFillAndStartSng(sng);
+        const maintenance = maintainTable(tableId, sng.engine, playerId);
+        return {
+          ok: true,
+          joinedExisting: true,
+          freeroll: true,
+          ritual: getDailyRitual(playerId),
+          ...tableSnapshot(tableId, sng.engine, playerId, maintenance),
+        };
+      } catch (e) {
+        releaseFreerollEntry(playerId, utcDay);
+        return reply.status(400).send({ error: (e as Error).message });
+      }
+    }
+
+    const created = createSngTable({
+      fillHouse: true,
+      minHumansToStart: DAT_DAILY_FREEROLL.minHumansToStart,
+      maxSeats: DAT_DAILY_FREEROLL.maxSeats,
+      variant: DAT_DAILY_FREEROLL.variant,
+      buyInMojos: DAT_DAILY_FREEROLL.buyInMojos,
+      startingStackMojos: DAT_DAILY_FREEROLL.startingStackMojos,
+      freeroll: true,
+      prizePoolOverrideMojos: DAT_DAILY_FREEROLL.prizePoolMojos,
+    });
+    const seat = created.table.emptySeatIndex() ?? 0;
+    try {
+      created.table.seatPlayer(playerId, seat, created.sng.startingStackMojos);
+      created.table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      autoFillAndStartSng(created.sng);
+      const maintenance = maintainTable(created.tableId, created.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: false,
+        freeroll: true,
+        ritual: getDailyRitual(playerId),
+        ...tableSnapshot(created.tableId, created.table, playerId, maintenance),
+      };
+    } catch (e) {
+      releaseFreerollEntry(playerId, utcDay);
+      tables.delete(created.tableId);
+      sngByTable.delete(created.tableId);
+      return reply.status(400).send({ error: (e as Error).message });
+    }
   });
+
+  type JoinMttBody = {
+    playerId?: string;
+    buyInMojos?: string;
+    buyInProof?: BuyInProof;
+    devAck?: boolean;
+  };
+
+  async function handleJoinMtt(
+    req: { body: JoinMttBody; ip: string },
+    reply: Parameters<typeof requirePlayer>[1],
+    fieldSize: number,
+    maxHumans: number,
+    options?: {
+      variant?: PokerVariant;
+      startingTableSeats?: number;
+      finalTableSeats?: number;
+    },
+  ) {
+    const session = requirePlayer(req as never, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many join requests from this network" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
+
+    const existing = findPlayerTable(playerId);
+    if (existing) {
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(existing.tableId, existing.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: true,
+        ...tableSnapshot(existing.tableId, existing.table, playerId, maintenance),
+      };
+    }
+
+    const dat = readDatTokenConfig();
+    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+    const variant = options?.variant ?? "nlhe";
+    const startingTableSeats = options?.startingTableSeats ?? DAT_MTT_DEFAULTS.startingTableSeats;
+    const finalTableSeats = options?.finalTableSeats ?? startingTableSeats;
+
+    const joinable = findJoinableMttEvent(playerId, fieldSize, variant);
+
+    if (joinable) {
+      const house = joinable.firstHouseSeat()!;
+      const buyIn = takeBuyInFromAccountOrProof({
+        tableId: house.tableId,
+        playerId,
+        displayAddress: session.displayAddress,
+        seatIndex: house.seatIndex,
+        buyInMojos,
+        buyInProof: req.body.buyInProof,
+        devAck: req.body.devAck,
+      });
+      if (buyIn.error) {
+        return reply.status(400).send({ error: buyIn.error });
+      }
+      try {
+        joinable.claimHouseSeat(house.tableId, playerId, house.seatIndex);
+        joinable.engineFor(house.tableId)?.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+        touchPlayerActivity(playerId);
+        const table = tables.get(house.tableId)!;
+        const maintenance = maintainTable(house.tableId, table, playerId);
+        return {
+          ok: true,
+          joinedExisting: true,
+          ...tableSnapshot(house.tableId, table, playerId, maintenance),
+        };
+      } catch (e) {
+        if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
+        if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+        return reply.status(400).send({ error: (e as Error).message });
+      }
+    }
+
+    const created = createMttEvent({
+      fieldSize,
+      maxHumans,
+      variant,
+      startingTableSeats,
+      finalTableSeats,
+    });
+    const open = created.firstOpenSeat();
+    if (!open) {
+      return reply.status(500).send({ error: openMttEventLabel(fieldSize) });
+    }
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: open.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: open.seatIndex,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      teardownMttEvent(created);
+      return reply.status(400).send({ error: buyIn.error });
+    }
+    try {
+      created.seatPlayer(open.tableId, playerId, open.seatIndex);
+      created.engineFor(open.tableId)?.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      autoFillAndStartMtt(created);
+      const table = tables.get(open.tableId)!;
+      const maintenance = maintainTable(open.tableId, table, playerId);
+      return {
+        ok: true,
+        joinedExisting: false,
+        ...tableSnapshot(open.tableId, table, playerId, maintenance),
+      };
+    } catch (e) {
+      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
+      if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+      teardownMttEvent(created);
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  }
+
+  app.post<{ Body: JoinMttBody }>("/v1/tables/join-mtt16", async (req, reply) =>
+    handleJoinMtt(req, reply, readMtt16FieldSize(), readMtt16MaxHumans()),
+  );
+
+  app.post<{ Body: JoinMttBody }>("/v1/tables/join-mtt", async (req, reply) =>
+    handleJoinMtt(req, reply, readMttFieldSize(), readMttMaxHumans()),
+  );
+
+  /** PLO 16-player SNG: two 8-max tables → 8-max final (same seating as NLHE 16). */
+  app.post<{ Body: JoinMttBody }>("/v1/tables/join-mtt-plo16", async (req, reply) =>
+    handleJoinMtt(req, reply, DAT_PLO_MTT_16.fieldSize, DAT_PLO_MTT_16.maxHumans, {
+      variant: DAT_PLO_MTT_16.variant,
+      startingTableSeats: DAT_PLO_MTT_16.startingTableSeats,
+      finalTableSeats: DAT_PLO_MTT_16.finalTableSeats,
+    }),
+  );
+
+  /** PLO 500-player MTT: 8-max tables throughout. */
+  app.post<{ Body: JoinMttBody }>("/v1/tables/join-mtt-plo500", async (req, reply) =>
+    handleJoinMtt(req, reply, DAT_PLO_MTT_500.fieldSize, DAT_PLO_MTT_500.maxHumans, {
+      variant: DAT_PLO_MTT_500.variant,
+      startingTableSeats: DAT_PLO_MTT_500.startingTableSeats,
+      finalTableSeats: DAT_PLO_MTT_500.finalTableSeats,
+    }),
+  );
 
   app.post<{
     Params: { tableId: string };
-    Body: { playerId: string };
-  }>("/v1/tables/:tableId/vault/cosign", async (req, reply) => {
+    Body: {
+      playerId?: string;
+      seatIndex?: number;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+    };
+  }>("/v1/tables/:tableId/claim-house", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
     const table = tables.get(req.params.tableId);
-    if (!table || !metas.has(req.params.tableId)) {
+    const sng = sngByTable.get(req.params.tableId);
+    const mtt = mttByTable.get(req.params.tableId);
+    if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
-    syncTableHybrid(req.params.tableId);
-    const vault = vaults.get(req.params.tableId);
-    if (!vault || vault.status !== "open") {
-      return reply.status(400).send({ error: "Table is not on an open DAT vault" });
+    const playerId = session.playerId;
+    if (isHousePlayerId(playerId)) {
+      return reply.status(400).send({ error: "House bots cannot claim a seat" });
     }
-    if (table.isHandInProgress()) {
-      return reply.status(400).send({ error: "Finish the hand before co-signing stacks" });
+    rememberLabel(playerId, session.displayAddress);
+    const previewSeat = req.body.seatIndex ?? table.houseSeats()[0]?.seatIndex ?? 0;
+    const dat = readDatTokenConfig();
+    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: req.params.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: previewSeat,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      return reply.status(400).send({ error: buyIn.error });
     }
-    const result = table.getLastHandResult();
-    if (!result) {
-      return reply.status(400).send({ error: "No completed hand to co-sign" });
-    }
-    if (!req.body.playerId) {
-      return reply.status(400).send({ error: "playerId required" });
-    }
-    const stacks = table.getSeatedPlayers();
-    const stateRootHash = hashStackVector(req.params.tableId, result.handId, stacks);
     try {
-      const next = recordVaultConsent(vault, {
-        playerId: req.body.playerId,
-        handId: result.handId,
-        stateRootHash,
-        stacks,
-      });
-      vaults.set(req.params.tableId, next);
+      const claimed = mtt
+        ? mtt.claimHouseSeat(req.params.tableId, playerId, req.body.seatIndex)
+        : sng
+          ? sng.claimHouseSeat(playerId, req.body.seatIndex)
+          : table.claimHouseSeat(playerId, req.body.seatIndex);
+      table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(req.params.tableId, table, playerId);
       return {
         ok: true,
-        completed: next.lastCoSigned?.handId === result.handId,
-        hybrid: buildHybridView(req.params.tableId),
+        replacedPlayerId: claimed.replacedPlayerId,
+        seatIndex: claimed.seatIndex,
+        stackMojos: claimed.stackMojos,
+        ...tableSnapshot(req.params.tableId, table, playerId, maintenance),
       };
     } catch (e) {
+      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
+      if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
       return reply.status(400).send({ error: (e as Error).message });
     }
   });
 
   app.post<{
+    Body: {
+      playerId?: string;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+      variant?: string;
+    };
+  }>("/v1/tables/join", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    if (!allowIpBucket(req.ip || "unknown", "join", Date.now(), 30)) {
+      return reply.status(429).send({ error: "Too many join requests from this network" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
+    const variant = parsePokerVariant(req.body.variant);
+
+    const existing = findPlayerTable(playerId);
+    if (existing) {
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(existing.tableId, existing.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: true,
+        ...tableSnapshot(existing.tableId, existing.table, playerId, maintenance),
+      };
+    }
+
+    const dat = readDatTokenConfig();
+    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+    let target = pickJoinableTable(variant);
+    if (!target) {
+      const created = createTable(6, variant);
+      target = { tableId: created.tableId, table: created.table };
+    }
+
+    const seatIndex = target.table.emptySeatIndex();
+    if (seatIndex === null) {
+      const created = createTable(6, variant);
+      target = { tableId: created.tableId, table: created.table };
+    }
+    const seat = target.table.emptySeatIndex();
+    if (seat === null) {
+      return reply.status(500).send({ error: "No empty seat" });
+    }
+
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: target.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: seat,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      return reply.status(400).send({ error: buyIn.error });
+    }
+
+    try {
+      target.table.seatPlayer(playerId, seat, buyInMojos);
+      target.table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      seatHouseIfNeeded(target.table, buyInMojos);
+      const maintenance = maintainTable(target.tableId, target.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: false,
+        ...tableSnapshot(target.tableId, target.table, playerId, maintenance),
+      };
+    } catch (e) {
+      if (buyIn.usedAccount) {
+        creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
+      }
+      if (buyIn.addedFreshMojos > 0n) {
+        reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+      }
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.get<{ Params: { tableId: string }; Querystring: { playerId?: string } }>(
+    "/v1/tables/:tableId",
+    async (req, reply) => {
+      const table = tables.get(req.params.tableId);
+      if (!table) {
+        return reply.status(404).send({ error: "Table not found" });
+      }
+      const session = readPlayerSession(req);
+      const maintenance = maintainTable(req.params.tableId, table, session?.playerId);
+      return tableSnapshot(req.params.tableId, table, session?.playerId, maintenance);
+    },
+  );
+
+  app.get<{
+    Params: { tableId: string };
+    Querystring: { playerId?: string; limit?: string };
+  }>("/v1/tables/:tableId/hand-history", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (
+      req.query.playerId &&
+      !sessionMatchesClaim(session, req.query.playerId)
+    ) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    const table = tables.get(req.params.tableId);
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+    const limit = Math.min(40, Math.max(1, Number(req.query.limit ?? "20") || 20));
+    return {
+      tableId: req.params.tableId,
+      hands: getHandHistory(req.params.tableId, limit),
+    };
+  });
+
+  app.post<{ Params: { tableId: string }; Body: { playerId?: string } }>(
+    "/v1/tables/:tableId/seats/unseat-inactive",
+    async (req, reply) => {
+      const session = requirePlayer(req, reply);
+      if (!session) return;
+      if (!sessionMatchesClaim(session, req.body?.playerId)) {
+        return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+      }
+      const table = tables.get(req.params.tableId);
+      if (!table) {
+        return reply.status(404).send({ error: "Table not found" });
+      }
+      if (!table.hasPlayer(session.playerId)) {
+        return reply.status(403).send({ error: "You are not seated at this table" });
+      }
+      touchPlayerActivity(session.playerId);
+      const maintenance = unseatInactivePlayers(req.params.tableId, table, Date.now());
+      return {
+        ok: true,
+        ...tableSnapshot(req.params.tableId, table, session.playerId, maintenance),
+      };
+    },
+  );
+
+  app.post<{
     Params: { tableId: string };
     Body: {
-      playerId: string;
+      playerId?: string;
       seatIndex: number;
       buyInMojos: string;
       buyInProof?: BuyInProof;
       devAck?: boolean;
     };
   }>("/v1/tables/:tableId/seat", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
     const table = tables.get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
 
-    const dat = readDatTokenConfig();
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
     const buyInMojos = BigInt(req.body.buyInMojos);
-    const minBuyIn = resolveDatMinBuyInMojos(dat.minBuyInMojos);
-
-    if (buyInMojos < minBuyIn) {
-      return reply.status(400).send({
-        error: `Buy-in below minimum (${minBuyIn.toString()} mojos)`,
-      });
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: req.params.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: req.body.seatIndex,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      return reply.status(400).send({ error: buyIn.error });
     }
-
-    if (!dat.devBuyInEnabled) {
-      if (!dat.assetId) {
-        return reply.status(503).send({ error: "DAT token not configured" });
-      }
-      if (!req.body.buyInProof) {
-        return reply.status(400).send({ error: "Wallet buy-in proof required" });
-      }
-      const proofError = validateBuyInProof(req.body.buyInProof, {
-        tableId: req.params.tableId,
-        seatIndex: req.body.seatIndex,
-        buyInMojos: req.body.buyInMojos,
-        playerId: req.body.playerId,
-      });
-      if (proofError) {
-        return reply.status(400).send({ error: proofError });
-      }
-      if (req.body.buyInProof.datBalanceMojos) {
-        const balance = BigInt(req.body.buyInProof.datBalanceMojos);
-        if (balance < buyInMojos) {
-          return reply.status(400).send({ error: "Insufficient DAT balance for buy-in" });
-        }
-      }
-    } else if (!req.body.devAck && dat.assetId && req.body.buyInProof) {
-      const proofError = validateBuyInProof(req.body.buyInProof, {
-        tableId: req.params.tableId,
-        seatIndex: req.body.seatIndex,
-        buyInMojos: req.body.buyInMojos,
-        playerId: req.body.playerId,
-      });
-      if (proofError) {
-        return reply.status(400).send({ error: proofError });
-      }
-    }
-
-    const buyInProof = req.body.buyInProof ?? {
-      address: req.body.playerId,
-      message: "",
-      signature: "",
-      pubkey: "",
-    };
-    recordBuyIn(req.params.tableId, req.body.playerId, buyInProof, req.body.buyInMojos);
 
     try {
-      table.seatPlayer(req.body.playerId, req.body.seatIndex, buyInMojos);
+      table.seatPlayer(playerId, req.body.seatIndex, buyInMojos);
+      table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      return { ok: true };
     } catch (e) {
+      if (buyIn.usedAccount) {
+        creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
+      }
+      if (buyIn.addedFreshMojos > 0n) {
+        reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+      }
       return reply.status(400).send({ error: (e as Error).message });
     }
-    return { ok: true, hybrid: syncTableHybrid(req.params.tableId) };
-  });
-
-  app.post<{
-    Params: { tableId: string };
-    Body: { playerId?: string; devAck?: boolean };
-  }>("/v1/tables/:tableId/cancel-join", async (req, reply) => {
-    const table = tables.get(req.params.tableId);
-    if (!table) {
-      return reply.status(404).send({ error: "Table not found" });
-    }
-    if (table.isHandInProgress() || table.getLastHandResult()) {
-      return reply.status(400).send({ error: "Play has started; withdraw instead of cancelling the join" });
-    }
-    const playerId = req.body.playerId;
-    if (!playerId) {
-      return reply.status(400).send({ error: "playerId required" });
-    }
-    if (table.getSeatedPlayers().some((seat) => seat.playerId === playerId)) {
-      try {
-        table.cashOutPlayer(playerId);
-      } catch (e) {
-        return reply.status(400).send({ error: (e as Error).message });
-      }
-      clearBuyIn(req.params.tableId, playerId);
-    }
-    await releaseHouseIfAlone(req.params.tableId, 0n);
-    return { ok: true, hybrid: syncTableHybrid(req.params.tableId) };
   });
 
   app.post<{
     Params: { tableId: string };
     Body: { buyInMojos?: string };
   }>("/v1/tables/:tableId/seat-house", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
     const table = tables.get(req.params.tableId);
     if (!table) {
       return reply.status(404).send({ error: "Table not found" });
     }
-    if (table.getSeatedPlayers().some((seat) => seat.playerId === HOUSE_PLAYER_ID)) {
+    if (!table.hasPlayer(session.playerId)) {
+      return reply.status(403).send({ error: "You are not seated at this table" });
+    }
+    if (table.hasPlayer(HOUSE_PLAYER_ID)) {
+      ensureHouseFunded(table);
+      const house = table.getSeatedPlayers().find((s) => s.playerId === HOUSE_PLAYER_ID);
       return {
         ok: true,
         playerId: HOUSE_PLAYER_ID,
-        hybrid: syncTableHybrid(req.params.tableId),
-        houseLock: await houseLockView(req.params.tableId),
+        seatIndex: house?.seatIndex,
+        stackMojos: house?.stackMojos.toString(),
       };
     }
     const buyInMojos = BigInt(req.body.buyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString());
-    let locked = false;
+    const seat = table.emptySeatIndex();
+    if (seat === null) {
+      return reply.status(400).send({ error: "Table is full" });
+    }
     try {
-      locked = (await lockHouseBuyIn(req.params.tableId, buyInMojos)) !== null;
-      table.seatPlayer(HOUSE_PLAYER_ID, 1, buyInMojos);
+      table.seatPlayer(HOUSE_PLAYER_ID, seat, buyInMojos);
+      return { ok: true, playerId: HOUSE_PLAYER_ID, seatIndex: seat };
     } catch (e) {
-      if (locked) {
-        await settleHouseTable(req.params.tableId, 0n);
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Params: { tableId: string };
+    Body: {
+      playerId?: string;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+    };
+  }>("/v1/tables/:tableId/rebuy", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    const table = tables.get(req.params.tableId);
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+    if (isSngTable(table)) {
+      return reply.status(400).send({ error: "Sit-n-go stacks cannot be rebought" });
+    }
+    const playerId = session.playerId;
+    if (!table.hasPlayer(playerId)) {
+      return reply.status(403).send({ error: "You are not seated at this table" });
+    }
+    const seated = table.getSeatedPlayers().find((s) => s.playerId === playerId);
+    if (!seated) {
+      return reply.status(400).send({ error: "You are not seated at this table" });
+    }
+
+    const dat = readDatTokenConfig();
+    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: req.params.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: seated.seatIndex,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      return reply.status(400).send({ error: buyIn.error });
+    }
+
+    try {
+      table.rebuyStack(playerId, buyInMojos);
+      table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      seatHouseIfNeeded(table, buyInMojos);
+      persistTablePlaythrough(table);
+      touchPlayerActivity(playerId);
+      return {
+        ok: true,
+        rebuy: true,
+        ...tableSnapshot(req.params.tableId, table, playerId),
+      };
+    } catch (e) {
+      if (buyIn.usedAccount) {
+        creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
       }
+      if (buyIn.addedFreshMojos > 0n) {
+        reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+      }
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Params: { tableId: string };
+    Body: { playerId?: string; sittingOut: boolean };
+  }>("/v1/tables/:tableId/sit-out", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    const table = tables.get(req.params.tableId);
+    if (!table) {
+      return reply.status(404).send({ error: "Table not found" });
+    }
+    if (!table.hasPlayer(session.playerId)) {
+      return reply.status(403).send({ error: "You are not seated at this table" });
+    }
+    try {
+      if (req.body.sittingOut) {
+        if (table.isHandInProgress()) {
+          table.markTimedOutSittingOut(session.playerId);
+        } else {
+          table.setSittingOut(session.playerId, true);
+        }
+      } else {
+        table.setSittingOut(session.playerId, false);
+      }
+      touchPlayerActivity(session.playerId);
+      const maintenance = maintainTable(req.params.tableId, table, session.playerId);
+      return {
+        ok: true,
+        sittingOut: table.isSittingOut(session.playerId),
+        ...tableSnapshot(req.params.tableId, table, session.playerId, maintenance),
+      };
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+  });
+
+  app.post<{
+    Body: {
+      playerId?: string;
+      buyInMojos?: string;
+      buyInProof?: BuyInProof;
+      devAck?: boolean;
+      variant?: string;
+    };
+  }>("/v1/tables/join-heads-up", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    if (!sessionMatchesClaim(session, req.body.playerId)) {
+      return reply.status(403).send({ error: "playerId does not match the signed-in account" });
+    }
+    const playerId = session.playerId;
+    rememberLabel(playerId, session.displayAddress);
+    const existing = findPlayerTable(playerId);
+    if (existing && isHeadsUpChannel(existing.tableId)) {
+      touchPlayerActivity(playerId);
+      const maintenance = maintainTable(existing.tableId, existing.table, playerId);
+      return {
+        ok: true,
+        joinedExisting: true,
+        ...tableSnapshot(existing.tableId, existing.table, playerId, maintenance),
+      };
+    }
+    if (existing) {
+      return reply.status(400).send({ error: "Leave your current table before joining heads-up" });
+    }
+
+    const variant = parsePokerVariant(req.body.variant);
+    const dat = readDatTokenConfig();
+    const buyInMojos = BigInt(req.body.buyInMojos ?? dat.minBuyInMojos);
+    const created = createTable(2, variant);
+    markHeadsUpTable(created.tableId);
+    const seat = created.table.emptySeatIndex();
+    if (seat === null) {
+      tables.delete(created.tableId);
+      forgetHeadsUpTable(created.tableId);
+      return reply.status(500).send({ error: "No empty seat" });
+    }
+
+    const buyIn = takeBuyInFromAccountOrProof({
+      tableId: created.tableId,
+      playerId,
+      displayAddress: session.displayAddress,
+      seatIndex: seat,
+      buyInMojos,
+      buyInProof: req.body.buyInProof,
+      devAck: req.body.devAck,
+    });
+    if (buyIn.error) {
+      tables.delete(created.tableId);
+      forgetHeadsUpTable(created.tableId);
+      return reply.status(400).send({ error: buyIn.error });
+    }
+
+    const refund = () => {
+      try {
+        created.table.cashOutPlayer(playerId);
+      } catch {
+        // Seat did not stick.
+      }
+      if (buyIn.usedAccount) creditAccount(playerId, buyInMojos, { type: "buy_in_refund" });
+      if (buyIn.addedFreshMojos > 0n) reducePlaythroughPool(playerId, buyIn.addedFreshMojos);
+      clearBuyIn(created.tableId, playerId);
+      tables.delete(created.tableId);
+      forgetHeadsUpTable(created.tableId);
+    };
+
+    try {
+      created.table.seatPlayer(playerId, seat, buyInMojos);
+      created.table.setHandsPlayed(playerId, getPlaythrough(playerId).handsPlayed);
+      touchPlayerActivity(playerId);
+      await openHeadsUpChannel({
+        tableId: created.tableId,
+        table: created.table,
+        playerId,
+        buyInMojos,
+        assetId: dat.assetId,
+      });
+    } catch (e) {
+      refund();
       const message = (e as Error).message;
       const status =
         e instanceof InsufficientHouseBankrollError || message.includes("not have enough free DAT")
@@ -437,34 +1573,378 @@ export function registerTableRoutes(app: FastifyInstance, chia: ChiaGamingClient
           : 400;
       return reply.status(status).send({ error: message });
     }
+
+    const maintenance = maintainTable(created.tableId, created.table, playerId);
     return {
       ok: true,
-      playerId: HOUSE_PLAYER_ID,
-      hybrid: syncTableHybrid(req.params.tableId),
-      houseLock: await houseLockView(req.params.tableId),
+      joinedExisting: false,
+      ...tableSnapshot(created.tableId, created.table, playerId, maintenance),
     };
   });
 }
 
-export async function releaseHouseIfAlone(tableId: string, spentMojos: bigint): Promise<void> {
-  const table = tables.get(tableId);
-  if (!table || table.isHandInProgress()) return;
-  const seats = table.getSeatedPlayers();
-  const houseSeated = seats.some((seat) => seat.playerId === HOUSE_PLAYER_ID);
-  const humans = seats.filter((seat) => seat.playerId !== HOUSE_PLAYER_ID);
-  if (!houseSeated || humans.length > 0) return;
-  try {
-    table.cashOutPlayer(HOUSE_PLAYER_ID);
-  } catch {
-    // The house seat is already empty.
-  }
-  await settleHouseTable(tableId, spentMojos);
-}
-
-export function getTableEngine(tableId: string): NlheTableEngine | undefined {
+export function getTableEngine(tableId: string): TableEngine | undefined {
   return tables.get(tableId);
 }
 
-export function getTableMeta(tableId: string): TableMeta | undefined {
-  return metas.get(tableId);
+/** Register a table engine created outside lobby POST (e.g. Spirit Slots play session). */
+export function registerTableEngine(tableId: string, engine: TableEngine): void {
+  tables.set(tableId, engine);
+}
+
+export function unregisterTableEngine(tableId: string): void {
+  tables.delete(tableId);
+}
+
+export function playthroughFields(playerId: string, tableHandsPlayed = 0) {
+  const pt = getPlaythrough(playerId);
+  const handsRequired = playthroughHandsRequired(pt.poolMojos);
+  const handsPlayed = Math.max(pt.handsPlayed, Math.max(0, Math.floor(tableHandsPlayed)));
+  const unlockedMojos = playthroughUnlockedMojos(handsPlayed, pt.poolMojos);
+  return {
+    poolMojos: pt.poolMojos.toString(),
+    handsPlayed,
+    handsRequired,
+    unlockedMojos: unlockedMojos.toString(),
+    playthroughRemaining: Math.max(0, handsRequired - handsPlayed),
+  };
+}
+
+export function persistTablePlaythrough(table: TableEngine): void {
+  const sng = isSngTable(table);
+  for (const seated of table.getSeatedPlayers()) {
+    if (isHousePlayerId(seated.playerId)) continue;
+    setPlaythroughHands(seated.playerId, table.getHandsPlayed(seated.playerId));
+    // Tournament chips are not withdrawable DAT — do not shrink the buy-in
+    // pool when an SNG stack drops (or hits zero on a bust).
+    if (!sng) {
+      syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId) + seated.stackMojos);
+    }
+  }
+}
+
+function persistSngPlaythroughAfterSettle(sng: SngTournament): void {
+  const seen = new Set<string>();
+  for (const row of sng.snapshot().placements) {
+    if (isHousePlayerId(row.playerId)) continue;
+    seen.add(row.playerId);
+    const held = getAccountBalance(row.playerId);
+    if (held > 0n) {
+      syncPlaythroughHeld(row.playerId, held);
+    }
+  }
+  for (const seated of sng.engine.getSeatedPlayers()) {
+    if (isHousePlayerId(seated.playerId) || seen.has(seated.playerId)) continue;
+    const held = getAccountBalance(seated.playerId);
+    if (held > 0n) {
+      syncPlaythroughHeld(seated.playerId, held);
+    }
+  }
+}
+
+/** Move seated stacks back to the persisted ledger (API restart / redeploy). */
+export function returnAllStacksToAccounts(): { returned: number } {
+  let returned = 0;
+  for (const [tableId, table] of tables) {
+    try {
+      table.abortHandRefundBets();
+    } catch {
+      /* older engine without abort */
+    }
+    persistTablePlaythrough(table);
+    for (const seated of [...table.getSeatedPlayers()]) {
+      if (isHousePlayerId(seated.playerId)) {
+        try {
+          table.cashOutPlayer(seated.playerId);
+        } catch {
+          /* house already gone */
+        }
+        continue;
+      }
+      try {
+        const cash = table.cashOutPlayer(seated.playerId);
+        creditAccount(seated.playerId, cash.stackMojos, { type: "table_return" });
+        syncPlaythroughHeld(seated.playerId, getAccountBalance(seated.playerId));
+        clearBuyIn(tableId, seated.playerId);
+        clearPlayerActivity(seated.playerId);
+        returned += 1;
+      } catch {
+        /* already standing */
+      }
+    }
+  }
+  return { returned };
+}
+
+/** Clear in-memory tables without wiping daily ritual progress. */
+export function clearTableStateForTests(): void {
+  tables.clear();
+  resetHeadsUpChannelsForTests();
+  sngByTable.clear();
+  mttByTable.clear();
+  mtt16WinRecorded.clear();
+  mtt500WinRecorded.clear();
+  playerLabels.clear();
+  resetHandHistoryForTests();
+  resetHumanTurnClockForTests();
+}
+
+export function resetTablesForTests(): void {
+  clearTableStateForTests();
+  resetRitualForTests();
+}
+
+function readFillHouseDefault(): boolean {
+  const raw = process.env.DAT_SNG_FILL_HOUSE?.trim().toLowerCase();
+  if (raw === "false" || raw === "0") return false;
+  return true;
+}
+
+function parsePokerVariant(
+  raw: string | null | undefined,
+  fallback: PokerVariant = "nlhe",
+): PokerVariant {
+  return normalizePokerVariant(raw) ?? fallback;
+}
+
+function createSngTable(options?: {
+  maxSeats?: number;
+  fillHouse?: boolean;
+  minHumansToStart?: number;
+  variant?: PokerVariant;
+  buyInMojos?: bigint;
+  startingStackMojos?: bigint;
+  freeroll?: boolean;
+  prizePoolOverrideMojos?: bigint;
+}): {
+  tableId: string;
+  table: NlheTableEngine;
+  sng: SngTournament;
+} {
+  const fillHouse = options?.fillHouse ?? readFillHouseDefault();
+  const minHumansToStart = options?.minHumansToStart ?? (fillHouse ? 1 : DAT_SNG_DEFAULTS.maxSeats);
+  const sng = SngTournament.create(randomUUID(), {
+    fillHouse,
+    minHumansToStart,
+    maxSeats: options?.maxSeats ?? DAT_SNG_DEFAULTS.maxSeats,
+    variant: options?.variant ?? "nlhe",
+    buyInMojos: options?.buyInMojos,
+    startingStackMojos: options?.startingStackMojos,
+    freeroll: options?.freeroll,
+    prizePoolOverrideMojos: options?.prizePoolOverrideMojos,
+  });
+  const tableId = sng.engine.getConfig().id;
+  tables.set(tableId, sng.engine);
+  sngByTable.set(tableId, sng);
+  return { tableId, table: sng.engine, sng };
+}
+
+function registerMttTables(mtt: MttEvent): void {
+  for (const engine of [...mtt.engines(), ...mtt.consumePendingTables()]) {
+    const id = engine.getConfig().id;
+    tables.set(id, engine);
+    mttByTable.set(id, mtt);
+  }
+}
+
+function createMttEvent(options?: {
+  fieldSize: number;
+  maxHumans: number;
+  variant?: PokerVariant;
+  startingTableSeats?: number;
+  finalTableSeats?: number;
+}): MttEvent {
+  const fieldSize = options?.fieldSize ?? readMttFieldSize();
+  const maxHumans = options?.maxHumans ?? readMttMaxHumans();
+  const mtt = MttEvent.create({
+    fieldSize,
+    fillHouse: readFillHouseDefault(),
+    minHumansToStart: 1,
+    maxHumans,
+    variant: options?.variant ?? "nlhe",
+    startingTableSeats: options?.startingTableSeats,
+    finalTableSeats: options?.finalTableSeats,
+  });
+  registerMttTables(mtt);
+  return mtt;
+}
+
+function uniqueMttEvents(): MttEvent[] {
+  const seen = new Set<string>();
+  const out: MttEvent[] = [];
+  for (const mtt of mttByTable.values()) {
+    if (seen.has(mtt.eventId)) continue;
+    seen.add(mtt.eventId);
+    out.push(mtt);
+  }
+  return out;
+}
+
+function findJoinableMttEvent(
+  playerId: string,
+  fieldSize: number,
+  variant: PokerVariant = "nlhe",
+): MttEvent | undefined {
+  return uniqueMttEvents().find((mtt) => {
+    if (mtt.fieldSize !== fieldSize) return false;
+    if (mtt.variant !== variant) return false;
+    if (mtt.getStatus() === "finished") return false;
+    if (!mtt.canAcceptHuman(playerId)) return false;
+    return mtt.firstHouseSeat() !== null;
+  });
+}
+
+function teardownMttEvent(mtt: MttEvent): void {
+  for (const tableId of mtt.tableIds()) {
+    tables.delete(tableId);
+    mttByTable.delete(tableId);
+  }
+}
+
+function openMttEventLabel(fieldSize: number): string {
+  return fieldSize === DAT_MTT_DEFAULTS.fieldSize
+    ? "Could not open a 16-player sit-n-go"
+    : `Could not open a ${fieldSize}-player MTT`;
+}
+
+function autoFillAndStartMtt(mtt: MttEvent): void {
+  if (mtt.getStatus() !== "registering") return;
+  if (mtt.fillHouse) {
+    mtt.fillHouseSeats();
+  }
+  if (mtt.canStart()) {
+    mtt.start();
+  }
+}
+
+function tournamentSnapshot(tableId: string, viewerId?: string) {
+  return (
+    sngByTable.get(tableId)?.snapshot() ??
+    mttByTable.get(tableId)?.snapshot(tableId, Date.now(), viewerId) ??
+    null
+  );
+}
+
+function autoFillAndStartSng(sng: SngTournament): void {
+  if (sng.getStatus() !== "registering") return;
+  if (sng.fillHouse) {
+    sng.fillHouseSeats();
+  }
+  if (sng.canStart()) {
+    sng.start();
+  }
+}
+
+function settleSngPrizes(sng: SngTournament): void {
+  for (const row of sng.unpaidHumanPrizes()) {
+    creditAccount(row.playerId, row.prizeMojos, {
+      type: "prize",
+      ref: sng.engine.getConfig().id,
+    });
+    sng.markPrizePaid(row.playerId);
+    if (sng.freeroll && row.place >= 1 && row.place <= 3) {
+      recordFreerollFinish(row.playerId, row.place);
+    }
+  }
+}
+
+function settleMttPrizes(mtt: MttEvent): void {
+  for (const row of mtt.unpaidHumanPrizes()) {
+    creditAccount(row.playerId, row.prizeMojos, {
+      type: "prize",
+      ref: mtt.eventId,
+    });
+    mtt.markPrizePaid(row.playerId);
+  }
+  const tableId = mtt.tableIds()[0];
+  if (!tableId) return;
+  const champion = mtt.snapshot(tableId).placements.find((row) => row.place === 1);
+  if (!champion || isHousePlayerId(champion.playerId)) return;
+  const payoutAddress = playerLabels.get(champion.playerId) ?? champion.playerId;
+
+  if (mtt.fieldSize === DAT_MTT_DEFAULTS.fieldSize) {
+    if (mtt16WinRecorded.has(mtt.eventId)) return;
+    mtt16WinRecorded.add(mtt.eventId);
+    recordMtt16FirstPlaceWin(champion.playerId, payoutAddress);
+    return;
+  }
+
+  const largeFieldSize = readMttFieldSize();
+  if (mtt.fieldSize !== largeFieldSize) return;
+  if (mtt500WinRecorded.has(mtt.eventId)) return;
+  mtt500WinRecorded.add(mtt.eventId);
+  recordMtt500FirstPlaceWin(champion.playerId, payoutAddress);
+}
+
+export function finalizeSngIfNeeded(tableId: string, table: TableEngine): void {
+  const sng = sngByTable.get(tableId);
+  if (sng && !table.isHandInProgress()) {
+    persistTablePlaythrough(table);
+    if (sng.getStatus() === "running") {
+      sng.afterHand();
+    }
+    if (sng.getStatus() === "finished") {
+      settleSngPrizes(sng);
+      persistSngPlaythroughAfterSettle(sng);
+    }
+    return;
+  }
+  const mtt = mttByTable.get(tableId);
+  if (!mtt || table.isHandInProgress()) return;
+  persistTablePlaythrough(table);
+  if (mtt.getStatus() === "running") {
+    mtt.afterHand(tableId);
+    registerMttTables(mtt);
+  }
+  if (mtt.getStatus() === "finished") {
+    settleMttPrizes(mtt);
+  }
+  runMttHouseCatchup(tableId);
+}
+
+/**
+ * Keep house-only sibling MTT tables on pace with the table a human is playing.
+ * Blind levels use max(hands) across tables, so catch-up does not double-speed blinds.
+ */
+function runMttHouseCatchup(triggerTableId: string): void {
+  const mtt = mttByTable.get(triggerTableId);
+  if (!mtt || mtt.getStatus() !== "running") return;
+  advanceSiblingMttHouseTables(mtt, triggerTableId, {
+    onHandStarted: (siblingId) => {
+      mtt.onHandStarted(siblingId);
+    },
+    onHandComplete: (siblingId) => {
+      const engine = mtt.engineFor(siblingId);
+      if (!engine || engine.isHandInProgress()) return;
+      maybeRecordCompletedHand(siblingId, engine);
+      if (mtt.getStatus() === "running") {
+        mtt.afterHand(siblingId);
+        registerMttTables(mtt);
+      }
+      if (mtt.getStatus() === "finished") {
+        settleMttPrizes(mtt);
+      }
+    },
+  });
+}
+
+export function getSng(tableId: string): SngTournament | undefined {
+  return sngByTable.get(tableId);
+}
+
+export function getMtt(tableId: string): MttEvent | undefined {
+  return mttByTable.get(tableId);
+}
+
+export function onTournamentHandStarted(tableId: string): void {
+  const sng = sngByTable.get(tableId);
+  if (sng) {
+    sng.onHandStarted();
+    return;
+  }
+  mttByTable.get(tableId)?.onHandStarted(tableId);
+}
+
+export function tournamentFields(tableId: string, viewerId?: string) {
+  return tournamentSnapshot(tableId, viewerId);
 }

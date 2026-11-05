@@ -1,7 +1,6 @@
 #!/bin/bash
 # Update DAT POKER on an existing host (works even if redeploy.sh is missing locally).
-# Session Manager:
-#   sudo bash -c 'export DAT_POKER_REPO_REF=cursor/hybrid-dat-chia-gaming-3c03; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/hybrid-dat-chia-gaming-3c03/deploy/aws-ec2/up.sh" | bash'
+# Phone / Session Manager: run short commands in docs/BETA.md § "Update from your phone".
 set -euxo pipefail
 
 REF="${DAT_POKER_REPO_REF:-cursor/hybrid-dat-chia-gaming-3c03}"
@@ -11,6 +10,7 @@ GITHUB_RAW="https://raw.githubusercontent.com/Drewski241/dat-poker"
 if [[ ! -d "$ROOT/.git" ]]; then
   echo "No git repo at $ROOT."
   echo "This box was never bootstrapped with DAT POKER user-data."
+  echo "Use a desktop browser to paste console-user-data.sh on a new EC2 launch (see docs/BETA.md)."
   exit 1
 fi
 

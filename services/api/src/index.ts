@@ -1,17 +1,24 @@
 import { config as loadEnv } from "dotenv";
-import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import fastifyStatic from "@fastify/static";
 import { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import { POKER_VARIANTS } from "@dat-poker/shared";
-import { registerTableRoutes } from "./routes/tables.js";
+import { loadUsers } from "./user-store.js";
+import { loadLedger } from "./account-store.js";
+import { registerTableRoutes, returnAllStacksToAccounts } from "./routes/tables.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerFeedbackRoutes } from "./routes/feedback.js";
+import { registerSessionRoutes } from "./routes/session.js";
+import { registerAuthRoutes } from "./routes/auth.js";
+import { registerPlayRoutes } from "./routes/play.js";
+import { registerSlotsRoutes } from "./routes/slots.js";
+import { registerSiteDatRoutes } from "./routes/site-dat.js";
+import { registerTournamentRoutes } from "./routes/tournaments.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -33,7 +40,7 @@ const chiaClient = new ChiaGamingClient({
 });
 
 async function main(): Promise<void> {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: true, trustProxy: true });
   await app.register(cors, { origin: true });
 
   app.addHook("preSerialization", async (_request, _reply, payload) => {
@@ -41,28 +48,43 @@ async function main(): Promise<void> {
     return serializeForJson(payload);
   });
 
+  await loadUsers();
+  loadLedger();
+
   registerHealthRoutes(app, chiaClient);
+  registerAuthRoutes(app);
+  registerSessionRoutes(app);
   registerWalletRoutes(app, chiaClient);
-  registerTableRoutes(app, chiaClient);
+  registerSiteDatRoutes(app);
+  registerTournamentRoutes(app);
+  registerFeedbackRoutes(app);
+  registerTableRoutes(app);
   registerHandRoutes(app);
+  registerPlayRoutes(app);
+  registerSlotsRoutes(app);
 
   app.get("/v1/variants", async () => ({
     variants: POKER_VARIANTS,
   }));
 
-  const webDist = process.env.WEB_DIST?.trim();
-  if (webDist && existsSync(webDist)) {
-    await app.register(fastifyStatic, { root: webDist });
-    app.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith("/v1") || req.url.startsWith("/health")) {
-        return reply.status(404).send({ error: "Not found" });
-      }
-      return reply.sendFile("index.html");
-    });
-  }
+  app.addHook("onClose", async () => {
+    try {
+      const { returned } = returnAllStacksToAccounts();
+      app.log.info({ returned }, "returned table stacks to persisted DAT accounts");
+    } catch (err) {
+      app.log.error({ err }, "failed to return table stacks on shutdown");
+    }
+  });
 
   await app.listen({ port, host });
   app.log.info(`API listening on http://${host}:${port}`);
+
+  const stop = (signal: string) => {
+    app.log.info({ signal }, "shutting down");
+    void app.close().finally(() => process.exit(0));
+  };
+  process.once("SIGTERM", () => stop("SIGTERM"));
+  process.once("SIGINT", () => stop("SIGINT"));
 }
 
 main().catch((err) => {

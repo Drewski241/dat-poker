@@ -1,0 +1,851 @@
+import {
+  evaluateBestHand,
+  evaluateOmahaBestHand,
+  rankValue,
+  type Card,
+  type PlayerAction,
+} from "@dat-poker/game-engine";
+import {
+  computeNlheBetRange,
+  isOmahaVariant,
+  isPotLimitVariant,
+  snapRaiseTo,
+  type PokerVariant,
+} from "@dat-poker/shared";
+export interface HouseView {
+  street: string;
+  holeCards: Card[];
+  board: Card[];
+  potMojos: bigint;
+  currentBetMojos: bigint;
+  betThisStreetMojos: bigint;
+  stackMojos: bigint;
+  bigBlindMojos: bigint;
+  lastRaiseIncrementMojos: bigint;
+  opponentsAllIn: boolean;
+  /** House vs one live opponent — always true at our 6-max fill seat. */
+  headsUp?: boolean;
+  variant?: PokerVariant;
+}
+
+export interface HouseChoice {
+  action: PlayerAction;
+  amountMojos: bigint;
+}
+
+const VALUE_BET_FREQ = 0.9;
+const STRONG_BET_FREQ = 0.68;
+const STAB_BET_FREQ = 0.4;
+const BLUFF_BET_FREQ = 0.18;
+const VALUE_RAISE_FREQ = 0.48;
+const STRONG_RAISE_FREQ = 0.24;
+const BLUFF_RAISE_FREQ = 0.08;
+
+export function chooseHouseAction(
+  view: HouseView,
+  random: () => number = Math.random,
+): HouseChoice {
+  const toCall = view.currentBetMojos - view.betThisStreetMojos;
+  const passive: HouseChoice =
+    toCall > 0n ? { action: "call", amountMojos: 0n } : { action: "check", amountMojos: 0n };
+
+  const omaha = isOmahaVariant(view.variant) || view.holeCards.length >= 4;
+  if (view.holeCards.length < 2 || (view.holeCards.length !== 2 && !omaha)) {
+    return passive;
+  }
+
+  if (view.opponentsAllIn && toCall <= 0n) {
+    return { action: "check", amountMojos: 0n };
+  }
+
+  const strength = estimateHouseStrength(view);
+  const roll = () => clamp01(random());
+
+  if (omaha) {
+    if (toCall > 0n) {
+      return facingBetOmaha(view, toCall, strength, roll) ?? { action: "fold", amountMojos: 0n };
+    }
+    return checkedToOmaha(view, strength, roll) ?? passive;
+  }
+
+  if (view.street === "preflop" && view.headsUp) {
+    return headsUpPreflop(view, toCall, roll);
+  }
+
+  if (toCall > 0n) {
+    return facingBet(view, toCall, strength, roll) ?? { action: "fold", amountMojos: 0n };
+  }
+  return checkedTo(view, strength, roll) ?? passive;
+}
+
+export function estimateHouseStrength(view: HouseView): number {
+  const omaha = isOmahaVariant(view.variant) || view.holeCards.length >= 4;
+  if (view.holeCards.length < 2) {
+    return 0;
+  }
+  if (view.street === "preflop" || view.board.length < 3) {
+    if (omaha) return omahaPreflopStrength(view.holeCards);
+    return preflopStrength(view.holeCards[0], view.holeCards[1]);
+  }
+
+  const hero = omaha
+    ? evaluateOmahaBestHand(view.holeCards, view.board)
+    : evaluateBestHand([...view.holeCards, ...view.board]);
+  let score = categoryScore(hero.category);
+
+  if (hero.category === "pair") {
+    score = omaha ? Math.min(0.42, score) : pairScore(view.holeCards, view.board);
+  } else if (hero.category === "high_card") {
+    score = 0.16 + Math.max(...view.holeCards.map((c) => rankValue(c.rank))) / 200;
+  }
+
+  if (view.board.length === 5 && !omaha) {
+    const boardOnly = evaluateBestHand(view.board);
+    if (hero.score <= boardOnly.score) {
+      score = Math.min(score, 0.28);
+    }
+  } else if (!omaha && !holePlays(view.holeCards, view.board) && hero.category === "pair") {
+    score = Math.min(score, 0.24);
+  }
+
+  if (view.street !== "river") {
+    if (omaha) {
+      const draws = omahaDrawStrength(view.holeCards, view.board);
+      if (draws.flushDraw) {
+        score = Math.max(score, 0.48);
+        score = Math.min(0.76, score + 0.14);
+      }
+      if (draws.wrap) {
+        score = Math.max(score, 0.5);
+        score = Math.min(0.78, score + 0.14);
+      } else if (draws.oesd) {
+        score = Math.max(score, 0.44);
+        score = Math.min(0.72, score + 0.1);
+      } else if (draws.gutshot) {
+        score = Math.min(0.64, score + 0.06);
+      }
+      if (draws.flushDraw && (draws.wrap || draws.oesd)) {
+        score = Math.min(0.82, Math.max(score, 0.62) + 0.08);
+      }
+    } else {
+      if (hasFlushDraw(view.holeCards, view.board)) {
+        score = Math.max(score, 0.46);
+        score = Math.min(0.74, score + 0.12);
+      }
+      const draw = straightDraw(view.holeCards, view.board);
+      if (draw === "oesd") {
+        score = Math.max(score, 0.42);
+        score = Math.min(0.72, score + 0.1);
+      } else if (draw === "gutshot") {
+        score = Math.min(0.62, score + 0.06);
+      }
+    }
+  }
+
+  return clamp01(score);
+}
+
+function headsUpPreflop(
+  view: HouseView,
+  toCall: bigint,
+  roll: () => number,
+): HouseChoice {
+  const score = huPreflopScore(view.holeCards[0], view.holeCards[1]);
+  const unraised = view.currentBetMojos <= view.bigBlindMojos;
+  const facingRaise = toCall > 0n && !unraised;
+
+  if (view.opponentsAllIn && toCall <= 0n) {
+    return { action: "check", amountMojos: 0n };
+  }
+
+  if (toCall <= 0n) {
+    // BB option after a complete. Isolate a wide HU range; otherwise check.
+    if (score >= 0.28 && roll() < 0.72) {
+      return preflopOpen(view, true) ?? { action: "check", amountMojos: 0n };
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+
+  if (!facingRaise) {
+    // SB vs posted BB: raise ~80% of hands, fold only junk.
+    if (score >= 0.16) {
+      if (roll() < 0.88) return preflopOpen(view, true) ?? { action: "call", amountMojos: 0n };
+      return { action: "call", amountMojos: 0n };
+    }
+    if (roll() < 0.22) return preflopOpen(view, true) ?? { action: "call", amountMojos: 0n };
+    if (roll() < 0.12) return { action: "call", amountMojos: 0n };
+    return { action: "fold", amountMojos: 0n };
+  }
+
+  const openBb = ratio(view.currentBetMojos, view.bigBlindMojos);
+  let continueAt = 0.14;
+  if (openBb > 4.2) continueAt = 0.34;
+  else if (openBb > 3.2) continueAt = 0.24;
+  else if (openBb > 2.4) continueAt = 0.16;
+  else continueAt = 0.12;
+
+  if (score >= 0.5 || (score >= 0.34 && roll() < 0.38)) {
+    return preflopOpen(view, true) ?? { action: "call", amountMojos: 0n };
+  }
+  if (score >= continueAt) {
+    return { action: "call", amountMojos: 0n };
+  }
+  if (roll() < 0.08 && openBb <= 3.2) {
+    return preflopOpen(view, true) ?? { action: "fold", amountMojos: 0n };
+  }
+  return { action: "fold", amountMojos: 0n };
+}
+
+/** Heads-up hole-card score. Full-ring Chen is too tight for HU. */
+export function huPreflopScore(a: Card, b: Card): number {
+  const va = rankValue(a.rank);
+  const vb = rankValue(b.rank);
+  const high = Math.max(va, vb);
+  const low = Math.min(va, vb);
+  const pair = a.rank === b.rank;
+  const suited = a.suit === b.suit;
+  const gap = high - low - 1;
+
+  if (pair) {
+    return clamp01(0.42 + ((high - 2) / 12) * 0.5);
+  }
+
+  let score = (high / 14) * 0.36 + (low / 14) * 0.18;
+  if (suited) score += 0.14;
+  if (gap === 0) score += 0.09;
+  else if (gap === 1) score += 0.05;
+  else if (gap === 2) score += 0.02;
+  if (high === 14) score += 0.14;
+  else if (high === 13) score += 0.06;
+  else if (high === 12) score += 0.03;
+
+  if (!suited && gap >= 4 && low <= 5 && high <= 12) {
+    score *= 0.42;
+  } else if (!suited && gap >= 3 && high <= 10 && low <= 6) {
+    score *= 0.38;
+  }
+
+  return clamp01(score);
+}
+
+function facingBet(
+  view: HouseView,
+  toCall: bigint,
+  strength: number,
+  roll: () => number,
+): HouseChoice | null {
+  const potWithCall = view.potMojos + toCall;
+  const price = ratio(toCall, potWithCall);
+  const cheap = price <= 0.22 || toCall <= view.bigBlindMojos;
+  const huge = price >= 0.55;
+
+  if (view.opponentsAllIn) {
+    return facingAllInCall(view, toCall, strength, roll);
+  }
+
+  if (view.street === "preflop") {
+    const unraised = view.currentBetMojos <= view.bigBlindMojos;
+    if (strength >= 0.55 && roll() < 0.82) {
+      return preflopOpen(view) ?? { action: "call", amountMojos: 0n };
+    }
+    if (unraised && strength >= 0.22) {
+      return { action: "call", amountMojos: 0n };
+    }
+    if (unraised && roll() < 0.12) {
+      return { action: "call", amountMojos: 0n };
+    }
+    if (strength >= 0.4 && !huge && roll() < 0.3) {
+      return preflopOpen(view) ?? { action: "call", amountMojos: 0n };
+    }
+    if (cheap && strength >= 0.18) {
+      return { action: "call", amountMojos: 0n };
+    }
+    return { action: "fold", amountMojos: 0n };
+  }
+
+  if (strength >= 0.85) {
+    if (roll() < VALUE_RAISE_FREQ) {
+      return raiseChoice(view, 2, 3) ?? { action: "call", amountMojos: 0n };
+    }
+    return { action: "call", amountMojos: 0n };
+  }
+  if (strength >= 0.68) {
+    if (!huge && roll() < STRONG_RAISE_FREQ) {
+      return raiseChoice(view, 1, 2) ?? { action: "call", amountMojos: 0n };
+    }
+    return { action: "call", amountMojos: 0n };
+  }
+  if (strength >= 0.48) {
+    if (huge && roll() > 0.35) {
+      return { action: "fold", amountMojos: 0n };
+    }
+    return { action: "call", amountMojos: 0n };
+  }
+  if (strength >= 0.32) {
+    if (cheap || (!huge && roll() < 0.45)) {
+      return { action: "call", amountMojos: 0n };
+    }
+    return { action: "fold", amountMojos: 0n };
+  }
+
+  if (!huge && roll() < BLUFF_RAISE_FREQ) {
+    return raiseChoice(view, 1, 2);
+  }
+  if (cheap && roll() < 0.25) {
+    return { action: "call", amountMojos: 0n };
+  }
+  return { action: "fold", amountMojos: 0n };
+}
+
+/**
+ * Facing an all-in: call or fold only (never raise). Uses pot odds + hand
+ * strength so short prices get called wider and huge shoves need a real hand.
+ * Multiway seats play tighter than heads-up.
+ */
+function facingAllInCall(
+  view: HouseView,
+  toCall: bigint,
+  strength: number,
+  roll: () => number,
+): HouseChoice {
+  const call: HouseChoice = { action: "call", amountMojos: 0n };
+  const fold: HouseChoice = { action: "fold", amountMojos: 0n };
+  if (toCall <= 0n) return { action: "check", amountMojos: 0n };
+
+  const potWithCall = view.potMojos + toCall;
+  const price = ratio(toCall, potWithCall);
+  const stackCommit = ratio(toCall, view.stackMojos + toCall);
+
+  // Rough equity needed ≈ price; ask for a bit more so we are not calling stations.
+  let need = 0.38;
+  if (price <= 0.12) need = 0.2;
+  else if (price <= 0.2) need = 0.26;
+  else if (price <= 0.3) need = 0.34;
+  else if (price <= 0.4) need = 0.42;
+  else if (price <= 0.5) need = 0.5;
+  else if (price <= 0.62) need = 0.58;
+  else need = 0.68;
+
+  if (!view.headsUp) need += 0.1;
+  if (stackCommit >= 0.75) need += 0.06;
+  if (view.street === "preflop") need += 0.04;
+
+  if (strength >= need + 0.12) return call;
+  if (strength >= need) {
+    // Borderline: call most of the time, still fold some.
+    return roll() < 0.72 ? call : fold;
+  }
+  if (strength >= need - 0.08 && price <= 0.28 && roll() < 0.22) {
+    // Occasional light call with a draw / weak showdown when getting a price.
+    return call;
+  }
+  return fold;
+}
+
+/**
+ * Pot-Limit Omaha facing a bet: respect pot odds, call draws when priced in,
+ * and avoid turning every continue into a pot-sized shove.
+ */
+function facingBetOmaha(
+  view: HouseView,
+  toCall: bigint,
+  strength: number,
+  roll: () => number,
+): HouseChoice | null {
+  const potWithCall = view.potMojos + toCall;
+  const price = ratio(toCall, potWithCall);
+  const cheap = price <= 0.25 || toCall <= view.bigBlindMojos;
+  const huge = price >= 0.5;
+  const spr = stackToPotRatio(view);
+  const shovey = spr <= 2.2 || aggressionWouldShove(view);
+
+  if (view.opponentsAllIn) {
+    return facingAllInCallOmaha(view, toCall, strength, roll);
+  }
+
+  if (view.street === "preflop") {
+    const unraised = view.currentBetMojos <= view.bigBlindMojos;
+    if (strength >= 0.62 && !shovey && roll() < 0.55) {
+      return omahaRaise(view, 1, 2) ?? { action: "call", amountMojos: 0n };
+    }
+    if (strength >= 0.7 && shovey && roll() < 0.4) {
+      return omahaRaise(view, 1, 1) ?? { action: "call", amountMojos: 0n };
+    }
+    if (unraised && strength >= 0.28) {
+      return { action: "call", amountMojos: 0n };
+    }
+    if (cheap && strength >= 0.22) {
+      return { action: "call", amountMojos: 0n };
+    }
+    if (strength >= 0.45 && !huge) {
+      return { action: "call", amountMojos: 0n };
+    }
+    return { action: "fold", amountMojos: 0n };
+  }
+
+  const draws =
+    view.street === "river"
+      ? { flushDraw: false, wrap: false, oesd: false, gutshot: false }
+      : omahaDrawStrength(view.holeCards, view.board);
+  const pricedDraw =
+    draws.flushDraw || draws.wrap || draws.oesd
+      ? price <= 0.34
+      : draws.gutshot
+        ? price <= 0.22
+        : false;
+
+  if (strength >= 0.88) {
+    if (!shovey && roll() < 0.42) {
+      return omahaRaise(view, 1, 2) ?? { action: "call", amountMojos: 0n };
+    }
+    return { action: "call", amountMojos: 0n };
+  }
+  if (strength >= 0.7) {
+    if (!huge && !shovey && roll() < 0.22) {
+      return omahaRaise(view, 1, 3) ?? { action: "call", amountMojos: 0n };
+    }
+    return { action: "call", amountMojos: 0n };
+  }
+  if (strength >= 0.48 || pricedDraw) {
+    if (huge && strength < 0.55 && !pricedDraw && roll() > 0.4) {
+      return { action: "fold", amountMojos: 0n };
+    }
+    return { action: "call", amountMojos: 0n };
+  }
+  if (strength >= 0.34) {
+    if (cheap || pricedDraw || (!huge && price <= 0.3 && roll() < 0.55)) {
+      return { action: "call", amountMojos: 0n };
+    }
+    return { action: "fold", amountMojos: 0n };
+  }
+
+  // Air: almost never bluff-raise when it commits the stack (MTT short SPR).
+  if (!shovey && !huge && roll() < 0.04) {
+    return omahaRaise(view, 1, 3);
+  }
+  if (cheap && roll() < 0.18) {
+    return { action: "call", amountMojos: 0n };
+  }
+  return { action: "fold", amountMojos: 0n };
+}
+
+function facingAllInCallOmaha(
+  view: HouseView,
+  toCall: bigint,
+  strength: number,
+  roll: () => number,
+): HouseChoice {
+  const call: HouseChoice = { action: "call", amountMojos: 0n };
+  const fold: HouseChoice = { action: "fold", amountMojos: 0n };
+  if (toCall <= 0n) return { action: "check", amountMojos: 0n };
+
+  const potWithCall = view.potMojos + toCall;
+  const price = ratio(toCall, potWithCall);
+  const draws =
+    view.street === "river" || view.board.length < 3
+      ? { flushDraw: false, wrap: false, oesd: false, gutshot: false }
+      : omahaDrawStrength(view.holeCards, view.board);
+  const comboDraw = (draws.flushDraw ? 1 : 0) + (draws.wrap || draws.oesd ? 1 : 0) >= 2;
+
+  // Pot odds first: equity needed ≈ price, with a small Omaha buffer for reverse implied odds.
+  let need = price + 0.06;
+  if (price <= 0.15) need = 0.18;
+  else if (price <= 0.22) need = 0.26;
+  else if (price <= 0.3) need = 0.34;
+  else if (price <= 0.4) need = 0.44;
+  else if (price <= 0.5) need = 0.54;
+  else need = 0.64;
+
+  if (!view.headsUp) need += 0.08;
+  if (view.street === "preflop") need += 0.05;
+  if (comboDraw && view.street !== "river") need -= 0.1;
+  else if ((draws.flushDraw || draws.wrap) && view.street !== "river") need -= 0.06;
+  need = clamp01(need);
+
+  if (strength >= need + 0.1) return call;
+  if (strength >= need) return roll() < 0.78 ? call : fold;
+  if (strength >= need - 0.08 && price <= 0.3 && roll() < 0.28) return call;
+  return fold;
+}
+
+/** Omaha checked-to: smaller pot bets; refuse air shoves when SPR is short. */
+function checkedToOmaha(view: HouseView, strength: number, roll: () => number): HouseChoice | null {
+  const shovey = stackToPotRatio(view) <= 2.2 || aggressionWouldShove(view);
+
+  if (view.street === "preflop") {
+    if (strength >= 0.58 && roll() < (shovey ? 0.35 : 0.7)) {
+      return omahaRaise(view, shovey ? 1 : 1, shovey ? 1 : 2) ?? {
+        action: "check",
+        amountMojos: 0n,
+      };
+    }
+    if (strength >= 0.42 && !shovey && roll() < 0.28) {
+      return omahaRaise(view, 1, 2);
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+
+  if (strength >= 0.85) {
+    if (roll() < 0.85) {
+      return omahaRaise(view, shovey ? 1 : 1, shovey ? 1 : 2);
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+  if (strength >= 0.68) {
+    if (roll() < (shovey ? 0.45 : 0.62)) {
+      return omahaRaise(view, 1, shovey ? 2 : 3);
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+  if (strength >= 0.48) {
+    if (!shovey && roll() < 0.34) {
+      return omahaRaise(view, 1, 3);
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+  // Do not bluff-shove air in short-SPR MTT pots — that is the drunk-bot feel.
+  if (!shovey && roll() < 0.1) {
+    return omahaRaise(view, 1, 3);
+  }
+  return { action: "check", amountMojos: 0n };
+}
+
+function checkedTo(view: HouseView, strength: number, roll: () => number): HouseChoice | null {
+  if (view.street === "preflop") {
+    if (strength >= 0.55 && roll() < 0.82) {
+      return preflopOpen(view);
+    }
+    if (strength >= 0.4 && roll() < 0.35) {
+      return preflopOpen(view);
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+
+  if (strength >= 0.85) {
+    if (roll() < VALUE_BET_FREQ) {
+      return raiseChoice(view, 2, 3);
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+  if (strength >= 0.68) {
+    if (roll() < STRONG_BET_FREQ) {
+      return raiseChoice(view, 2, 3);
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+  if (strength >= 0.48) {
+    if (roll() < STAB_BET_FREQ) {
+      return raiseChoice(view, 1, 2);
+    }
+    return { action: "check", amountMojos: 0n };
+  }
+  if (roll() < BLUFF_BET_FREQ) {
+    return raiseChoice(view, 1, 2);
+  }
+  return { action: "check", amountMojos: 0n };
+}
+
+function preflopOpen(view: HouseView, headsUp = false): HouseChoice | null {
+  const threeBb = view.bigBlindMojos * 3n;
+  const unraised = view.currentBetMojos <= view.bigBlindMojos;
+  const iso =
+    headsUp && unraised
+      ? view.bigBlindMojos * 3n
+      : view.currentBetMojos > 0n
+        ? view.currentBetMojos * 3n
+        : threeBb;
+  const range = betRange(view);
+  if (!range.canBetOrRaise) {
+    return { action: "check", amountMojos: 0n };
+  }
+  const amount = snapRaiseTo(iso, range.minRaiseTo, range.maxRaiseTo, view.bigBlindMojos);
+  return {
+    action: view.currentBetMojos === 0n ? "bet" : "raise",
+    amountMojos: amount,
+  };
+}
+
+function raiseChoice(view: HouseView, potNum: number, potDen: number): HouseChoice | null {
+  const range = betRange(view);
+  if (!range.canBetOrRaise) {
+    return null;
+  }
+  const extra = (view.potMojos * BigInt(potNum)) / BigInt(potDen);
+  const opening = view.currentBetMojos === 0n;
+  const desired = opening
+    ? extra > view.bigBlindMojos
+      ? extra
+      : view.bigBlindMojos
+    : view.currentBetMojos + extra;
+  const amount = snapRaiseTo(desired, range.minRaiseTo, range.maxRaiseTo, view.bigBlindMojos);
+  if (amount <= view.currentBetMojos) {
+    return null;
+  }
+  return {
+    action: opening ? "bet" : "raise",
+    amountMojos: amount,
+  };
+}
+
+/** Prefer smaller pot fractions in PLO so deep stacks do not default to pot shoves. */
+function omahaRaise(view: HouseView, potNum: number, potDen: number): HouseChoice | null {
+  return raiseChoice(view, potNum, potDen);
+}
+
+/** Effective stack / pot — short SPR means any pot bet is essentially a shove. */
+function stackToPotRatio(view: HouseView): number {
+  if (view.potMojos <= 0n) return 99;
+  return ratio(view.stackMojos, view.potMojos);
+}
+
+/** True when the max legal pot-limit aggression commits (nearly) the whole stack. */
+function aggressionWouldShove(view: HouseView): boolean {
+  const range = betRange(view);
+  if (!range.canBetOrRaise) return false;
+  const chipsToPutIn = range.maxRaiseTo - view.betThisStreetMojos;
+  return chipsToPutIn >= (view.stackMojos * 85n) / 100n;
+}
+
+export type OmahaDrawFlags = {
+  flushDraw: boolean;
+  wrap: boolean;
+  oesd: boolean;
+  gutshot: boolean;
+};
+
+/**
+ * Omaha draws must use exactly two hole cards. Hold'em-style "any suited hole + board"
+ * over-counts flush draws and creates fake equity for junk four-card hands.
+ */
+export function omahaDrawStrength(hole: Card[], board: Card[]): OmahaDrawFlags {
+  const flushDraw = omahaFlushDraw(hole, board);
+  const straight = omahaStraightDraw(hole, board);
+  return {
+    flushDraw,
+    wrap: straight === "wrap",
+    oesd: straight === "oesd",
+    gutshot: straight === "gutshot",
+  };
+}
+
+function omahaFlushDraw(hole: Card[], board: Card[]): boolean {
+  if (board.length < 3 || board.length > 4) return false;
+  for (const suit of ["c", "d", "h", "s"] as const) {
+    const holeSuited = hole.filter((c) => c.suit === suit).length;
+    const boardSuited = board.filter((c) => c.suit === suit).length;
+    // Need exactly 2 hole + 2 board (one card to come) for a legal Omaha flush draw.
+    if (holeSuited >= 2 && boardSuited === 2) return true;
+  }
+  return false;
+}
+
+function omahaStraightDraw(hole: Card[], board: Card[]): "wrap" | "oesd" | "gutshot" | null {
+  if (board.length < 3 || board.length > 4) return null;
+  const outs = countOmahaStraightOutRanks(hole, board);
+  if (outs >= 8) return "wrap";
+  if (outs >= 4) return "oesd";
+  if (outs >= 1) return "gutshot";
+  return null;
+}
+
+/**
+ * Distinct ranks that, as the next board card, make a straight for some exact
+ * 2-hole + 3-board combo (Omaha rule).
+ */
+function countOmahaStraightOutRanks(hole: Card[], board: Card[]): number {
+  const holeRanks = hole.map((c) => rankValue(c.rank));
+  const boardRanks = board.map((c) => rankValue(c.rank));
+  const completing = new Set<number>();
+
+  for (let turn = 2; turn <= 14; turn++) {
+    if (boardRanks.includes(turn)) continue;
+    const nextBoard = [...boardRanks, turn];
+    for (let i = 0; i < holeRanks.length; i++) {
+      for (let j = i + 1; j < holeRanks.length; j++) {
+        const pair = [holeRanks[i]!, holeRanks[j]!];
+        for (let a = 0; a < nextBoard.length; a++) {
+          for (let b = a + 1; b < nextBoard.length; b++) {
+            for (let c = b + 1; c < nextBoard.length; c++) {
+              if (isStraightRanks([...pair, nextBoard[a]!, nextBoard[b]!, nextBoard[c]!])) {
+                completing.add(turn);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return completing.size;
+}
+
+function isStraightRanks(ranks: number[]): boolean {
+  const vals = new Set(ranks);
+  if (vals.has(14)) vals.add(1);
+  for (let start = 1; start <= 10; start++) {
+    if ([0, 1, 2, 3, 4].every((i) => vals.has(start + i))) return true;
+  }
+  return false;
+}
+
+function betRange(view: HouseView) {
+  const potLimit =
+    isPotLimitVariant(view.variant) || isOmahaVariant(view.variant) || view.holeCards.length >= 4;
+  return computeNlheBetRange({
+    bigBlindMojos: view.bigBlindMojos,
+    currentBetMojos: view.currentBetMojos,
+    myBetThisStreetMojos: view.betThisStreetMojos,
+    myStackMojos: view.stackMojos,
+    lastRaiseIncrementMojos: view.lastRaiseIncrementMojos,
+    potMojos: view.potMojos,
+    bettingStructure: potLimit ? "pot-limit" : "no-limit",
+  });
+}
+
+/** Rough PLO preflop: prefer double-suited / high pairs / connected rundowns. */
+function omahaPreflopStrength(hole: Card[]): number {
+  const ranks = hole.map((c) => rankValue(c.rank)).sort((a, b) => b - a);
+  const suits = hole.map((c) => c.suit);
+  const suitCounts = new Map<string, number>();
+  for (const s of suits) suitCounts.set(s, (suitCounts.get(s) ?? 0) + 1);
+  const suitedBuckets = [...suitCounts.values()].filter((n) => n >= 2).length;
+  const maxSuit = Math.max(...suitCounts.values());
+  const uniqueRanks = new Set(ranks).size;
+  const pairBonus = 4 - uniqueRanks;
+  const high = (ranks[0]! + ranks[1]!) / 28;
+  const connected =
+    ranks[0]! - ranks[3]! <= 6 ? 0.1 : ranks[0]! - ranks[2]! <= 4 ? 0.06 : 0;
+  const suitedBonus = suitedBuckets >= 2 ? 0.16 : maxSuit >= 2 ? 0.09 : 0;
+  return clamp01(0.2 + high * 0.45 + pairBonus * 0.12 + suitedBonus + connected);
+}
+
+function preflopStrength(a: Card, b: Card): number {
+  const va = rankValue(a.rank);
+  const vb = rankValue(b.rank);
+  const high = Math.max(va, vb);
+  const low = Math.min(va, vb);
+  const pair = a.rank === b.rank;
+  const suited = a.suit === b.suit;
+
+  const highPts: Record<number, number> = {
+    14: 10,
+    13: 8,
+    12: 7,
+    11: 6,
+    10: 5,
+  };
+  let chen = highPts[high] ?? high / 2;
+
+  if (pair) {
+    chen = Math.max(5, chen * 2);
+    if (high === 5) chen += 1;
+    return clamp01(chen / 20);
+  }
+
+  if (suited) chen += 2;
+  let gap = high - low - 1;
+  if (high === 14 && low <= 5) {
+    gap = Math.min(gap, suited ? 1 : 2);
+  }
+  if (gap === 0) chen += 1;
+  else if (gap === 1) chen -= 1;
+  else if (gap === 2) chen -= 2;
+  else if (gap === 3) chen -= 4;
+  else chen -= 5;
+
+  return clamp01(chen / 20);
+}
+
+function categoryScore(
+  category: ReturnType<typeof evaluateBestHand>["category"],
+): number {
+  switch (category) {
+    case "straight_flush":
+      return 1;
+    case "four_kind":
+      return 0.99;
+    case "full_house":
+      return 0.96;
+    case "flush":
+      return 0.9;
+    case "straight":
+      return 0.88;
+    case "three_kind":
+      return 0.82;
+    case "two_pair":
+      return 0.72;
+    case "pair":
+      return 0.45;
+    default:
+      return 0.18;
+  }
+}
+
+function pairScore(hole: Card[], board: Card[]): number {
+  if (!holePlays(hole, board)) {
+    return 0.22;
+  }
+  const boardHigh = Math.max(...board.map((c) => rankValue(c.rank)));
+  const boardRanks = board.map((c) => rankValue(c.rank)).sort((a, b) => b - a);
+  const pocket = hole[0].rank === hole[1].rank;
+  const pairRank = pocket
+    ? rankValue(hole[0].rank)
+    : rankValue(hole.find((h) => board.some((b) => b.rank === h.rank))?.rank ?? hole[0].rank);
+
+  if (pocket && pairRank > boardHigh) {
+    return 0.66;
+  }
+  if (pairRank === boardHigh) {
+    const kicker = pocket ? pairRank : rankValue(hole.find((h) => rankValue(h.rank) !== pairRank)?.rank ?? hole[0].rank);
+    return 0.52 + (kicker >= 14 ? 0.06 : kicker >= 12 ? 0.03 : 0);
+  }
+  if (pairRank === boardRanks[1]) {
+    return 0.4;
+  }
+  return 0.32;
+}
+
+function holePlays(hole: Card[], board: Card[]): boolean {
+  if (hole[0].rank === hole[1].rank) {
+    return true;
+  }
+  return hole.some((h) => board.some((b) => b.rank === h.rank));
+}
+
+function hasFlushDraw(hole: Card[], board: Card[]): boolean {
+  for (const suit of ["c", "d", "h", "s"] as const) {
+    const fromHole = hole.filter((c) => c.suit === suit).length;
+    const total = [...hole, ...board].filter((c) => c.suit === suit).length;
+    if (fromHole >= 1 && total === 4) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function straightDraw(hole: Card[], board: Card[]): "oesd" | "gutshot" | null {
+  const vals = new Set([...hole, ...board].map((c) => rankValue(c.rank)));
+  if (vals.has(14)) vals.add(1);
+  let best: "oesd" | "gutshot" | null = null;
+  for (let start = 1; start <= 10; start++) {
+    const window = [0, 1, 2, 3, 4].map((i) => start + i);
+    const have = window.filter((r) => vals.has(r));
+    if (have.length !== 4) continue;
+    const missing = window.find((r) => !vals.has(r));
+    if (missing === start || missing === start + 4) {
+      best = "oesd";
+    } else if (best !== "oesd") {
+      best = "gutshot";
+    }
+  }
+  return best;
+}
+
+function ratio(a: bigint, b: bigint): number {
+  if (b <= 0n) return 1;
+  return Number(a) / Number(b);
+}
+
+function clamp01(n: number): number {
+  if (Number.isNaN(n)) return 0;
+  return Math.min(1, Math.max(0, n));
+}
