@@ -26,6 +26,9 @@ sequenceDiagram
 |--------|------|-----------------|
 | **Treasury Sage** | Holds DAT pool, creates payout offers | Local RPC on `https://127.0.0.1:9257` |
 | **Player Sage** | Buy-in, play, take offers | WalletConnect from web app |
+| **Player Cloud Wallet** | Optional withdraw destination | OAuth on the game API. Sage still builds the DAT offer |
+
+Players can withdraw unlocked DAT to a Chia Cloud Wallet vault. Treasury Sage still creates the offer. The game API then asks Cloud Wallet to take it. Connect stays off until an OAuth app is registered in Cloud Wallet under Settings → OAuth Apps and approved. Register this redirect URI exactly: `https://datspiritpoker.com/v1/wallet/cloud/callback`. Request scopes `wallet.read`, `offer.read`, `offer.accept`, and `offline_access`. Put the client id in `CHIA_CLOUD_WALLET_CLIENT_ID` on the API host. If the portal issues a client secret, put that only in `CHIA_CLOUD_WALLET_CLIENT_SECRET` on the same host.
 
 Use a **separate Sage key/fingerprint** for treasury — not the same profile players use to play.
 

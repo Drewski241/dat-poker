@@ -34,6 +34,29 @@ if [[ -f "$ENV_FILE" ]]; then
       echo "DAT_TREASURY_BANKROLL_MOJOS=${DAT_TREASURY_BANKROLL_MOJOS}" >> "$ENV_FILE"
     fi
   fi
+  upsert_env_line() {
+    local key="$1"
+    local value="$2"
+    local tmp
+    tmp="$(mktemp)"
+    if grep -q "^${key}=" "$ENV_FILE"; then
+      grep -v "^${key}=" "$ENV_FILE" > "$tmp"
+      printf '%s=%s\n' "$key" "$value" >> "$tmp"
+      mv "$tmp" "$ENV_FILE"
+    else
+      rm -f "$tmp"
+      printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+    fi
+  }
+  if [[ -n "${CHIA_CLOUD_WALLET_CLIENT_ID:-}" ]]; then
+    upsert_env_line CHIA_CLOUD_WALLET_CLIENT_ID "$CHIA_CLOUD_WALLET_CLIENT_ID"
+  fi
+  if [[ -n "${CHIA_CLOUD_WALLET_REDIRECT_URI:-}" ]]; then
+    upsert_env_line CHIA_CLOUD_WALLET_REDIRECT_URI "$CHIA_CLOUD_WALLET_REDIRECT_URI"
+  fi
+  if [[ -n "${CHIA_CLOUD_WALLET_CLIENT_SECRET:-}" ]]; then
+    upsert_env_line CHIA_CLOUD_WALLET_CLIENT_SECRET "$CHIA_CLOUD_WALLET_CLIENT_SECRET"
+  fi
   grep -q '^DAT_SPIN_COST_MOJOS=' "$ENV_FILE" || echo 'DAT_SPIN_COST_MOJOS=1000' >> "$ENV_FILE"
   if grep -q '^DAT_POKER_REPO_REF=' "$ENV_FILE"; then
     sed -i "s|^DAT_POKER_REPO_REF=.*|DAT_POKER_REPO_REF=${REPO_REF}|" "$ENV_FILE"

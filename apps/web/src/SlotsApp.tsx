@@ -5,6 +5,7 @@ import { formatDatMojos } from "@dat-poker/shared";
 import { api, restoreApiAuthToken } from "./api.js";
 import { AltSlotMachine } from "./games/slot/AltSlotMachine.js";
 import { SlotMachine } from "./games/slot/SlotMachine.js";
+import { VaultBonusProvider } from "./games/slot/VaultBonus.js";
 import { PlaySessionProvider } from "./play/PlaySessionContext.js";
 import { SiteNav } from "./SiteNav.js";
 import type { SitePage } from "./site-route.js";
@@ -65,6 +66,7 @@ export function SlotsApp({
 
   return (
     <PlaySessionProvider playerId={playerId}>
+      <VaultBonusProvider playerId={playerId} ticker={ticker}>
       <div className="app app-shell-wide">
         <SiteNav page="slots" onNavigate={onNavigate} />
         {loading ? (
@@ -83,7 +85,10 @@ export function SlotsApp({
               Signed in as <strong>{username ?? playerId}</strong>
             </p>
             <h1 className="slot-lobby-title">DAT Slot Floor</h1>
-            <p className="muted">Each game feeds its own progressive pot.</p>
+            <p className="muted">
+              Each game feeds its own progressive pot. About 1 paid spin in 64 unlocks Crack the Vault.
+              That bonus is the only time those chips are on the table.
+            </p>
             <div className="slot-lobby-grid">
               {(catalog.length > 0
                 ? catalog
@@ -132,6 +137,7 @@ export function SlotsApp({
           </>
         )}
       </div>
+      </VaultBonusProvider>
     </PlaySessionProvider>
   );
 }

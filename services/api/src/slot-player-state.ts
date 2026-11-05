@@ -1,7 +1,8 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HouseEdgeState } from "@dat-poker/slot-engine";
+import type { SlotGameId } from "@dat-poker/shared";
+import type { HouseEdgeState, VaultCard } from "@dat-poker/slot-engine";
 import { defaultHouseEdgeState } from "@dat-poker/slot-engine";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -12,9 +13,18 @@ type PokerHoldPending = {
   expiresAt: number;
 };
 
+export type StoredVaultBonus = {
+  bonusId: string;
+  gameId: SlotGameId;
+  betMojos: string;
+  cards: VaultCard[];
+  revealed: number[];
+};
+
 type PlayerSlotState = {
   houseEdge: HouseEdgeState;
   pokerHold?: PokerHoldPending;
+  vault?: StoredVaultBonus;
 };
 
 const byPlayer = new Map<string, PlayerSlotState>();
@@ -47,6 +57,7 @@ function load(): void {
       byPlayer.set(k, {
         houseEdge: v.houseEdge ?? defaultHouseEdgeState(),
         pokerHold: v.pokerHold,
+        vault: v.vault,
       });
     }
   } catch {
@@ -108,6 +119,23 @@ export function clearPokerHoldPending(playerId: string): void {
     delete s.pokerHold;
     persist();
   }
+}
+
+export function getVaultBonus(playerId: string): StoredVaultBonus | null {
+  const vault = get(playerId).vault;
+  return vault ? { ...vault, cards: vault.cards.map((card) => ({ ...card })), revealed: [...vault.revealed] } : null;
+}
+
+export function setVaultBonus(playerId: string, vault: StoredVaultBonus): void {
+  get(playerId).vault = vault;
+  persist();
+}
+
+export function clearVaultBonus(playerId: string): void {
+  const state = get(playerId);
+  if (!state.vault) return;
+  delete state.vault;
+  persist();
 }
 
 export function resetSlotPlayerStateForTests(): void {

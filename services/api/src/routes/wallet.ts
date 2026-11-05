@@ -33,6 +33,30 @@ import { getTableEngine, persistTablePlaythrough, playthroughFields } from "./ta
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import type { TableEngine } from "@dat-poker/game-engine";
 import { allowIpBucket } from "../ip-rate-limit.js";
+import { acceptCloudWalletOffer, cloudWalletConfigured, cloudWalletPublic } from "../cloud-wallet.js";
+
+async function deliverCloudOffer(
+  playerId: string,
+  offer: string,
+): Promise<{ status?: string; error?: string }> {
+  if (offer.startsWith("mock-offer:")) return {};
+  try {
+    return { status: (await acceptCloudWalletOffer(playerId, offer)).status };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+function cloudWithdrawNote(base: string, cloud: { status?: string; error?: string } | null): string {
+  if (!cloud) return base;
+  if (cloud.status) {
+    return "Treasury Sage built the DAT offer and Cloud Wallet accepted it into your vault.";
+  }
+  if (cloud.error) {
+    return `Treasury Sage built the DAT offer. Cloud Wallet did not accept it automatically (${cloud.error}). The offer is included so you can finish it once.`;
+  }
+  return base;
+}
 import { requirePlayer, sessionMatchesClaim, sessionTtlSeconds } from "../player-session.js";
 import {
   buildBuyInMessage,
@@ -112,6 +136,10 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       chiaGaming: {
         lobbyUrl: chia.lobbyBaseUrl,
         gameUrl: chia.gameBaseUrl,
+      },
+      cloudWallet: {
+        configured: cloudWalletConfigured(),
+        redirectUri: process.env.CHIA_CLOUD_WALLET_REDIRECT_URI?.trim() || null,
       },
     };
   });
@@ -349,6 +377,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       devAck?: boolean;
       toAccount?: boolean;
       fromAccount?: boolean;
+      toCloudWallet?: boolean;
     };
   }>("/v1/wallet/withdraw", async (req, reply) => {
     const session = requirePlayer(req, reply);
@@ -368,6 +397,18 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     if (table) persistTablePlaythrough(table);
 
     const cashOutToAccount = Boolean(toAccount);
+    const toCloudWallet = Boolean(req.body.toCloudWallet) && !cashOutToAccount;
+    let payoutAddress = session.displayAddress;
+    let cloudDelivery: { status?: string; error?: string } | null = null;
+    if (toCloudWallet) {
+      const dest = cloudWalletPublic(playerId);
+      if (!dest.address) {
+        return reply.status(400).send({
+          error: "Connect Chia Cloud Wallet before withdrawing DAT there.",
+        });
+      }
+      payoutAddress = dest.address;
+    }
     if (cashOutToAccount) {
       if (!table || !tableId) {
         return reply.status(400).send({ error: "tableId required" });
@@ -403,7 +444,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         return reply.status(400).send({ error: "Nothing unlocked" });
       }
 
-      if (!dat.devBuyInEnabled) {
+      if (!toCloudWallet && !dat.devBuyInEnabled) {
         if (!dat.assetId) {
           return reply.status(503).send({ error: "DAT token not configured" });
         }
@@ -419,7 +460,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         if (proofError) {
           return reply.status(400).send({ error: proofError });
         }
-      } else if (!devAck) {
+      } else if (!toCloudWallet && !devAck) {
         if (dat.assetId && withdrawProof) {
           const proofError = validateWithdrawProof(withdrawProof, {
             tableId: withdrawKey,
@@ -446,11 +487,12 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         try {
           const treasuryOffer = await requestTreasuryOffer({
             assetId: dat.assetId,
-            recipientAddress: session.displayAddress,
+            recipientAddress: payoutAddress,
             amountMojos: withdrawMojos,
             treasuryPayoutUrl: payoutConfig.treasuryPayoutUrl,
           });
           if (treasuryOffer) {
+            if (toCloudWallet) cloudDelivery = await deliverCloudOffer(playerId, treasuryOffer);
             accountMojos = debitAccount(playerId, withdrawMojos, {
               type: "withdraw_sage",
               ref: withdrawKey,
@@ -488,13 +530,17 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         payoutMode: payoutConfig.payoutMode,
         mode,
         offer,
+        cloudOfferStatus: cloudDelivery?.status,
+        cloudOfferError: cloudDelivery?.error,
         feeMojos: payoutConfig.withdrawFeeMojos.toString(),
         accountMojos: accountMojos.toString(),
         playthrough: playthroughView(playerId),
-        note:
+        note: cloudWithdrawNote(
           mode === "offer"
             ? "Approve the treasury offer in Sage to receive unlocked DAT from sit-n-go play."
             : "Sit-n-go hands unlocked this DAT in your account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT.",
+          toCloudWallet ? cloudDelivery : null,
+        ),
       };
     }
 
@@ -518,7 +564,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       });
     }
 
-    if (!cashOutToAccount && !dat.devBuyInEnabled) {
+    if (!toCloudWallet && !cashOutToAccount && !dat.devBuyInEnabled) {
       if (!dat.assetId) {
         return reply.status(503).send({ error: "DAT token not configured" });
       }
@@ -537,7 +583,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       if (!hasBuyIn(tableId!, playerId)) {
         return reply.status(400).send({ error: "No verified buy-in found for this player" });
       }
-    } else if (!cashOutToAccount && !devAck) {
+    } else if (!toCloudWallet && !cashOutToAccount && !devAck) {
       if (dat.assetId && withdrawProof) {
         const proofError = validateWithdrawProof(withdrawProof, {
           tableId: tableId!,
@@ -572,11 +618,12 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       try {
         const treasuryOffer = await requestTreasuryOffer({
           assetId: dat.assetId,
-          recipientAddress: session.displayAddress,
+          recipientAddress: payoutAddress,
           amountMojos: payoutMojos,
           treasuryPayoutUrl: payoutConfig.treasuryPayoutUrl,
         });
         if (treasuryOffer) {
+          if (toCloudWallet) cloudDelivery = await deliverCloudOffer(playerId, treasuryOffer);
           mode = "offer";
           offer = treasuryOffer;
         }
@@ -654,16 +701,21 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       payoutMode: payoutConfig.payoutMode,
       mode,
       offer,
+      cloudOfferStatus: cloudDelivery?.status,
+      cloudOfferError: cloudDelivery?.error,
       feeMojos: feeMojos.toString(),
       accountMojos: accountMojos.toString(),
       playthrough: playthroughView(playerId),
-      note: cashOutToAccount
-        ? "Table stack returned to your DAT account. Play-through progress is kept for the next sit."
-        : mode === "offer"
-          ? "Approve the treasury offer in Sage to receive unlocked DAT."
-          : stillSeated
-            ? "Unlocked DAT returned to your account. Remaining stack stays at the table until you play through more hands."
-            : "Unlocked DAT returned to your DAT account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT.",
+      note: cloudWithdrawNote(
+        cashOutToAccount
+          ? "Table stack returned to your DAT account. Play-through progress is kept for the next sit."
+          : mode === "offer"
+            ? "Approve the treasury offer in Sage to receive unlocked DAT."
+            : stillSeated
+              ? "Unlocked DAT returned to your account. Remaining stack stays at the table until you play through more hands."
+              : "Unlocked DAT returned to your DAT account. Configure DAT_TREASURY_PAYOUT_URL for on-chain CAT.",
+        toCloudWallet ? cloudDelivery : null,
+      ),
     };
   });
 }

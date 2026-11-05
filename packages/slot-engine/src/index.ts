@@ -8,4 +8,5 @@ export * from "./mine-mojo.js";
 export * from "./poker-hands.js";
 export * from "./stampede.js";
 export * from "./house-edge.js";
+export * from "./vault-bonus.js";
 export * from "./game-registry.js";

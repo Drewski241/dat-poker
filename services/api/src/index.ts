@@ -12,6 +12,7 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerCloudWalletRoutes } from "./routes/cloud-wallet.js";
 import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerSessionRoutes } from "./routes/session.js";
 import { registerAuthRoutes } from "./routes/auth.js";
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
   registerAuthRoutes(app);
   registerSessionRoutes(app);
   registerWalletRoutes(app, chiaClient);
+  registerCloudWalletRoutes(app);
   registerSiteDatRoutes(app);
   registerTournamentRoutes(app);
   registerFeedbackRoutes(app);
