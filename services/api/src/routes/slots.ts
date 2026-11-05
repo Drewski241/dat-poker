@@ -1,3 +1,4 @@
+import { randomInt, randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import {
   DAT_PLAY_DEFAULTS,
@@ -18,6 +19,10 @@ import {
   shouldOfferHoldDraw,
   spinForGame,
   tierForResult,
+  VAULT_BONUS_EVERY_N,
+  buildVaultCards,
+  flipVaultCard,
+  vaultCollectedMultiplier,
 } from "@dat-poker/slot-engine";
 import { creditAccount, debitAccount, getAccountBalance } from "../account-store.js";
 import {
@@ -28,13 +33,64 @@ import {
 } from "../jackpot-store.js";
 import {
   clearPokerHoldPending,
+  clearVaultBonus,
   getHouseEdgeState,
+  getVaultBonus,
   setHouseEdgeState,
   setPokerHoldPending,
+  setVaultBonus,
   takePokerHoldPending,
+  type StoredVaultBonus,
 } from "../slot-player-state.js";
 import { requirePlayer, sessionMatchesClaim } from "../player-session.js";
 import { findSeatedPlayerTable } from "./tables.js";
+
+const VAULT_OPEN_ERROR = "The vault bonus is open. Flip your chips before the next spin.";
+
+function vaultUnlocksThisSpin(): boolean {
+  const mode = process.env.DAT_VAULT_BONUS?.trim();
+  if (mode === "always") return true;
+  if (mode === "never") return false;
+  return randomInt(VAULT_BONUS_EVERY_N) === 0;
+}
+
+function vaultCollectedMojos(bonus: StoredVaultBonus): bigint {
+  return BigInt(bonus.betMojos) * BigInt(vaultCollectedMultiplier(bonus.cards, bonus.revealed));
+}
+
+function vaultBonusView(bonus: StoredVaultBonus) {
+  const bet = BigInt(bonus.betMojos);
+  const cards = bonus.cards.map((card, index) => {
+    if (!bonus.revealed.includes(index)) return { index, revealed: false as const };
+    if (card.kind === "rake") return { index, revealed: true as const, kind: "rake" as const };
+    const payoutMojos = (bet * BigInt(card.multiplier)).toString();
+    return {
+      index,
+      revealed: true as const,
+      kind: "prize" as const,
+      multiplier: card.multiplier,
+      payoutMojos,
+    };
+  });
+  return {
+    bonusId: bonus.bonusId,
+    gameId: bonus.gameId,
+    gameTitle: SLOT_GAMES[bonus.gameId].title,
+    betMojos: bonus.betMojos,
+    cards,
+    collectedMojos: vaultCollectedMojos(bonus).toString(),
+    open: true as const,
+  };
+}
+
+function payVaultBonus(playerId: string, bonus: StoredVaultBonus): bigint {
+  const payout = vaultCollectedMojos(bonus);
+  if (payout > 0n) {
+    creditAccount(playerId, payout, { type: "credit", ref: `slots-vault-${bonus.bonusId}` });
+  }
+  clearVaultBonus(playerId);
+  return payout;
+}
 
 function spinPayoutMojos(result: SlotSpinCore, lineBetMojos: bigint): bigint {
   return payoutUnitsToMojos(result.totalPayout, lineBetMojos, payoutDenominatorOf(result.meta));
@@ -106,6 +162,19 @@ async function handleSpin(
     holdDrawOffer = { heldReels: [] };
   }
 
+  let vaultBonus: ReturnType<typeof vaultBonusView> | undefined;
+  if (!isFreeBossSpin && !holdDrawOffer && !getVaultBonus(playerId) && vaultUnlocksThisSpin()) {
+    const opened: StoredVaultBonus = {
+      bonusId: randomUUID(),
+      gameId,
+      betMojos: betMojos.toString(),
+      cards: buildVaultCards((max) => randomInt(max)),
+      revealed: [],
+    };
+    setVaultBonus(playerId, opened);
+    vaultBonus = vaultBonusView(opened);
+  }
+
   return {
     ok: true,
     gameId,
@@ -119,6 +188,7 @@ async function handleSpin(
     progressiveJackpots: readAllProgressiveJackpots(),
     freeSpin: isFreeBossSpin,
     holdDrawOffer,
+    vaultBonus,
     result: {
       ...client,
       winTier: wonProgressive ? "jackpot" : client.winTier,
@@ -186,6 +256,10 @@ export function registerSlotsRoutes(app: FastifyInstance): void {
       return reply.status(400).send({ error: "Finish your poker hand before spinning" });
     }
 
+    if (getVaultBonus(playerId)) {
+      return reply.status(409).send({ error: VAULT_OPEN_ERROR });
+    }
+
     const balance = getAccountBalance(playerId);
     const houseState = gameId === "house-edge" ? getHouseEdgeState(playerId) : undefined;
     const isFreeBossSpin = gameId === "house-edge" && (houseState?.freeSpinsRemaining ?? 0) > 0;
@@ -200,6 +274,80 @@ export function registerSlotsRoutes(app: FastifyInstance): void {
       return reply.status(400).send({ error: (e as Error).message });
     }
   };
+
+  app.get("/v1/slots/bonus", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    const bonus = getVaultBonus(session.playerId);
+    return { bonus: bonus ? vaultBonusView(bonus) : null };
+  });
+
+  app.post<{ Body: { index?: number } }>("/v1/slots/bonus/flip", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    const bonus = getVaultBonus(session.playerId);
+    if (!bonus) {
+      return reply.status(400).send({ error: "No vault bonus is open" });
+    }
+    let flip: ReturnType<typeof flipVaultCard>;
+    try {
+      flip = flipVaultCard(bonus.cards, bonus.revealed, req.body?.index ?? -1);
+    } catch (e) {
+      return reply.status(400).send({ error: (e as Error).message });
+    }
+    bonus.revealed = flip.revealed;
+    const reveal =
+      flip.card.kind === "rake"
+        ? { index: req.body?.index, kind: "rake" as const }
+        : {
+            index: req.body?.index,
+            kind: "prize" as const,
+            multiplier: flip.card.multiplier,
+            payoutMojos: (BigInt(bonus.betMojos) * BigInt(flip.card.multiplier)).toString(),
+          };
+    if (!flip.finished) {
+      setVaultBonus(session.playerId, bonus);
+      return {
+        ok: true,
+        finished: false,
+        hitRake: false,
+        reveal,
+        bonus: vaultBonusView(bonus),
+        collectedMojos: vaultCollectedMojos(bonus).toString(),
+        accountBalanceMojos: getAccountBalance(session.playerId).toString(),
+      };
+    }
+    const collected = payVaultBonus(session.playerId, bonus);
+    return {
+      ok: true,
+      finished: true,
+      hitRake: flip.card.kind === "rake",
+      reveal,
+      bonus: null,
+      collectedMojos: collected.toString(),
+      accountBalanceMojos: getAccountBalance(session.playerId).toString(),
+    };
+  });
+
+  app.post("/v1/slots/bonus/cash-out", async (req, reply) => {
+    const session = requirePlayer(req, reply);
+    if (!session) return;
+    const bonus = getVaultBonus(session.playerId);
+    if (!bonus) {
+      return reply.status(400).send({ error: "No vault bonus is open" });
+    }
+    if (bonus.revealed.length === 0) {
+      return reply.status(400).send({ error: "Flip a chip before cashing out" });
+    }
+    const collected = payVaultBonus(session.playerId, bonus);
+    return {
+      ok: true,
+      finished: true,
+      hitRake: false,
+      collectedMojos: collected.toString(),
+      accountBalanceMojos: getAccountBalance(session.playerId).toString(),
+    };
+  });
 
   app.post<{ Body: { playerId?: string; betMojos?: string } }>(
     "/v1/slots/spin",

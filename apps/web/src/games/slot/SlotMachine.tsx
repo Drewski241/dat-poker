@@ -9,6 +9,7 @@ import { grossWinMojosFromSpin, resolveSpinDisplayWins, type SpinDisplayWin } fr
 import { PAYLINE_COUNT } from "@dat-poker/slot-engine";
 import { SlotPaytableModal } from "./SlotPaytableModal.js";
 import { SlotWinCelebration } from "./SlotWinCelebration.js";
+import { useVaultBonus } from "./VaultBonus.js";
 import {
   pickCelebrationVariant,
   resolveWinTier,
@@ -110,6 +111,7 @@ export function SlotMachine({
   playerId: string | null;
 }) {
   const { session, refreshSession } = usePlaySession();
+  const { bonusOpen, noteUnlock } = useVaultBonus();
   const betOptions = session?.betOptionsMojos ?? DEFAULT_BET_OPTIONS;
   const [selectedBetMojos, setSelectedBetMojos] = useState(
     session?.defaultBetMojos ?? betOptions[0] ?? "1000",
@@ -151,6 +153,7 @@ export function SlotMachine({
   const canSpin =
     Boolean(playerId && session?.active) &&
     !spinning &&
+    !bonusOpen &&
     !session?.handInProgress &&
     balanceMojos >= betMojos;
 
@@ -223,6 +226,7 @@ export function SlotMachine({
             setSpinResult(
               buildSpinResultMessage(response, ticker, wins, grossWinMojos, serverAuthoritative),
             );
+            if (response.vaultBonus) noteUnlock(response.vaultBonus);
 
             const tier = resolveWinTier(
               grossWinMojos,
@@ -250,7 +254,7 @@ export function SlotMachine({
       setCelebration(null);
       setStatus((e as Error).message);
     }
-  }, [canSpin, clearTimers, playerId, refreshSession, selectedBetMojos]);
+  }, [canSpin, clearTimers, noteUnlock, playerId, refreshSession, selectedBetMojos, ticker]);
 
   return (
     <div className="slot-page">

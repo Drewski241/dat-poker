@@ -10,6 +10,7 @@ export type SlotSpinApiResult = {
   progressiveJackpotMojos: string;
   freeSpin?: boolean;
   holdDrawOffer?: { heldReels: number[] };
+  vaultBonus?: import("./VaultBonus.js").VaultBonusView;
   result: {
     grid: string[][];
     lineWins: {

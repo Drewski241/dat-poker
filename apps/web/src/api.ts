@@ -1126,6 +1126,33 @@ export const api = {
       defaultBetMojos: string;
     }>("/v1/slots/catalog"),
 
+  getVaultBonus: () =>
+    request<{ bonus: import("./games/slot/VaultBonus.js").VaultBonusView | null }>("/v1/slots/bonus"),
+
+  flipVaultChip: (index: number) =>
+    request<{
+      ok: boolean;
+      finished: boolean;
+      hitRake: boolean;
+      collectedMojos: string;
+      accountBalanceMojos: string;
+      bonus: import("./games/slot/VaultBonus.js").VaultBonusView | null;
+    }>("/v1/slots/bonus/flip", {
+      method: "POST",
+      body: JSON.stringify({ index }),
+    }),
+
+  cashOutVaultBonus: () =>
+    request<{
+      ok: boolean;
+      finished: boolean;
+      collectedMojos: string;
+      accountBalanceMojos: string;
+    }>("/v1/slots/bonus/cash-out", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
   getSlotJackpot: (gameId: string) =>
     request<{
       gameId: string;
@@ -1148,6 +1175,7 @@ export const api = {
       progressiveJackpotMojos: string;
       freeSpin?: boolean;
       holdDrawOffer?: { heldReels: number[] };
+      vaultBonus?: import("./games/slot/VaultBonus.js").VaultBonusView;
       result: {
         grid: string[][];
         lineWins: {
@@ -1206,6 +1234,7 @@ export const api = {
       netMojos: string;
       accountBalanceMojos: string;
       progressiveJackpotMojos: string;
+      vaultBonus?: import("./games/slot/VaultBonus.js").VaultBonusView;
       result: {
         grid: string[][];
         lineWins: {

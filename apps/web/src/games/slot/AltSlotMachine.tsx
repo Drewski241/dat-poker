@@ -10,6 +10,7 @@ import { symbolDisplay } from "./symbol-display.js";
 import type { SlotSpinApiResult } from "./slot-api-types.js";
 import { SlotGamePaytableModal } from "./SlotGamePaytableModal.js";
 import { SlotWinCelebration } from "./SlotWinCelebration.js";
+import { useVaultBonus } from "./VaultBonus.js";
 import {
   pickCelebrationVariant,
   resolveWinTier,
@@ -101,6 +102,7 @@ export function AltSlotMachine({
 }) {
   const meta = SLOT_GAMES[gameId];
   const { session, refreshSession } = usePlaySession();
+  const { bonusOpen, noteUnlock } = useVaultBonus();
   const betOptions = session?.betOptionsMojos ?? DEFAULT_BET_OPTIONS;
   const [selectedBetMojos, setSelectedBetMojos] = useState(
     session?.defaultBetMojos ?? betOptions[0] ?? "1000",
@@ -138,6 +140,7 @@ export function AltSlotMachine({
     !spinning &&
     !session?.handInProgress &&
     !holdDrawActive &&
+    !bonusOpen &&
     !presenting &&
     (balanceMojos >= betMojos || (gameId === "house-edge" && freeSpins > 0));
 
@@ -198,6 +201,7 @@ export function AltSlotMachine({
         setHeldReels(new Set());
         setSpinResult((prev) => `${prev ?? ""} · Hold up to 2 reels, then Draw (free)`);
       }
+      if (response.vaultBonus) noteUnlock(response.vaultBonus);
       setGrid(resultGrid.map((col) => [...col]));
 
       const grossWin =
@@ -220,7 +224,7 @@ export function AltSlotMachine({
         setCelebration(null);
       }
     },
-    [gameId, selectedBetMojos, ticker],
+    [gameId, noteUnlock, selectedBetMojos, ticker],
   );
 
   const animateToGrid = useCallback(
