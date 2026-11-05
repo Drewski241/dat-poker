@@ -27,6 +27,13 @@ if [[ -f "$ENV_FILE" ]]; then
   grep -q '^DAT_HAND_HISTORY_PATH=' "$ENV_FILE" || \
     echo 'DAT_HAND_HISTORY_PATH=/opt/dat-poker/data/hand-history.jsonl' >> "$ENV_FILE"
   grep -q '^DAT_DAILY_REDEEM_MOJOS=' "$ENV_FILE" || echo 'DAT_DAILY_REDEEM_MOJOS=5000000' >> "$ENV_FILE"
+  if [[ "${DAT_TREASURY_BANKROLL_MOJOS:-}" =~ ^[0-9]+$ ]]; then
+    if grep -q '^DAT_TREASURY_BANKROLL_MOJOS=' "$ENV_FILE"; then
+      sed -i "s|^DAT_TREASURY_BANKROLL_MOJOS=.*|DAT_TREASURY_BANKROLL_MOJOS=${DAT_TREASURY_BANKROLL_MOJOS}|" "$ENV_FILE"
+    else
+      echo "DAT_TREASURY_BANKROLL_MOJOS=${DAT_TREASURY_BANKROLL_MOJOS}" >> "$ENV_FILE"
+    fi
+  fi
   grep -q '^DAT_SPIN_COST_MOJOS=' "$ENV_FILE" || echo 'DAT_SPIN_COST_MOJOS=1000' >> "$ENV_FILE"
   if grep -q '^DAT_POKER_REPO_REF=' "$ENV_FILE"; then
     sed -i "s|^DAT_POKER_REPO_REF=.*|DAT_POKER_REPO_REF=${REPO_REF}|" "$ENV_FILE"

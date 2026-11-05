@@ -39,9 +39,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers,
   });
-  const body = (await res.json()) as T & { error?: string };
+  const body = (await res.json()) as T & { error?: string; message?: string };
   if (!res.ok) {
-    throw new Error((body as { error?: string }).error ?? res.statusText);
+    const detail = body.error && body.message && body.error !== body.message
+      ? `${body.error}: ${body.message}`
+      : body.error;
+    throw new Error(detail ?? res.statusText);
   }
   return body;
 }
