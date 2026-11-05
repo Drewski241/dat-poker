@@ -184,6 +184,8 @@ export interface WithdrawResult {
   payoutMode: "net" | "full";
   mode: "ledger" | "offer";
   offer?: string;
+  cloudOfferStatus?: string;
+  cloudOfferError?: string;
   feeMojos: string;
   accountMojos?: string;
   playthrough?: PlaythroughInfo;
@@ -338,6 +340,10 @@ export const api = {
         payoutMode: "net" | "full";
         treasuryConfigured: boolean;
         feeMojos: string;
+      };
+      cloudWallet?: {
+        configured: boolean;
+        redirectUri: string | null;
       };
     }>("/v1/wallet/config"),
 
@@ -601,10 +607,37 @@ export const api = {
     return request<{ message: string; stackMojos: string }>(`/v1/wallet/withdraw/message?${q}`);
   },
 
+  cloudWalletStatus: () =>
+    request<{
+      configured: boolean;
+      connected: boolean;
+      walletId: string | null;
+      walletName: string | null;
+      address: string | null;
+    }>("/v1/wallet/cloud"),
+
+  startCloudWallet: () =>
+    request<{ ok: boolean; authorizeUrl: string }>("/v1/wallet/cloud/start", { method: "POST" }),
+
+  disconnectCloudWallet: () =>
+    request<{
+      configured: boolean;
+      connected: boolean;
+      walletId: string | null;
+      walletName: string | null;
+      address: string | null;
+    }>("/v1/wallet/cloud/disconnect", { method: "POST" }),
+
   withdraw: (
     tableId: string | null,
     playerId: string,
-    options?: { withdrawProof?: WithdrawProof; devAck?: boolean; toAccount?: boolean; fromAccount?: boolean },
+    options?: {
+      withdrawProof?: WithdrawProof;
+      devAck?: boolean;
+      toAccount?: boolean;
+      fromAccount?: boolean;
+      toCloudWallet?: boolean;
+    },
   ) =>
     request<WithdrawResult>("/v1/wallet/withdraw", {
       method: "POST",

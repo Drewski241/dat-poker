@@ -31,6 +31,7 @@ import {
   type WithdrawResult,
 } from "./api.js";
 import { AuthPanel, ChangePasswordForm } from "./AuthPanel.js";
+import { CloudWalletPanel } from "./CloudWalletPanel.js";
 import { CardRow } from "./components/PlayingCard.js";
 import { BigWinOverlayHost } from "./components/BigWinOverlayHost.js";
 import { TableRoom } from "./components/TableRoom.js";
@@ -2508,6 +2509,18 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
           </>
         )}
       </section>
+      )}
+
+      {playerId && (
+        <CloudWalletPanel
+          playerId={playerId}
+          unlockedMojos={accountUnlockedMojos}
+          ticker={datToken?.ticker}
+          busy={busy}
+          run={run}
+          onWithdrawn={setWithdrawResult}
+          onAccountRefresh={refreshAccount}
+        />
       )}
 
       <section className="panel">
