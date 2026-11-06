@@ -32,6 +32,14 @@ pnpm dev:api
 pnpm dev:web
 ```
 
+On the existing EC2 beta host, Session Manager:
+
+```bash
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/cat-channel-heads-up-11a7; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/cat-channel-heads-up-11a7/deploy/aws-ec2/up.sh" | bash'
+```
+
+That sets `DAT_CAT_CHANNEL_TEST=true`, rebuilds, and restarts the API. Open `/` and use **Play test channel vs house**.
+
 Puzzle checks:
 
 ```bash

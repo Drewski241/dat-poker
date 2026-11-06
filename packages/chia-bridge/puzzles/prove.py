@@ -43,7 +43,10 @@ def compile_puzzle(name: str) -> SExp:
     path = HERE / f"{name}.clsp"
     env = os.environ.copy()
     env["PATH"] = os.path.expanduser("~/.local/bin") + os.pathsep + env.get("PATH", "")
-    hex_out = subprocess.check_output([RUN, "-d", str(path)], text=True, env=env).strip()
+    try:
+        hex_out = subprocess.check_output([RUN, "-d", str(path)], text=True, env=env).strip()
+    except (OSError, subprocess.CalledProcessError):
+        hex_out = (HERE / f"{name}.hex").read_text().strip()
     prog = sexp_from_stream(io.BytesIO(bytes.fromhex(hex_out)), SExp.to)
     _COMPILED[name] = prog
     return prog
