@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./bls": {
+      "types": "./dist/bls.d.ts",
+      "import": "./dist/bls.js"
     }
   },
   "scripts": {
@@ -18,7 +22,9 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
-    "@dat-poker/shared": "workspace:*"
+    "@dat-poker/shared": "workspace:*",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.0.1"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

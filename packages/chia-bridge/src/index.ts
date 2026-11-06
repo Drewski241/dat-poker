@@ -1,3 +1,7 @@
+export * from "./bls.js";
+export * from "./cat-channel.js";
+export * from "./clvm.js";
+export * from "./puzzle-prove.js";
 export * from "./types.js";
 export * from "./chia-gaming-client.js";
 export * from "./settlement.js";
