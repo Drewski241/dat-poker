@@ -85,9 +85,24 @@ corepack prepare pnpm@9.15.0 --activate
 pnpm install --frozen-lockfile
 pnpm --filter @dat-poker/api^... build
 pnpm --filter @dat-poker/api build
-if ! sudo -u ec2-user -H python3 -c 'import clvm' >/dev/null 2>&1; then
+# The failed chia-rs source build fills the disk. Puzzle prove only needs the
+# pure-Python clvm package plus a prebuilt chia-rs wheel. Python 3.9 on this
+# host has no wheel for current chia-rs, so pin the last release that ships
+# a cp39 manylinux wheel and refuse a source build.
+echo "Clearing the failed chia-rs compile cache"
+rm -rf /tmp/pip-* /tmp/tmp.* \
+  /home/ec2-user/.cache/pip \
+  /home/ec2-user/.cache/puccinialin \
+  /home/ec2-user/.cargo \
+  /home/ec2-user/.rustup \
+  /root/.cache/pip \
+  /root/.cache/puccinialin
+df -h / /tmp || true
+if ! sudo -u ec2-user -H python3 -c 'import clvm, chia_rs' >/dev/null 2>&1; then
   dnf install -y python3-pip || yum install -y python3-pip
-  sudo -u ec2-user -H python3 -m pip install --user 'clvm==0.9.15'
+  sudo -u ec2-user -H python3 -m pip install --user --upgrade 'pip>=23'
+  sudo -u ec2-user -H python3 -m pip install --user --only-binary=:all: \
+    'clvm==0.9.15' 'chia-rs==0.34.0'
 fi
 export VITE_BUILD_ID="$(git rev-parse --short HEAD)"
 export VITE_APP_STAGE="${DAT_POKER_STAGE:-beta}"
