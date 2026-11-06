@@ -1,195 +1,124 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { sha256 } from "@noble/hashes/sha2.js";
+import { createHash } from "node:crypto";
 
-/** Empty atom, or a pair. Atoms keep their raw CLVM bytes (0 is empty). */
-export type Clvm = Uint8Array | [Clvm, Clvm];
+/** A CLVM atom, or a cons pair. The empty atom is both nil and integer 0. */
+export type Clvm = Buffer | [Clvm, Clvm];
 
-const puzzleDir = join(dirname(fileURLToPath(import.meta.url)), "../puzzles");
-
-let channelModHashCache: Uint8Array | undefined;
-let unrollModHashCache: Uint8Array | undefined;
-
-export function concatBytes(...parts: Uint8Array[]): Uint8Array {
-  const length = parts.reduce((sum, part) => sum + part.length, 0);
-  const out = new Uint8Array(length);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
+export function sha256(data: Buffer): Buffer {
+  return createHash("sha256").update(data).digest();
 }
 
-export function sha256Bytes(...parts: Uint8Array[]): Uint8Array {
-  return sha256(concatBytes(...parts));
+export function sha256tree(value: Clvm): Buffer {
+  if (Buffer.isBuffer(value)) {
+    return sha256(Buffer.concat([Buffer.from([0x01]), value]));
+  }
+  return sha256(Buffer.concat([Buffer.from([0x02]), sha256tree(value[0]), sha256tree(value[1])]));
 }
 
-/** Minimal signed CLVM integer encoding. Matches `clvm.casts.int_to_bytes`. */
-export function intToBytes(value: bigint): Uint8Array {
-  if (value === 0n) return new Uint8Array();
-  const magnitude = value < 0n ? -value : value;
-  const bitLength = magnitude.toString(2).length;
-  const byteCount = (bitLength + 8) >> 3;
-  const bytes = new Uint8Array(byteCount);
-  let remaining = value;
-  for (let i = byteCount - 1; i >= 0; i -= 1) {
-    bytes[i] = Number(remaining & 0xffn);
-    remaining >>= 8n;
+/** Minimal big-endian CLVM integer atom. 0 is the empty atom. */
+export function clvmInt(value: bigint): Buffer {
+  if (value < 0n) {
+    throw new Error("Negative CLVM integers are not used by the tournament pool");
   }
-  let start = 0;
-  while (start < bytes.length - 1 && bytes[start] === ((bytes[start + 1] & 0x80) !== 0 ? 0xff : 0)) {
-    start += 1;
+  if (value === 0n) return Buffer.alloc(0);
+  const hex = value.toString(16);
+  const padded = hex.length % 2 === 0 ? hex : `0${hex}`;
+  let bytes = Buffer.from(padded, "hex");
+  if (bytes[0]! >= 0x80) {
+    bytes = Buffer.concat([Buffer.from([0x00]), bytes]);
   }
-  return bytes.subarray(start);
+  return bytes;
 }
 
-export function treeHash(node: Clvm): Uint8Array {
-  if (node instanceof Uint8Array) {
-    return sha256Bytes(new Uint8Array([1]), node);
-  }
-  return sha256Bytes(new Uint8Array([2]), treeHash(node[0]), treeHash(node[1]));
-}
-
-export function properList(items: Clvm[]): Clvm {
-  let node: Clvm = new Uint8Array();
+export function clvmList(items: Clvm[]): Clvm {
+  let node: Clvm = Buffer.alloc(0);
   for (let i = items.length - 1; i >= 0; i -= 1) {
-    node = [items[i], node];
+    node = [items[i]!, node];
   }
   return node;
 }
 
-export function utf8Atom(value: string): Uint8Array {
-  return new TextEncoder().encode(value);
-}
-
-/** Tree hash of a serialized CLVM program (the compiler's `run -d` hex). */
-export function treeHashHexProgram(hex: string): Uint8Array {
-  const bytes = hexToBytes(hex.trim());
-  const cursor = { offset: 0 };
-  const program = deserialize(bytes, cursor);
-  if (cursor.offset !== bytes.length) {
-    throw new Error("Trailing bytes in CLVM program");
+function serializeAtom(atom: Buffer): Buffer {
+  if (atom.length === 0) return Buffer.from([0x80]);
+  if (atom.length === 1 && atom[0]! < 0x80) return Buffer.from([atom[0]!]);
+  if (atom.length < 0x40) {
+    return Buffer.concat([Buffer.from([0x80 | atom.length]), atom]);
   }
-  return treeHash(program);
-}
-
-export function hexToBytes(hex: string): Uint8Array {
-  const normalized = hex.trim().replace(/^0x/, "");
-  if (normalized.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(normalized)) {
-    throw new Error("Invalid hex");
+  if (atom.length < 0x2000) {
+    return Buffer.concat([
+      Buffer.from([0xc0 | (atom.length >> 8), atom.length & 0xff]),
+      atom,
+    ]);
   }
-  const out = new Uint8Array(normalized.length / 2);
-  for (let i = 0; i < out.length; i += 1) {
-    out[i] = Number.parseInt(normalized.slice(i * 2, i * 2 + 2), 16);
+  if (atom.length < 0x100000) {
+    return Buffer.concat([
+      Buffer.from([0xe0 | (atom.length >> 16), (atom.length >> 8) & 0xff, atom.length & 0xff]),
+      atom,
+    ]);
   }
-  return out;
+  throw new Error("CLVM atom is too large to serialize");
 }
 
-export function bytesToHex(bytes: Uint8Array): string {
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+export function serializeClvm(value: Clvm): Buffer {
+  if (Buffer.isBuffer(value)) return serializeAtom(value);
+  return Buffer.concat([Buffer.from([0xff]), serializeClvm(value[0]), serializeClvm(value[1])]);
 }
 
-function deserialize(bytes: Uint8Array, cursor: { offset: number }): Clvm {
-  const marker = readByte(bytes, cursor);
-  if (marker === 0xff) {
-    const left = deserialize(bytes, cursor);
-    const right = deserialize(bytes, cursor);
-    return [left, right];
+export function parseClvm(buf: Buffer, offset = 0): { value: Clvm; offset: number } {
+  const prefix = buf[offset];
+  if (prefix === undefined) throw new Error("Truncated CLVM");
+  if (prefix === 0xff) {
+    const left = parseClvm(buf, offset + 1);
+    const right = parseClvm(buf, left.offset);
+    return { value: [left.value, right.value], offset: right.offset };
   }
-  return readAtom(bytes, cursor, marker);
-}
-
-function readByte(bytes: Uint8Array, cursor: { offset: number }): number {
-  const value = bytes[cursor.offset];
-  if (value === undefined) throw new Error("Unexpected end of CLVM");
-  cursor.offset += 1;
-  return value;
-}
-
-function readAtom(bytes: Uint8Array, cursor: { offset: number }, marker: number): Uint8Array {
-  if (marker === 0x80) return new Uint8Array();
-  if (marker <= 0x7f) return new Uint8Array([marker]);
-  let bitCount = 0;
-  let sizePrefix = marker;
-  let mask = 0x80;
-  while ((sizePrefix & mask) !== 0) {
-    bitCount += 1;
-    sizePrefix &= 0xff ^ mask;
-    mask >>= 1;
+  if (prefix < 0x80) {
+    return { value: Buffer.from([prefix]), offset: offset + 1 };
   }
-  const sizeBytes = new Uint8Array(bitCount);
-  sizeBytes[0] = sizePrefix;
-  for (let i = 1; i < bitCount; i += 1) {
-    sizeBytes[i] = readByte(bytes, cursor);
+  let length = 0;
+  let start = offset + 1;
+  if (prefix <= 0xbf) {
+    length = prefix & 0x3f;
+  } else if (prefix <= 0xdf) {
+    length = ((prefix & 0x1f) << 8) | (buf[offset + 1] ?? 0);
+    start = offset + 2;
+  } else if (prefix <= 0xef) {
+    length = ((prefix & 0x0f) << 16) | ((buf[offset + 1] ?? 0) << 8) | (buf[offset + 2] ?? 0);
+    start = offset + 3;
+  } else {
+    throw new Error("Unsupported CLVM size prefix");
   }
-  let size = 0;
-  for (const byte of sizeBytes) size = (size << 8) + byte;
-  const atom = bytes.subarray(cursor.offset, cursor.offset + size);
-  if (atom.length !== size) throw new Error("Truncated CLVM atom");
-  cursor.offset += size;
-  return atom;
+  const atom = Buffer.from(buf.subarray(start, start + length));
+  if (atom.length !== length) throw new Error("Truncated CLVM atom");
+  return { value: atom, offset: start + length };
 }
 
-const NIL_HASH = treeHash(new Uint8Array());
-const ONE_HASH = treeHash(new Uint8Array([1]));
+const ONE = sha256tree(Buffer.from([0x01]));
+const TWO = sha256tree(Buffer.from([0x02]));
+const FOUR = sha256tree(Buffer.from([0x04]));
+const NIL = sha256tree(Buffer.alloc(0));
 
-function pairHash(left: Uint8Array, right: Uint8Array): Uint8Array {
-  return sha256Bytes(new Uint8Array([2]), left, right);
+function pairHash(left: Buffer, right: Buffer): Buffer {
+  return sha256(Buffer.concat([Buffer.from([0x02]), left, right]));
 }
 
-function quotedHash(argHash: Uint8Array): Uint8Array {
-  return pairHash(treeHash(new Uint8Array([1])), argHash);
-}
-
-function consArgHash(argHash: Uint8Array, restHash: Uint8Array): Uint8Array {
-  return pairHash(treeHash(new Uint8Array([4])), pairHash(quotedHash(argHash), pairHash(restHash, NIL_HASH)));
-}
-
-/** Tree hash of `(a (q . mod) (c (q . arg) ... 1))`, matching `Program.curry`. */
-export function curryTreeHash(modHash: Uint8Array, argHashes: Uint8Array[]): Uint8Array {
-  let envHash = ONE_HASH;
-  for (let i = argHashes.length - 1; i >= 0; i -= 1) {
-    envHash = consArgHash(argHashes[i], envHash);
+/**
+ * Tree hash of `(a (q . MOD) (c (q . arg1) (c (q . arg2) ... 1)))`.
+ * `a` and `c` are proper lists. `(q . value)` is a cons pair.
+ * `argTreeHashes` are sha256tree of each curried argument.
+ */
+export function curryTreeHash(modHash: Buffer, argTreeHashes: Buffer[]): Buffer {
+  let env = ONE;
+  for (let i = argTreeHashes.length - 1; i >= 0; i -= 1) {
+    const quoted = pairHash(ONE, argTreeHashes[i]!);
+    env = pairHash(FOUR, pairHash(quoted, pairHash(env, NIL)));
   }
-  return pairHash(treeHash(new Uint8Array([2])), pairHash(quotedHash(modHash), pairHash(envHash, NIL_HASH)));
+  const quotedMod = pairHash(ONE, modHash);
+  return pairHash(TWO, pairHash(quotedMod, pairHash(env, NIL)));
 }
 
-export function channelModHash(): Uint8Array {
-  channelModHashCache ??= treeHashHexProgram(readFileSync(join(puzzleDir, "dat_channel.hex"), "utf8"));
-  return channelModHashCache;
-}
-
-export function unrollModHash(): Uint8Array {
-  unrollModHashCache ??= treeHashHexProgram(readFileSync(join(puzzleDir, "dat_unroll.hex"), "utf8"));
-  return unrollModHashCache;
-}
-
-/** Official CAT puzzle mod hash from chia_puzzles_py CAT_PUZZLE_HASH. */
-export const CAT_MOD_HASH = hexToBytes(
-  "37bef360ee858133b69d595a906dc45d01af50379dad515eb9518abb7c1d2a7a",
-);
-
-export function catPuzzleHash(tailHash: Uint8Array, innerPuzzleHash: Uint8Array): Uint8Array {
-  if (tailHash.length !== 32 || innerPuzzleHash.length !== 32) {
-    throw new Error("CAT tail and inner puzzle hash must be 32 bytes");
-  }
-  return curryTreeHash(CAT_MOD_HASH, [treeHash(CAT_MOD_HASH), treeHash(tailHash), innerPuzzleHash]);
-}
-
-export function channelPuzzleHash(params: {
-  alicePk: Uint8Array;
-  bobPk: Uint8Array;
-  timeoutBlocks: number;
-  nonce: Uint8Array;
-}): Uint8Array {
-  const unroll = unrollModHash();
-  return curryTreeHash(channelModHash(), [
-    treeHash(params.alicePk),
-    treeHash(params.bobPk),
-    treeHash(intToBytes(BigInt(params.timeoutBlocks))),
-    treeHash(params.nonce),
-    treeHash(unroll),
-  ]);
+export function curryAtomsTreeHash(modHash: Buffer, atoms: Buffer[]): Buffer {
+  return curryTreeHash(
+    modHash,
+    atoms.map((atom) => sha256tree(atom)),
+  );
 }

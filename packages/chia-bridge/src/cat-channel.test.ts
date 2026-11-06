@@ -2,7 +2,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { describe, expect, it } from "vitest";
 import { generateChannelKey, signAug, verifyAug } from "./bls.js";
 import { CatChannelSession, hashBalanceMessage } from "./cat-channel.js";
-import { bytesToHex, catPuzzleHash, channelModHash, channelPuzzleHash, hexToBytes, intToBytes, unrollModHash } from "./clvm.js";
+import { bytesToHex, catPuzzleHash, channelModHash, channelPuzzleHash, hexToBytes, intToBytes, unrollModHash } from "./channel-clvm.js";
 import { runPuzzleSelfTest } from "./puzzle-prove.js";
 
 describe("DAT CAT channel", () => {

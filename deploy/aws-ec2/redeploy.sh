@@ -95,6 +95,10 @@ corepack prepare pnpm@9.15.0 --activate
 pnpm install --frozen-lockfile
 pnpm --filter @dat-poker/api^... build
 pnpm --filter @dat-poker/api build
+if ! grep -q paylineBaseSymbol "$INSTALL_ROOT/packages/slot-engine/dist/slot-engine.js" 2>/dev/null; then
+  echo "ERROR: slot-engine dist missing paylineBaseSymbol (stale Spirit Slots math)" >&2
+  exit 1
+fi
 # Puzzle prove needs the pure-Python clvm package plus a prebuilt chia-rs wheel.
 # Python 3.9 on this host has no wheel for current chia-rs, so pin the last
 # release that ships a cp39 manylinux wheel and refuse a source build.
@@ -110,11 +114,31 @@ pnpm --filter @dat-poker/web build
 
 rm -rf "${WEB_ROOT:?}/"*
 cp -a "$INSTALL_ROOT/apps/web/dist/." "$WEB_ROOT/"
-if ! grep -rq "Play test channel vs house" "$WEB_ROOT" 2>/dev/null; then
+if ! grep -rq "Spirit Slots" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: Spirit Slots UI missing from web dist" >&2
+  exit 1
+fi
+if ! grep -rq "/v1/slots/spin" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: /v1/slots/spin client missing from web dist" >&2
+  exit 1
+fi
+if ! grep -rq "redeem-daily" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: daily play redeem client missing from web dist" >&2
+  exit 1
+fi
+if ! grep -rq "Create account" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: account login UI missing from web dist (expected trust-rails AuthPanel)" >&2
+  exit 1
+fi
+if ! grep -rq "Choose your game" "$WEB_ROOT" 2>/dev/null; then
+  echo "ERROR: post-login game chooser missing from web dist" >&2
+  exit 1
+fi
+if ! grep -rq "Play heads-up DAT channel" "$WEB_ROOT" 2>/dev/null; then
   echo "ERROR: heads-up DAT channel UI missing from web dist" >&2
   exit 1
 fi
-echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (heads-up DAT channel OK)"
+echo "Web build ${VITE_BUILD_ID} → ${WEB_ROOT} (sign-in + play page + heads-up DAT channel OK)"
 chown -R ec2-user:ec2-user "$INSTALL_ROOT"
 mkdir -p "$INSTALL_ROOT/data/feedback"
 if [[ ! -f "$INSTALL_ROOT/data/accounts.json" ]]; then
@@ -176,4 +200,4 @@ if [[ "$ok" -ne 1 ]]; then
   exit 1
 fi
 echo "beta redeploy ok"
-echo "Heads-up DAT channel: open / and use Play test channel vs house"
+echo "Homepage is sign-in. Play page is /play, including Play heads-up DAT channel."

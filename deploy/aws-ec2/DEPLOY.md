@@ -4,13 +4,8 @@ This kit deploys the **web client + REST API** on one Amazon Linux 2023 EC2
 instance (nginx on `:80`, API on `:4000`). Treasury Sage and
 `pnpm dev:treasury` stay on a **separate** machine ([docs/TREASURY.md](../../docs/TREASURY.md)).
 
-**Heads-up DAT channel test on an existing beta host** (Session Manager):
-
-```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/cat-channel-heads-up-11a7; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/cat-channel-heads-up-11a7/deploy/aws-ec2/up.sh" | bash'
-```
-
-Wait for `beta redeploy ok`, then open `/` and use **Play test channel vs house**. This checkout replaces the web root currently on the box. The same kind of command with the previous ref puts that build back.
+**Current beta branch (16-player SNG + 500-player MTT, chop pots, SNG sit-out pace, cash auto-deal):**
+`cursor/fix-final-table-deal-stuck-7c36` (or set `DAT_POKER_REPO_REF` on redeploy).
 
 ## Option A — EC2 console (recommended)
 
@@ -53,13 +48,19 @@ Do **not** redeploy `cursor/trust-rails-fairness-7c36` if you want the slot mach
 the MTT/lobby client without slots. Do **not** redeploy `cursor/tournament-pool-coin-b930` by itself:
 that branch has the Chialisp puzzle but not Spirit Slots.
 
-**Heads-up DAT channel** — paste this single line (downloads `up.sh` from GitHub):
+**First time / `pull-spirit-slots.sh` missing** — paste this single line (downloads `up.sh` from GitHub):
 
 ```bash
-sudo bash -c 'export DAT_POKER_REPO_REF=cursor/cat-channel-heads-up-11a7; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/cat-channel-heads-up-11a7/deploy/aws-ec2/up.sh" | bash'
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/fix-stampede-bigint-payout-6e1e; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/fix-stampede-bigint-payout-6e1e/deploy/aws-ec2/up.sh" | bash'
 ```
 
-Wait for **`beta redeploy ok`**, then open **`/`** and use **Play test channel vs house**.
+Later deploys (after this branch is checked out on the host):
+
+```bash
+sudo bash /opt/dat-poker/deploy/aws-ec2/pull-spirit-slots.sh
+```
+
+Wait for **`beta redeploy ok`**, then open **`/slots`** (five games, five separate progressives) or use **DAT Slots** at **`/play`**.
 
 If `up.sh` is missing locally, bootstrap once with `git fetch` + `checkout`, or paste
 [console-user-data.sh](./console-user-data.sh) on a new instance (see [docs/BETA.md](../../docs/BETA.md)).

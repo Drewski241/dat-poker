@@ -23,6 +23,7 @@
 
 - [ ] PLO4 / PLO5 engines
 - [ ] SNG + MTT schedulers
+- [x] Hybrid routing: every variant heads-up on chia-gaming, DAT-only stakes, 3+ player vault with heads-up promotion
 - [ ] Calpoker route through chia-gaming native flow
 - [ ] Rake accounting + ledger
 

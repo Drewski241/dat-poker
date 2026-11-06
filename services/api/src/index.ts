@@ -1,7 +1,26 @@
 import { config as loadEnv } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildApp } from "./app.js";
+import Fastify from "fastify";
+import cors from "@fastify/cors";
+import { ChiaGamingClient } from "@dat-poker/chia-bridge";
+import { POKER_VARIANTS } from "@dat-poker/shared";
+import { loadUsers } from "./user-store.js";
+import { loadLedger } from "./account-store.js";
+import { registerTableRoutes, returnAllStacksToAccounts } from "./routes/tables.js";
+import { registerHealthRoutes } from "./routes/health.js";
+import { serializeForJson } from "./serialize.js";
+import { registerHandRoutes } from "./routes/hands.js";
+import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerCloudWalletRoutes } from "./routes/cloud-wallet.js";
+import { registerFeedbackRoutes } from "./routes/feedback.js";
+import { registerSessionRoutes } from "./routes/session.js";
+import { registerAuthRoutes } from "./routes/auth.js";
+import { registerPlayRoutes } from "./routes/play.js";
+import { registerSlotsRoutes } from "./routes/slots.js";
+import { registerSiteDatRoutes } from "./routes/site-dat.js";
+import { registerTournamentRoutes } from "./routes/tournaments.js";
+import { registerCatChannelRoutes } from "./routes/cat-channel.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -9,10 +28,67 @@ loadEnv({ path: resolve(__dirname, "../../../.env") });
 const port = Number(process.env.API_PORT ?? 4000);
 const host = process.env.API_HOST ?? "0.0.0.0";
 
+const chiaClient = new ChiaGamingClient({
+  network: (process.env.CHIA_NETWORK as "mainnet" | "testnet") ?? "mainnet",
+  lobbyUrl: process.env.CHIA_GAMING_LOBBY_URL ?? "http://localhost:3001",
+  gameUrl: process.env.CHIA_GAMING_GAME_URL ?? "http://localhost:3000",
+  coinsetUrl: process.env.COINSET_URL ?? "https://coinset.org",
+  walletConnect: process.env.WALLETCONNECT_PROJECT_ID
+    ? {
+        projectId: process.env.WALLETCONNECT_PROJECT_ID,
+        chainId: process.env.CHIA_CHAIN_ID ?? "chia:mainnet",
+      }
+    : undefined,
+});
+
 async function main(): Promise<void> {
-  const app = await buildApp(undefined, { logger: true });
+  const app = Fastify({ logger: true, trustProxy: true });
+  await app.register(cors, { origin: true });
+
+  app.addHook("preSerialization", async (_request, _reply, payload) => {
+    if (payload === undefined || payload === null) return payload;
+    return serializeForJson(payload);
+  });
+
+  await loadUsers();
+  loadLedger();
+
+  registerHealthRoutes(app, chiaClient);
+  registerAuthRoutes(app);
+  registerSessionRoutes(app);
+  registerWalletRoutes(app, chiaClient);
+  registerCloudWalletRoutes(app);
+  registerSiteDatRoutes(app);
+  registerTournamentRoutes(app);
+  registerFeedbackRoutes(app);
+  registerTableRoutes(app);
+  registerHandRoutes(app);
+  registerCatChannelRoutes(app);
+  registerPlayRoutes(app);
+  registerSlotsRoutes(app);
+
+  app.get("/v1/variants", async () => ({
+    variants: POKER_VARIANTS,
+  }));
+
+  app.addHook("onClose", async () => {
+    try {
+      const { returned } = returnAllStacksToAccounts();
+      app.log.info({ returned }, "returned table stacks to persisted DAT accounts");
+    } catch (err) {
+      app.log.error({ err }, "failed to return table stacks on shutdown");
+    }
+  });
+
   await app.listen({ port, host });
   app.log.info(`API listening on http://${host}:${port}`);
+
+  const stop = (signal: string) => {
+    app.log.info({ signal }, "shutting down");
+    void app.close().finally(() => process.exit(0));
+  };
+  process.once("SIGTERM", () => stop("SIGTERM"));
+  process.once("SIGINT", () => stop("SIGINT"));
 }
 
 main().catch((err) => {

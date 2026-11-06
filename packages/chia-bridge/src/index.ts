@@ -1,11 +1,15 @@
+export { bytesToHex } from "./channel-clvm.js";
 export * from "./bls.js";
 export * from "./cat-channel.js";
 export * from "./clvm.js";
 export * from "./puzzle-prove.js";
 export * from "./types.js";
 export * from "./chia-gaming-client.js";
+export * from "./hybrid-session.js";
 export * from "./settlement.js";
 export * from "./sage-wallet-rpc.js";
 export * from "./sage-payout-offer.js";
 export * from "./cat-payout-offer.js";
 export * from "./treasury-payout-offer.js";
+export * from "./house-treasury-book.js";
+export * from "./tournament-pool.js";

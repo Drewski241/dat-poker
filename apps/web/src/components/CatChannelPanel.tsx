@@ -22,7 +22,7 @@ export function CatChannelPanel(props: {
       </p>
       {!channel ? (
         <button type="button" disabled={props.busy || !props.apiOk} onClick={props.onPlay}>
-          Play test channel vs house
+          Play heads-up DAT channel
         </button>
       ) : (
         <>

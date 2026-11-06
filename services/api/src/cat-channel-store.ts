@@ -7,7 +7,7 @@ import {
   type CatChannelSnapshot,
   type PuzzleSpendResult,
 } from "@dat-poker/chia-bridge";
-import { HOUSE_PLAYER_ID } from "./routes/tables.js";
+import { HOUSE_PLAYER_ID } from "./house-id.js";
 
 interface ChannelRecord {
   session: CatChannelSession;
