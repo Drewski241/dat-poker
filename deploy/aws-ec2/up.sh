@@ -14,6 +14,17 @@ if [[ ! -d "$ROOT/.git" ]]; then
   exit 1
 fi
 
+# A failed chia-rs source build fills the disk and then git fetch cannot land.
+echo "Clearing the failed chia-rs compile cache"
+rm -rf /tmp/pip-* /tmp/tmp.* \
+  /home/ec2-user/.cache/pip \
+  /home/ec2-user/.cache/puccinialin \
+  /home/ec2-user/.cargo \
+  /home/ec2-user/.rustup \
+  /root/.cache/pip \
+  /root/.cache/puccinialin
+df -h / /tmp || true
+
 cd "$ROOT"
 git fetch --depth 1 origin "$REF"
 git checkout -f FETCH_HEAD
