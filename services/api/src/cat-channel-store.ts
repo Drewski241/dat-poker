@@ -25,6 +25,17 @@ export function isCatChannelTable(tableId: string): boolean {
   return marked.has(tableId);
 }
 
+/** Drop the in-memory channel after the table stack has been returned to the account. */
+export function releaseCatChannel(tableId: string): void {
+  marked.delete(tableId);
+  channels.delete(tableId);
+}
+
+export function resetCatChannelsForTests(): void {
+  marked.clear();
+  channels.clear();
+}
+
 export function getCatChannelSnapshot(tableId: string): CatChannelSnapshot | null {
   return channels.get(tableId)?.session.snapshot() ?? null;
 }

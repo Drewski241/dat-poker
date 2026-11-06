@@ -112,6 +112,12 @@ export function useCatChannel(opts: {
     noteChannel(next: CatChannelSnapshot | null | undefined) {
       if (next) setChannel(next);
     },
+    clear() {
+      setChannel(null);
+      setProof(null);
+      setTableId(null);
+      signedMessage.current = null;
+    },
     play,
     sign() {
       signedMessage.current = null;

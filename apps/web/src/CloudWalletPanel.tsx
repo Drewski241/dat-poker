@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { formatDatMojos } from "@dat-poker/shared";
 import { api, type WithdrawResult } from "./api.js";
 
-const REGISTER_REDIRECT = "https://datspiritpoker.com/v1/wallet/cloud/callback";
-
 type CloudStatus = {
   configured: boolean;
   connected: boolean;
@@ -60,39 +58,20 @@ export function CloudWalletPanel({
     };
   }, [playerId]);
 
-  const refresh = async () => {
-    setStatus(await api.cloudWalletStatus());
-  };
+  if (!status?.configured) return null;
 
   return (
     <section className="panel">
       <h2>Withdraw DAT (Chia Cloud Wallet)</h2>
       <p className="muted small">
-        Treasury Sage still builds the DAT offer. Cloud Wallet is only where that offer is delivered.
-        Connect stays off until this site’s OAuth app is registered and approved.
+        Treasury Sage still builds the DAT offer. Cloud Wallet is where that offer is delivered.
       </p>
       {banner && (
         <p className={banner.includes("connected") && !banner.includes("did not") ? "ok-text" : "banner error"}>
           {banner}
         </p>
       )}
-      {status && !status.configured && (
-        <>
-          <p>
-            Register an OAuth app in Chia Cloud Wallet under <strong>Settings → OAuth Apps</strong>.
-            New apps can stay pending until Cloud Wallet approves them. Until the client id is on this
-            host, players cannot connect.
-          </p>
-          <p className="muted small">Redirect URI, exactly:</p>
-          <p className="mono">{REGISTER_REDIRECT}</p>
-          <p className="muted small">
-            Scopes: wallet.read, offer.read, offer.accept, offline_access. Then set
-            CHIA_CLOUD_WALLET_CLIENT_ID on the API host. Add CHIA_CLOUD_WALLET_CLIENT_SECRET only if the
-            portal issued one. The secret stays on the server.
-          </p>
-        </>
-      )}
-      {status?.configured && !status.connected && (
+      {!status.connected && (
         <button
           type="button"
           disabled={busy}
@@ -156,11 +135,6 @@ export function CloudWalletPanel({
         <p className="mono">
           Offer (finish once): {offer}
         </p>
-      )}
-      {status === null && (
-        <button type="button" className="secondary" disabled={busy} onClick={() => void refresh()}>
-          Check Cloud Wallet
-        </button>
       )}
     </section>
   );

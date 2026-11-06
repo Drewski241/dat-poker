@@ -31,7 +31,7 @@ import { mtt500NftRewardForPlayer, retryMtt500NftOffer } from "../mtt500-nft-cha
 import { isHeadsUpChannel, releaseHeadsUpHouse } from "../heads-up-channel.js";
 import { getTableEngine, persistTablePlaythrough, playthroughFields } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
-import { isCatChannelTable } from "../cat-channel-store.js";
+import { isCatChannelTable, releaseCatChannel } from "../cat-channel-store.js";
 import type { TableEngine } from "@dat-poker/game-engine";
 import { allowIpBucket } from "../ip-rate-limit.js";
 import { acceptCloudWalletOffer, cloudWalletConfigured, cloudWalletPublic } from "../cloud-wallet.js";
@@ -340,8 +340,10 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
 
     const playerId = session.playerId;
     const table = tableId ? getTableEngine(tableId) : undefined;
-    if (tableId && isCatChannelTable(tableId)) {
-      return reply.status(400).send({ error: "This pot is in a DAT channel. Close the channel to cash out." });
+    if (tableId && isCatChannelTable(tableId) && !fromAccount) {
+      return reply.status(400).send({
+        error: "Cash out to your account to close this DAT channel.",
+      });
     }
     if (tableId && !fromAccount && !table) {
       return reply.status(404).send({ error: "Table not found" });
@@ -392,8 +394,11 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     }
     const playerId = session.playerId;
     const table = tableId ? getTableEngine(tableId) : undefined;
-    if (tableId && isCatChannelTable(tableId)) {
-      return reply.status(400).send({ error: "This pot is in a DAT channel. Close the channel to cash out." });
+    const closingChannel = Boolean(tableId && toAccount && isCatChannelTable(tableId));
+    if (tableId && isCatChannelTable(tableId) && !toAccount) {
+      return reply.status(400).send({
+        error: "Cash out to your account to close this DAT channel.",
+      });
     }
     if (tableId && !fromAccount && !toAccount && !table) {
       return reply.status(404).send({ error: "Table not found" });
@@ -670,6 +675,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     if (cashOutToAccount) {
       syncPlaythroughHeld(playerId, accountMojos);
       if (tableId) clearBuyIn(tableId, playerId);
+      if (closingChannel && tableId) releaseCatChannel(tableId);
       if (tableId && table && isHeadsUpChannel(tableId)) {
         await releaseHeadsUpHouse(tableId, table);
       }
@@ -715,7 +721,9 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       playthrough: playthroughView(playerId),
       note: cloudWithdrawNote(
         cashOutToAccount
-          ? "Table stack returned to your DAT account. Play-through progress is kept for the next sit."
+          ? closingChannel
+            ? "DAT channel closed. Table stack returned to your account. Play-through progress is kept for the next sit."
+            : "Table stack returned to your DAT account. Play-through progress is kept for the next sit."
           : mode === "offer"
             ? "Approve the treasury offer in Sage to receive unlocked DAT."
             : stillSeated

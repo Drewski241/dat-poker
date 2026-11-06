@@ -47,7 +47,7 @@ import {
 } from "../heads-up-channel.js";
 import { InsufficientHouseBankrollError } from "../house-lock.js";
 import { HOUSE_PLAYER_ID } from "../house-id.js";
-import { markCatChannelTable } from "../cat-channel-store.js";
+import { markCatChannelTable, resetCatChannelsForTests } from "../cat-channel-store.js";
 
 const tableCustody = new Map<string, "ledger" | "cat-channel">();
 
@@ -1696,6 +1696,8 @@ export function returnAllStacksToAccounts(): { returned: number } {
 /** Clear in-memory tables without wiping daily ritual progress. */
 export function clearTableStateForTests(): void {
   tables.clear();
+  tableCustody.clear();
+  resetCatChannelsForTests();
   resetHeadsUpChannelsForTests();
   sngByTable.clear();
   mttByTable.clear();

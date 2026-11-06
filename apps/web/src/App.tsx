@@ -1806,6 +1806,7 @@ export function App({
         setHandResult(null);
       }
       await refreshAccount(playerId);
+      datChannel.clear();
     });
   };
 
@@ -2938,6 +2939,11 @@ export function App({
               </p>
             )}
             {tableId && !hand && !handInProgress && tableStackMojos && tableFormat !== "sng" && tableFormat !== "mtt" && (
+              <>
+              {error && <div className="banner error">{error}</div>}
+              {datChannel.channel && (
+                <p className="muted small">Cash out closes the DAT channel and returns this stack to your account.</p>
+              )}
               <div className="row">
                 <button type="button" disabled={busy} onClick={cashOutToAccount}>
                   Cash out {formatDatMojos(tableStackMojos, datToken?.ticker)} to account
@@ -2953,6 +2959,7 @@ export function App({
                   </button>
                 )}
               </div>
+              </>
             )}
             {(tableFormat === "sng" || tableFormat === "mtt") && accountUnlockedMojos > 0n && (
               <div className="row">
