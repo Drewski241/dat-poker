@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { generateChannelKey, publicKeyFor, signAug } from "@dat-poker/chia-bridge/bls";
+import { api, type BuyInProof, type CatChannelSnapshot, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type PuzzleCondition, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
+import { CatChannelPanel } from "./components/CatChannelPanel.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
   beginWalletConnect,
@@ -16,6 +18,24 @@ import {
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
 const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
+const CHANNEL_KEY_STORAGE = "dat-poker-cat-channel-secret";
+
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i += 1) bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return bytes;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const digest = await crypto.subtle.digest("SHA-256", copy);
+  return bytesToHex(new Uint8Array(digest));
+}
 
 function playerLabel(id: string, youId: string | null): string {
   if (id === youId) return "You";
@@ -54,6 +74,10 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+  const [channel, setChannel] = useState<CatChannelSnapshot | null>(null);
+  const [channelSecret, setChannelSecret] = useState<Uint8Array | null>(null);
+  const [channelProof, setChannelProof] = useState<{ kind: string; conditions: PuzzleCondition[] } | null>(null);
+  const signedMessage = useRef<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -95,12 +119,14 @@ export function App() {
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
     if (t.lastHandResult) setHandResult(t.lastHandResult);
+    setChannel(t.channel ?? null);
   }, []);
 
   const applyActionResponse = useCallback(
-    (response: { hand: HandState | null; lastHandResult: HandResult | null }) => {
+    (response: { hand: HandState | null; lastHandResult: HandResult | null; channel?: CatChannelSnapshot | null }) => {
       setHand(response.hand);
       if (response.lastHandResult) setHandResult(response.lastHandResult);
+      if (response.channel) setChannel(response.channel);
     },
     [],
   );
@@ -142,6 +168,70 @@ export function App() {
 
     return () => window.clearTimeout(timer);
   }, [tableId, hand, playerId, busy, refreshTable, applyActionResponse]);
+
+  const signChannelBalance = useCallback(async () => {
+    if (!tableId || !playerId || !channel || !channelSecret) {
+      throw new Error("Open a test channel first");
+    }
+    const signature = bytesToHex(signAug(channelSecret, hexToBytes(channel.stateMessageHex)));
+    const next = await api.submitStateSignature(tableId, playerId, signature);
+    setChannel(next.channel);
+  }, [tableId, playerId, channel, channelSecret]);
+
+  useEffect(() => {
+    if (!channel || channel.signed || !channelSecret || !tableId || !playerId || busy) return;
+    if (signedMessage.current === channel.stateMessageHex) return;
+    signedMessage.current = channel.stateMessageHex;
+    void run("Signing DAT channel balance…", signChannelBalance);
+  }, [channel, channelSecret, tableId, playerId, busy, run, signChannelBalance]);
+
+  const playChannel = () =>
+    run("Opening DAT channel…", async () => {
+      const secretHex = sessionStorage.getItem(CHANNEL_KEY_STORAGE);
+      const key = secretHex
+        ? { secretKey: hexToBytes(secretHex), publicKey: publicKeyFor(hexToBytes(secretHex)) }
+        : generateChannelKey();
+      if (!secretHex) sessionStorage.setItem(CHANNEL_KEY_STORAGE, bytesToHex(key.secretKey));
+      setChannelSecret(key.secretKey);
+      const id = bytesToHex(key.publicKey);
+      setPlayerId(id);
+      const { tableId: created, config: tableConfig } = await api.createTable({ custody: "cat-channel" });
+      const buyIn = tableConfig.minBuyInMojos;
+      await api.seatPlayer(created, id, 0, buyIn, { channelTest: true });
+      await api.seatHouse(created, buyIn);
+      const payout = await sha256Hex(key.publicKey);
+      const opened = await api.openCatChannel(created, {
+        alicePublicKey: id,
+        alicePayoutPuzzleHash: payout,
+      });
+      setTableId(created);
+      setChannel(opened.channel);
+      setHand(null);
+      setHandResult(null);
+      setChannelProof(null);
+      signedMessage.current = null;
+      await refreshTable(created);
+    });
+
+  const proveChannel = (kind: "close" | "settle" | "preempt") => {
+    if (!tableId) return;
+    run(`Proving ${kind}…`, async () => {
+      const result = await api.proveCatChannel(tableId, kind);
+      setChannelProof(result);
+    });
+  };
+
+  const signClose = () => {
+    if (!tableId || !playerId || !channel || !channelSecret) return;
+    run("Signing cooperative close…", async () => {
+      const signature = bytesToHex(signAug(channelSecret, hexToBytes(channel.closeSigningHex)));
+      const next = await api.submitCloseSignature(tableId, playerId, signature);
+      setChannel(next.channel);
+      if (next.channel.closeReady) {
+        setChannelProof(await api.proveCatChannel(tableId, "close"));
+      }
+    });
+  };
 
   const connectSage = () =>
     run("Opening WalletConnect…", async () => {
@@ -453,7 +543,7 @@ export function App() {
                 <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
               </p>
             )}
-            {tableId && !hand && !handInProgress && tableStackMojos && (
+            {tableId && !hand && !handInProgress && tableStackMojos && !channel && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawToSage}>
                   Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
@@ -477,6 +567,21 @@ export function App() {
         )}
       </section>
 
+      <CatChannelPanel
+        ticker={datToken?.ticker}
+        busy={busy}
+        apiOk={apiOk}
+        channel={channel}
+        proof={channelProof}
+        onPlay={() => void playChannel()}
+        onSign={() => {
+          signedMessage.current = null;
+          void run("Signing DAT channel balance…", signChannelBalance);
+        }}
+        onProve={proveChannel}
+        onClose={() => void signClose()}
+      />
+
       {tableId && (
         <section className="panel">
           <h2>Hand</h2>
@@ -489,7 +594,7 @@ export function App() {
                   {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
                 </div>
               )}
-              <button type="button" disabled={busy} onClick={startHandFlow}>
+              <button type="button" disabled={busy || (channel !== null && !channel.signed)} onClick={startHandFlow}>
                 {handResult ? "New hand" : "Start hand vs house"}
               </button>
             </>

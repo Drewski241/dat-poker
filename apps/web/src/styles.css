@@ -77,6 +77,12 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.hash {
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+}
+
 .mono {
   font-family: ui-monospace, monospace;
   font-size: 0.85rem;

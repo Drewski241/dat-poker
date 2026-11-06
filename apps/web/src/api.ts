@@ -82,6 +82,36 @@ export interface TableSeat {
   stackMojos: string;
 }
 
+export interface CatChannelSnapshot {
+  status: "awaiting-signatures" | "active" | "desynced" | "closed";
+  sequence: number;
+  timeoutBlocks: number;
+  aliceAmount: string;
+  bobAmount: string;
+  lockedMojos: string;
+  nonceHex: string;
+  assetIdHex: string;
+  innerPuzzleHashHex: string;
+  catPuzzleHashHex: string;
+  coinIdHex: string;
+  coinIdSimulated: boolean;
+  stateMessageHex: string;
+  closeSigningHex: string;
+  potato: "alice" | "bob";
+  fullSigHolder: "alice" | "bob";
+  signed: boolean;
+  closeReady: boolean;
+  desyncReason?: string;
+}
+
+export interface PuzzleCondition {
+  opcode: number;
+  puzzleHash?: string;
+  amount?: string;
+  value?: string;
+  pubkey?: string;
+}
+
 export interface TableConfigResponse {
   id: string;
   minBuyInMojos: string;
@@ -145,10 +175,10 @@ export const api = {
       }),
     }),
 
-  createTable: () =>
-    request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
+  createTable: (body?: { custody?: "ledger" | "cat-channel"; maxSeats?: number }) =>
+    request<{ tableId: string; custody?: string; config: TableConfigResponse }>("/v1/tables", {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify(body ?? {}),
     }),
 
   getTable: (tableId: string) =>
@@ -159,6 +189,8 @@ export const api = {
       seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;
+      custody?: string;
+      channel?: CatChannelSnapshot | null;
     }>(`/v1/tables/${tableId}`),
 
   seatPlayer: (
@@ -166,7 +198,7 @@ export const api = {
     playerId: string,
     seatIndex: number,
     buyInMojos: string,
-    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+    options?: { buyInProof?: BuyInProof; devAck?: boolean; channelTest?: boolean },
   ) =>
     request<{ ok: boolean }>(`/v1/tables/${tableId}/seat`, {
       method: "POST",
@@ -202,8 +234,40 @@ export const api = {
       body: "{}",
     }),
 
+  openCatChannel: (
+    tableId: string,
+    body: { alicePublicKey: string; alicePayoutPuzzleHash: string; timeoutBlocks?: number },
+  ) =>
+    request<{ channel: CatChannelSnapshot }>(`/v1/tables/${tableId}/cat-channel/open`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  submitStateSignature: (tableId: string, playerId: string, signature: string) =>
+    request<{ channel: CatChannelSnapshot }>(`/v1/tables/${tableId}/cat-channel/state-signature`, {
+      method: "POST",
+      body: JSON.stringify({ playerId, signature }),
+    }),
+
+  submitCloseSignature: (tableId: string, playerId: string, signature: string) =>
+    request<{ channel: CatChannelSnapshot }>(`/v1/tables/${tableId}/cat-channel/close-signature`, {
+      method: "POST",
+      body: JSON.stringify({ playerId, signature }),
+    }),
+
+  proveCatChannel: (tableId: string, kind: "close" | "settle" | "preempt") =>
+    request<{ kind: string; conditions: PuzzleCondition[] }>(`/v1/tables/${tableId}/cat-channel/prove`, {
+      method: "POST",
+      body: JSON.stringify({ kind }),
+    }),
+
   action: (tableId: string, playerId: string, action: PlayerAction, amountMojos?: string) =>
-    request<{ ok: boolean; hand: HandState | null; lastHandResult: HandResult | null }>(
+    request<{
+      ok: boolean;
+      hand: HandState | null;
+      lastHandResult: HandResult | null;
+      channel?: CatChannelSnapshot | null;
+    }>(
       `/v1/tables/${tableId}/hands/action`,
       {
         method: "POST",
