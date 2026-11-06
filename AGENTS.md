@@ -54,3 +54,4 @@ Connect to `ws://localhost:4100/ws`, wait for `connected`, send `{"type":"ping"}
 - Buy-in amounts are **CAT mojos** (1000 mojos = 1 DAT). Default min buy-in is `1000000` (1000 DAT). Do not use XCH-scale values like `2000000000000`.
 - In-memory table state: restarting `pnpm dev:api` clears all tables.
 - `DAT_ALLOW_DEV_BUYIN=true` in `.env.example` allows dev buy-ins without a configured `DAT_GOVERNANCE_TOKEN_ASSET_ID`.
+- Heads-up DAT channel tests compile Chialisp. Install `packages/chia-bridge/puzzles/requirements.txt` (`clvm`, `clvm-tools`) and put `~/.local/bin` on `PATH` so `run` is available. `DAT_CAT_CHANNEL_TEST=true` enables the browser test seat.

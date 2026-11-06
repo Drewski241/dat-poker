@@ -2,7 +2,7 @@
 
 Global-scale poker on the **Chia blockchain** with off-chain gameplay and on-chain settlement via [chia-gaming](https://github.com/Chia-Network/chia-gaming) state channels.
 
-**Account funding:** player buy-ins and bankrolls use the **DAT Governance Token** (Chia CAT). See [docs/DAT_TOKEN.md](./docs/DAT_TOKEN.md).
+**Account funding:** player buy-ins and bankrolls use the **DAT Governance Token** (Chia CAT). See [docs/DAT_TOKEN.md](./docs/DAT_TOKEN.md). Heads-up pots can sit in a non-custodial DAT channel: [docs/CAT_CHANNEL.md](./docs/CAT_CHANNEL.md).
 
 ## Quick start
 

@@ -16,6 +16,7 @@
 - [ ] Postgres persistence for tables/hands/events
 - [ ] Redis pub/sub for gateway fanout
 - [ ] Docker Compose dev stack
+- [x] Heads-up DAT CAT channel (2-of-2 inner puzzle, off-chain balance signatures)
 - [ ] chia-gaming simulator E2E
 
 ## Phase 2 — Multi-variant

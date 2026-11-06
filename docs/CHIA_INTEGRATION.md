@@ -30,12 +30,23 @@ CHIA_GAMING_GAME_URL=http://localhost:3000
 
 ## Integration modes
 
-### Mode A — Native state channel (2 players)
+### Mode A — DAT CAT channel (2 players)
 
-Best for: Calpoker, heads-up NLHE, high-trust P2P stakes.
+Best for: heads-up NLHE where the pot is DAT and neither player can move it alone.
+
+- Create a table with `custody: "cat-channel"` (2 seats only)
+- The channel coin is a DAT CAT. Its inner puzzle is the 2-of-2 balance channel in `packages/chia-bridge/puzzles/`
+- After each hand both players sign the new stacks. The game server does not custody the pot
+- Cooperative close pays both wallet inner puzzle hashes immediately. A unilateral close spends to an unroll coin that pays the latest co-signed balance after a relative timeout. A newer opposite-parity state preempts a stale unroll immediately
+- XCH is only the network fee
+- chia-gaming's own channel still accepts XCH only. This mode does not wait on that upstream change. See [CAT_CHANNEL.md](./CAT_CHANNEL.md)
+
+### Mode A2 — chia-gaming state channel (2 players, XCH)
+
+Best for: Calpoker experiments that can stake XCH.
 
 - Use `ChiaGamingClient.createHeadToHeadRoom()`
-- Wallets open/close channel via chia-gaming UI
+- Wallets open/close the channel via chia-gaming
 - Platform records session metadata only
 
 ### Mode B — Platform escrow + batch settlement (3–10 players)

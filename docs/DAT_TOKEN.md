@@ -70,7 +70,7 @@ sequenceDiagram
 | **DAT** | Player buy-ins, pots, payouts |
 | **XCH** | Network fees only (mempool fees for opens/settles) |
 
-Head-to-head **chia-gaming** sessions may still lock XCH or CAT per room config; DAT POKER will standardize on DAT for ring games and MTTs.
+Ring games and tournaments settle DAT through the treasury. Heads-up tables can lock DAT in a CAT whose inner puzzle is a 2-of-2 channel. See [CAT_CHANNEL.md](./CAT_CHANNEL.md). chia-gaming rooms still stake XCH only.
 
 ## Governance (future)
 
