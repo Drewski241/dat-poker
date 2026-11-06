@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type PlayerAction } from "@dat-poker/game-engine";
+import { catChannelStartBlock, syncCatChannelAfterHand } from "../cat-channel-store.js";
 import { getTableEngine } from "./tables.js";
 
 export function registerHandRoutes(app: FastifyInstance): void {
@@ -9,6 +10,8 @@ export function registerHandRoutes(app: FastifyInstance): void {
     async (req, reply) => {
       const table = getTableEngine(req.params.tableId);
       if (!table) return reply.status(404).send({ error: "Table not found" });
+      const channelBlock = catChannelStartBlock(req.params.tableId);
+      if (channelBlock) return reply.status(400).send({ error: channelBlock });
       try {
         const handId = req.body.handId ?? randomUUID();
         const { commitHash } = table.startHand(handId);
@@ -56,10 +59,14 @@ export function registerHandRoutes(app: FastifyInstance): void {
     try {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
       table.applyAction(req.body.playerId, req.body.action, amount);
+      const channel = table.isHandInProgress()
+        ? undefined
+        : syncCatChannelAfterHand(req.params.tableId, table.getSeatedPlayers());
       return {
         ok: true,
         hand: table.getHandState(),
         lastHandResult: table.getLastHandResult(),
+        channel,
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });

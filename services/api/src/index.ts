@@ -1,15 +1,7 @@
 import { config as loadEnv } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import Fastify from "fastify";
-import cors from "@fastify/cors";
-import { ChiaGamingClient } from "@dat-poker/chia-bridge";
-import { POKER_VARIANTS } from "@dat-poker/shared";
-import { registerTableRoutes } from "./routes/tables.js";
-import { registerHealthRoutes } from "./routes/health.js";
-import { serializeForJson } from "./serialize.js";
-import { registerHandRoutes } from "./routes/hands.js";
-import { registerWalletRoutes } from "./routes/wallet.js";
+import { buildApp } from "./app.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -17,37 +9,8 @@ loadEnv({ path: resolve(__dirname, "../../../.env") });
 const port = Number(process.env.API_PORT ?? 4000);
 const host = process.env.API_HOST ?? "0.0.0.0";
 
-const chiaClient = new ChiaGamingClient({
-  network: (process.env.CHIA_NETWORK as "mainnet" | "testnet") ?? "mainnet",
-  lobbyUrl: process.env.CHIA_GAMING_LOBBY_URL ?? "http://localhost:3001",
-  gameUrl: process.env.CHIA_GAMING_GAME_URL ?? "http://localhost:3000",
-  coinsetUrl: process.env.COINSET_URL ?? "https://coinset.org",
-  walletConnect: process.env.WALLETCONNECT_PROJECT_ID
-    ? {
-        projectId: process.env.WALLETCONNECT_PROJECT_ID,
-        chainId: process.env.CHIA_CHAIN_ID ?? "chia:mainnet",
-      }
-    : undefined,
-});
-
 async function main(): Promise<void> {
-  const app = Fastify({ logger: true });
-  await app.register(cors, { origin: true });
-
-  app.addHook("preSerialization", async (_request, _reply, payload) => {
-    if (payload === undefined || payload === null) return payload;
-    return serializeForJson(payload);
-  });
-
-  registerHealthRoutes(app, chiaClient);
-  registerWalletRoutes(app, chiaClient);
-  registerTableRoutes(app);
-  registerHandRoutes(app);
-
-  app.get("/v1/variants", async () => ({
-    variants: POKER_VARIANTS,
-  }));
-
+  const app = await buildApp(undefined, { logger: true });
   await app.listen({ port, host });
   app.log.info(`API listening on http://${host}:${port}`);
 }

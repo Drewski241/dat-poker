@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { TableConfig } from "@dat-poker/shared";
 import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
+import { getCatChannelSnapshot, markCatChannelTable } from "../cat-channel-store.js";
 import { recordBuyIn } from "../buy-in-store.js";
 import {
   type BuyInProof,
@@ -11,7 +12,12 @@ import {
 } from "../wallet-config.js";
 
 const tables = new Map<string, NlheTableEngine>();
-const HOUSE_PLAYER_ID = "dat-poker:house";
+const tableCustody = new Map<string, "ledger" | "cat-channel">();
+export const HOUSE_PLAYER_ID = "dat-poker:house";
+
+export function getTableCustody(tableId: string): "ledger" | "cat-channel" {
+  return tableCustody.get(tableId) ?? "ledger";
+}
 
 export function registerTableRoutes(app: FastifyInstance): void {
   app.post<{
@@ -20,11 +26,16 @@ export function registerTableRoutes(app: FastifyInstance): void {
       smallBlindMojos?: string;
       bigBlindMojos?: string;
       maxSeats?: number;
+      custody?: "ledger" | "cat-channel";
     };
-  }>("/v1/tables", async (req) => {
+  }>("/v1/tables", async (req, reply) => {
+    const custody = req.body.custody ?? "ledger";
+    if (custody === "cat-channel" && req.body.maxSeats !== undefined && req.body.maxSeats !== 2) {
+      return reply.status(400).send({ error: "DAT CAT channels are heads-up (2 seats)" });
+    }
     const id = randomUUID();
     const dat = readDatTokenConfig();
-    const useDatStakes = Boolean(dat.assetId);
+    const useDatStakes = Boolean(dat.assetId) || custody === "cat-channel";
     const minBuyIn = useDatStakes
       ? resolveDatMinBuyInMojos(dat.minBuyInMojos)
       : DAT_TABLE_DEFAULTS.minBuyInMojos;
@@ -32,7 +43,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       id,
       variant: "nlhe",
       format: "cash",
-      maxSeats: req.body.maxSeats ?? 6,
+      maxSeats: custody === "cat-channel" ? 2 : (req.body.maxSeats ?? 6),
       smallBlindMojos: BigInt(
         req.body.smallBlindMojos ??
           (useDatStakes ? DAT_TABLE_DEFAULTS.smallBlindMojos : 50_000_000_000n),
@@ -46,7 +57,9 @@ export function registerTableRoutes(app: FastifyInstance): void {
       rakeBps: 500,
     };
     tables.set(id, new NlheTableEngine(config));
-    return { tableId: id, config };
+    tableCustody.set(id, custody);
+    if (custody === "cat-channel") markCatChannelTable(id);
+    return { tableId: id, custody, config };
   });
 
   app.get<{ Params: { tableId: string } }>("/v1/tables/:tableId", async (req, reply) => {
@@ -61,6 +74,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
       seats: table.getSeatedPlayers(),
       hand: table.getHandState(),
       lastHandResult: table.getLastHandResult(),
+      custody: getTableCustody(req.params.tableId),
+      channel: getCatChannelSnapshot(req.params.tableId),
     };
   });
 
@@ -72,6 +87,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       buyInMojos: string;
       buyInProof?: BuyInProof;
       devAck?: boolean;
+      channelTest?: boolean;
     };
   }>("/v1/tables/:tableId/seat", async (req, reply) => {
     const table = tables.get(req.params.tableId);
@@ -89,7 +105,11 @@ export function registerTableRoutes(app: FastifyInstance): void {
       });
     }
 
-    if (!dat.devBuyInEnabled) {
+    if (req.body.channelTest) {
+      if (process.env.DAT_CAT_CHANNEL_TEST !== "true") {
+        return reply.status(403).send({ error: "DAT channel test seating is disabled" });
+      }
+    } else if (!dat.devBuyInEnabled) {
       if (!dat.assetId) {
         return reply.status(503).send({ error: "DAT token not configured" });
       }

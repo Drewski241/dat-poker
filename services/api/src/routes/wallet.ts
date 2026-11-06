@@ -7,6 +7,7 @@ import {
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
 } from "../treasury-payout.js";
+import { isCatChannelTable } from "../cat-channel-store.js";
 import { getTableEngine } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import {
@@ -90,6 +91,11 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     if (table.isHandInProgress()) {
       return reply.status(400).send({ error: "Finish the current hand before withdrawing" });
     }
+    if (isCatChannelTable(tableId)) {
+      return reply.status(400).send({
+        error: "This pot is locked in a DAT channel. Cooperative-close the channel instead of a treasury withdraw.",
+      });
+    }
 
     const stack = table.getPlayerStack(address);
     if (stack === null) {
@@ -124,6 +130,11 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     }
     if (table.isHandInProgress()) {
       return reply.status(400).send({ error: "Finish the current hand before withdrawing" });
+    }
+    if (isCatChannelTable(tableId)) {
+      return reply.status(400).send({
+        error: "This pot is locked in a DAT channel. Cooperative-close the channel instead of a treasury withdraw.",
+      });
     }
     if (hasWithdrawal(tableId, playerId)) {
       return reply.status(400).send({ error: "Withdrawal already completed for this table session" });
