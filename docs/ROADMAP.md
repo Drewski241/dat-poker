@@ -16,12 +16,14 @@
 - [ ] Postgres persistence for tables/hands/events
 - [ ] Redis pub/sub for gateway fanout
 - [ ] Docker Compose dev stack
+- [x] Heads-up DAT CAT channel (2-of-2 inner puzzle, off-chain balance signatures)
 - [ ] chia-gaming simulator E2E
 
 ## Phase 2 — Multi-variant
 
 - [ ] PLO4 / PLO5 engines
 - [ ] SNG + MTT schedulers
+- [x] Hybrid routing: every variant heads-up on chia-gaming, DAT-only stakes, 3+ player vault with heads-up promotion
 - [ ] Calpoker route through chia-gaming native flow
 - [ ] Rake accounting + ledger
 

@@ -8,3 +8,6 @@ coverage
 !.env.treasury.example
 *.log
 .DS_Store
+main.sym
+__pycache__/
+data/ledger.json

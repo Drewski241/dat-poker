@@ -30,12 +30,23 @@ CHIA_GAMING_GAME_URL=http://localhost:3000
 
 ## Integration modes
 
-### Mode A — Native state channel (2 players)
+### Mode A — DAT CAT channel (2 players)
 
-Best for: Calpoker, heads-up NLHE, high-trust P2P stakes.
+Best for: heads-up NLHE where the pot is DAT and neither player can move it alone.
+
+- Create a table with `custody: "cat-channel"` (2 seats only)
+- The channel coin is a DAT CAT. Its inner puzzle is the 2-of-2 balance channel in `packages/chia-bridge/puzzles/`
+- After each hand both players sign the new stacks. The game server does not custody the pot
+- Cooperative close pays both wallet inner puzzle hashes immediately. A unilateral close spends to an unroll coin that pays the latest co-signed balance after a relative timeout. A newer opposite-parity state preempts a stale unroll immediately
+- XCH is only the network fee
+- chia-gaming's own channel still accepts XCH only. This mode does not wait on that upstream change. See [CAT_CHANNEL.md](./CAT_CHANNEL.md)
+
+### Mode A2 — chia-gaming state channel (2 players, XCH)
+
+Best for: Calpoker experiments that can stake XCH.
 
 - Use `ChiaGamingClient.createHeadToHeadRoom()`
-- Wallets open/close channel via chia-gaming UI
+- Wallets open/close the channel via chia-gaming
 - Platform records session metadata only
 
 ### Mode B — Platform escrow + batch settlement (3–10 players)
@@ -46,13 +57,15 @@ Best for: cash games, SNGs.
 - Hand ends → `buildSettlementProof()` → settlement worker submits Chia tx
 - Event log + `stateRootHash` enable third-party audit
 
-### Mode C — Tournament pools (100k+ players)
+### Mode C — Tournament pools
 
-Best for: MTTs.
+Best for: sit-and-gos and MTTs. See [TOURNAMENT_POOL.md](./TOURNAMENT_POOL.md).
 
-- Registration opens tournament pool coin on Chia
-- Payout table executed after final table settlement
-- Off-chain blind/level schedule with on-chain prize pool lock
+- Each paid entry is its own DAT CAT locked to `puzzles/tournament_pool.clsp`
+- The prize pool is the set of those coins, not one coin that grows
+- Wallet signature is required to join
+- Free site DAT redeems are a separate ledger and do not create a pool coin
+- Settlement spends every entry coin; odd mojos go to first place
 
 ## Network configuration
 
@@ -67,5 +80,5 @@ WalletConnect project ID is required for production wallet flows. See [WALLETCON
 
 1. Wire real lobby API paths from chia-gaming OpenAPI (alpha APIs may change).
 2. Add settlement worker service consuming Kafka hand-complete events.
-3. Implement Chialisp escrow puzzle templates for ring-game buy-ins.
+3. Broadcast tournament pool spends (lock, refund, settle) through a wallet or coinset client. The puzzle and spend builder are in `puzzles/tournament_pool.clsp`.
 4. Simulator E2E test harness in CI (Docker compose profile).

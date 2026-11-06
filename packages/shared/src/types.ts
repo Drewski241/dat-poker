@@ -9,10 +9,20 @@ export type PokerVariant =
   | "plo4"
   | "plo5"
   | "plo6"
+  | "plo4_hl"
+  | "pineapple"
+  | "crazy_pineapple"
+  | "lazy_pineapple"
+  | "five_card_draw"
+  | "triple_draw_27"
+  | "badugi"
+  | "draw"
   | "stud"
+  | "seven_card_stud"
   | "razz"
   | "horse"
-  | "calpoker";
+  | "calpoker"
+  | "omaha";
 
 export type TableFormat = "cash" | "sng" | "mtt";
 
@@ -48,7 +58,34 @@ export interface SeatState {
   sittingOut: boolean;
 }
 
-export type Street = "preflop" | "flop" | "turn" | "river" | "showdown";
+/** Community-card streets plus discard (pineapple) and showdown. */
+export type Street =
+  | "preflop"
+  | "flop"
+  | "turn"
+  | "river"
+  | "discard"
+  | "showdown";
+
+/** Draw-family streets (used by DrawTableEngine). */
+export type DrawStreet =
+  | "betting1"
+  | "draw1"
+  | "betting2"
+  | "draw2"
+  | "betting3"
+  | "draw3"
+  | "betting4"
+  | "showdown";
+
+/** Stud-family streets (used by StudTableEngine). */
+export type StudStreet =
+  | "third"
+  | "fourth"
+  | "fifth"
+  | "sixth"
+  | "seventh"
+  | "showdown";
 
 export interface HandCommitment {
   handId: HandId;

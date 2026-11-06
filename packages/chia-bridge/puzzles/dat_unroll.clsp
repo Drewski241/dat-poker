@@ -1,0 +1,152 @@
+; Optimistic unroll for a DAT channel. Curried with one co-signed balance state.
+; After TIMEOUT blocks anyone may pay that state out.
+; A later state with the opposite sequence parity can replace it immediately.
+;
+; Curried: ALICE_PK BOB_PK TIMEOUT CHANNEL_NONCE SEQUENCE
+;          ALICE_PH ALICE_AMT BOB_PH BOB_AMT UNROLL_MOD_HASH
+; Solution: (mode new_sequence new_alice_ph new_alice_amt new_bob_ph new_bob_amt)
+;   mode 0 — settle after the relative timeout
+;   mode 1 — preempt with a higher, opposite-parity state
+
+(mod (
+    ALICE_PK
+    BOB_PK
+    TIMEOUT
+    CHANNEL_NONCE
+    SEQUENCE
+    ALICE_PH
+    ALICE_AMT
+    BOB_PH
+    BOB_AMT
+    UNROLL_MOD_HASH
+    mode
+    new_sequence
+    new_alice_ph
+    new_alice_amt
+    new_bob_ph
+    new_bob_amt
+  )
+
+  (defun sha256tree (TREE)
+    (if (l TREE)
+      (sha256 2 (sha256tree (f TREE)) (sha256tree (r TREE)))
+      (sha256 1 TREE)
+    )
+  )
+
+  (defun atom-hash (ATOM)
+    (sha256 1 ATOM)
+  )
+
+  (defun pair-hash (LEFT RIGHT)
+    (sha256 2 LEFT RIGHT)
+  )
+
+  (defun nil-hash ()
+    (sha256 1 ())
+  )
+
+  (defun quoted (ARG_HASH)
+    (pair-hash (atom-hash 1) ARG_HASH)
+  )
+
+  (defun cons-arg (ARG_HASH REST_HASH)
+    (pair-hash
+      (atom-hash 4)
+      (pair-hash
+        (quoted ARG_HASH)
+        (pair-hash REST_HASH (nil-hash))
+      )
+    )
+  )
+
+  (defun apply-hash (MOD_HASH ENV_HASH)
+    (pair-hash
+      (atom-hash 2)
+      (pair-hash
+        (quoted MOD_HASH)
+        (pair-hash ENV_HASH (nil-hash))
+      )
+    )
+  )
+
+  (defun one-hash ()
+    (atom-hash 1)
+  )
+
+  (defun curry10 (MOD A1 A2 A3 A4 A5 A6 A7 A8 A9 A10)
+    (apply-hash MOD
+      (cons-arg A1
+        (cons-arg A2
+          (cons-arg A3
+            (cons-arg A4
+              (cons-arg A5
+                (cons-arg A6
+                  (cons-arg A7
+                    (cons-arg A8
+                      (cons-arg A9
+                        (cons-arg A10 (one-hash))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+
+  (defun state-hash (NONCE SEQ APH AAMT BPH BAMT)
+    (sha256tree (list "DAT/1/state" NONCE SEQ APH AAMT BPH BAMT))
+  )
+
+  (if (= mode 0)
+    (c (list 82 TIMEOUT)
+      (c (list 73 (+ ALICE_AMT BOB_AMT))
+        (c (list 51 ALICE_PH ALICE_AMT)
+          (c (list 51 BOB_PH BOB_AMT)
+            ()
+          )
+        )
+      )
+    )
+    (if (= mode 1)
+      (if (not (> new_sequence SEQUENCE))
+        (x)
+        (if (= (logand new_sequence 1) (logand SEQUENCE 1))
+          (x)
+          (if (not (= (+ new_alice_amt new_bob_amt) (+ ALICE_AMT BOB_AMT)))
+            (x)
+            (if (any (> 0 new_alice_amt) (> 0 new_bob_amt))
+              (x)
+              (c (list 49 ALICE_PK (state-hash CHANNEL_NONCE new_sequence new_alice_ph new_alice_amt new_bob_ph new_bob_amt))
+                (c (list 49 BOB_PK (state-hash CHANNEL_NONCE new_sequence new_alice_ph new_alice_amt new_bob_ph new_bob_amt))
+                  (c (list 73 (+ ALICE_AMT BOB_AMT))
+                    (c (list 51 (curry10
+                      UNROLL_MOD_HASH
+                      (atom-hash ALICE_PK)
+                      (atom-hash BOB_PK)
+                      (atom-hash TIMEOUT)
+                      (atom-hash CHANNEL_NONCE)
+                      (atom-hash new_sequence)
+                      (atom-hash new_alice_ph)
+                      (atom-hash new_alice_amt)
+                      (atom-hash new_bob_ph)
+                      (atom-hash new_bob_amt)
+                      (atom-hash UNROLL_MOD_HASH)
+                    ) (+ new_alice_amt new_bob_amt))
+                      ()
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+      (x)
+    )
+  )
+)

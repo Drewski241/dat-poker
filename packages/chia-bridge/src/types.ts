@@ -16,6 +16,11 @@ export interface LobbyRoom {
   inviteUrl: string;
   variant: string;
   createdAt: string;
+  /** DAT governance token. Rooms never carry an XCH wager. */
+  wagerAsset: "dat";
+  xchWagerMojos: 0n;
+  gameRelayUrl: string;
+  rules: "chia-gaming-referee" | "engine-result-on-channel";
 }
 
 export interface WalletConnectConfig {

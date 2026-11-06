@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildBuyInMessage,
+  buildRedeemMessage,
   buildWithdrawMessage,
   validateBuyInProof,
+  validateRedeemProof,
   validateWithdrawProof,
 } from "./wallet-config.js";
 
@@ -14,7 +16,7 @@ describe("validateBuyInProof", () => {
     playerId: "xch1abc",
   };
 
-  it("accepts balance attestation without signature when balance suffices", () => {
+  it("rejects balance attestation without a Sage signature", () => {
     const message = buildBuyInMessage({
       tableId: params.tableId,
       seatIndex: params.seatIndex,
@@ -32,7 +34,7 @@ describe("validateBuyInProof", () => {
         },
         params,
       ),
-    ).toBeNull();
+    ).toContain("signature");
   });
 
   it("rejects missing signature when balance is insufficient", () => {
@@ -71,6 +73,33 @@ describe("validateWithdrawProof", () => {
     });
     expect(
       validateWithdrawProof(
+        {
+          address: params.playerId,
+          message,
+          signature: "",
+          pubkey: "",
+        },
+        params,
+      ),
+    ).toContain("signature");
+  });
+});
+
+describe("validateRedeemProof", () => {
+  it("requires a Sage signature for daily redeem", () => {
+    const params = {
+      utcDate: "2026-09-16",
+      address: "xch1abc",
+      amountMojos: "5000000",
+      playerId: "xch1abc",
+    };
+    const message = buildRedeemMessage({
+      utcDate: params.utcDate,
+      address: params.address,
+      amountMojos: params.amountMojos,
+    });
+    expect(
+      validateRedeemProof(
         {
           address: params.playerId,
           message,
