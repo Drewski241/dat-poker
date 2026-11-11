@@ -1,6 +1,6 @@
 import type { HandId, PlayerId, Street, TableConfig } from "@dat-poker/shared";
 import { standardDeck, type Card } from "./card.js";
-import { compareHands, evaluateBestHand } from "./hand-evaluator.js";
+import { compareHands, describeEvaluatedHand, evaluateBestHand } from "./hand-evaluator.js";
 import {
   buildShuffleEntropy,
   createCommit,
@@ -11,11 +11,51 @@ import {
 
 export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in";
 
+export interface ShownHand {
+  playerId: PlayerId;
+  holeCards: Card[];
+  handLabel: string;
+}
+
+export interface HandResultStack {
+  playerId: PlayerId;
+  seatIndex: number;
+  stackMojos: bigint;
+}
+
 export interface HandResult {
   handId: HandId;
   winnerId: PlayerId;
   potMojos: bigint;
   reason: "fold" | "showdown";
+  board: Card[];
+  commitHash: string;
+  /** Winner's showdown hand. Absent when the pot was won by a fold. */
+  handLabel: string | null;
+  /** Live hands at showdown. Empty when the pot was won by a fold. */
+  shownHands: ShownHand[];
+  stacks: HandResultStack[];
+}
+
+/** Hand state safe to send to one player. Omits the deck, seeds, and other hole cards. */
+export interface PublicHandState {
+  handId: HandId;
+  street: Street;
+  board: Card[];
+  potMojos: bigint;
+  currentBetMojos: bigint;
+  dealerSeat: number;
+  actionSeat: number | null;
+  commitHash: string;
+  players: Array<{
+    playerId: PlayerId;
+    seatIndex: number;
+    holeCards: Card[];
+    stackMojos: bigint;
+    betThisStreetMojos: bigint;
+    folded: boolean;
+    allIn: boolean;
+  }>;
 }
 
 export interface PlayerHandState {
@@ -27,6 +67,8 @@ export interface PlayerHandState {
   totalBetHandMojos: bigint;
   folded: boolean;
   allIn: boolean;
+  /** True after this player voluntarily acts on the current street. Blinds do not count. */
+  actedThisStreet: boolean;
 }
 
 export interface TableHandState {
@@ -148,6 +190,7 @@ export class NlheTableEngine {
       totalBetHandMojos: 0n,
       folded: false,
       allIn: false,
+      actedThisStreet: false,
     }));
 
     this.hand = {
@@ -252,6 +295,7 @@ export class NlheTableEngine {
         throw new Error(`Unknown action: ${action}`);
     }
 
+    player.actedThisStreet = true;
     h.seq++;
 
     if (this.activePlayers(h).length <= 1) {
@@ -266,8 +310,37 @@ export class NlheTableEngine {
     }
   }
 
+  getBigBlindMojos(): bigint {
+    return this.config.bigBlindMojos;
+  }
+
   getHandState(): TableHandState | null {
     return this.hand ? structuredClone(this.hand) : null;
+  }
+
+  /** Viewer sees only their own hole cards. Pass null to hide every hand. */
+  getPublicHandState(viewerId: PlayerId | null): PublicHandState | null {
+    const h = this.hand;
+    if (!h) return null;
+    return {
+      handId: h.handId,
+      street: h.street,
+      board: h.board.map((c) => ({ ...c })),
+      potMojos: h.potMojos,
+      currentBetMojos: h.currentBetMojos,
+      dealerSeat: h.dealerSeat,
+      actionSeat: h.actionSeat,
+      commitHash: h.commitHash,
+      players: h.players.map((p) => ({
+        playerId: p.playerId,
+        seatIndex: p.seatIndex,
+        holeCards: p.playerId === viewerId ? p.holeCards.map((c) => ({ ...c })) : [],
+        stackMojos: p.stackMojos,
+        betThisStreetMojos: p.betThisStreetMojos,
+        folded: p.folded,
+        allIn: p.allIn,
+      })),
+    };
   }
 
   getLastHandResult(): HandResult | null {
@@ -303,6 +376,9 @@ export class NlheTableEngine {
     player.betThisStreetMojos += pay;
     player.totalBetHandMojos += pay;
     h.potMojos += pay;
+    if (player.stackMojos === 0n) {
+      player.allIn = true;
+    }
     this.stacks.set(player.playerId, player.stackMojos);
   }
 
@@ -319,7 +395,9 @@ export class NlheTableEngine {
   private bettingRoundComplete(h: TableHandState): boolean {
     const contenders = h.players.filter((p) => !p.folded && !p.allIn);
     if (contenders.length === 0) return true;
-    return contenders.every((p) => p.betThisStreetMojos === h.currentBetMojos);
+    return contenders.every(
+      (p) => p.actedThisStreet && p.betThisStreetMojos === h.currentBetMojos,
+    );
   }
 
   private advanceActionSeat(h: TableHandState, fromPlayerId: PlayerId): void {
@@ -342,6 +420,7 @@ export class NlheTableEngine {
   private advanceStreet(h: TableHandState): void {
     for (const p of h.players) {
       p.betThisStreetMojos = 0n;
+      p.actedThisStreet = false;
     }
     h.currentBetMojos = 0n;
 
@@ -353,24 +432,50 @@ export class NlheTableEngine {
       showdown: "showdown",
     };
 
-    const street = next[h.street];
-    if (street === "showdown") {
-      this.runShowdown(h);
-      return;
-    }
+    while (true) {
+      const street = next[h.street];
+      if (street === "showdown") {
+        this.runShowdown(h);
+        return;
+      }
 
-    h.street = street;
-    const count = street === "flop" ? 3 : 1;
-    for (let i = 0; i < count; i++) {
-      h.board.push(this.draw(h));
+      h.street = street;
+      const count = street === "flop" ? 3 : 1;
+      for (let i = 0; i < count; i++) {
+        h.board.push(this.draw(h));
+      }
+      h.seq++;
+
+      if (h.players.some((p) => !p.folded && !p.allIn)) {
+        this.setFirstToAct(h);
+        return;
+      }
     }
-    h.actionSeat = h.dealerSeat;
-    h.seq++;
+  }
+
+  private setFirstToAct(h: TableHandState): void {
+    const ordered = [...h.players].sort((a, b) => a.seatIndex - b.seatIndex);
+    const start = ordered.findIndex((p) => p.seatIndex === h.dealerSeat);
+    const from = start === -1 ? 0 : start;
+    for (let i = 0; i < ordered.length; i++) {
+      const next = ordered[(from + i) % ordered.length];
+      if (!next.folded && !next.allIn) {
+        h.actionSeat = next.seatIndex;
+        return;
+      }
+    }
+    h.actionSeat = null;
   }
 
   private runShowdown(h: TableHandState): void {
     h.street = "showdown";
     const live = this.activePlayers(h);
+    const shown: ShownHand[] = live.map((p) => ({
+      playerId: p.playerId,
+      holeCards: p.holeCards.map((c) => ({ ...c })),
+      handLabel: describeEvaluatedHand(evaluateBestHand([...p.holeCards, ...h.board])),
+    }));
+
     let best = live[0];
     let bestEval = evaluateBestHand([...best.holeCards, ...h.board]);
 
@@ -382,27 +487,38 @@ export class NlheTableEngine {
       }
     }
 
-    best.stackMojos += h.potMojos;
-    this.stacks.set(best.playerId, best.stackMojos);
-    this.lastHandResult = {
-      handId: h.handId,
-      winnerId: best.playerId,
-      potMojos: h.potMojos,
-      reason: "showdown",
-    };
-    h.potMojos = 0n;
-    this.hand = null;
+    this.finishHand(h, best, "showdown", shown);
   }
 
   private awardToWinner(h: TableHandState): void {
     const winner = this.activePlayers(h)[0];
-    winner.stackMojos += h.potMojos;
+    this.finishHand(h, winner, "fold", []);
+  }
+
+  private finishHand(
+    h: TableHandState,
+    winner: PlayerHandState,
+    reason: "fold" | "showdown",
+    shownHands: ShownHand[],
+  ): void {
+    const potMojos = h.potMojos;
+    winner.stackMojos += potMojos;
     this.stacks.set(winner.playerId, winner.stackMojos);
+    const winnerShown = shownHands.find((s) => s.playerId === winner.playerId);
     this.lastHandResult = {
       handId: h.handId,
       winnerId: winner.playerId,
-      potMojos: h.potMojos,
-      reason: "fold",
+      potMojos,
+      reason,
+      board: h.board.map((c) => ({ ...c })),
+      commitHash: h.commitHash,
+      handLabel: winnerShown?.handLabel ?? null,
+      shownHands,
+      stacks: h.players.map((p) => ({
+        playerId: p.playerId,
+        seatIndex: p.seatIndex,
+        stackMojos: p.stackMojos,
+      })),
     };
     h.potMojos = 0n;
     this.hand = null;

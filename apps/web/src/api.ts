@@ -14,23 +14,37 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type PlayerAction = "fold" | "check" | "call" | "bet" | "raise" | "all-in";
 
+export interface CardFace {
+  rank: string;
+  suit: string;
+}
+
 export interface HandPlayer {
   playerId: string;
   seatIndex: number;
-  holeCards: { rank: string; suit: string }[];
+  holeCards: CardFace[];
   stackMojos: string;
   betThisStreetMojos: string;
   folded: boolean;
+  allIn: boolean;
 }
 
 export interface HandState {
   handId: string;
   street: string;
-  board: { rank: string; suit: string }[];
+  board: CardFace[];
   potMojos: string;
   currentBetMojos: string;
+  dealerSeat: number;
   actionSeat: number | null;
+  commitHash: string;
   players: HandPlayer[];
+}
+
+export interface ShownHand {
+  playerId: string;
+  holeCards: CardFace[];
+  handLabel: string;
 }
 
 export interface HandResult {
@@ -38,6 +52,23 @@ export interface HandResult {
   winnerId: string;
   potMojos: string;
   reason: "fold" | "showdown";
+  board: CardFace[];
+  commitHash: string;
+  handLabel: string | null;
+  shownHands: ShownHand[];
+  stacks: TableSeat[];
+}
+
+export interface HouseAction {
+  action: PlayerAction;
+  amountMojos: string;
+}
+
+export interface ActionResponse {
+  ok: boolean;
+  hand: HandState | null;
+  lastHandResult: HandResult | null;
+  houseActions: HouseAction[];
 }
 
 export interface WalletConnectConfig {
@@ -151,15 +182,17 @@ export const api = {
       body: "{}",
     }),
 
-  getTable: (tableId: string) =>
-    request<{
+  getTable: (tableId: string, playerId?: string | null) => {
+    const q = playerId ? `?playerId=${encodeURIComponent(playerId)}` : "";
+    return request<{
       tableId: string;
       players: number;
       handInProgress: boolean;
       seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;
-    }>(`/v1/tables/${tableId}`),
+    }>(`/v1/tables/${tableId}${q}`);
+  },
 
   seatPlayer: (
     tableId: string,
@@ -196,18 +229,15 @@ export const api = {
       body: JSON.stringify({ playerId }),
     }),
 
-  deal: (tableId: string) =>
-    request<{ ok: boolean; hand: HandState }>(`/v1/tables/${tableId}/hands/deal`, {
+  deal: (tableId: string, playerId: string) =>
+    request<ActionResponse>(`/v1/tables/${tableId}/hands/deal`, {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify({ playerId }),
     }),
 
   action: (tableId: string, playerId: string, action: PlayerAction, amountMojos?: string) =>
-    request<{ ok: boolean; hand: HandState | null; lastHandResult: HandResult | null }>(
-      `/v1/tables/${tableId}/hands/action`,
-      {
-        method: "POST",
-        body: JSON.stringify({ playerId, action, amountMojos }),
-      },
-    ),
+    request<ActionResponse>(`/v1/tables/${tableId}/hands/action`, {
+      method: "POST",
+      body: JSON.stringify({ playerId, action, amountMojos }),
+    }),
 };

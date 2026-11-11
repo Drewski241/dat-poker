@@ -27,6 +27,10 @@ body {
   padding: 1.5rem;
 }
 
+.app.at-table {
+  max-width: 56rem;
+}
+
 header h1 {
   margin: 0 0 0.25rem;
   font-size: 1.75rem;
@@ -253,4 +257,261 @@ button.secondary {
   max-height: 4rem;
   overflow: auto;
   word-break: break-all;
+}
+
+.felt-shell {
+  position: relative;
+  margin-top: 1.25rem;
+  padding: 1.5rem 1.25rem 1.25rem;
+  min-height: 28rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: #14382e;
+  border: 10px solid #3a2418;
+  border-radius: 160px;
+}
+
+.felt-tools {
+  position: absolute;
+  top: 0.85rem;
+  right: 1.4rem;
+}
+
+.sound-toggle {
+  background: transparent;
+  color: #d5e6dc;
+  border: 1px solid rgba(213, 230, 220, 0.35);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.55rem;
+}
+
+.seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 7.5rem;
+}
+
+.seat.folded {
+  opacity: 0.45;
+}
+
+.seat-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.seat-name {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d7ebe1;
+}
+
+.seat.acting .seat-name {
+  color: var(--accent);
+}
+
+.dealer-btn {
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  background: #f4f1ea;
+  color: #1a1a1a;
+  font-size: 0.68rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.allin-tag,
+.hand-label,
+.house-note,
+.street-label,
+.deck-lock,
+.felt-wait {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #d7ebe1;
+}
+
+.hand-label {
+  color: var(--accent);
+}
+
+.clock {
+  display: inline-block;
+  width: 4.5rem;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.clock > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.felt-middle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.hole-cards,
+.board-cards,
+.chip-piles {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.pcard {
+  width: 3rem;
+  height: 4.25rem;
+  border-radius: 4px;
+  background: #f7f4ee;
+  color: #1c1c1c;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.2rem 0 0.35rem;
+  font-weight: 700;
+  animation: card-in 0.35s ease both;
+}
+
+.pcard.red {
+  color: #b42318;
+}
+
+.pcard.back {
+  background-color: #0e3d34;
+  border: 2px solid #d4b483;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(212, 180, 131, 0.15) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+.pcard-rank {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.pcard-suit {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.chip-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.chip-pile {
+  position: relative;
+  width: 16px;
+}
+
+.chip {
+  position: absolute;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  box-sizing: border-box;
+}
+
+.chip::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  border: 1px dashed rgba(0, 0, 0, 0.35);
+}
+
+.chip.d1 { background: #efe6c9; }
+.chip.d5 { background: #c44536; }
+.chip.d25 { background: #2c6bed; }
+.chip.d100 { background: #22262c; }
+.chip.d1000 { background: #6d28d9; }
+
+.chip-label {
+  font-size: 0.72rem;
+  color: #f4f1ea;
+}
+
+.pot {
+  min-height: 2.4rem;
+}
+
+.pot-award.you {
+  animation: pot-to-hero 0.8s ease forwards;
+}
+
+.pot-award.house {
+  animation: pot-to-house 0.8s ease forwards;
+}
+
+.felt-banner {
+  text-align: center;
+}
+
+.actions-dock {
+  position: sticky;
+  bottom: 0;
+  margin-top: 0.75rem;
+  padding: 0.75rem 0 0.25rem;
+  background: var(--bg);
+}
+
+@keyframes card-in {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes pot-to-hero {
+  to {
+    transform: translateY(3.5rem);
+    opacity: 0.15;
+  }
+}
+
+@keyframes pot-to-house {
+  to {
+    transform: translateY(-3.5rem);
+    opacity: 0.15;
+  }
+}
+
+@media (max-width: 640px) {
+  .felt-shell {
+    border-radius: 1.25rem;
+    min-height: 24rem;
+    padding-top: 2.4rem;
+  }
+
+  .pcard {
+    width: 2.45rem;
+    height: 3.5rem;
+  }
 }

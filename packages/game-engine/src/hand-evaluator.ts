@@ -178,3 +178,52 @@ export function evaluateBestHand(cards: Card[]): EvaluatedHand {
 export function compareHands(a: EvaluatedHand, b: EvaluatedHand): number {
   return a.score - b.score;
 }
+
+const RANK_WORD: Record<number, { singular: string; plural: string }> = {
+  14: { singular: "ace", plural: "aces" },
+  13: { singular: "king", plural: "kings" },
+  12: { singular: "queen", plural: "queens" },
+  11: { singular: "jack", plural: "jacks" },
+  10: { singular: "ten", plural: "tens" },
+  9: { singular: "nine", plural: "nines" },
+  8: { singular: "eight", plural: "eights" },
+  7: { singular: "seven", plural: "sevens" },
+  6: { singular: "six", plural: "sixes" },
+  5: { singular: "five", plural: "fives" },
+  4: { singular: "four", plural: "fours" },
+  3: { singular: "three", plural: "threes" },
+  2: { singular: "two", plural: "twos" },
+};
+
+function rankSingular(value: number): string {
+  return RANK_WORD[value]?.singular ?? String(value);
+}
+
+function rankPlural(value: number): string {
+  return RANK_WORD[value]?.plural ?? String(value);
+}
+
+/** Short showdown name, such as "two pair, kings and fives". */
+export function describeEvaluatedHand(hand: EvaluatedHand): string {
+  const k = hand.kickers;
+  switch (hand.category) {
+    case "straight_flush":
+      return k[0] === 14 ? "a royal flush" : `a straight flush, ${rankSingular(k[0])} high`;
+    case "four_kind":
+      return `four of a kind, ${rankPlural(k[0])}`;
+    case "full_house":
+      return `a full house, ${rankPlural(k[0])} full of ${rankPlural(k[1])}`;
+    case "flush":
+      return `a flush, ${rankSingular(k[0])} high`;
+    case "straight":
+      return `a straight, ${rankSingular(k[0])} high`;
+    case "three_kind":
+      return `three of a kind, ${rankPlural(k[0])}`;
+    case "two_pair":
+      return `two pair, ${rankPlural(k[0])} and ${rankPlural(k[1])}`;
+    case "pair":
+      return `a pair of ${rankPlural(k[0])}`;
+    default:
+      return `${rankSingular(k[0])} high`;
+  }
+}

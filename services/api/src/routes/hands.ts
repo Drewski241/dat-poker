@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type PlayerAction } from "@dat-poker/game-engine";
+import { runHouseTurn } from "../house-turn.js";
 import { getTableEngine } from "./tables.js";
 
 export function registerHandRoutes(app: FastifyInstance): void {
@@ -33,14 +34,20 @@ export function registerHandRoutes(app: FastifyInstance): void {
     }
   });
 
-  app.post<{ Params: { tableId: string } }>(
+  app.post<{ Params: { tableId: string }; Body: { playerId?: string } }>(
     "/v1/tables/:tableId/hands/deal",
     async (req, reply) => {
       const table = getTableEngine(req.params.tableId);
       if (!table) return reply.status(404).send({ error: "Table not found" });
       try {
         table.revealAndDeal();
-        return { ok: true, hand: table.getHandState() };
+        const houseActions = runHouseTurn(table);
+        return {
+          ok: true,
+          hand: table.getPublicHandState(req.body?.playerId ?? null),
+          lastHandResult: table.getLastHandResult(),
+          houseActions,
+        };
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message });
       }
@@ -56,10 +63,12 @@ export function registerHandRoutes(app: FastifyInstance): void {
     try {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
       table.applyAction(req.body.playerId, req.body.action, amount);
+      const houseActions = runHouseTurn(table);
       return {
         ok: true,
-        hand: table.getHandState(),
+        hand: table.getPublicHandState(req.body.playerId),
         lastHandResult: table.getLastHandResult(),
+        houseActions,
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });

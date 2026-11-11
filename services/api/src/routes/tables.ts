@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { TableConfig } from "@dat-poker/shared";
 import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
-import { NlheTableEngine } from "@dat-poker/game-engine";
+import { HOUSE_PLAYER_ID, NlheTableEngine } from "@dat-poker/game-engine";
 import { recordBuyIn } from "../buy-in-store.js";
 import {
   type BuyInProof,
@@ -11,7 +11,6 @@ import {
 } from "../wallet-config.js";
 
 const tables = new Map<string, NlheTableEngine>();
-const HOUSE_PLAYER_ID = "dat-poker:house";
 
 export function registerTableRoutes(app: FastifyInstance): void {
   app.post<{
@@ -24,7 +23,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
   }>("/v1/tables", async (req) => {
     const id = randomUUID();
     const dat = readDatTokenConfig();
-    const useDatStakes = Boolean(dat.assetId);
+    const useDatStakes = Boolean(dat.assetId) || dat.devBuyInEnabled;
     const minBuyIn = useDatStakes
       ? resolveDatMinBuyInMojos(dat.minBuyInMojos)
       : DAT_TABLE_DEFAULTS.minBuyInMojos;
@@ -49,20 +48,23 @@ export function registerTableRoutes(app: FastifyInstance): void {
     return { tableId: id, config };
   });
 
-  app.get<{ Params: { tableId: string } }>("/v1/tables/:tableId", async (req, reply) => {
-    const table = tables.get(req.params.tableId);
-    if (!table) {
-      return reply.status(404).send({ error: "Table not found" });
-    }
-    return {
-      tableId: req.params.tableId,
-      players: table.getActivePlayerCount(),
-      handInProgress: table.isHandInProgress(),
-      seats: table.getSeatedPlayers(),
-      hand: table.getHandState(),
-      lastHandResult: table.getLastHandResult(),
-    };
-  });
+  app.get<{ Params: { tableId: string }; Querystring: { playerId?: string } }>(
+    "/v1/tables/:tableId",
+    async (req, reply) => {
+      const table = tables.get(req.params.tableId);
+      if (!table) {
+        return reply.status(404).send({ error: "Table not found" });
+      }
+      return {
+        tableId: req.params.tableId,
+        players: table.getActivePlayerCount(),
+        handInProgress: table.isHandInProgress(),
+        seats: table.getSeatedPlayers(),
+        hand: table.getPublicHandState(req.query.playerId ?? null),
+        lastHandResult: table.getLastHandResult(),
+      };
+    },
+  );
 
   app.post<{
     Params: { tableId: string };
