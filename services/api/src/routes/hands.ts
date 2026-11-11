@@ -40,6 +40,14 @@ export function registerHandRoutes(app: FastifyInstance): void {
       const table = getTableEngine(req.params.tableId);
       if (!table) return reply.status(404).send({ error: "Table not found" });
       try {
+        const pending = table.getHandState();
+        if (pending) {
+          for (const player of pending.players) {
+            if (!pending.playerSeeds[player.playerId]) {
+              table.submitPlayerSeed(player.playerId, generateServerSeed());
+            }
+          }
+        }
         table.revealAndDeal();
         const houseActions = runHouseTurn(table);
         return {
@@ -47,6 +55,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
           hand: table.getPublicHandState(req.body?.playerId ?? null),
           lastHandResult: table.getLastHandResult(),
           houseActions,
+          buttonSeat: table.getButtonSeat(),
         };
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message });
@@ -69,6 +78,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         hand: table.getPublicHandState(req.body.playerId),
         lastHandResult: table.getLastHandResult(),
         houseActions,
+        buttonSeat: table.getButtonSeat(),
       };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });

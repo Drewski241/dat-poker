@@ -204,6 +204,33 @@ code {
   margin-top: 0.5rem;
 }
 
+.name-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.name-field input {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #2d3a4f;
+  background: #0f1419;
+  color: var(--text);
+  font: inherit;
+}
+
+.lobby {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+}
+
+.lobby li {
+  margin-top: 0.4rem;
+}
+
 button.secondary {
   background: #2d3a4f;
   color: var(--text);
@@ -259,18 +286,44 @@ button.secondary {
   word-break: break-all;
 }
 
+.felt-wrap {
+  margin-top: 1.25rem;
+}
+
 .felt-shell {
   position: relative;
-  margin-top: 1.25rem;
-  padding: 1.5rem 1.25rem 1.25rem;
-  min-height: 28rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 0.75rem;
+  min-height: 40rem;
   background: #14382e;
   border: 10px solid #3a2418;
-  border-radius: 160px;
+  border-radius: 180px;
+}
+
+.felt-center {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  width: min(100% - 11rem, 24rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  z-index: 1;
+}
+
+.seat-slot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 8.75rem;
+  z-index: 2;
+}
+
+.seat-open {
+  width: 100%;
+  background: transparent;
+  color: #d7ebe1;
+  border: 1px dashed rgba(215, 235, 225, 0.55);
+  font-size: 0.8rem;
 }
 
 .felt-tools {
@@ -291,8 +344,17 @@ button.secondary {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  min-height: 7.5rem;
+  gap: 0.25rem;
+}
+
+.seat.remote .pcard {
+  width: 2rem;
+  height: 2.8rem;
+}
+
+.seat.remote .pcard-rank,
+.seat.remote .pcard-suit {
+  font-size: 0.75rem;
 }
 
 .seat.folded {
@@ -337,6 +399,14 @@ button.secondary {
   margin: 0;
   font-size: 0.78rem;
   color: #d7ebe1;
+}
+
+.house-note {
+  margin: 1rem 0 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hand-label {
@@ -468,14 +538,12 @@ button.secondary {
 
 .felt-banner {
   text-align: center;
+  margin-top: 0.75rem;
 }
 
 .actions-dock {
-  position: sticky;
-  bottom: 0;
   margin-top: 0.75rem;
   padding: 0.75rem 0 0.25rem;
-  background: var(--bg);
 }
 
 @keyframes card-in {
@@ -505,9 +573,16 @@ button.secondary {
 
 @media (max-width: 640px) {
   .felt-shell {
-    border-radius: 1.25rem;
-    min-height: 24rem;
-    padding-top: 2.4rem;
+    border-radius: 1.5rem;
+    min-height: 34rem;
+  }
+
+  .felt-center {
+    width: min(100% - 7.5rem, 16rem);
+  }
+
+  .seat-slot {
+    width: 5.6rem;
   }
 
   .pcard {

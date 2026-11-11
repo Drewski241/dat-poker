@@ -1,6 +1,7 @@
 import type { HandId, PlayerId, Street, TableConfig } from "@dat-poker/shared";
 import { standardDeck, type Card } from "./card.js";
 import { compareHands, describeEvaluatedHand, evaluateBestHand } from "./hand-evaluator.js";
+import { nextClockwise, settlePots } from "./pot-settle.js";
 import {
   buildShuffleEntropy,
   createCommit,
@@ -23,6 +24,11 @@ export interface HandResultStack {
   stackMojos: bigint;
 }
 
+export interface PotAward {
+  playerId: PlayerId;
+  amountMojos: bigint;
+}
+
 export interface HandResult {
   handId: HandId;
   winnerId: PlayerId;
@@ -35,6 +41,7 @@ export interface HandResult {
   /** Live hands at showdown. Empty when the pot was won by a fold. */
   shownHands: ShownHand[];
   stacks: HandResultStack[];
+  payouts: PotAward[];
 }
 
 /** Hand state safe to send to one player. Omits the deck, seeds, and other hole cards. */
@@ -95,6 +102,8 @@ export class NlheTableEngine {
   private stacks: Map<PlayerId, bigint> = new Map();
   private hand: TableHandState | null = null;
   private lastHandResult: HandResult | null = null;
+  /** Button for the next hand. Null until the first hand starts. */
+  private buttonSeat: number | null = null;
 
   constructor(config: TableConfig) {
     this.config = config;
@@ -180,6 +189,7 @@ export class NlheTableEngine {
     const serverSeed = generateServerSeed();
     const { commitHash } = createCommit(serverSeed);
     const seated = [...this.seats.entries()].sort((a, b) => a[0] - b[0]);
+    const button = this.ensureButton(seated.map(([seatIndex]) => seatIndex));
 
     const players: PlayerHandState[] = seated.map(([seatIndex, playerId]) => ({
       playerId,
@@ -200,8 +210,8 @@ export class NlheTableEngine {
       board: [],
       potMojos: 0n,
       currentBetMojos: 0n,
-      dealerSeat: seated[0][0],
-      actionSeat: seated[0][0],
+      dealerSeat: button,
+      actionSeat: button,
       players,
       commitHash,
       serverSeed,
@@ -314,6 +324,18 @@ export class NlheTableEngine {
     return this.config.bigBlindMojos;
   }
 
+  getSmallBlindMojos(): bigint {
+    return this.config.smallBlindMojos;
+  }
+
+  getMaxSeats(): number {
+    return this.config.maxSeats;
+  }
+
+  getButtonSeat(): number | null {
+    return this.buttonSeat;
+  }
+
   getHandState(): TableHandState | null {
     return this.hand ? structuredClone(this.hand) : null;
   }
@@ -360,14 +382,42 @@ export class NlheTableEngine {
   }
 
   private postBlinds(h: TableHandState): void {
-    const ordered = [...h.players].sort((a, b) => a.seatIndex - b.seatIndex);
-    const sb = ordered[0];
-    const bb = ordered[1] ?? ordered[0];
+    const ring = this.clockwiseFrom(h, h.dealerSeat);
+    const headsUp = ring.length === 2;
+    const sb = headsUp ? ring[0] : ring[1];
+    const bb = headsUp ? ring[1] : ring[2];
+    const first = headsUp ? ring[0] : (ring[3] ?? ring[0]);
 
     this.charge(sb, h, this.config.smallBlindMojos);
     this.charge(bb, h, this.config.bigBlindMojos);
     h.currentBetMojos = bb.betThisStreetMojos;
-    h.actionSeat = ordered[2]?.seatIndex ?? ordered[0].seatIndex;
+    h.actionSeat = first.seatIndex;
+  }
+
+  /** Seats in clockwise order, starting at `fromSeat` when that player is in the hand. */
+  private clockwiseFrom(h: TableHandState, fromSeat: number): PlayerHandState[] {
+    const ordered = [...h.players].sort((a, b) => a.seatIndex - b.seatIndex);
+    const start = ordered.findIndex((player) => player.seatIndex === fromSeat);
+    if (start === -1) return ordered;
+    return [...ordered.slice(start), ...ordered.slice(0, start)];
+  }
+
+  private ensureButton(occupied: number[]): number {
+    if (this.buttonSeat !== null && occupied.includes(this.buttonSeat)) {
+      return this.buttonSeat;
+    }
+    const next = nextClockwise(occupied, this.buttonSeat ?? -1);
+    this.buttonSeat = next;
+    return next;
+  }
+
+  private advanceButton(): void {
+    const occupied = [...this.seats.keys()].sort((a, b) => a - b);
+    if (occupied.length === 0) {
+      this.buttonSeat = null;
+      return;
+    }
+    this.buttonSeat = nextClockwise(occupied, this.buttonSeat ?? -1);
   }
 
   private charge(player: PlayerHandState, h: TableHandState, amount: bigint): void {
@@ -454,11 +504,9 @@ export class NlheTableEngine {
   }
 
   private setFirstToAct(h: TableHandState): void {
-    const ordered = [...h.players].sort((a, b) => a.seatIndex - b.seatIndex);
-    const start = ordered.findIndex((p) => p.seatIndex === h.dealerSeat);
-    const from = start === -1 ? 0 : start;
-    for (let i = 0; i < ordered.length; i++) {
-      const next = ordered[(from + i) % ordered.length];
+    const ring = this.clockwiseFrom(h, h.dealerSeat);
+    for (let i = 1; i <= ring.length; i++) {
+      const next = ring[i % ring.length];
       if (!next.folded && !next.allIn) {
         h.actionSeat = next.seatIndex;
         return;
@@ -487,40 +535,75 @@ export class NlheTableEngine {
       }
     }
 
-    this.finishHand(h, best, "showdown", shown);
+    this.finishHand(h, "showdown", shown);
   }
 
   private awardToWinner(h: TableHandState): void {
-    const winner = this.activePlayers(h)[0];
-    this.finishHand(h, winner, "fold", []);
+    this.finishHand(h, "fold", []);
   }
 
-  private finishHand(
-    h: TableHandState,
-    winner: PlayerHandState,
-    reason: "fold" | "showdown",
-    shownHands: ShownHand[],
-  ): void {
+  private returnUncalled(h: TableHandState): void {
+    const live = h.players.filter((player) => !player.folded);
+    if (live.length < 2) return;
+    const ranked = [...live].sort((a, b) => (a.totalBetHandMojos > b.totalBetHandMojos ? -1 : 1));
+    const unmatched = ranked[0].totalBetHandMojos - ranked[1].totalBetHandMojos;
+    if (unmatched <= 0n) return;
+    ranked[0].totalBetHandMojos -= unmatched;
+    ranked[0].stackMojos += unmatched;
+    h.potMojos -= unmatched;
+    this.stacks.set(ranked[0].playerId, ranked[0].stackMojos);
+  }
+
+  private finishHand(h: TableHandState, reason: "fold" | "showdown", shownHands: ShownHand[]): void {
+    this.returnUncalled(h);
+    const scores = new Map(
+      shownHands.map((shown) => {
+        const player = h.players.find((candidate) => candidate.playerId === shown.playerId);
+        const score = player
+          ? evaluateBestHand([...player.holeCards, ...h.board]).score
+          : 0;
+        return [shown.playerId, score] as const;
+      }),
+    );
+    const payouts = settlePots(
+      h.players.map((player) => ({
+        playerId: player.playerId,
+        seatIndex: player.seatIndex,
+        folded: player.folded,
+        contributed: player.totalBetHandMojos,
+        handScore: scores.get(player.playerId) ?? 0,
+      })),
+      h.dealerSeat,
+    );
+    for (const payout of payouts) {
+      const player = h.players.find((candidate) => candidate.playerId === payout.playerId);
+      if (!player) continue;
+      player.stackMojos += payout.amountMojos;
+      this.stacks.set(player.playerId, player.stackMojos);
+    }
+    const winner =
+      [...payouts].sort((a, b) => (a.amountMojos > b.amountMojos ? -1 : 1))[0] ??
+      null;
+    const winnerShown = winner ? shownHands.find((shown) => shown.playerId === winner.playerId) : undefined;
     const potMojos = h.potMojos;
-    winner.stackMojos += potMojos;
-    this.stacks.set(winner.playerId, winner.stackMojos);
-    const winnerShown = shownHands.find((s) => s.playerId === winner.playerId);
     this.lastHandResult = {
       handId: h.handId,
-      winnerId: winner.playerId,
+      winnerId: winner?.playerId ?? h.players[0].playerId,
       potMojos,
       reason,
-      board: h.board.map((c) => ({ ...c })),
+      board: h.board.map((card) => ({ ...card })),
       commitHash: h.commitHash,
       handLabel: winnerShown?.handLabel ?? null,
       shownHands,
-      stacks: h.players.map((p) => ({
-        playerId: p.playerId,
-        seatIndex: p.seatIndex,
-        stackMojos: p.stackMojos,
+      stacks: h.players.map((player) => ({
+        playerId: player.playerId,
+        seatIndex: player.seatIndex,
+        stackMojos: player.stackMojos,
       })),
+      payouts,
     };
     h.potMojos = 0n;
     this.hand = null;
+    this.advanceButton();
   }
 }

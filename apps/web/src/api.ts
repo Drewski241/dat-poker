@@ -57,9 +57,11 @@ export interface HandResult {
   handLabel: string | null;
   shownHands: ShownHand[];
   stacks: TableSeat[];
+  payouts: { playerId: string; amountMojos: string }[];
 }
 
 export interface HouseAction {
+  playerId?: string;
   action: PlayerAction;
   amountMojos: string;
 }
@@ -69,6 +71,7 @@ export interface ActionResponse {
   hand: HandState | null;
   lastHandResult: HandResult | null;
   houseActions: HouseAction[];
+  buttonSeat: number | null;
 }
 
 export interface WalletConnectConfig {
@@ -111,6 +114,16 @@ export interface TableSeat {
   playerId: string;
   seatIndex: number;
   stackMojos: string;
+  displayName?: string;
+}
+
+export interface TableSummary {
+  tableId: string;
+  maxSeats: number;
+  seated: number;
+  smallBlindMojos: string;
+  bigBlindMojos: string;
+  buttonSeat: number | null;
 }
 
 export interface TableConfigResponse {
@@ -176,16 +189,20 @@ export const api = {
       }),
     }),
 
+  listTables: () => request<{ tables: TableSummary[] }>("/v1/tables"),
+
   createTable: () =>
     request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify({ maxSeats: 6 }),
     }),
 
   getTable: (tableId: string, playerId?: string | null) => {
     const q = playerId ? `?playerId=${encodeURIComponent(playerId)}` : "";
     return request<{
       tableId: string;
+      maxSeats: number;
+      buttonSeat: number | null;
       players: number;
       handInProgress: boolean;
       seats: TableSeat[];
@@ -199,7 +216,7 @@ export const api = {
     playerId: string,
     seatIndex: number,
     buyInMojos: string,
-    options?: { buyInProof?: BuyInProof; devAck?: boolean },
+    options?: { buyInProof?: BuyInProof; devAck?: boolean; displayName?: string },
   ) =>
     request<{ ok: boolean }>(`/v1/tables/${tableId}/seat`, {
       method: "POST",
@@ -211,11 +228,14 @@ export const api = {
       }),
     }),
 
-  seatHouse: (tableId: string, buyInMojos: string) =>
-    request<{ ok: boolean; playerId: string }>(`/v1/tables/${tableId}/seat-house`, {
-      method: "POST",
-      body: JSON.stringify({ buyInMojos }),
-    }),
+  seatHouse: (tableId: string, buyInMojos: string, seatIndex?: number) =>
+    request<{ ok: boolean; playerId: string; seatIndex: number; displayName: string }>(
+      `/v1/tables/${tableId}/seat-house`,
+      {
+        method: "POST",
+        body: JSON.stringify({ buyInMojos, seatIndex }),
+      },
+    ),
 
   startHand: (tableId: string) =>
     request<{ handId: string; commitHash: string; phase: string }>(

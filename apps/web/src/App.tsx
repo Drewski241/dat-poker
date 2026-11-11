@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type ActionResponse, type BuyInProof, type CardFace, type DatTokenInfo, type HandResult, type HandState, type HouseAction, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { api, type ActionResponse, type BuyInProof, type CardFace, type DatTokenInfo, type HandResult, type HandState, type HouseAction, type PlayerAction, type TableSeat, type TableSummary, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { FeltTable, type FeltSeat } from "./components/FeltTable.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
@@ -15,41 +15,65 @@ import {
   type WcSession,
 } from "./wallet/chia-wallet.js";
 
-const HOUSE_PLAYER_ID = "dat-poker:house";
 const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
 const TURN_SECONDS = 45;
 
-function formatHouseActions(actions: HouseAction[] | undefined, ticker?: string): string | null {
+function formatHouseActions(
+  actions: HouseAction[] | undefined,
+  ticker?: string,
+  nameOf?: (playerId: string) => string,
+): string | null {
   if (!actions?.length) return null;
-  return actions
+  const recent = actions.length > 4 ? actions.slice(-4) : actions;
+  const prefix = actions.length > 4 ? "… · " : "";
+  return prefix + recent
     .map((action) => {
+      const who = action.playerId && nameOf ? nameOf(action.playerId) : "House";
       const amount = formatDatMojos(action.amountMojos, ticker);
       switch (action.action) {
         case "fold":
-          return "House folds";
+          return `${who} folds`;
         case "check":
-          return "House checks";
+          return `${who} checks`;
         case "call":
-          return "House calls";
+          return `${who} calls`;
         case "bet":
-          return `House bets ${amount}`;
+          return `${who} bets ${amount}`;
         case "raise":
-          return `House raises to ${amount}`;
+          return `${who} raises to ${amount}`;
         default:
-          return "House is all-in";
+          return `${who} is all-in`;
       }
     })
     .join(" · ");
+}
+
+function practicePlayerId(): string {
+  const key = "dat-poker-practice-id";
+  const existing = window.sessionStorage.getItem(key);
+  if (existing) return existing;
+  const created = `practice-${crypto.randomUUID().slice(0, 8)}`;
+  window.sessionStorage.setItem(key, created);
+  return created;
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function playerLabel(id: string, youId: string | null): string {
-  if (id === youId) return "You";
-  if (id === HOUSE_PLAYER_ID) return "House";
-  return id.length > 16 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
+function resultBanner(
+  result: HandResult,
+  nameOf: (id: string) => string,
+  ticker?: string,
+): string {
+  const amount = formatDatMojos(result.potMojos, ticker);
+  if (result.payouts && result.payouts.length > 1) {
+    return `${result.payouts.map((payout) => nameOf(payout.playerId)).join(" and ")} split ${amount}`;
+  }
+  const who = nameOf(result.winnerId);
+  if (result.handLabel) return `${who} wins ${amount} with ${result.handLabel}`;
+  if (result.reason === "fold") return `${who} wins ${amount} — the other hands folded`;
+  return `${who} wins ${amount}`;
 }
 
 function shortAddress(addr: string): string {
@@ -83,8 +107,17 @@ export function App() {
   const [snapshot, setSnapshot] = useState<HandState | null>(null);
   const [houseNote, setHouseNote] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [displayName, setDisplayName] = useState(
+    () => window.sessionStorage.getItem("dat-poker-name") ?? "Player",
+  );
+  const [lobby, setLobby] = useState<TableSummary[]>([]);
+  const [buttonSeat, setButtonSeat] = useState<number | null>(null);
   const handRef = useRef<HandState | null>(null);
   const playerIdRef = useRef<string | null>(null);
+  const busyRef = useRef(false);
+  const lockingRef = useRef(false);
+  const seatsRef = useRef<TableSeat[]>([]);
+  const nameRef = useRef(displayName);
 
   useEffect(() => {
     void (async () => {
@@ -122,15 +155,48 @@ export function App() {
 
   handRef.current = hand;
   playerIdRef.current = playerId;
+  busyRef.current = busy;
+  lockingRef.current = locking;
+  seatsRef.current = tableSeats;
+  nameRef.current = displayName;
 
   const refreshTable = useCallback(async (id: string) => {
     const t = await api.getTable(id, playerIdRef.current);
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
+    setButtonSeat(t.buttonSeat);
     if (t.lastHandResult) setHandResult(t.lastHandResult);
     if (t.hand?.commitHash) setCommitHash(t.hand.commitHash);
   }, []);
+
+  useEffect(() => {
+    if (!tableId) return;
+    const timer = window.setInterval(() => {
+      if (busyRef.current || lockingRef.current) return;
+      void refreshTable(tableId);
+    }, 1200);
+    return () => window.clearInterval(timer);
+  }, [tableId, refreshTable]);
+
+  useEffect(() => {
+    if (tableId || !apiOk) return;
+    let cancel = false;
+    const load = async () => {
+      try {
+        const data = await api.listTables();
+        if (!cancel) setLobby(data.tables);
+      } catch {
+        /* the lobby can retry */
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 2000);
+    return () => {
+      cancel = true;
+      window.clearInterval(timer);
+    };
+  }, [tableId, apiOk]);
 
   const applyActionResponse = useCallback((response: ActionResponse, ticker?: string) => {
     if (!response.hand && handRef.current) setSnapshot(handRef.current);
@@ -139,11 +205,20 @@ export function App() {
     if (!response.hand) setHandInProgress(false);
     if (response.lastHandResult) {
       setHandResult(response.lastHandResult);
-      setTableSeats(response.lastHandResult.stacks);
+      setTableSeats(
+        response.lastHandResult.stacks.map((stack) => ({
+          ...stack,
+          displayName: seatsRef.current.find((seat) => seat.playerId === stack.playerId)?.displayName,
+        })),
+      );
       setCommitHash(response.lastHandResult.commitHash);
     }
-    const note = formatHouseActions(response.houseActions, ticker);
+    const note = formatHouseActions(response.houseActions, ticker, (id) => {
+      if (id === playerIdRef.current) return nameRef.current || "You";
+      return seatsRef.current.find((seat) => seat.playerId === id)?.displayName ?? "House";
+    });
     if (note) setHouseNote(note);
+    setButtonSeat(response.buttonSeat);
   }, []);
 
   const connectSage = () =>
@@ -186,68 +261,124 @@ export function App() {
       setDatBalance(balance.spendable);
     });
 
-  const joinTable = async (overrideId?: string) => {
+  const resolvedPlayerId = (): string => {
+    if (playerIdRef.current) return playerIdRef.current;
+    if (walletAddress) return walletAddress;
+    if (datToken?.devBuyInEnabled) return practicePlayerId();
+    throw new Error("Connect Sage and load DAT balance first");
+  };
+
+  const sitDown = async (id: string, seatIndex: number, seatedId: string, buyIn: string) => {
+    const ticker = datToken?.ticker ?? "DAT";
+    if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
+      throw new Error(`Need at least ${formatDatMojos(buyIn, ticker)} in wallet`);
+    }
+    let buyInProof: BuyInProof | undefined;
+    if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
+      const { message } = await api.buyInMessage({
+        tableId: id,
+        seatIndex,
+        buyInMojos: buyIn,
+        address: walletAddress,
+      });
+      buyInProof = {
+        address: walletAddress,
+        message,
+        signature: "",
+        pubkey: "",
+        datBalanceMojos: datBalance ?? undefined,
+      };
+      setStatus("Approve buy-in in Sage (check your phone)…");
+      try {
+        const signed = await signBuyInMessage(
+          session,
+          wcConfig.projectId,
+          wcConfig.chainId,
+          message,
+          walletAddress,
+        );
+        buyInProof.signature = signed.signature;
+        buyInProof.pubkey = signed.pubkey;
+      } catch (signErr) {
+        if (!datBalance || BigInt(datBalance) < BigInt(buyIn)) throw signErr;
+        setStatus("Signature skipped — using wallet balance attestation…");
+      }
+    }
+    window.sessionStorage.setItem("dat-poker-name", displayName.trim() || "Player");
+    await api.seatPlayer(id, seatedId, seatIndex, buyIn, {
+      buyInProof,
+      devAck: datToken?.devBuyInEnabled,
+      displayName: displayName.trim() || "Player",
+    });
+  };
+
+  const openSixMax = async (fillHouse: boolean) => {
     if (busy) return;
-    const seatedId = overrideId ?? playerId;
     setBusy(true);
     setError(null);
     try {
-      if (!seatedId) throw new Error("Connect Sage and load DAT balance first");
-      if (overrideId) setPlayerId(overrideId);
-      const ticker = datToken?.ticker ?? "DAT";
-
-      setStatus("Creating table…");
+      const seatedId = resolvedPlayerId();
+      setPlayerId(seatedId);
+      playerIdRef.current = seatedId;
+      setStatus("Opening a six-max table…");
       const { tableId: id, config: tableConfig } = await api.createTable();
       const buyIn = tableConfig.minBuyInMojos;
-
-      if (datBalance && BigInt(datBalance) < BigInt(buyIn)) {
-        throw new Error(`Need at least ${formatDatMojos(buyIn, ticker)} in wallet`);
-      }
-
-      let buyInProof: BuyInProof | undefined;
-
-      if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
-        const { message } = await api.buyInMessage({
-          tableId: id,
-          seatIndex: 0,
-          buyInMojos: buyIn,
-          address: walletAddress,
-        });
-        buyInProof = {
-          address: walletAddress,
-          message,
-          signature: "",
-          pubkey: "",
-          datBalanceMojos: datBalance ?? undefined,
-        };
-        setStatus("Approve buy-in in Sage (check your phone)…");
-        try {
-          const signed = await signBuyInMessage(
-            session,
-            wcConfig.projectId,
-            wcConfig.chainId,
-            message,
-            walletAddress,
-          );
-          buyInProof.signature = signed.signature;
-          buyInProof.pubkey = signed.pubkey;
-        } catch (signErr) {
-          if (!datBalance || BigInt(datBalance) < BigInt(buyIn)) {
-            throw signErr;
-          }
-          setStatus("Signature skipped — using wallet balance attestation…");
+      setStatus("Taking seat 1…");
+      await sitDown(id, 0, seatedId, buyIn);
+      if (fillHouse) {
+        setStatus("Seating the house…");
+        for (let seat = 1; seat < 6; seat++) {
+          await api.seatHouse(id, buyIn, seat);
         }
       }
-
-      setStatus("Seating you at the table…");
-      await api.seatPlayer(id, seatedId, 0, buyIn, {
-        buyInProof,
-        devAck: datToken?.devBuyInEnabled,
-      });
-      await api.seatHouse(id, buyIn);
       setTableId(id);
-      playerIdRef.current = seatedId;
       await refreshTable(id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const claimSeat = async (seatIndex: number) => {
+    if (!tableId || busy || hand) return;
+    const mine = tableSeats.find((seat) => seat.playerId === playerIdRef.current);
+    const minBuyIn = datToken?.minBuyInMojos ?? "1000000";
+    setBusy(true);
+    setError(null);
+    try {
+      if (!mine) {
+        const seatedId = resolvedPlayerId();
+        setPlayerId(seatedId);
+        playerIdRef.current = seatedId;
+        setStatus(`Sitting in seat ${seatIndex + 1}…`);
+        await sitDown(tableId, seatIndex, seatedId, minBuyIn);
+      } else {
+        setStatus("Seating the house…");
+        await api.seatHouse(tableId, minBuyIn, seatIndex);
+      }
+      await refreshTable(tableId);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const fillOpenSeats = async () => {
+    if (!tableId || busy || hand) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const minBuyIn = datToken?.minBuyInMojos ?? "1000000";
+      const taken = new Set(tableSeats.map((seat) => seat.seatIndex));
+      setStatus("Filling open seats with the house…");
+      for (let seat = 0; seat < 6; seat++) {
+        if (!taken.has(seat)) await api.seatHouse(tableId, minBuyIn, seat);
+      }
+      await refreshTable(tableId);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -270,7 +401,6 @@ export function App() {
         setStatus("Deck locked");
         await sleep(900);
         await api.submitSeed(tableId, playerId);
-        await api.submitSeed(tableId, HOUSE_PLAYER_ID);
         setStatus("Dealing…");
         const dealt = await api.deal(tableId, playerId);
         applyActionResponse(dealt, datToken?.ticker);
@@ -287,8 +417,8 @@ export function App() {
     run(action, async () => {
       const response = await api.action(tableId, playerId, action, amountMojos);
       if (response.houseActions.length > 0) {
-        setStatus("House is thinking…");
-        await sleep(450);
+        setStatus("The house is thinking…");
+        await sleep(Math.min(1400, 280 * response.houseActions.length));
       }
       applyActionResponse(response, datToken?.ticker);
       if (!response.hand) await refreshTable(tableId);
@@ -439,7 +569,7 @@ export function App() {
         return { cards: previous.holeCards, faceDown: false, label: null };
       }
     }
-    return { cards: [], faceDown: true, label: null };
+    return { cards: [], faceDown: Boolean(hand), label: null };
   };
 
   const stackFor = (id: string): string =>
@@ -450,39 +580,42 @@ export function App() {
   const betFor = (id: string): string =>
     hand?.players.find((p) => p.playerId === id)?.betThisStreetMojos ?? "0";
 
-  const seatView = (id: string, name: string): FeltSeat => {
-    const live = hand?.players.find((p) => p.playerId === id);
-    const cards = shownCards(id);
+  const nameOf = (id: string): string => {
+    if (id === playerId) return displayName.trim() || "You";
+    return tableSeats.find((seat) => seat.playerId === id)?.displayName ?? "Player";
+  };
+
+  const occupiedSeats = tableSeats.map((seat) => seat.seatIndex);
+  const buttonPreview =
+    buttonSeat ?? (occupiedSeats.length > 0 ? Math.min(...occupiedSeats) : null);
+
+  const feltSeats: FeltSeat[] = tableSeats.map((seat) => {
+    const live = hand?.players.find((player) => player.playerId === seat.playerId);
+    const cards = shownCards(seat.playerId);
     return {
-      name,
-      stackMojos: stackFor(id),
-      betMojos: betFor(id),
+      seatIndex: seat.seatIndex,
+      name: nameOf(seat.playerId),
+      stackMojos: stackFor(seat.playerId),
+      betMojos: betFor(seat.playerId),
       holeCards: cards.cards,
       faceDown: cards.faceDown,
       folded: live?.folded ?? false,
-      isDealer: hand?.dealerSeat === live?.seatIndex && live != null,
+      isDealer: (hand?.dealerSeat ?? buttonPreview) === seat.seatIndex,
       acting: Boolean(hand && live && hand.actionSeat === live.seatIndex && !live.folded),
       allIn: live?.allIn ?? false,
       handLabel: cards.label,
+      isHero: seat.playerId === playerId,
+      empty: false,
     };
-  };
+  });
 
-  const feltBanner =
-    !hand && handResult
-      ? `${playerLabel(handResult.winnerId, playerId)} wins ${formatDatMojos(handResult.potMojos, datToken?.ticker)}${
-          handResult.handLabel
-            ? ` with ${handResult.handLabel}`
-            : handResult.reason === "fold"
-              ? " — the other hand folded"
-              : ""
-        }`
-      : null;
+  const feltBanner = !hand && handResult ? resultBanner(handResult, nameOf, datToken?.ticker) : null;
 
   return (
     <div className={`app ${tableId ? "at-table" : ""}`}>
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
+        <p className="tagline">Six-max no-limit · DAT buy-in · open seats</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -535,25 +668,54 @@ export function App() {
       <section className="panel">
         <h2>Table</h2>
         {!tableId ? (
-          <div className="row">
-            <button
-              type="button"
-              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-              onClick={() => void joinTable()}
-            >
-              Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
-            </button>
-            {datToken?.devBuyInEnabled && (
+          <>
+            <label className="name-field">
+              Name
+              <input
+                value={displayName}
+                maxLength={18}
+                onChange={(event) => setDisplayName(event.target.value)}
+              />
+            </label>
+            <div className="row">
+              <button
+                type="button"
+                disabled={busy || !apiOk || !datToken?.buyInReady || (!datToken.devBuyInEnabled && !playerId)}
+                onClick={() => void openSixMax(true)}
+              >
+                Play six-max ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+              </button>
               <button
                 type="button"
                 className="secondary"
-                disabled={busy || !apiOk || !datToken.buyInReady}
-                onClick={() => void joinTable("practice")}
+                disabled={busy || !apiOk || !datToken?.buyInReady || (!datToken.devBuyInEnabled && !playerId)}
+                onClick={() => void openSixMax(false)}
               >
-                Practice at the table
+                Open an empty table
               </button>
+            </div>
+            {lobby.length > 0 && (
+              <ul className="lobby">
+                {lobby.map((table) => (
+                  <li key={table.tableId}>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() => {
+                        setTableId(table.tableId);
+                        void refreshTable(table.tableId);
+                      }}
+                    >
+                      Join {table.seated}/{table.maxSeats} · blinds{" "}
+                      {formatDatMojos(table.smallBlindMojos, datToken?.ticker)}/
+                      {formatDatMojos(table.bigBlindMojos, datToken?.ticker)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
-          </div>
+          </>
         ) : (
           <>
             <p className="mono">Table ID: {tableId}</p>
@@ -570,7 +732,14 @@ export function App() {
                 </button>
               </div>
             )}
-            {datToken?.devBuyInEnabled && playerId === "practice" && (
+            {!hand && tableSeats.length < 6 && (
+              <div className="row">
+                <button type="button" className="secondary" disabled={busy} onClick={() => void fillOpenSeats()}>
+                  Fill open seats with the house
+                </button>
+              </div>
+            )}
+            {playerId?.startsWith("practice-") && (
               <p className="muted small">Practice stack. Sage is not connected, so this table cannot cash out.</p>
             )}
           </>
@@ -590,28 +759,36 @@ export function App() {
         )}
       </section>
 
-      {tableId && playerId && (
+      {tableId && (
         <FeltTable
-          house={seatView(HOUSE_PLAYER_ID, "House")}
-          hero={seatView(playerId, "You")}
+          seats={feltSeats}
+          heroSeat={tableSeats.find((seat) => seat.playerId === playerId)?.seatIndex ?? 0}
           board={hand?.board ?? handResult?.board ?? []}
           street={hand?.street ?? null}
           potMojos={hand?.potMojos ?? (handResult && !hand ? handResult.potMojos : "0")}
-          potAward={!hand && handResult ? (handResult.winnerId === playerId ? "you" : "house") : null}
           commitHash={hand?.commitHash ?? handResult?.commitHash ?? commitHash}
           locking={locking}
           houseNote={houseNote}
           secondsLeft={isMyAction ? secondsLeft : null}
           ticker={datToken?.ticker}
           banner={feltBanner}
+          onEmptySeat={(seatIndex) => void claimSeat(seatIndex)}
         />
       )}
 
       {tableId && (
         <div className="actions-dock">
           {!hand && !locking && (
-            <button type="button" disabled={busy} onClick={startHandFlow}>
-              {handResult ? "New hand" : "Start hand vs house"}
+            <button
+              type="button"
+              disabled={busy || tableSeats.length < 2 || !tableSeats.some((seat) => seat.playerId === playerId)}
+              onClick={startHandFlow}
+            >
+              {tableSeats.length < 2
+                ? "Waiting for a second player"
+                : handResult
+                  ? "New hand"
+                  : "Start hand"}
             </button>
           )}
           {hand && isMyAction && (

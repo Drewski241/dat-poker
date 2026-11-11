@@ -4,6 +4,7 @@ import { ChipStack } from "./ChipStack.js";
 import { PlayingCard } from "./PlayingCard.js";
 
 export interface FeltSeat {
+  seatIndex: number;
   name: string;
   stackMojos: string;
   betMojos: string;
@@ -14,36 +15,49 @@ export interface FeltSeat {
   acting: boolean;
   allIn: boolean;
   handLabel: string | null;
+  isHero: boolean;
+  empty: boolean;
 }
 
 const TURN_SECONDS = 45;
+const MAX_SEATS = 6;
+
+/** Clockwise from the hero, who is drawn at the bottom. */
+const SPOTS = [
+  { left: "50%", top: "84%" },
+  { left: "84%", top: "64%" },
+  { left: "84%", top: "32%" },
+  { left: "50%", top: "14%" },
+  { left: "16%", top: "32%" },
+  { left: "16%", top: "64%" },
+];
 
 export function FeltTable({
-  house,
-  hero,
+  seats,
+  heroSeat,
   board,
   street,
   potMojos,
-  potAward,
   commitHash,
   locking,
   houseNote,
   secondsLeft,
   ticker,
   banner,
+  onEmptySeat,
 }: {
-  house: FeltSeat;
-  hero: FeltSeat;
+  seats: FeltSeat[];
+  heroSeat: number;
   board: CardFace[];
   street: string | null;
   potMojos: string;
-  potAward: "you" | "house" | null;
   commitHash: string | null;
   locking: boolean;
   houseNote: string | null;
   secondsLeft: number | null;
   ticker?: string;
   banner: string | null;
+  onEmptySeat?: (seatIndex: number) => void;
 }) {
   const [soundOn, setSoundOn] = useState(false);
   const audioRef = useRef<AudioContext | null>(null);
@@ -68,81 +82,95 @@ export function FeltTable({
     if (banner) play(soundRef.current, audioRef, 660, 0.12);
   }, [banner]);
 
-  const shortHash = commitHash
-    ? `${commitHash.slice(0, 8)}…${commitHash.slice(-4)}`
-    : null;
+  const shortHash = commitHash ? `${commitHash.slice(0, 8)}…${commitHash.slice(-4)}` : null;
+  const byIndex = new Map(seats.map((seat) => [seat.seatIndex, seat]));
+  const openCount = MAX_SEATS - byIndex.size;
 
   return (
-    <section className="felt-shell" aria-label="Poker table">
-      <div className="felt-tools">
-        <button
-          type="button"
-          className="sound-toggle"
-          onClick={() => {
-            const next = !soundOn;
-            setSoundOn(next);
-            window.sessionStorage.setItem("dat-poker-sound", next ? "on" : "off");
-            if (next) play(true, audioRef, 440, 0.06);
-          }}
-        >
-          Sound {soundOn ? "on" : "off"}
-        </button>
-      </div>
+    <div className="felt-wrap">
+      <section className="felt-shell" aria-label="Six-max poker table">
+        <div className="felt-tools">
+          <button
+            type="button"
+            className="sound-toggle"
+            onClick={() => {
+              const next = !soundOn;
+              setSoundOn(next);
+              window.sessionStorage.setItem("dat-poker-sound", next ? "on" : "off");
+              if (next) play(true, audioRef, 440, 0.06);
+            }}
+          >
+            Sound {soundOn ? "on" : "off"}
+          </button>
+        </div>
 
-      <Seat seat={house} ticker={ticker} note={houseNote} />
-
-      <div className="felt-middle">
-        {shortHash && (
-          <p className="deck-lock">Deck locked · {shortHash}</p>
-        )}
-        <div className="board-cards">
-          {board.map((card, index) => (
-            <PlayingCard
-              key={`${card.rank}${card.suit}${index}`}
-              card={card}
-              delayMs={index * 160}
-            />
-          ))}
-          {board.length === 0 && !banner && (
-            <p className="felt-wait">{locking ? "Shuffling the deck…" : street ? street : "Take a seat"}</p>
+        <div className="felt-center">
+          {shortHash && <p className="deck-lock">Deck locked · {shortHash}</p>}
+          <div className="board-cards">
+            {board.map((card, index) => (
+              <PlayingCard key={`${card.rank}${card.suit}${index}`} card={card} delayMs={index * 140} />
+            ))}
+            {board.length === 0 && !banner && (
+              <p className="felt-wait">
+                {locking ? "Shuffling the deck…" : street ? street : openCount > 0 ? "Open seats" : "Deal when ready"}
+              </p>
+            )}
+          </div>
+          {street && board.length > 0 && <p className="street-label">{street}</p>}
+          {BigInt(potMojos || "0") > 0n && (
+            <div className="pot">
+              <ChipStack mojos={potMojos} ticker={ticker} />
+            </div>
           )}
         </div>
-        {street && board.length > 0 && <p className="street-label">{street}</p>}
-        {BigInt(potMojos || "0") > 0n && (
-          <div key={`${potAward ?? "live"}-${potMojos}`} className={`pot ${potAward ? `pot-award ${potAward}` : ""}`}>
-            <ChipStack mojos={potMojos} ticker={ticker} />
-          </div>
-        )}
-      </div>
 
-      <Seat
-        seat={hero}
-        ticker={ticker}
-        secondsLeft={secondsLeft}
-        turnSeconds={TURN_SECONDS}
-      />
-
+        {Array.from({ length: MAX_SEATS }, (_, seatIndex) => {
+          const spot = (seatIndex - heroSeat + MAX_SEATS) % MAX_SEATS;
+          const seat = byIndex.get(seatIndex);
+          return (
+            <div key={seatIndex} className="seat-slot" style={SPOTS[spot]}>
+              {seat && !seat.empty ? (
+                <Seat
+                  seat={seat}
+                  ticker={ticker}
+                  secondsLeft={seat.isHero ? secondsLeft : null}
+                  turnSeconds={TURN_SECONDS}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="seat-open"
+                  onClick={() => onEmptySeat?.(seatIndex)}
+                >
+                  Seat {seatIndex + 1}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </section>
+      {houseNote && <p className="house-note">{houseNote}</p>}
       {banner && <div className="banner win felt-banner">{banner}</div>}
-    </section>
+    </div>
   );
 }
 
 function Seat({
   seat,
   ticker,
-  note,
   secondsLeft,
   turnSeconds,
 }: {
   seat: FeltSeat;
   ticker?: string;
-  note?: string | null;
   secondsLeft?: number | null;
   turnSeconds?: number;
 }) {
   const showBacks = seat.faceDown && !seat.folded;
   return (
-    <div className={`seat ${seat.acting ? "acting" : ""} ${seat.folded ? "folded" : ""}`}>
+    <div
+      className={`seat ${seat.isHero ? "hero" : "remote"} ${seat.acting ? "acting" : ""} ${seat.folded ? "folded" : ""}`}
+    >
       <div className="seat-meta">
         {seat.isDealer && <span className="dealer-btn">D</span>}
         <span className="seat-name">{seat.name}</span>
@@ -157,16 +185,15 @@ function Seat({
         {showBacks && (
           <>
             <PlayingCard faceDown delayMs={0} />
-            <PlayingCard faceDown delayMs={120} />
+            <PlayingCard faceDown delayMs={80} />
           </>
         )}
         {!seat.faceDown &&
           seat.holeCards.map((card, index) => (
-            <PlayingCard key={`${card.rank}${card.suit}${index}`} card={card} delayMs={index * 120} />
+            <PlayingCard key={`${card.rank}${card.suit}${index}`} card={card} delayMs={index * 80} />
           ))}
       </div>
       {seat.handLabel && <p className="hand-label">{seat.handLabel}</p>}
-      {note && <p className="house-note">{note}</p>}
       <ChipStack mojos={seat.stackMojos} ticker={ticker} />
       {BigInt(seat.betMojos || "0") > 0n && (
         <div className="seat-bet">
