@@ -3,3 +3,4 @@ export * from "./shuffle.js";
 export * from "./hand-evaluator.js";
 export * from "./nlhe-table.js";
 export * from "./house-strategy.js";
+export * from "./pot-settle.js";

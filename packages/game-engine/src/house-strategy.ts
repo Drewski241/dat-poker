@@ -6,6 +6,10 @@ import type { PlayerAction } from "./nlhe-table.js";
 
 export const HOUSE_PLAYER_ID = "dat-poker:house";
 
+export function isHousePlayer(playerId: string): boolean {
+  return playerId === HOUSE_PLAYER_ID || playerId.startsWith(`${HOUSE_PLAYER_ID}:`);
+}
+
 export interface HouseDecisionInput {
   street: Street;
   board: Card[];

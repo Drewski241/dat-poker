@@ -181,6 +181,63 @@ describe("NlheTableEngine", () => {
     expect(table.getActivePlayerCount()).toBe(1);
   });
 
+  it("opens under the gun at six-max and moves the button", () => {
+    const table = new NlheTableEngine(config);
+    for (let seat = 0; seat < 6; seat++) {
+      table.seatPlayer(`p${seat}`, seat, 5_000_000_000_000n);
+    }
+    table.startHand("six");
+    for (let seat = 0; seat < 6; seat++) {
+      table.submitPlayerSeed(`p${seat}`, generateServerSeed());
+    }
+    table.revealAndDeal();
+
+    const hand = table.getHandState()!;
+    expect(hand.dealerSeat).toBe(0);
+    expect(hand.players.find((player) => player.seatIndex === 1)?.betThisStreetMojos).toBe(
+      config.smallBlindMojos,
+    );
+    expect(hand.players.find((player) => player.seatIndex === 2)?.betThisStreetMojos).toBe(
+      config.bigBlindMojos,
+    );
+    expect(hand.actionSeat).toBe(3);
+
+    table.applyAction("p3", "fold");
+    table.applyAction("p4", "fold");
+    table.applyAction("p5", "fold");
+    table.applyAction("p0", "fold");
+    table.applyAction("p1", "fold");
+    expect(table.isHandInProgress()).toBe(false);
+    expect(table.getLastHandResult()?.winnerId).toBe("p2");
+    expect(table.getButtonSeat()).toBe(1);
+  });
+
+  it("starts the flop with the small blind in a three-handed game", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.seatPlayer("cara", 2, 5_000_000_000_000n);
+    table.startHand("three");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.submitPlayerSeed("cara", generateServerSeed());
+    table.revealAndDeal();
+
+    const act = () => {
+      const state = table.getHandState();
+      if (!state || state.actionSeat == null) return;
+      const actor = state.players.find((player) => player.seatIndex === state.actionSeat)!;
+      const toCall = state.currentBetMojos - actor.betThisStreetMojos;
+      table.applyAction(actor.playerId, toCall > 0n ? "call" : "check");
+    };
+    act();
+    act();
+    act();
+    const flop = table.getHandState()!;
+    expect(flop.street).toBe("flop");
+    expect(flop.actionSeat).toBe(1);
+  });
+
   it("rejects cash out during active hand", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

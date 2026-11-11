@@ -1,20 +1,25 @@
 import {
   chooseHouseAction,
-  HOUSE_PLAYER_ID,
+  isHousePlayer,
   type HouseDecision,
   type NlheTableEngine,
+  type PlayerAction,
 } from "@dat-poker/game-engine";
 
+export interface TakenHouseAction extends HouseDecision {
+  playerId: string;
+}
+
 /** Apply the house policy until the seat belongs to someone else or the hand ends. */
-export function runHouseTurn(table: NlheTableEngine): HouseDecision[] {
-  const taken: HouseDecision[] = [];
-  for (let i = 0; i < 8; i++) {
+export function runHouseTurn(table: NlheTableEngine): TakenHouseAction[] {
+  const taken: TakenHouseAction[] = [];
+  for (let i = 0; i < 40; i++) {
     const hand = table.getHandState();
     if (!hand || hand.actionSeat == null) break;
     const actor = hand.players.find(
-      (p) => p.seatIndex === hand.actionSeat && !p.folded && !p.allIn,
+      (player) => player.seatIndex === hand.actionSeat && !player.folded && !player.allIn,
     );
-    if (!actor || actor.playerId !== HOUSE_PLAYER_ID) break;
+    if (!actor || !isHousePlayer(actor.playerId)) break;
     const decision = chooseHouseAction({
       street: hand.street,
       board: hand.board,
@@ -25,20 +30,32 @@ export function runHouseTurn(table: NlheTableEngine): HouseDecision[] {
       stackMojos: actor.stackMojos,
       bigBlindMojos: table.getBigBlindMojos(),
     });
-    try {
-      table.applyAction(HOUSE_PLAYER_ID, decision.action, decision.amountMojos);
-      taken.push(decision);
-    } catch {
-      const toCall = hand.currentBetMojos - actor.betThisStreetMojos;
-      const fallback = toCall <= 0n ? "check" : "call";
-      try {
-        table.applyAction(HOUSE_PLAYER_ID, fallback, 0n);
-        taken.push({ action: fallback, amountMojos: 0n });
-      } catch {
-        table.applyAction(HOUSE_PLAYER_ID, "fold", 0n);
-        taken.push({ action: "fold", amountMojos: 0n });
-      }
-    }
+    const applied = applyOrFallback(table, actor.playerId, decision.action, decision.amountMojos, hand);
+    taken.push({ playerId: actor.playerId, ...applied });
   }
   return taken;
+}
+
+function applyOrFallback(
+  table: NlheTableEngine,
+  playerId: string,
+  action: PlayerAction,
+  amountMojos: bigint,
+  hand: NonNullable<ReturnType<NlheTableEngine["getHandState"]>>,
+): HouseDecision {
+  try {
+    table.applyAction(playerId, action, amountMojos);
+    return { action, amountMojos };
+  } catch {
+    const actor = hand.players.find((player) => player.playerId === playerId);
+    const toCall = hand.currentBetMojos - (actor?.betThisStreetMojos ?? 0n);
+    const fallback: PlayerAction = toCall <= 0n ? "check" : "call";
+    try {
+      table.applyAction(playerId, fallback, 0n);
+      return { action: fallback, amountMojos: 0n };
+    } catch {
+      table.applyAction(playerId, "fold", 0n);
+      return { action: "fold", amountMojos: 0n };
+    }
+  }
 }
