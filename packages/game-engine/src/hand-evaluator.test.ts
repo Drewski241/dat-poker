@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCard } from "./card.js";
-import { compareHands, evaluateBestHand } from "./hand-evaluator.js";
+import { compareHands, describeEvaluatedHand, evaluateBestHand } from "./hand-evaluator.js";
 
 describe("hand evaluator", () => {
   it("detects a flush beating a straight", () => {
@@ -29,5 +29,11 @@ describe("hand evaluator", () => {
     const cards = ["Kh", "Kd", "Kc", "2s", "2h", "9c", "3d"].map(parseCard);
     const ev = evaluateBestHand(cards);
     expect(ev.category).toBe("full_house");
+    expect(describeEvaluatedHand(ev)).toBe("a full house, kings full of twos");
+  });
+
+  it("names two pair from the kickers", () => {
+    const cards = ["Kh", "Kd", "5c", "5s", "9c"].map(parseCard);
+    expect(describeEvaluatedHand(evaluateBestHand(cards))).toBe("two pair, kings and fives");
   });
 });

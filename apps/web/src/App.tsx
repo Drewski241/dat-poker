@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { api, type ActionResponse, type BuyInProof, type CardFace, type DatTokenInfo, type HandResult, type HandState, type HouseAction, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
+import { FeltTable, type FeltSeat } from "./components/FeltTable.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
   beginWalletConnect,
@@ -16,16 +17,39 @@ import {
 
 const HOUSE_PLAYER_ID = "dat-poker:house";
 const DAT_BIG_BLIND_MOJOS = DAT_TABLE_DEFAULTS.bigBlindMojos;
+const TURN_SECONDS = 45;
+
+function formatHouseActions(actions: HouseAction[] | undefined, ticker?: string): string | null {
+  if (!actions?.length) return null;
+  return actions
+    .map((action) => {
+      const amount = formatDatMojos(action.amountMojos, ticker);
+      switch (action.action) {
+        case "fold":
+          return "House folds";
+        case "check":
+          return "House checks";
+        case "call":
+          return "House calls";
+        case "bet":
+          return `House bets ${amount}`;
+        case "raise":
+          return `House raises to ${amount}`;
+        default:
+          return "House is all-in";
+      }
+    })
+    .join(" · ");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function playerLabel(id: string, youId: string | null): string {
   if (id === youId) return "You";
   if (id === HOUSE_PLAYER_ID) return "House";
   return id.length > 16 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
-}
-
-function cardLabel(card: { rank: string; suit: string }): string {
-  const suit = { c: "♣", d: "♦", h: "♥", s: "♠" }[card.suit] ?? card.suit;
-  return `${card.rank}${suit}`;
 }
 
 function shortAddress(addr: string): string {
@@ -54,6 +78,13 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [betAmountMojos, setBetAmountMojos] = useState<bigint>(DAT_BIG_BLIND_MOJOS);
+  const [commitHash, setCommitHash] = useState<string | null>(null);
+  const [locking, setLocking] = useState(false);
+  const [snapshot, setSnapshot] = useState<HandState | null>(null);
+  const [houseNote, setHouseNote] = useState<string | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const handRef = useRef<HandState | null>(null);
+  const playerIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -89,59 +120,31 @@ export function App() {
     }
   }, []);
 
+  handRef.current = hand;
+  playerIdRef.current = playerId;
+
   const refreshTable = useCallback(async (id: string) => {
-    const t = await api.getTable(id);
+    const t = await api.getTable(id, playerIdRef.current);
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
     if (t.lastHandResult) setHandResult(t.lastHandResult);
+    if (t.hand?.commitHash) setCommitHash(t.hand.commitHash);
   }, []);
 
-  const applyActionResponse = useCallback(
-    (response: { hand: HandState | null; lastHandResult: HandResult | null }) => {
-      setHand(response.hand);
-      if (response.lastHandResult) setHandResult(response.lastHandResult);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!tableId || !hand || !playerId || busy) return;
-    const actor = hand.players.find((p) => p.seatIndex === hand.actionSeat && !p.folded);
-    if (!actor || actor.playerId !== HOUSE_PLAYER_ID) return;
-
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        setBusy(true);
-        try {
-          const currentBet = BigInt(hand.currentBetMojos);
-          const house = hand.players.find((p) => p.playerId === HOUSE_PLAYER_ID);
-          const houseBet = BigInt(house?.betThisStreetMojos ?? 0);
-          const toCall = currentBet - houseBet;
-          let response;
-          if (toCall > 0n) {
-            response = await api.action(tableId, HOUSE_PLAYER_ID, "call");
-          } else {
-            response = await api.action(tableId, HOUSE_PLAYER_ID, "check");
-          }
-          applyActionResponse(response);
-          if (!response.hand) await refreshTable(tableId);
-        } catch {
-          try {
-            const response = await api.action(tableId, HOUSE_PLAYER_ID, "fold");
-            applyActionResponse(response);
-            if (!response.hand) await refreshTable(tableId);
-          } catch {
-            /* ignore */
-          }
-        } finally {
-          setBusy(false);
-        }
-      })();
-    }, 600);
-
-    return () => window.clearTimeout(timer);
-  }, [tableId, hand, playerId, busy, refreshTable, applyActionResponse]);
+  const applyActionResponse = useCallback((response: ActionResponse, ticker?: string) => {
+    if (!response.hand && handRef.current) setSnapshot(handRef.current);
+    if (response.hand) setSnapshot(null);
+    setHand(response.hand);
+    if (!response.hand) setHandInProgress(false);
+    if (response.lastHandResult) {
+      setHandResult(response.lastHandResult);
+      setTableSeats(response.lastHandResult.stacks);
+      setCommitHash(response.lastHandResult.commitHash);
+    }
+    const note = formatHouseActions(response.houseActions, ticker);
+    if (note) setHouseNote(note);
+  }, []);
 
   const connectSage = () =>
     run("Opening WalletConnect…", async () => {
@@ -183,12 +186,14 @@ export function App() {
       setDatBalance(balance.spendable);
     });
 
-  const joinTable = async () => {
+  const joinTable = async (overrideId?: string) => {
     if (busy) return;
+    const seatedId = overrideId ?? playerId;
     setBusy(true);
     setError(null);
     try {
-      if (!playerId) throw new Error("Connect Sage and load DAT balance first");
+      if (!seatedId) throw new Error("Connect Sage and load DAT balance first");
+      if (overrideId) setPlayerId(overrideId);
       const ticker = datToken?.ticker ?? "DAT";
 
       setStatus("Creating table…");
@@ -235,12 +240,13 @@ export function App() {
       }
 
       setStatus("Seating you at the table…");
-      await api.seatPlayer(id, playerId, 0, buyIn, {
+      await api.seatPlayer(id, seatedId, 0, buyIn, {
         buyInProof,
         devAck: datToken?.devBuyInEnabled,
       });
       await api.seatHouse(id, buyIn);
       setTableId(id);
+      playerIdRef.current = seatedId;
       await refreshTable(id);
     } catch (e) {
       setError((e as Error).message);
@@ -252,21 +258,39 @@ export function App() {
 
   const startHandFlow = () => {
     if (!tableId || !playerId) return;
-    run("Starting hand…", async () => {
+    run("Locking the deck…", async () => {
       setHandResult(null);
-      await api.startHand(tableId);
-      await api.submitSeed(tableId, playerId);
-      await api.submitSeed(tableId, HOUSE_PLAYER_ID);
-      const { hand: dealt } = await api.deal(tableId);
-      setHand(dealt);
+      setSnapshot(null);
+      setHouseNote(null);
+      setHandInProgress(true);
+      try {
+        const started = await api.startHand(tableId);
+        setCommitHash(started.commitHash);
+        setLocking(true);
+        setStatus("Deck locked");
+        await sleep(900);
+        await api.submitSeed(tableId, playerId);
+        await api.submitSeed(tableId, HOUSE_PLAYER_ID);
+        setStatus("Dealing…");
+        const dealt = await api.deal(tableId, playerId);
+        applyActionResponse(dealt, datToken?.ticker);
+        if (!dealt.hand) await refreshTable(tableId);
+      } finally {
+        setLocking(false);
+      }
     });
   };
 
   const sendAction = (action: PlayerAction, amountMojos?: string) => {
-    if (!tableId || !playerId) return;
+    if (!tableId || !playerId || busy) return;
+    setSecondsLeft(null);
     run(action, async () => {
       const response = await api.action(tableId, playerId, action, amountMojos);
-      applyActionResponse(response);
+      if (response.houseActions.length > 0) {
+        setStatus("House is thinking…");
+        await sleep(450);
+      }
+      applyActionResponse(response, datToken?.ticker);
       if (!response.hand) await refreshTable(tableId);
     });
   };
@@ -365,6 +389,26 @@ export function App() {
 
   const isMyAction = actionSeatPlayer?.playerId === playerId;
 
+  const sendRef = useRef(sendAction);
+  sendRef.current = sendAction;
+
+  useEffect(() => {
+    if (!isMyAction) {
+      setSecondsLeft(null);
+      return;
+    }
+    setSecondsLeft(TURN_SECONDS);
+    const id = window.setInterval(() => {
+      setSecondsLeft((current) => (current == null ? current : Math.max(0, current - 1)));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [isMyAction, hand?.handId, hand?.street, hand?.actionSeat]);
+
+  useEffect(() => {
+    if (secondsLeft !== 0 || !isMyAction || busy) return;
+    sendRef.current(canCheck ? "check" : "fold");
+  }, [secondsLeft, isMyAction, busy, canCheck]);
+
   useEffect(() => {
     if (!isMyAction || !betRange.canBetOrRaise) return;
     setBetAmountMojos(betRange.minRaiseTo);
@@ -380,8 +424,62 @@ export function App() {
     betRange.canBetOrRaise,
   ]);
 
+  const shownCards = (id: string): { cards: CardFace[]; faceDown: boolean; label: string | null } => {
+    const shown = !hand ? handResult?.shownHands.find((s) => s.playerId === id) : undefined;
+    if (shown && shown.holeCards.length > 0) {
+      return { cards: shown.holeCards, faceDown: false, label: shown.handLabel };
+    }
+    const live = hand?.players.find((p) => p.playerId === id);
+    if (live && live.holeCards.length > 0) {
+      return { cards: live.holeCards, faceDown: false, label: null };
+    }
+    if (!hand && id === playerId) {
+      const previous = snapshot?.players.find((p) => p.playerId === id);
+      if (previous && previous.holeCards.length > 0) {
+        return { cards: previous.holeCards, faceDown: false, label: null };
+      }
+    }
+    return { cards: [], faceDown: true, label: null };
+  };
+
+  const stackFor = (id: string): string =>
+    hand?.players.find((p) => p.playerId === id)?.stackMojos ??
+    tableSeats.find((s) => s.playerId === id)?.stackMojos ??
+    "0";
+
+  const betFor = (id: string): string =>
+    hand?.players.find((p) => p.playerId === id)?.betThisStreetMojos ?? "0";
+
+  const seatView = (id: string, name: string): FeltSeat => {
+    const live = hand?.players.find((p) => p.playerId === id);
+    const cards = shownCards(id);
+    return {
+      name,
+      stackMojos: stackFor(id),
+      betMojos: betFor(id),
+      holeCards: cards.cards,
+      faceDown: cards.faceDown,
+      folded: live?.folded ?? false,
+      isDealer: hand?.dealerSeat === live?.seatIndex && live != null,
+      acting: Boolean(hand && live && hand.actionSeat === live.seatIndex && !live.folded),
+      allIn: live?.allIn ?? false,
+      handLabel: cards.label,
+    };
+  };
+
+  const feltBanner =
+    !hand && handResult
+      ? `${playerLabel(handResult.winnerId, playerId)} wins ${formatDatMojos(handResult.potMojos, datToken?.ticker)}${
+          handResult.handLabel
+            ? ` with ${handResult.handLabel}`
+            : handResult.reason === "fold"
+              ? " — the other hand folded"
+              : ""
+        }`
+      : null;
+
   return (
-    <div className="app">
+    <div className={`app ${tableId ? "at-table" : ""}`}>
       <header>
         <h1>DAT Poker</h1>
         <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
@@ -437,13 +535,25 @@ export function App() {
       <section className="panel">
         <h2>Table</h2>
         {!tableId ? (
-          <button
-            type="button"
-            disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
-            onClick={() => void joinTable()}
-          >
-            Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
-          </button>
+          <div className="row">
+            <button
+              type="button"
+              disabled={busy || !apiOk || !playerId || !datToken?.buyInReady}
+              onClick={() => void joinTable()}
+            >
+              Buy in &amp; join table ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+            </button>
+            {datToken?.devBuyInEnabled && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !datToken.buyInReady}
+                onClick={() => void joinTable("practice")}
+              >
+                Practice at the table
+              </button>
+            )}
+          </div>
         ) : (
           <>
             <p className="mono">Table ID: {tableId}</p>
@@ -453,12 +563,15 @@ export function App() {
                 <strong>{formatDatMojos(tableStackMojos, datToken?.ticker)}</strong>
               </p>
             )}
-            {tableId && !hand && !handInProgress && tableStackMojos && (
+            {tableId && !hand && !handInProgress && tableStackMojos && walletAddress && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawToSage}>
                   Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
                 </button>
               </div>
+            )}
+            {datToken?.devBuyInEnabled && playerId === "practice" && (
+              <p className="muted small">Practice stack. Sage is not connected, so this table cannot cash out.</p>
             )}
           </>
         )}
@@ -477,101 +590,81 @@ export function App() {
         )}
       </section>
 
+      {tableId && playerId && (
+        <FeltTable
+          house={seatView(HOUSE_PLAYER_ID, "House")}
+          hero={seatView(playerId, "You")}
+          board={hand?.board ?? handResult?.board ?? []}
+          street={hand?.street ?? null}
+          potMojos={hand?.potMojos ?? (handResult && !hand ? handResult.potMojos : "0")}
+          potAward={!hand && handResult ? (handResult.winnerId === playerId ? "you" : "house") : null}
+          commitHash={hand?.commitHash ?? handResult?.commitHash ?? commitHash}
+          locking={locking}
+          houseNote={houseNote}
+          secondsLeft={isMyAction ? secondsLeft : null}
+          ticker={datToken?.ticker}
+          banner={feltBanner}
+        />
+      )}
+
       {tableId && (
-        <section className="panel">
-          <h2>Hand</h2>
-          {!hand ? (
-            <>
-              {handResult && (
-                <div className="banner win">
-                  <strong>{playerLabel(handResult.winnerId, playerId)}</strong> wins{" "}
-                  {formatDatMojos(handResult.potMojos, datToken?.ticker)}
-                  {handResult.reason === "showdown" ? " at showdown" : " (fold)"}
-                </div>
-              )}
-              <button type="button" disabled={busy} onClick={startHandFlow}>
-                {handResult ? "New hand" : "Start hand vs house"}
-              </button>
-            </>
-          ) : (
-            <>
-              <p>
-                Street: <strong>{hand.street}</strong> · Pot:{" "}
-                <strong>{formatDatMojos(hand.potMojos, datToken?.ticker)}</strong>
-              </p>
-              {hand.board.length > 0 && <p>Board: {hand.board.map(cardLabel).join(" ")}</p>}
-              <ul className="players">
-                {hand.players.map((p) => (
-                  <li key={p.playerId}>
-                    <strong>{p.playerId === playerId ? "You" : p.playerId === HOUSE_PLAYER_ID ? "House" : p.playerId}</strong>
-                    {p.playerId === playerId && p.holeCards.length > 0 && (
-                      <span className="cards"> {p.holeCards.map(cardLabel).join(" ")}</span>
-                    )}
-                    {p.folded ? " — folded" : ""}
-                    <span className="stack"> stack {formatDatMojos(p.stackMojos, datToken?.ticker)}</span>
-                  </li>
-                ))}
-              </ul>
-              {isMyAction && (
-                <div className="actions">
-                  <span>Your action</span>
-                  <button type="button" disabled={busy} onClick={() => sendAction("fold")}>
-                    fold
-                  </button>
-                  {canCheck ? (
-                    <button type="button" disabled={busy} onClick={() => sendAction("check")}>
-                      check
-                    </button>
-                  ) : (
-                    <button type="button" disabled={busy} onClick={() => sendAction("call")}>
-                      call {formatDatMojos(toCall.toString(), datToken?.ticker)}
-                    </button>
-                  )}
-                  {betRange.canBetOrRaise && (
-                    <>
-                      <BetSlider
-                        label={betRange.isOpeningBet ? "Bet size" : "Raise to"}
-                        minMojos={betRange.minRaiseTo}
-                        maxMojos={betRange.maxRaiseTo}
-                        stepMojos={DAT_BIG_BLIND_MOJOS}
-                        valueMojos={betAmountMojos}
-                        ticker={datToken?.ticker}
-                        disabled={busy}
-                        onChange={setBetAmountMojos}
-                      />
-                      <button
-                        type="button"
-                        className="primary-bet"
-                        disabled={busy}
-                        onClick={() =>
-                          sendAction(
-                            betRange.isOpeningBet ? "bet" : "raise",
-                            betAmountMojos.toString(),
-                          )
-                        }
-                      >
-                        {betRange.isOpeningBet ? "bet" : "raise to"}{" "}
-                        {formatDatMojos(betAmountMojos.toString(), datToken?.ticker)}
-                      </button>
-                    </>
-                  )}
-                  {myStack > 0n && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => sendAction("all-in")}
-                    >
-                      all-in
-                    </button>
-                  )}
-                </div>
-              )}
-              {!isMyAction && actionSeatPlayer && (
-                <p className="muted">Waiting for {playerLabel(actionSeatPlayer.playerId, playerId)}…</p>
-              )}
-            </>
+        <div className="actions-dock">
+          {!hand && !locking && (
+            <button type="button" disabled={busy} onClick={startHandFlow}>
+              {handResult ? "New hand" : "Start hand vs house"}
+            </button>
           )}
-        </section>
+          {hand && isMyAction && (
+            <div className="actions">
+              <span>Your action{secondsLeft != null ? ` · ${secondsLeft}s` : ""}</span>
+              <button type="button" disabled={busy} onClick={() => sendAction("fold")}>
+                fold
+              </button>
+              {canCheck ? (
+                <button type="button" disabled={busy} onClick={() => sendAction("check")}>
+                  check
+                </button>
+              ) : (
+                <button type="button" disabled={busy} onClick={() => sendAction("call")}>
+                  call {formatDatMojos(toCall.toString(), datToken?.ticker)}
+                </button>
+              )}
+              {betRange.canBetOrRaise && (
+                <>
+                  <BetSlider
+                    label={betRange.isOpeningBet ? "Bet size" : "Raise to"}
+                    minMojos={betRange.minRaiseTo}
+                    maxMojos={betRange.maxRaiseTo}
+                    stepMojos={DAT_BIG_BLIND_MOJOS}
+                    valueMojos={betAmountMojos}
+                    ticker={datToken?.ticker}
+                    disabled={busy}
+                    onChange={setBetAmountMojos}
+                  />
+                  <button
+                    type="button"
+                    className="primary-bet"
+                    disabled={busy}
+                    onClick={() =>
+                      sendAction(betRange.isOpeningBet ? "bet" : "raise", betAmountMojos.toString())
+                    }
+                  >
+                    {betRange.isOpeningBet ? "bet" : "raise to"}{" "}
+                    {formatDatMojos(betAmountMojos.toString(), datToken?.ticker)}
+                  </button>
+                </>
+              )}
+              {myStack > 0n && (
+                <button type="button" disabled={busy} onClick={() => sendAction("all-in")}>
+                  all-in
+                </button>
+              )}
+            </div>
+          )}
+          {hand && !isMyAction && (
+            <p className="muted">Waiting for the house…</p>
+          )}
+        </div>
       )}
 
       {wcUri && <QrConnectModal uri={wcUri} onClose={() => setWcUri(null)} />}

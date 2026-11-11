@@ -35,6 +35,78 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()).toBeNull();
     expect(table.getLastHandResult()?.winnerId).toBe("bob");
     expect(table.getLastHandResult()?.reason).toBe("fold");
+    expect(table.getLastHandResult()?.handLabel).toBeNull();
+    expect(table.getLastHandResult()?.shownHands).toEqual([]);
+  });
+
+  it("hides the deck, the server seed, and the opponent's hole cards", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.startHand("hand-public");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const view = table.getPublicHandState("alice");
+    expect(view?.commitHash).toHaveLength(64);
+    expect(view?.players.find((p) => p.playerId === "alice")?.holeCards).toHaveLength(2);
+    expect(view?.players.find((p) => p.playerId === "bob")?.holeCards).toEqual([]);
+    expect(view).not.toHaveProperty("deck");
+    expect(view).not.toHaveProperty("serverSeed");
+    expect(Object.keys(view ?? {})).not.toContain("playerSeeds");
+  });
+
+  it("names the winning hand and shows both hands at showdown", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.startHand("hand-showdown");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const playCheckdown = () => {
+      const state = table.getHandState();
+      if (!state || state.actionSeat == null) return false;
+      const actor = state.players.find((p) => p.seatIndex === state.actionSeat);
+      if (!actor) return false;
+      const toCall = state.currentBetMojos - actor.betThisStreetMojos;
+      table.applyAction(actor.playerId, toCall > 0n ? "call" : "check");
+      return true;
+    };
+    for (let i = 0; i < 12 && playCheckdown(); i++) {
+      /* check or call through the river */
+    }
+
+    const result = table.getLastHandResult();
+    expect(table.getHandState()).toBeNull();
+    expect(result?.reason).toBe("showdown");
+    expect(result?.board).toHaveLength(5);
+    expect(result?.handLabel).toEqual(expect.any(String));
+    expect(result?.shownHands).toHaveLength(2);
+    expect(result?.shownHands.every((h) => h.holeCards.length === 2 && h.handLabel.length > 0)).toBe(true);
+  });
+
+  it("runs the board out when both players are all-in", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.startHand("hand-allin");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const pre = table.getHandState()!;
+    const actor = pre.players.find((p) => p.seatIndex === pre.actionSeat)!;
+    table.applyAction(actor.playerId, "all-in");
+    const next = table.getHandState()!;
+    const other = next.players.find((p) => p.seatIndex === next.actionSeat)!;
+    table.applyAction(other.playerId, "call");
+
+    expect(table.getHandState()).toBeNull();
+    expect(table.getLastHandResult()?.reason).toBe("showdown");
+    expect(table.getLastHandResult()?.board).toHaveLength(5);
   });
 
   it("advances to flop after raise and call", () => {
@@ -59,6 +131,33 @@ describe("NlheTableEngine", () => {
     const flop = table.getHandState();
     expect(flop?.street).toBe("flop");
     expect(flop?.board).toHaveLength(3);
+  });
+
+  it("gives the other player a turn after a check", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.startHand("hand-check");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.revealAndDeal();
+
+    const pre = table.getHandState()!;
+    const sb = pre.players.find((p) => p.seatIndex === pre.actionSeat)!;
+    table.applyAction(sb.playerId, "call");
+    const option = table.getHandState()!;
+    expect(option.street).toBe("preflop");
+    const bb = option.players.find((p) => p.seatIndex === option.actionSeat)!;
+    expect(bb.playerId).not.toBe(sb.playerId);
+    table.applyAction(bb.playerId, "check");
+
+    const flop = table.getHandState()!;
+    expect(flop.street).toBe("flop");
+    const first = flop.players.find((p) => p.seatIndex === flop.actionSeat)!;
+    table.applyAction(first.playerId, "check");
+    const stillFlop = table.getHandState()!;
+    expect(stillFlop.street).toBe("flop");
+    expect(stillFlop.actionSeat).not.toBe(first.seatIndex);
   });
 
   it("cashes out player stack when no hand is active", () => {
