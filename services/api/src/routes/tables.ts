@@ -2,7 +2,14 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import type { TableConfig } from "@dat-poker/shared";
 import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
-import { HOUSE_PLAYER_ID, isHousePlayer, NlheTableEngine } from "@dat-poker/game-engine";
+import {
+  HOUSE_PLAYER_ID,
+  isHousePlayer,
+  NlheTableEngine,
+  sngBlinds,
+  SNG_STARTING_STACK_MOJOS,
+} from "@dat-poker/game-engine";
+import { collectableMojos, freshSitAndGo, playersRemaining, type SitAndGoState } from "../sit-and-go.js";
 import { recordBuyIn } from "../buy-in-store.js";
 import {
   type BuyInProof,
@@ -13,9 +20,29 @@ import {
 interface TableRecord {
   engine: NlheTableEngine;
   names: Map<string, string>;
+  sng?: SitAndGoState;
 }
 
 const tables = new Map<string, TableRecord>();
+
+function tournamentView(record: TableRecord) {
+  if (!record.sng) return null;
+  const sng = record.sng;
+  return {
+    status: sng.status,
+    level: sng.levelIndex + 1,
+    smallBlindMojos: record.engine.getSmallBlindMojos(),
+    bigBlindMojos: record.engine.getBigBlindMojos(),
+    handsPlayed: sng.handsPlayed,
+    handsPerLevel: sng.handsPerLevel,
+    playersLeft: playersRemaining(record.engine),
+    entrants: sng.entrants,
+    prizeMojos: sng.prizeMojos,
+    winnerId: sng.winnerId,
+    entryMojos: sng.entryMojos,
+    startingStackMojos: sng.startingStackMojos,
+  };
+}
 
 function seatView(record: TableRecord) {
   return record.engine.getSeatedPlayers().map((seat) => ({
@@ -31,33 +58,52 @@ export function registerTableRoutes(app: FastifyInstance): void {
       smallBlindMojos?: string;
       bigBlindMojos?: string;
       maxSeats?: number;
+      format?: "cash" | "sng";
     };
   }>("/v1/tables", async (req) => {
     const id = randomUUID();
     const dat = readDatTokenConfig();
     const useDatStakes = Boolean(dat.assetId) || dat.devBuyInEnabled;
+    const sitAndGo = req.body.format === "sng";
+    const sng = sitAndGo ? freshSitAndGo() : undefined;
+    const openingBlinds = sngBlinds(0);
     const minBuyIn = useDatStakes
       ? resolveDatMinBuyInMojos(dat.minBuyInMojos)
       : DAT_TABLE_DEFAULTS.minBuyInMojos;
     const config: TableConfig = {
       id,
       variant: "nlhe",
-      format: "cash",
+      format: sitAndGo ? "sng" : "cash",
       maxSeats: req.body.maxSeats ?? 6,
-      smallBlindMojos: BigInt(
-        req.body.smallBlindMojos ??
-          (useDatStakes ? DAT_TABLE_DEFAULTS.smallBlindMojos : 50_000_000_000n),
-      ),
-      bigBlindMojos: BigInt(
-        req.body.bigBlindMojos ??
-          (useDatStakes ? DAT_TABLE_DEFAULTS.bigBlindMojos : 100_000_000_000n),
-      ),
-      minBuyInMojos: minBuyIn,
-      maxBuyInMojos: useDatStakes ? DAT_TABLE_DEFAULTS.maxBuyInMojos : 20_000_000_000_000n,
-      rakeBps: 500,
+      smallBlindMojos: sitAndGo
+        ? openingBlinds.smallBlindMojos
+        : BigInt(
+            req.body.smallBlindMojos ??
+              (useDatStakes ? DAT_TABLE_DEFAULTS.smallBlindMojos : 50_000_000_000n),
+          ),
+      bigBlindMojos: sitAndGo
+        ? openingBlinds.bigBlindMojos
+        : BigInt(
+            req.body.bigBlindMojos ??
+              (useDatStakes ? DAT_TABLE_DEFAULTS.bigBlindMojos : 100_000_000_000n),
+          ),
+      minBuyInMojos: sitAndGo ? SNG_STARTING_STACK_MOJOS : minBuyIn,
+      maxBuyInMojos: sitAndGo
+        ? SNG_STARTING_STACK_MOJOS
+        : useDatStakes
+          ? DAT_TABLE_DEFAULTS.maxBuyInMojos
+          : 20_000_000_000_000n,
+      rakeBps: sitAndGo ? 0 : 500,
     };
-    tables.set(id, { engine: new NlheTableEngine(config), names: new Map() });
-    return { tableId: id, config };
+    tables.set(id, { engine: new NlheTableEngine(config), names: new Map(), sng });
+    return {
+      tableId: id,
+      config: {
+        ...config,
+        entryMojos: sng?.entryMojos,
+        startingStackMojos: sng?.startingStackMojos,
+      },
+    };
   });
 
   app.get("/v1/tables", async () => ({
@@ -68,6 +114,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
       smallBlindMojos: record.engine.getSmallBlindMojos(),
       bigBlindMojos: record.engine.getBigBlindMojos(),
       buttonSeat: record.engine.getButtonSeat(),
+      format: record.sng ? "sng" : "cash",
+      tournamentStatus: record.sng?.status ?? null,
     })),
   }));
 
@@ -88,6 +136,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
         seats: seatView(record),
         hand: table.getPublicHandState(req.query.playerId ?? null),
         lastHandResult: table.getLastHandResult(),
+        tournament: tournamentView(record),
+        collectableMojos: req.query.playerId ? collectableMojos(record, req.query.playerId) : null,
       };
     },
   );
@@ -108,10 +158,19 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return reply.status(404).send({ error: "Table not found" });
     }
     const table = record.engine;
+    if (record.sng && record.sng.status !== "registering") {
+      return reply.status(400).send({ error: "Registration is closed" });
+    }
 
     const dat = readDatTokenConfig();
     const buyInMojos = BigInt(req.body.buyInMojos);
     const minBuyIn = resolveDatMinBuyInMojos(dat.minBuyInMojos);
+
+    if (record.sng && buyInMojos !== record.sng.entryMojos) {
+      return reply.status(400).send({
+        error: `Sit-and-go entry is ${record.sng.entryMojos.toString()} mojos`,
+      });
+    }
 
     if (buyInMojos < minBuyIn) {
       return reply.status(400).send({
@@ -162,7 +221,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
     recordBuyIn(req.params.tableId, req.body.playerId, buyInProof, req.body.buyInMojos);
 
     try {
-      table.seatPlayer(req.body.playerId, req.body.seatIndex, buyInMojos);
+      const stack = record.sng?.startingStackMojos ?? buyInMojos;
+      table.seatPlayer(req.body.playerId, req.body.seatIndex, stack);
       const name = req.body.displayName?.trim();
       record.names.set(req.body.playerId, name && name.length > 0 ? name.slice(0, 18) : req.body.playerId);
       return { ok: true };
@@ -180,6 +240,9 @@ export function registerTableRoutes(app: FastifyInstance): void {
       return reply.status(404).send({ error: "Table not found" });
     }
     const table = record.engine;
+    if (record.sng && record.sng.status !== "registering") {
+      return reply.status(400).send({ error: "Registration is closed" });
+    }
     const seated = table.getSeatedPlayers();
     let seatIndex = req.body.seatIndex;
     if (seatIndex === undefined) {
@@ -195,7 +258,9 @@ export function registerTableRoutes(app: FastifyInstance): void {
     }
     const houseCount = seated.filter((player) => isHousePlayer(player.playerId)).length;
     const playerId = houseCount === 0 ? HOUSE_PLAYER_ID : `${HOUSE_PLAYER_ID}:${houseCount + 1}`;
-    const buyInMojos = BigInt(req.body.buyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString());
+    const buyInMojos = record.sng
+      ? record.sng.startingStackMojos
+      : BigInt(req.body.buyInMojos ?? DAT_TABLE_DEFAULTS.minBuyInMojos.toString());
     try {
       table.seatPlayer(playerId, seatIndex, buyInMojos);
       record.names.set(playerId, houseCount === 0 ? "House" : `House ${houseCount + 1}`);
@@ -207,4 +272,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
 }
 export function getTableEngine(tableId: string): NlheTableEngine | undefined {
   return tables.get(tableId)?.engine;
+}
+
+export function getTableRecord(tableId: string): TableRecord | undefined {
+  return tables.get(tableId);
 }

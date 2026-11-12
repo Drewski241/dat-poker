@@ -17,6 +17,7 @@ export interface FeltSeat {
   handLabel: string | null;
   isHero: boolean;
   empty: boolean;
+  eliminated: boolean;
 }
 
 const TURN_SECONDS = 45;
@@ -169,7 +170,7 @@ function Seat({
   const showBacks = seat.faceDown && !seat.folded;
   return (
     <div
-      className={`seat ${seat.isHero ? "hero" : "remote"} ${seat.acting ? "acting" : ""} ${seat.folded ? "folded" : ""}`}
+      className={`seat ${seat.isHero ? "hero" : "remote"} ${seat.acting ? "acting" : ""} ${seat.folded ? "folded" : ""} ${seat.eliminated ? "out" : ""}`}
     >
       <div className="seat-meta">
         {seat.isDealer && <span className="dealer-btn">D</span>}
@@ -194,7 +195,7 @@ function Seat({
           ))}
       </div>
       {seat.handLabel && <p className="hand-label">{seat.handLabel}</p>}
-      <ChipStack mojos={seat.stackMojos} ticker={ticker} />
+      {seat.eliminated ? <p className="out-tag">Out</p> : <ChipStack mojos={seat.stackMojos} ticker={ticker} />}
       {BigInt(seat.betMojos || "0") > 0n && (
         <div className="seat-bet">
           <ChipStack mojos={seat.betMojos} ticker={ticker} />

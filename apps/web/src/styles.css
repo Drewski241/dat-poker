@@ -357,8 +357,17 @@ button.secondary {
   font-size: 0.75rem;
 }
 
-.seat.folded {
+.seat.folded,
+.seat.out {
   opacity: 0.45;
+}
+
+.out-tag {
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #d7ebe1;
 }
 
 .seat-meta {

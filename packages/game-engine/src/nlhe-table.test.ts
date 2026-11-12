@@ -238,6 +238,54 @@ describe("NlheTableEngine", () => {
     expect(flop.actionSeat).toBe(1);
   });
 
+  it("deals around a busted player and posts the new limits", () => {
+    const table = new NlheTableEngine({
+      ...config,
+      format: "sng",
+      smallBlindMojos: 10_000n,
+      bigBlindMojos: 20_000n,
+      minBuyInMojos: 1_500_000n,
+      maxBuyInMojos: 1_500_000n,
+    });
+    table.seatPlayer("alice", 0, 1_500_000n);
+    table.seatPlayer("bob", 1, 1_500_000n);
+    table.seatPlayer("cara", 2, 1_500_000n);
+    table.setPlayerStack("bob", 0n);
+    table.setLimits(15_000n, 30_000n);
+
+    table.startHand("sng");
+    const dealt = table.getHandState()!;
+    expect(dealt.players.map((player) => player.playerId)).toEqual(["alice", "cara"]);
+    for (const player of dealt.players) {
+      table.submitPlayerSeed(player.playerId, generateServerSeed());
+    }
+    table.revealAndDeal();
+    const hand = table.getHandState()!;
+    expect(hand.dealerSeat).toBe(0);
+    expect(hand.players.find((player) => player.playerId === "alice")?.betThisStreetMojos).toBe(15_000n);
+    expect(hand.players.find((player) => player.playerId === "cara")?.betThisStreetMojos).toBe(30_000n);
+    expect(hand.actionSeat).toBe(0);
+  });
+
+  it("moves the button past a player who busted", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.seatPlayer("cara", 2, 5_000_000_000_000n);
+    table.startHand("bust");
+    table.submitPlayerSeed("alice", generateServerSeed());
+    table.submitPlayerSeed("bob", generateServerSeed());
+    table.submitPlayerSeed("cara", generateServerSeed());
+    table.revealAndDeal();
+    table.applyAction("alice", "fold");
+    table.applyAction("bob", "fold");
+    expect(table.getButtonSeat()).toBe(1);
+    table.setPlayerStack("bob", 0n);
+    table.startHand("after");
+    expect(table.getHandState()?.players.map((player) => player.playerId)).toEqual(["alice", "cara"]);
+    expect(table.getHandState()?.dealerSeat).toBe(2);
+  });
+
   it("rejects cash out during active hand", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

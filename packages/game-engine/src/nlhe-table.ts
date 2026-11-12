@@ -188,7 +188,12 @@ export class NlheTableEngine {
     this.lastHandResult = null;
     const serverSeed = generateServerSeed();
     const { commitHash } = createCommit(serverSeed);
-    const seated = [...this.seats.entries()].sort((a, b) => a[0] - b[0]);
+    const seated = [...this.seats.entries()]
+      .filter(([, playerId]) => (this.stacks.get(playerId) ?? 0n) > 0n)
+      .sort((a, b) => a[0] - b[0]);
+    if (seated.length < 2) {
+      throw new Error("Need at least 2 players with chips");
+    }
     const button = this.ensureButton(seated.map(([seatIndex]) => seatIndex));
 
     const players: PlayerHandState[] = seated.map(([seatIndex, playerId]) => ({
@@ -336,6 +341,23 @@ export class NlheTableEngine {
     return this.buttonSeat;
   }
 
+  /** Change the blinds between hands. A sit-and-go calls this as the level rises. */
+  setLimits(smallBlindMojos: bigint, bigBlindMojos: bigint): void {
+    if (this.hand) throw new Error("Cannot change blinds during a hand");
+    if (smallBlindMojos <= 0n || bigBlindMojos < smallBlindMojos) {
+      throw new Error("Invalid blinds");
+    }
+    this.config.smallBlindMojos = smallBlindMojos;
+    this.config.bigBlindMojos = bigBlindMojos;
+  }
+
+  setPlayerStack(playerId: PlayerId, stackMojos: bigint): void {
+    if (this.hand) throw new Error("Cannot change a stack during a hand");
+    if (!this.stacks.has(playerId)) throw new Error("Player not seated");
+    if (stackMojos < 0n) throw new Error("Invalid stack");
+    this.stacks.set(playerId, stackMojos);
+  }
+
   getHandState(): TableHandState | null {
     return this.hand ? structuredClone(this.hand) : null;
   }
@@ -412,12 +434,19 @@ export class NlheTableEngine {
   }
 
   private advanceButton(): void {
-    const occupied = [...this.seats.keys()].sort((a, b) => a - b);
+    const occupied = this.liveSeatIndexes();
     if (occupied.length === 0) {
       this.buttonSeat = null;
       return;
     }
     this.buttonSeat = nextClockwise(occupied, this.buttonSeat ?? -1);
+  }
+
+  private liveSeatIndexes(): number[] {
+    return [...this.seats.entries()]
+      .filter(([, playerId]) => (this.stacks.get(playerId) ?? 0n) > 0n)
+      .map(([seatIndex]) => seatIndex)
+      .sort((a, b) => a - b);
   }
 
   private charge(player: PlayerHandState, h: TableHandState, amount: bigint): void {

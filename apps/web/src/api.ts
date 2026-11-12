@@ -124,14 +124,34 @@ export interface TableSummary {
   smallBlindMojos: string;
   bigBlindMojos: string;
   buttonSeat: number | null;
+  format?: "cash" | "sng";
+  tournamentStatus?: "registering" | "running" | "complete" | null;
+}
+
+export interface TournamentInfo {
+  status: "registering" | "running" | "complete";
+  level: number;
+  smallBlindMojos: string;
+  bigBlindMojos: string;
+  handsPlayed: number;
+  handsPerLevel: number;
+  playersLeft: number;
+  entrants: number;
+  prizeMojos: string;
+  winnerId: string | null;
+  entryMojos: string;
+  startingStackMojos: string;
 }
 
 export interface TableConfigResponse {
   id: string;
+  format?: "cash" | "sng";
   minBuyInMojos: string;
   maxBuyInMojos: string;
   smallBlindMojos: string;
   bigBlindMojos: string;
+  entryMojos?: string;
+  startingStackMojos?: string;
 }
 
 export const api = {
@@ -191,10 +211,10 @@ export const api = {
 
   listTables: () => request<{ tables: TableSummary[] }>("/v1/tables"),
 
-  createTable: () =>
+  createTable: (format: "cash" | "sng" = "cash") =>
     request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
       method: "POST",
-      body: JSON.stringify({ maxSeats: 6 }),
+      body: JSON.stringify({ maxSeats: 6, format }),
     }),
 
   getTable: (tableId: string, playerId?: string | null) => {
@@ -208,6 +228,8 @@ export const api = {
       seats: TableSeat[];
       hand: HandState | null;
       lastHandResult: HandResult | null;
+      tournament: TournamentInfo | null;
+      collectableMojos: string | null;
     }>(`/v1/tables/${tableId}${q}`);
   },
 
