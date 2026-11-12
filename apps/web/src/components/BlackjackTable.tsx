@@ -3,6 +3,7 @@ import { formatDatMojos } from "@dat-poker/shared";
 import type { BlackjackTableView } from "../api.js";
 import { ChipStack } from "./ChipStack.js";
 import { PlayingCard } from "./PlayingCard.js";
+import { SessionReminder } from "./SessionReminder.js";
 
 const CHIP_MOJOS = [10_000n, 25_000n, 50_000n, 100_000n];
 
@@ -12,6 +13,7 @@ export function BlackjackTable({
   ticker,
   onBet,
   onAction,
+  onSetLimit,
   onLeave,
 }: {
   view: BlackjackTableView;
@@ -19,12 +21,15 @@ export function BlackjackTable({
   ticker?: string;
   onBet: (amountMojos: string) => void;
   onAction: (action: "hit" | "stand" | "double" | "split") => void;
+  onSetLimit: (lossLimitMojos: string | null) => void;
   onLeave: () => void;
 }) {
   const [selected, setSelected] = useState(10_000n);
   const stack = BigInt(view.stackMojos);
   const maxBet = BigInt(view.maxBetMojos);
+  const room = view.lossRoomMojos === null ? null : BigInt(view.lossRoomMojos);
   const betting = view.phase !== "acting";
+  const blocked = view.limitReached;
   const result = view.phase === "done" ? resultLine(view, ticker) : null;
 
   return (
@@ -66,6 +71,15 @@ export function BlackjackTable({
         )}
       </section>
       <div className="actions-dock">
+        <SessionReminder
+          resultMojos={view.sessionResultMojos}
+          lossLimitMojos={view.lossLimitMojos}
+          limitReached={view.limitReached}
+          canEdit={betting}
+          busy={busy}
+          ticker={ticker}
+          onSetLimit={onSetLimit}
+        />
         <p>
           Stack <strong>{formatDatMojos(view.stackMojos, ticker)}</strong>
         </p>
@@ -76,7 +90,7 @@ export function BlackjackTable({
                 key={chip.toString()}
                 type="button"
                 className={selected === chip ? "primary-bet" : "secondary"}
-                disabled={busy || chip > stack || chip > maxBet}
+                disabled={busy || blocked || chip > stack || chip > maxBet || (room !== null && chip > room)}
                 onClick={() => setSelected(chip)}
               >
                 {formatDatMojos(chip, ticker)}
@@ -84,7 +98,7 @@ export function BlackjackTable({
             ))}
             <button
               type="button"
-              disabled={busy || selected > stack}
+              disabled={busy || blocked || selected > stack || (room !== null && selected > room)}
               onClick={() => onBet(selected.toString())}
             >
               {view.phase === "done" ? "Deal again" : "Deal"}

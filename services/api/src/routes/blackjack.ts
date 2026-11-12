@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { BlackjackTable } from "@dat-poker/game-engine";
-import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
+import { DAT_TABLE_DEFAULTS, DEFAULT_CASINO_LOSS_LIMIT_MOJOS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { loadBlackjackTables, saveBlackjackTables } from "../blackjack-store.js";
 import { readDatTokenConfig } from "../wallet-config.js";
 
@@ -51,6 +51,7 @@ export function registerBlackjackRoutes(app: FastifyInstance): void {
       stackMojos: buyIn,
       minBetMojos: DAT_TABLE_DEFAULTS.bigBlindMojos,
       maxBetMojos: 500_000n,
+      lossLimitMojos: DEFAULT_CASINO_LOSS_LIMIT_MOJOS,
     });
     tables.set(table.view().tableId, table);
     persist();
@@ -62,6 +63,25 @@ export function registerBlackjackRoutes(app: FastifyInstance): void {
     if (!table) return reply.status(404).send({ error: "Table not found" });
     return table.view();
   });
+
+  app.post<{ Params: { tableId: string }; Body: { lossLimitMojos?: string | null } }>(
+    "/v1/blackjack/:tableId/limit",
+    async (req, reply) => {
+      const table = tables.get(req.params.tableId);
+      if (!table) return reply.status(404).send({ error: "Table not found" });
+      if (!req.body || !("lossLimitMojos" in req.body)) {
+        return reply.status(400).send({ error: "Choose a session limit" });
+      }
+      try {
+        const raw = req.body.lossLimitMojos;
+        table.setLossLimit(raw == null || raw === "" ? null : BigInt(raw));
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message });
+      }
+      persist();
+      return table.view();
+    },
+  );
 
   app.post<{ Params: { tableId: string }; Body: { amountMojos?: string } }>(
     "/v1/blackjack/:tableId/bet",

@@ -14,6 +14,10 @@ export function datTokensToMojos(tokens: bigint | number | string): bigint {
   return BigInt(tokens) * CAT_MOJOS_PER_TOKEN;
 }
 
+/** Loss limits offered on blackjack and video poker. 250 DAT is the table default. */
+export const CASINO_LOSS_LIMIT_CHOICES_MOJOS = [100_000n, 250_000n, 500_000n] as const;
+export const DEFAULT_CASINO_LOSS_LIMIT_MOJOS = 250_000n;
+
 /** Default NLHE table stakes when buy-ins are DAT CAT mojos. */
 export const DAT_TABLE_DEFAULTS = {
   minBuyInMojos: 1_000_000n, // 1,000 DAT

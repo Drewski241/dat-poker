@@ -89,6 +89,23 @@ describe("VideoPokerTable", () => {
     expect(restored.view().result).toBe("royal_flush");
   });
 
+  it("keeps the live bet out of the session result, then stops the next deal", () => {
+    const game = table();
+    game.setLossLimit(10_000n);
+    game.deal(1, cards("Th", "Td", "2c", "3d", "4s"));
+    expect(game.view().sessionResultMojos).toBe(0n);
+    expect(game.view().limitReached).toBe(false);
+    for (let i = 0; i < 5; i++) game.toggleHold(i);
+    game.draw();
+    expect(game.view().result).toBe("nothing");
+    expect(game.view().sessionResultMojos).toBe(-10_000n);
+    expect(game.view().limitReached).toBe(true);
+    expect(() => game.deal(1)).toThrow(/session limit reached/i);
+    game.setLossLimit(null);
+    game.deal(1, cards("Jh", "Jd", "2c", "3d", "4s"));
+    expect(game.view().phase).toBe("holding");
+  });
+
   it("rejects a bet bigger than the stack", () => {
     const game = table(20_000n);
     expect(() => game.deal(5)).toThrow(/bigger than your stack/i);

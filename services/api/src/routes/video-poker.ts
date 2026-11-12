@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { VideoPokerTable } from "@dat-poker/game-engine";
-import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
+import { DAT_TABLE_DEFAULTS, DEFAULT_CASINO_LOSS_LIMIT_MOJOS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { loadVideoPokerTables, saveVideoPokerTables } from "../video-poker-store.js";
 import { readDatTokenConfig } from "../wallet-config.js";
 
@@ -50,6 +50,7 @@ export function registerVideoPokerRoutes(app: FastifyInstance): void {
       displayName: name && name.length > 0 ? name.slice(0, 18) : "Player",
       stackMojos: buyIn,
       coinMojos: DAT_TABLE_DEFAULTS.bigBlindMojos,
+      lossLimitMojos: DEFAULT_CASINO_LOSS_LIMIT_MOJOS,
     });
     tables.set(table.view().tableId, table);
     persist();
@@ -61,6 +62,25 @@ export function registerVideoPokerRoutes(app: FastifyInstance): void {
     if (!table) return reply.status(404).send({ error: "Table not found" });
     return table.view();
   });
+
+  app.post<{ Params: { tableId: string }; Body: { lossLimitMojos?: string | null } }>(
+    "/v1/video-poker/:tableId/limit",
+    async (req, reply) => {
+      const table = tables.get(req.params.tableId);
+      if (!table) return reply.status(404).send({ error: "Table not found" });
+      if (!req.body || !("lossLimitMojos" in req.body)) {
+        return reply.status(400).send({ error: "Choose a session limit" });
+      }
+      try {
+        const raw = req.body.lossLimitMojos;
+        table.setLossLimit(raw == null || raw === "" ? null : BigInt(raw));
+      } catch (error) {
+        return reply.status(400).send({ error: (error as Error).message });
+      }
+      persist();
+      return table.view();
+    },
+  );
 
   app.post<{ Params: { tableId: string }; Body: { coins?: number } }>(
     "/v1/video-poker/:tableId/deal",

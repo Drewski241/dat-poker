@@ -1,5 +1,6 @@
 import type { Card } from "./card.js";
 import { standardDeck } from "./card.js";
+import { assertSessionWager, lossRoomMojos, sessionLimitReached, sessionResultMojos } from "./session-limit.js";
 import { createCommit, generateServerSeed, shuffleDeck } from "./shuffle.js";
 
 export type BlackjackPhase = "betting" | "acting" | "done";
@@ -32,6 +33,8 @@ export interface BlackjackSnapshot {
   shoe: Card[];
   commitHash: string | null;
   serverSeed: string | null;
+  sessionStartMojos: bigint;
+  lossLimitMojos: bigint | null;
 }
 
 export interface BlackjackView {
@@ -54,6 +57,11 @@ export interface BlackjackView {
   actions: { hit: boolean; stand: boolean; double: boolean; split: boolean };
   commitHash: string | null;
   serverSeed: string | null;
+  sessionStartMojos: bigint;
+  sessionResultMojos: bigint;
+  lossLimitMojos: bigint | null;
+  lossRoomMojos: bigint | null;
+  limitReached: boolean;
 }
 
 const TEN_RANKS = new Set(["T", "J", "Q", "K"]);
@@ -102,6 +110,8 @@ export class BlackjackTable {
   private shoe: Card[] = [];
   private commitHash: string | null = null;
   private serverSeed: string | null = null;
+  private sessionStartMojos: bigint;
+  private lossLimitMojos: bigint | null = null;
 
   constructor(options: {
     id: string;
@@ -110,17 +120,27 @@ export class BlackjackTable {
     stackMojos: bigint;
     minBetMojos?: bigint;
     maxBetMojos?: bigint;
+    lossLimitMojos?: bigint | null;
   }) {
     this.id = options.id;
     this.playerId = options.playerId;
     this.displayName = options.displayName;
     this.stackMojos = options.stackMojos;
+    this.sessionStartMojos = options.stackMojos;
     this.minBetMojos = options.minBetMojos ?? 10_000n;
     this.maxBetMojos = options.maxBetMojos ?? 500_000n;
+    this.lossLimitMojos = options.lossLimitMojos ?? null;
+  }
+
+  setLossLimit(limitMojos: bigint | null): void {
+    if (this.phase === "acting") throw new Error("Finish the hand before changing the session limit");
+    if (limitMojos !== null && limitMojos <= 0n) throw new Error("Set a session limit above zero");
+    this.lossLimitMojos = limitMojos;
   }
 
   placeBet(amountMojos: bigint, shoe?: Card[]): void {
     if (this.phase === "acting") throw new Error("Hand in progress");
+    this.assertWager(amountMojos);
     if (amountMojos > this.stackMojos) throw new Error("Bet is bigger than your stack");
     if (amountMojos < this.minBetMojos) throw new Error("Bet is below the table minimum");
     if (amountMojos > this.maxBetMojos) throw new Error("Bet is above the table maximum");
@@ -170,6 +190,7 @@ export class BlackjackTable {
   double(): void {
     const hand = this.requireActing();
     if (hand.cards.length !== 2 || hand.splitAces) throw new Error("Double is only on the first two cards");
+    this.assertWager(hand.betMojos);
     if (hand.betMojos > this.stackMojos) throw new Error("Not enough chips to double");
     this.stackMojos -= hand.betMojos;
     hand.betMojos += hand.betMojos;
@@ -183,6 +204,7 @@ export class BlackjackTable {
     const hand = this.requireActing();
     if (this.hands.length !== 1 || hand.cards.length !== 2) throw new Error("Split is only on the first two cards");
     if (hand.cards[0].rank !== hand.cards[1].rank) throw new Error("Those cards do not match");
+    this.assertWager(hand.betMojos);
     if (hand.betMojos > this.stackMojos) throw new Error("Not enough chips to split");
 
     const aces = hand.cards[0].rank === "A";
@@ -209,6 +231,8 @@ export class BlackjackTable {
     const acting = this.phase === "acting" && hand && !hand.stood && !hand.busted;
     const total = hand ? handTotal(hand.cards).total : 0;
     const twoCards = Boolean(hand && hand.cards.length === 2);
+    const outstanding = this.outstandingMojos();
+    const room = lossRoomMojos(this.sessionStartMojos, this.stackMojos, outstanding, this.lossLimitMojos);
     return {
       tableId: this.id,
       displayName: this.displayName,
@@ -229,17 +253,23 @@ export class BlackjackTable {
       actions: {
         hit: Boolean(acting && total < 21 && !hand.splitAces),
         stand: Boolean(acting && !hand.splitAces),
-        double: Boolean(acting && twoCards && !hand.splitAces && this.stackMojos >= hand.betMojos),
+        double: Boolean(acting && twoCards && !hand.splitAces && this.stackMojos >= hand.betMojos && this.fitsSession(hand.betMojos)),
         split: Boolean(
           acting &&
             this.hands.length === 1 &&
             twoCards &&
             hand.cards[0]?.rank === hand.cards[1]?.rank &&
-            this.stackMojos >= hand.betMojos,
+            this.stackMojos >= hand.betMojos &&
+            this.fitsSession(hand.betMojos),
         ),
       },
       commitHash: this.commitHash,
       serverSeed: this.revealed ? this.serverSeed : null,
+      sessionStartMojos: this.sessionStartMojos,
+      sessionResultMojos: sessionResultMojos(this.sessionStartMojos, this.stackMojos, outstanding),
+      lossLimitMojos: this.lossLimitMojos,
+      lossRoomMojos: room,
+      limitReached: this.phase !== "acting" && sessionLimitReached(this.sessionStartMojos, this.stackMojos, this.lossLimitMojos),
     };
   }
 
@@ -259,6 +289,8 @@ export class BlackjackTable {
       shoe: this.shoe.map((card) => ({ ...card })),
       commitHash: this.commitHash,
       serverSeed: this.serverSeed,
+      sessionStartMojos: this.sessionStartMojos,
+      lossLimitMojos: this.lossLimitMojos,
     };
   }
 
@@ -279,7 +311,33 @@ export class BlackjackTable {
     table.shoe = snapshot.shoe.map((card) => ({ ...card }));
     table.commitHash = snapshot.commitHash;
     table.serverSeed = snapshot.serverSeed;
+    table.sessionStartMojos = snapshot.sessionStartMojos ?? snapshot.stackMojos;
+    table.lossLimitMojos = snapshot.lossLimitMojos ?? null;
     return table;
+  }
+
+  private outstandingMojos(): bigint {
+    if (this.phase !== "acting") return 0n;
+    return this.hands.reduce((sum, hand) => sum + hand.betMojos, 0n);
+  }
+
+  private fitsSession(wagerMojos: bigint): boolean {
+    try {
+      this.assertWager(wagerMojos);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private assertWager(wagerMojos: bigint): void {
+    assertSessionWager({
+      sessionStartMojos: this.sessionStartMojos,
+      stackMojos: this.stackMojos,
+      outstandingMojos: this.outstandingMojos(),
+      wagerMojos,
+      lossLimitMojos: this.lossLimitMojos,
+    });
   }
 
   private freshHand(betMojos: bigint): BlackjackHand {

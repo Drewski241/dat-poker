@@ -3,6 +3,7 @@ import { formatDatMojos } from "@dat-poker/shared";
 import type { VideoPokerTableView } from "../api.js";
 import { ChipStack } from "./ChipStack.js";
 import { PlayingCard } from "./PlayingCard.js";
+import { SessionReminder } from "./SessionReminder.js";
 
 export function VideoPokerTable({
   view,
@@ -11,6 +12,7 @@ export function VideoPokerTable({
   onDeal,
   onHold,
   onDraw,
+  onSetLimit,
   onLeave,
 }: {
   view: VideoPokerTableView;
@@ -19,15 +21,17 @@ export function VideoPokerTable({
   onDeal: (coins: number) => void;
   onHold: (index: number) => void;
   onDraw: () => void;
+  onSetLimit: (lossLimitMojos: string | null) => void;
   onLeave: () => void;
 }) {
   const [selected, setSelected] = useState(1);
   const stack = BigInt(view.stackMojos);
   const coin = BigInt(view.coinMojos);
+  const room = view.lossRoomMojos === null ? null : BigInt(view.lossRoomMojos);
   const holding = view.phase === "holding";
   const coinsShown = holding || view.phase === "done" ? view.coins : selected;
-  const bet = coin * BigInt(coinsShown);
-  const canDeal = !holding && bet > 0n && bet <= stack;
+  const dealBet = coin * BigInt(selected);
+  const canDeal = !holding && !view.limitReached && dealBet > 0n && dealBet <= stack && (room === null || dealBet <= room);
 
   return (
     <div className="bj-wrap">
@@ -85,6 +89,15 @@ export function VideoPokerTable({
         )}
       </section>
       <div className="actions-dock">
+        <SessionReminder
+          resultMojos={view.sessionResultMojos}
+          lossLimitMojos={view.lossLimitMojos}
+          limitReached={view.limitReached}
+          canEdit={!holding}
+          busy={busy}
+          ticker={ticker}
+          onSetLimit={onSetLimit}
+        />
         <p>
           Stack <strong>{formatDatMojos(view.stackMojos, ticker)}</strong>
         </p>
@@ -101,7 +114,7 @@ export function VideoPokerTable({
                 key={coins}
                 type="button"
                 className={selected === coins ? "primary-bet" : "secondary"}
-                disabled={busy || coin * BigInt(coins) > stack}
+                disabled={busy || view.limitReached || coin * BigInt(coins) > stack || (room !== null && coin * BigInt(coins) > room)}
                 onClick={() => setSelected(coins)}
               >
                 {coins} {coins === 1 ? "coin" : "coins"}

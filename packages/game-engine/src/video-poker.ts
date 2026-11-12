@@ -1,6 +1,7 @@
 import type { Card } from "./card.js";
 import { standardDeck } from "./card.js";
 import { describeEvaluatedHand, evaluateBestHand } from "./hand-evaluator.js";
+import { assertSessionWager, lossRoomMojos, sessionLimitReached, sessionResultMojos } from "./session-limit.js";
 import { createCommit, generateServerSeed, shuffleDeck } from "./shuffle.js";
 
 export type VideoPokerPhase = "betting" | "holding" | "done";
@@ -77,6 +78,8 @@ export interface VideoPokerSnapshot {
   profitMojos: bigint | null;
   commitHash: string | null;
   serverSeed: string | null;
+  sessionStartMojos: bigint;
+  lossLimitMojos: bigint | null;
 }
 
 export interface VideoPokerView {
@@ -98,6 +101,11 @@ export interface VideoPokerView {
   royalMaxPerCoin: number;
   commitHash: string | null;
   serverSeed: string | null;
+  sessionStartMojos: bigint;
+  sessionResultMojos: bigint;
+  lossLimitMojos: bigint | null;
+  lossRoomMojos: bigint | null;
+  limitReached: boolean;
 }
 
 export class VideoPokerTable {
@@ -118,6 +126,8 @@ export class VideoPokerTable {
   private profitMojos: bigint | null = null;
   private commitHash: string | null = null;
   private serverSeed: string | null = null;
+  private sessionStartMojos: bigint;
+  private lossLimitMojos: bigint | null = null;
 
   constructor(options: {
     id: string;
@@ -126,13 +136,22 @@ export class VideoPokerTable {
     stackMojos: bigint;
     coinMojos?: bigint;
     maxCoins?: number;
+    lossLimitMojos?: bigint | null;
   }) {
     this.id = options.id;
     this.playerId = options.playerId;
     this.displayName = options.displayName;
     this.stackMojos = options.stackMojos;
+    this.sessionStartMojos = options.stackMojos;
     this.coinMojos = options.coinMojos ?? 10_000n;
     this.maxCoins = options.maxCoins ?? 5;
+    this.lossLimitMojos = options.lossLimitMojos ?? null;
+  }
+
+  setLossLimit(limitMojos: bigint | null): void {
+    if (this.phase === "holding") throw new Error("Finish the hand before changing the session limit");
+    if (limitMojos !== null && limitMojos <= 0n) throw new Error("Set a session limit above zero");
+    this.lossLimitMojos = limitMojos;
   }
 
   deal(coins: number, shoe?: Card[]): void {
@@ -141,6 +160,7 @@ export class VideoPokerTable {
       throw new Error(`Bet 1 to ${this.maxCoins} coins`);
     }
     const bet = this.coinMojos * BigInt(coins);
+    this.assertWager(bet);
     if (bet > this.stackMojos) throw new Error("Bet is bigger than your stack");
 
     this.stackMojos -= bet;
@@ -208,6 +228,7 @@ export class VideoPokerTable {
       royalMaxPerCoin: MAX_ROYAL_PER_COIN,
       commitHash: this.commitHash,
       serverSeed: this.phase === "done" ? this.serverSeed : null,
+      ...this.sessionView(),
     };
   }
 
@@ -230,6 +251,8 @@ export class VideoPokerTable {
       profitMojos: this.profitMojos,
       commitHash: this.commitHash,
       serverSeed: this.serverSeed,
+      sessionStartMojos: this.sessionStartMojos,
+      lossLimitMojos: this.lossLimitMojos,
     };
   }
 
@@ -253,7 +276,37 @@ export class VideoPokerTable {
     table.profitMojos = snapshot.profitMojos;
     table.commitHash = snapshot.commitHash;
     table.serverSeed = snapshot.serverSeed;
+    table.sessionStartMojos = snapshot.sessionStartMojos ?? snapshot.stackMojos;
+    table.lossLimitMojos = snapshot.lossLimitMojos ?? null;
     return table;
+  }
+
+  private outstandingMojos(): bigint {
+    return this.phase === "holding" ? this.betMojos : 0n;
+  }
+
+  private sessionView(): Pick<
+    VideoPokerView,
+    "sessionStartMojos" | "sessionResultMojos" | "lossLimitMojos" | "lossRoomMojos" | "limitReached"
+  > {
+    const outstanding = this.outstandingMojos();
+    return {
+      sessionStartMojos: this.sessionStartMojos,
+      sessionResultMojos: sessionResultMojos(this.sessionStartMojos, this.stackMojos, outstanding),
+      lossLimitMojos: this.lossLimitMojos,
+      lossRoomMojos: lossRoomMojos(this.sessionStartMojos, this.stackMojos, outstanding, this.lossLimitMojos),
+      limitReached: this.phase !== "holding" && sessionLimitReached(this.sessionStartMojos, this.stackMojos, this.lossLimitMojos),
+    };
+  }
+
+  private assertWager(wagerMojos: bigint): void {
+    assertSessionWager({
+      sessionStartMojos: this.sessionStartMojos,
+      stackMojos: this.stackMojos,
+      outstandingMojos: this.outstandingMojos(),
+      wagerMojos,
+      lossLimitMojos: this.lossLimitMojos,
+    });
   }
 
   private take(): Card {
