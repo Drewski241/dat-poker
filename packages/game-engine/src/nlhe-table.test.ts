@@ -334,6 +334,29 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()?.potMojos).toBe(80_000n);
   });
 
+  it("deals two cards and refuses a raise bigger than the pot", () => {
+    const table = new NlheTableEngine({
+      ...config,
+      id: "plhe",
+      variant: "plhe",
+      smallBlindMojos: 10_000n,
+      bigBlindMojos: 20_000n,
+      minBuyInMojos: 1_000_000n,
+      maxBuyInMojos: 1_000_000n,
+    });
+    table.seatPlayer("alice", 0, 1_000_000n);
+    table.seatPlayer("bob", 1, 1_000_000n);
+    table.startHand("hand-plhe");
+    table.submitPlayerSeed("alice", "seed-a");
+    table.submitPlayerSeed("bob", "seed-b");
+    table.revealAndDeal();
+    const state = table.getHandState()!;
+    expect(state.players.every((player) => player.holeCards.length === 2)).toBe(true);
+    expect(() => table.applyAction("alice", "raise", 61_000n)).toThrow(/bigger than the pot/i);
+    table.applyAction("alice", "raise", 60_000n);
+    expect(table.getHandState()?.currentBetMojos).toBe(60_000n);
+  });
+
   it("rejects cash out during active hand", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

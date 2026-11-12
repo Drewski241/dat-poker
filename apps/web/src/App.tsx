@@ -115,7 +115,7 @@ export function App() {
   const [lobby, setLobby] = useState<TableSummary[]>([]);
   const [buttonSeat, setButtonSeat] = useState<number | null>(null);
   const [tournament, setTournament] = useState<TournamentInfo | null>(null);
-  const [variant, setVariant] = useState<"nlhe" | "plo4">("nlhe");
+  const [variant, setVariant] = useState<"nlhe" | "plhe" | "plo4">("nlhe");
   const [blackjack, setBlackjack] = useState<BlackjackTableView | null>(null);
   const handRef = useRef<HandState | null>(null);
   const playerIdRef = useRef<string | null>(null);
@@ -182,7 +182,7 @@ export function App() {
     setTournament(t.tournament);
     if (t.lastHandResult) setHandResult(t.lastHandResult);
     if (t.hand?.commitHash) setCommitHash(t.hand.commitHash);
-    if (t.variant === "plo4" || t.variant === "nlhe") setVariant(t.variant);
+    if (t.variant === "plo4" || t.variant === "plhe" || t.variant === "nlhe") setVariant(t.variant);
   }, []);
 
   const refreshTable = useCallback(async (id: string) => {
@@ -339,7 +339,7 @@ export function App() {
     });
   };
 
-  const openSixMax = async (fillHouse: boolean, game: "nlhe" | "plo4" = "nlhe") => {
+  const openSixMax = async (fillHouse: boolean, game: "nlhe" | "plhe" | "plo4" = "nlhe") => {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -348,7 +348,13 @@ export function App() {
       setPlayerId(seatedId);
       playerIdRef.current = seatedId;
       setVariant(game);
-      setStatus(game === "plo4" ? "Opening a pot-limit Omaha table…" : "Opening a six-max table…");
+      setStatus(
+        game === "plo4"
+          ? "Opening a pot-limit Omaha table…"
+          : game === "plhe"
+            ? "Opening a pot-limit hold'em table…"
+            : "Opening a six-max table…",
+      );
       const { tableId: id, config: tableConfig } = await api.createTable("cash", game);
       const buyIn = tableConfig.minBuyInMojos;
       setStatus("Taking seat 1…");
@@ -602,9 +608,10 @@ export function App() {
   const stackTicker = tournament ? "chips" : datToken?.ticker;
 
   const omaha = variant === "plo4";
+  const potLimit = omaha || variant === "plhe";
   const betRange = useMemo(
     () =>
-      omaha
+      potLimit
         ? computePotLimitBetRange({
             bigBlindMojos,
             potMojos: BigInt(hand?.potMojos ?? "0"),
@@ -619,7 +626,7 @@ export function App() {
             myBetThisStreetMojos: myBet,
             myStackMojos: myStack,
           }),
-    [omaha, bigBlindMojos, currentBet, myBet, myStack, hand?.potMojos, hand?.raiseIncrementMojos],
+    [potLimit, bigBlindMojos, currentBet, myBet, myStack, hand?.potMojos, hand?.raiseIncrementMojos],
   );
 
   const actionSeatPlayer =
@@ -732,7 +739,7 @@ export function App() {
     <div className={`app ${tableId || blackjack ? "at-table" : ""}`}>
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Six-max hold'em · pot-limit Omaha · blackjack · sit-and-go</p>
+        <p className="tagline">Hold'em · pot-limit · Omaha · blackjack · sit-and-go</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -810,6 +817,14 @@ export function App() {
                 type="button"
                 className="secondary"
                 disabled={busy || !apiOk || !datToken?.buyInReady || (!datToken.devBuyInEnabled && !playerId)}
+                onClick={() => void openSixMax(true, "plhe")}
+              >
+                Play pot-limit hold'em ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !datToken?.buyInReady || (!datToken.devBuyInEnabled && !playerId)}
                 onClick={() => void openSixMax(true, "plo4")}
               >
                 Play pot-limit Omaha ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
@@ -852,7 +867,13 @@ export function App() {
                         void refreshTable(table.tableId);
                       }}
                     >
-                      {table.format === "sng" ? "Sit-and-go" : table.variant === "plo4" ? "Omaha" : "Hold'em"}{" "}
+                      {table.format === "sng"
+                        ? "Sit-and-go"
+                        : table.variant === "plo4"
+                          ? "Omaha"
+                          : table.variant === "plhe"
+                            ? "Pot-limit"
+                            : "Hold'em"}{" "}
                       {table.seated}/{table.maxSeats}
                       {table.format === "sng"
                         ? ""
@@ -869,6 +890,11 @@ export function App() {
             {omaha && (
               <p className="muted small">
                 Pot-limit Omaha. Two of your four cards play with three from the board, and a raise stops at the pot.
+              </p>
+            )}
+            {variant === "plhe" && (
+              <p className="muted small">
+                Pot-limit hold'em. Two hole cards, and a raise stops at the pot.
               </p>
             )}
             {tableStackMojos && (
@@ -1013,7 +1039,7 @@ export function App() {
                 <>
                   <BetSlider
                     label={
-                      omaha
+                      potLimit
                         ? betRange.isOpeningBet
                           ? "Bet, up to the pot"
                           : "Raise to, up to the pot"
@@ -1042,7 +1068,7 @@ export function App() {
                   </button>
                 </>
               )}
-              {myStack > 0n && (!omaha || myBet + myStack <= betRange.maxRaiseTo) && (
+              {myStack > 0n && (!potLimit || myBet + myStack <= betRange.maxRaiseTo) && (
                 <button type="button" disabled={busy} onClick={() => sendAction("all-in")}>
                   all-in
                 </button>

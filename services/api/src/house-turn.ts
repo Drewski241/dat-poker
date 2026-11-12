@@ -21,9 +21,10 @@ export function runHouseTurn(table: NlheTableEngine): TakenHouseAction[] {
       (player) => player.seatIndex === hand.actionSeat && !player.folded && !player.allIn,
     );
     if (!actor || !isHousePlayer(actor.playerId)) break;
-    const variant = table.getVariant() === "plo4" ? "plo4" : "nlhe";
+    const game = table.getVariant();
+    const variant = game === "plo4" ? "plo4" : "nlhe";
     const potRange =
-      variant === "plo4"
+      game === "plo4" || game === "plhe"
         ? computePotLimitBetRange({
             bigBlindMojos: table.getBigBlindMojos(),
             potMojos: hand.potMojos,

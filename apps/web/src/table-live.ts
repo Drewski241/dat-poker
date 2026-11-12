@@ -2,7 +2,7 @@ import type { HandResult, HandState, TableSeat, TournamentInfo } from "./api.js"
 
 export interface LiveTable {
   tableId: string;
-  variant?: "nlhe" | "plo4";
+  variant?: "nlhe" | "plhe" | "plo4";
   hand: HandState | null;
   seats: TableSeat[];
   handInProgress: boolean;
