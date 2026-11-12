@@ -156,6 +156,28 @@ function evaluateFive(cards: Card[]): EvaluatedHand {
   };
 }
 
+/**
+ * Pot-limit Omaha showdown. Exactly two hole cards and exactly three board cards.
+ * A five-card board on its own does not play.
+ */
+export function evaluateOmahaHand(holeCards: Card[], board: Card[]): EvaluatedHand {
+  if (holeCards.length < 4) {
+    throw new Error(`Omaha needs 4 hole cards, got ${holeCards.length}`);
+  }
+  if (board.length < 3) {
+    throw new Error(`Omaha needs at least 3 board cards, got ${board.length}`);
+  }
+
+  let best: EvaluatedHand | null = null;
+  for (const hole of combinations(holeCards, 2)) {
+    for (const fromBoard of combinations(board, 3)) {
+      const ev = evaluateFive([...hole, ...fromBoard]);
+      if (!best || ev.score > best.score) best = ev;
+    }
+  }
+  return best!;
+}
+
 /** Best 5-card hand from 5–7 cards (Hold'em showdown). */
 export function evaluateBestHand(cards: Card[]): EvaluatedHand {
   if (cards.length < 5) {

@@ -33,7 +33,10 @@ export function BetSlider({
   const min = Number(minMojos);
   const max = Number(maxMojos);
   const step = Number(stepMojos);
-  const rangeSteps = step > 0 ? Math.max(0, Math.floor((max - min) / step)) : 0;
+  const alignedSteps = step > 0 ? Math.max(0, Math.floor((max - min) / step)) : 0;
+  const alignedTop = minMojos + BigInt(alignedSteps) * stepMojos;
+  const hasTail = alignedTop < maxMojos;
+  const rangeSteps = alignedSteps + (hasTail ? 1 : 0);
   const sliderValue = mojosToSlider(minMojos, valueMojos, stepMojos);
 
   if (maxMojos <= minMojos || rangeSteps === 0) {
@@ -55,7 +58,12 @@ export function BetSlider({
         value={Math.min(sliderValue, rangeSteps)}
         disabled={disabled}
         onChange={(e) => {
-          const next = sliderToMojos(minMojos, Number(e.target.value), stepMojos);
+          const index = Number(e.target.value);
+          if (hasTail && index >= rangeSteps) {
+            onChange(maxMojos);
+            return;
+          }
+          const next = sliderToMojos(minMojos, index, stepMojos);
           onChange(next > maxMojos ? maxMojos : next);
         }}
       />

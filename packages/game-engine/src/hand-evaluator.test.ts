@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseCard } from "./card.js";
-import { compareHands, describeEvaluatedHand, evaluateBestHand } from "./hand-evaluator.js";
+import { compareHands, describeEvaluatedHand, evaluateBestHand, evaluateOmahaHand } from "./hand-evaluator.js";
 
 describe("hand evaluator", () => {
   it("detects a flush beating a straight", () => {
@@ -30,6 +30,21 @@ describe("hand evaluator", () => {
     const ev = evaluateBestHand(cards);
     expect(ev.category).toBe("full_house");
     expect(describeEvaluatedHand(ev)).toBe("a full house, kings full of twos");
+  });
+
+  it("plays exactly two hole cards and three from the board", () => {
+    const hole = ["As", "Kd", "2c", "3d"].map(parseCard);
+    const board = ["Ah", "Kh", "Qh", "Jh", "Th"].map(parseCard);
+    const ev = evaluateOmahaHand(hole, board);
+    expect(ev.category).toBe("straight");
+    expect(describeEvaluatedHand(ev)).toBe("a straight, ace high");
+    expect(evaluateBestHand([...hole, ...board]).category).toBe("straight_flush");
+  });
+
+  it("does not let a player use the whole board", () => {
+    const hole = ["2c", "3d", "4h", "5s"].map(parseCard);
+    const board = ["Ah", "Kh", "Qh", "Jh", "9d"].map(parseCard);
+    expect(evaluateOmahaHand(hole, board).category).toBe("high_card");
   });
 
   it("names two pair from the kickers", () => {

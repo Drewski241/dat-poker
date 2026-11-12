@@ -1,7 +1,7 @@
 import type { Street } from "@dat-poker/shared";
 import type { Card } from "./card.js";
 import { rankValue } from "./card.js";
-import { evaluateBestHand, type HandCategory } from "./hand-evaluator.js";
+import { evaluateBestHand, evaluateOmahaHand, type HandCategory } from "./hand-evaluator.js";
 import type { PlayerAction } from "./nlhe-table.js";
 
 export const HOUSE_PLAYER_ID = "dat-poker:house";
@@ -19,6 +19,9 @@ export interface HouseDecisionInput {
   betThisStreetMojos: bigint;
   stackMojos: bigint;
   bigBlindMojos: bigint;
+  variant?: "nlhe" | "plo4";
+  minRaiseTo?: bigint;
+  maxRaiseTo?: bigint;
 }
 
 export interface HouseDecision {
@@ -48,8 +51,8 @@ export function chooseHouseAction(input: HouseDecisionInput): HouseDecision {
   const strength = handStrength(input);
 
   if (toCall <= 0n) {
-    if (strength >= 0.8) return openBet(input, maxTo, 75n);
-    if (strength >= 0.62) return openBet(input, maxTo, 50n);
+    if (strength >= 0.8) return fitPotLimit(input, openBet(input, maxTo, 75n));
+    if (strength >= 0.62) return fitPotLimit(input, openBet(input, maxTo, 50n));
     return { action: "check", amountMojos: 0n };
   }
 
@@ -61,7 +64,7 @@ export function chooseHouseAction(input: HouseDecisionInput): HouseDecision {
     }
     if (raiseTo > maxTo) raiseTo = maxTo;
     if (raiseTo > input.currentBetMojos) {
-      return { action: "raise", amountMojos: raiseTo };
+      return fitPotLimit(input, { action: "raise", amountMojos: raiseTo });
     }
   }
 
@@ -70,6 +73,22 @@ export function chooseHouseAction(input: HouseDecisionInput): HouseDecision {
   }
 
   return { action: "fold", amountMojos: 0n };
+}
+
+function fitPotLimit(input: HouseDecisionInput, decision: HouseDecision): HouseDecision {
+  if (input.maxRaiseTo == null || (decision.action !== "bet" && decision.action !== "raise")) {
+    return decision;
+  }
+  let amount = decision.amountMojos;
+  if (amount > input.maxRaiseTo) amount = input.maxRaiseTo;
+  if (input.minRaiseTo != null && amount < input.minRaiseTo && input.minRaiseTo <= input.maxRaiseTo) {
+    amount = input.minRaiseTo;
+  }
+  if (amount <= input.currentBetMojos) {
+    const toCall = input.currentBetMojos - input.betThisStreetMojos;
+    return toCall > 0n ? { action: "call", amountMojos: 0n } : { action: "check", amountMojos: 0n };
+  }
+  return { action: decision.action, amountMojos: amount };
 }
 
 function openBet(input: HouseDecisionInput, maxTo: bigint, percent: bigint): HouseDecision {
@@ -84,10 +103,41 @@ function openBet(input: HouseDecisionInput, maxTo: bigint, percent: bigint): Hou
 }
 
 function handStrength(input: HouseDecisionInput): number {
+  if (input.variant === "plo4") {
+    if (input.board.length >= 3 && input.holeCards.length >= 4) {
+      return CATEGORY_STRENGTH[evaluateOmahaHand(input.holeCards, input.board).category];
+    }
+    return omahaPreflopStrength(input.holeCards);
+  }
   if (input.board.length >= 3 && input.holeCards.length >= 2) {
     return CATEGORY_STRENGTH[evaluateBestHand([...input.holeCards, ...input.board]).category];
   }
   return preflopStrength(input.holeCards);
+}
+
+function omahaPreflopStrength(cards: Card[]): number {
+  if (cards.length < 4) return 0.2;
+  const values = cards.map((card) => rankValue(card.rank)).sort((a, b) => b - a);
+  const counts = new Map<number, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  const pairRanks = [...counts.entries()].filter(([, count]) => count >= 2).map(([rank]) => rank);
+  const suitedGroups = [...cards.reduce((suits, card) => {
+    suits.set(card.suit, (suits.get(card.suit) ?? 0) + 1);
+    return suits;
+  }, new Map<string, number>()).values()].filter((count) => count >= 2).length;
+  const high = values.filter((value) => value >= 11).length;
+  let strength = 0.18 + high * 0.05 + pairRanks.length * 0.14 + suitedGroups * 0.07;
+  const bestPair = pairRanks.sort((a, b) => b - a)[0] ?? 0;
+  if (bestPair >= 14) strength += 0.22;
+  else if (bestPair >= 13) strength += 0.12;
+  if ([...counts.values()].some((count) => count >= 3)) strength += 0.16;
+  const unique = [...new Set(values)];
+  let connected = 0;
+  for (let i = 0; i < unique.length - 1; i++) {
+    if (unique[i] - unique[i + 1] <= 2) connected += 1;
+  }
+  strength += connected * 0.03;
+  return Math.max(0.05, Math.min(0.95, strength));
 }
 
 function preflopStrength(cards: Card[]): number {

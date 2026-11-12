@@ -38,6 +38,7 @@ export interface HandState {
   dealerSeat: number;
   actionSeat: number | null;
   commitHash: string;
+  raiseIncrementMojos?: string;
   players: HandPlayer[];
 }
 
@@ -125,6 +126,7 @@ export interface TableSummary {
   bigBlindMojos: string;
   buttonSeat: number | null;
   format?: "cash" | "sng";
+  variant?: "nlhe" | "plo4";
   tournamentStatus?: "registering" | "running" | "complete" | null;
 }
 
@@ -211,16 +213,17 @@ export const api = {
 
   listTables: () => request<{ tables: TableSummary[] }>("/v1/tables"),
 
-  createTable: (format: "cash" | "sng" = "cash") =>
+  createTable: (format: "cash" | "sng" = "cash", variant: "nlhe" | "plo4" = "nlhe") =>
     request<{ tableId: string; config: TableConfigResponse }>("/v1/tables", {
       method: "POST",
-      body: JSON.stringify({ maxSeats: 6, format }),
+      body: JSON.stringify({ maxSeats: 6, format, variant }),
     }),
 
   getTable: (tableId: string, playerId?: string | null) => {
     const q = playerId ? `?playerId=${encodeURIComponent(playerId)}` : "";
     return request<{
       tableId: string;
+      variant?: "nlhe" | "plo4";
       maxSeats: number;
       buttonSeat: number | null;
       players: number;
