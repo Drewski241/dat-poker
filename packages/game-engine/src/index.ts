@@ -5,3 +5,4 @@ export * from "./nlhe-table.js";
 export * from "./house-strategy.js";
 export * from "./pot-settle.js";
 export * from "./sng.js";
+export * from "./blackjack.js";

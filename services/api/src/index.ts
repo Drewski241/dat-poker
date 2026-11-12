@@ -9,6 +9,7 @@ import { registerTableRoutes } from "./routes/tables.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
+import { registerBlackjackRoutes } from "./routes/blackjack.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
 import { attachTableSocket, publishTable } from "./table-events.js";
 import { setTableCommitListener } from "./routes/tables.js";
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
   registerWalletRoutes(app, chiaClient);
   registerTableRoutes(app);
   registerHandRoutes(app);
+  registerBlackjackRoutes(app);
   setTableCommitListener(publishTable);
   attachTableSocket(app.server);
 

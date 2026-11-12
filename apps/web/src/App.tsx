@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, computePotLimitBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type ActionResponse, type BuyInProof, type CardFace, type DatTokenInfo, type HandResult, type HandState, type HouseAction, type PlayerAction, type TableSeat, type TableSummary, type TournamentInfo, type WithdrawResult } from "./api.js";
+import { api, type ActionResponse, type BlackjackTableView, type BuyInProof, type CardFace, type DatTokenInfo, type HandResult, type HandState, type HouseAction, type PlayerAction, type TableSeat, type TableSummary, type TournamentInfo, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
+import { BlackjackTable } from "./components/BlackjackTable.js";
 import { FeltTable, type FeltSeat } from "./components/FeltTable.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import { subscribeTable, type LiveTable } from "./table-live.js";
@@ -115,6 +116,7 @@ export function App() {
   const [buttonSeat, setButtonSeat] = useState<number | null>(null);
   const [tournament, setTournament] = useState<TournamentInfo | null>(null);
   const [variant, setVariant] = useState<"nlhe" | "plo4">("nlhe");
+  const [blackjack, setBlackjack] = useState<BlackjackTableView | null>(null);
   const handRef = useRef<HandState | null>(null);
   const playerIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
@@ -141,6 +143,15 @@ export function App() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!apiOk) return;
+    const saved = window.sessionStorage.getItem("dat-poker-blackjack");
+    if (!saved) return;
+    void api.getBlackjack(saved).then(setBlackjack).catch(() => {
+      window.sessionStorage.removeItem("dat-poker-blackjack");
+    });
+  }, [apiOk]);
 
   const run = useCallback(async (label: string, fn: () => Promise<void>) => {
     setBusy(true);
@@ -355,6 +366,44 @@ export function App() {
     } finally {
       setBusy(false);
       setStatus("");
+    }
+  };
+
+  const openBlackjack = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const seatedId = resolvedPlayerId();
+      setPlayerId(seatedId);
+      playerIdRef.current = seatedId;
+      setTableId(null);
+      setStatus("Opening a blackjack table…");
+      const table = await api.openBlackjack(
+        seatedId,
+        datToken?.minBuyInMojos ?? "1000000",
+        displayName.trim() || "Player",
+      );
+      window.sessionStorage.setItem("dat-poker-blackjack", table.tableId);
+      setBlackjack(table);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const playBlackjack = async (fn: () => Promise<BlackjackTableView>) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setBlackjack(await fn());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -680,10 +729,10 @@ export function App() {
         : null;
 
   return (
-    <div className={`app ${tableId ? "at-table" : ""}`}>
+    <div className={`app ${tableId || blackjack ? "at-table" : ""}`}>
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Six-max hold'em · pot-limit Omaha · sit-and-go</p>
+        <p className="tagline">Six-max hold'em · pot-limit Omaha · blackjack · sit-and-go</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -735,7 +784,11 @@ export function App() {
 
       <section className="panel">
         <h2>Table</h2>
-        {!tableId ? (
+        {blackjack ? (
+          <p className="muted small">
+            Practice stack. Blackjack pays 3 to 2, and the dealer stands on every 17.
+          </p>
+        ) : !tableId ? (
           <>
             <label className="name-field">
               Name
@@ -760,6 +813,14 @@ export function App() {
                 onClick={() => void openSixMax(true, "plo4")}
               >
                 Play pot-limit Omaha ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !datToken?.devBuyInEnabled}
+                onClick={() => void openBlackjack()}
+              >
+                Play blackjack ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
               </button>
               <button
                 type="button"
@@ -872,7 +933,21 @@ export function App() {
         )}
       </section>
 
-      {tableId && (
+      {blackjack && (
+        <BlackjackTable
+          view={blackjack}
+          busy={busy}
+          ticker={datToken?.ticker}
+          onBet={(amount) => void playBlackjack(() => api.blackjackBet(blackjack.tableId, amount))}
+          onAction={(action) => void playBlackjack(() => api.blackjackAction(blackjack.tableId, action))}
+          onLeave={() => {
+            window.sessionStorage.removeItem("dat-poker-blackjack");
+            setBlackjack(null);
+          }}
+        />
+      )}
+
+      {tableId && !blackjack && (
         <FeltTable
           seats={feltSeats}
           heroSeat={tableSeats.find((seat) => seat.playerId === playerId)?.seatIndex ?? 0}
