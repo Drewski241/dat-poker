@@ -10,6 +10,8 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { attachTableSocket, publishTable } from "./table-events.js";
+import { setTableCommitListener } from "./routes/tables.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -43,6 +45,8 @@ async function main(): Promise<void> {
   registerWalletRoutes(app, chiaClient);
   registerTableRoutes(app);
   registerHandRoutes(app);
+  setTableCommitListener(publishTable);
+  attachTableSocket(app.server);
 
   app.get("/v1/variants", async () => ({
     variants: POKER_VARIANTS,

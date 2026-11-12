@@ -286,6 +286,30 @@ describe("NlheTableEngine", () => {
     expect(table.getHandState()?.dealerSeat).toBe(2);
   });
 
+  it("restores a hand in progress from a snapshot", () => {
+    const table = new NlheTableEngine(config);
+    table.seatPlayer("alice", 0, 5_000_000_000_000n);
+    table.seatPlayer("bob", 1, 5_000_000_000_000n);
+    table.startHand("hand-snap");
+    table.submitPlayerSeed("alice", "seed-a");
+    table.submitPlayerSeed("bob", "seed-b");
+    table.revealAndDeal();
+    const before = table.getHandState()!;
+
+    const restored = NlheTableEngine.fromSnapshot(table.toSnapshot());
+    const after = restored.getHandState()!;
+    expect(after.handId).toBe("hand-snap");
+    expect(after.commitHash).toBe(before.commitHash);
+    expect(after.players.map((player) => player.holeCards)).toEqual(
+      before.players.map((player) => player.holeCards),
+    );
+    expect(restored.getPlayerStack("alice")).toBe(before.players[0]?.stackMojos);
+    restored.applyAction("alice", "fold");
+    expect(restored.isHandInProgress()).toBe(false);
+    expect(restored.getLastHandResult()?.winnerId).toBe("bob");
+    expect(table.isHandInProgress()).toBe(true);
+  });
+
   it("rejects cash out during active hand", () => {
     const table = new NlheTableEngine(config);
     table.seatPlayer("alice", 0, 5_000_000_000_000n);

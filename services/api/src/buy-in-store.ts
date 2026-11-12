@@ -36,3 +36,17 @@ export function getBuyInRecord(tableId: string, playerId: string): BuyInRecord |
 export function clearBuyIn(tableId: string, playerId: string): void {
   verifiedBuyIns.delete(buyInKey(tableId, playerId));
 }
+
+export function exportBuyIns(): { tableId: string; playerId: string; record: BuyInRecord }[] {
+  return [...verifiedBuyIns.entries()].map(([key, record]) => {
+    const splitAt = key.indexOf(":");
+    return { tableId: key.slice(0, splitAt), playerId: key.slice(splitAt + 1), record };
+  });
+}
+
+export function replaceBuyIns(entries: { tableId: string; playerId: string; record: BuyInRecord }[]): void {
+  verifiedBuyIns.clear();
+  for (const entry of entries) {
+    verifiedBuyIns.set(buyInKey(entry.tableId, entry.playerId), entry.record);
+  }
+}

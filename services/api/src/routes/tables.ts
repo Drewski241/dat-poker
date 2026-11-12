@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { TableConfig } from "@dat-poker/shared";
 import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import {
@@ -10,7 +12,9 @@ import {
   SNG_STARTING_STACK_MOJOS,
 } from "@dat-poker/game-engine";
 import { collectableMojos, freshSitAndGo, playersRemaining, type SitAndGoState } from "../sit-and-go.js";
-import { recordBuyIn } from "../buy-in-store.js";
+import { exportBuyIns, recordBuyIn, replaceBuyIns } from "../buy-in-store.js";
+import { exportWithdrawals, replaceWithdrawals } from "../withdraw-store.js";
+import { loadRoom, saveRoom } from "../table-store.js";
 import {
   type BuyInProof,
   readDatTokenConfig,
@@ -24,6 +28,53 @@ interface TableRecord {
 }
 
 const tables = new Map<string, TableRecord>();
+const storeFile =
+  process.env.DAT_TABLE_STORE ??
+  resolve(dirname(fileURLToPath(import.meta.url)), "../../data/tables.json");
+
+let onCommit: (tableId: string) => void = () => {};
+
+export function setTableCommitListener(listener: (tableId: string) => void): void {
+  onCommit = listener;
+}
+
+function persistRoom(): void {
+  saveRoom(storeFile, {
+    tables: [...tables.entries()].map(([id, record]) => ({
+      id,
+      names: [...record.names.entries()],
+      sng: record.sng ?? null,
+      engine: record.engine.toSnapshot(),
+    })),
+    buyIns: exportBuyIns(),
+    withdrawals: exportWithdrawals(),
+  });
+}
+
+export function commitTable(tableId: string): void {
+  persistRoom();
+  onCommit(tableId);
+}
+
+function loadPersistedRoom(): void {
+  try {
+    const room = loadRoom(storeFile);
+    tables.clear();
+    for (const stored of room.tables) {
+      tables.set(stored.id, {
+        engine: NlheTableEngine.fromSnapshot(stored.engine),
+        names: new Map(stored.names),
+        sng: stored.sng ?? undefined,
+      });
+    }
+    replaceBuyIns(room.buyIns);
+    replaceWithdrawals(room.withdrawals);
+  } catch (error) {
+    console.error("Could not load saved tables", error);
+  }
+}
+
+loadPersistedRoom();
 
 function tournamentView(record: TableRecord) {
   if (!record.sng) return null;
@@ -96,6 +147,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       rakeBps: sitAndGo ? 0 : 500,
     };
     tables.set(id, { engine: new NlheTableEngine(config), names: new Map(), sng });
+    commitTable(id);
     return {
       tableId: id,
       config: {
@@ -122,23 +174,9 @@ export function registerTableRoutes(app: FastifyInstance): void {
   app.get<{ Params: { tableId: string }; Querystring: { playerId?: string } }>(
     "/v1/tables/:tableId",
     async (req, reply) => {
-      const record = tables.get(req.params.tableId);
-      if (!record) {
-        return reply.status(404).send({ error: "Table not found" });
-      }
-      const table = record.engine;
-      return {
-        tableId: req.params.tableId,
-        maxSeats: table.getMaxSeats(),
-        buttonSeat: table.getButtonSeat(),
-        players: table.getActivePlayerCount(),
-        handInProgress: table.isHandInProgress(),
-        seats: seatView(record),
-        hand: table.getPublicHandState(req.query.playerId ?? null),
-        lastHandResult: table.getLastHandResult(),
-        tournament: tournamentView(record),
-        collectableMojos: req.query.playerId ? collectableMojos(record, req.query.playerId) : null,
-      };
+      const view = tableView(req.params.tableId, req.query.playerId ?? null);
+      if (!view) return reply.status(404).send({ error: "Table not found" });
+      return view;
     },
   );
 
@@ -225,6 +263,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       table.seatPlayer(req.body.playerId, req.body.seatIndex, stack);
       const name = req.body.displayName?.trim();
       record.names.set(req.body.playerId, name && name.length > 0 ? name.slice(0, 18) : req.body.playerId);
+      commitTable(req.params.tableId);
       return { ok: true };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -264,6 +303,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     try {
       table.seatPlayer(playerId, seatIndex, buyInMojos);
       record.names.set(playerId, houseCount === 0 ? "House" : `House ${houseCount + 1}`);
+      commitTable(req.params.tableId);
       return { ok: true, playerId, seatIndex, displayName: record.names.get(playerId) };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -276,4 +316,22 @@ export function getTableEngine(tableId: string): NlheTableEngine | undefined {
 
 export function getTableRecord(tableId: string): TableRecord | undefined {
   return tables.get(tableId);
+}
+
+export function tableView(tableId: string, playerId: string | null) {
+  const record = tables.get(tableId);
+  if (!record) return null;
+  const table = record.engine;
+  return {
+    tableId,
+    maxSeats: table.getMaxSeats(),
+    buttonSeat: table.getButtonSeat(),
+    players: table.getActivePlayerCount(),
+    handInProgress: table.isHandInProgress(),
+    seats: seatView(record),
+    hand: table.getPublicHandState(playerId),
+    lastHandResult: table.getLastHandResult(),
+    tournament: tournamentView(record),
+    collectableMojos: playerId ? collectableMojos(record, playerId) : null,
+  };
 }

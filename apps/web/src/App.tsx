@@ -4,6 +4,7 @@ import { api, type ActionResponse, type BuyInProof, type CardFace, type DatToken
 import { BetSlider } from "./components/BetSlider.js";
 import { FeltTable, type FeltSeat } from "./components/FeltTable.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
+import { subscribeTable, type LiveTable } from "./table-live.js";
 import {
   beginWalletConnect,
   disconnectWallet,
@@ -161,8 +162,7 @@ export function App() {
   seatsRef.current = tableSeats;
   nameRef.current = displayName;
 
-  const refreshTable = useCallback(async (id: string) => {
-    const t = await api.getTable(id, playerIdRef.current);
+  const applyLiveTable = useCallback((t: LiveTable) => {
     setHand(t.hand);
     setTableSeats(t.seats);
     setHandInProgress(t.handInProgress);
@@ -172,12 +172,24 @@ export function App() {
     if (t.hand?.commitHash) setCommitHash(t.hand.commitHash);
   }, []);
 
+  const refreshTable = useCallback(async (id: string) => {
+    applyLiveTable(await api.getTable(id, playerIdRef.current));
+  }, [applyLiveTable]);
+
+  useEffect(() => {
+    if (!tableId) return;
+    return subscribeTable(tableId, () => playerIdRef.current, (table) => {
+      if (busyRef.current || lockingRef.current) return;
+      applyLiveTable(table);
+    });
+  }, [tableId, applyLiveTable]);
+
   useEffect(() => {
     if (!tableId) return;
     const timer = window.setInterval(() => {
       if (busyRef.current || lockingRef.current) return;
       void refreshTable(tableId);
-    }, 1200);
+    }, 8000);
     return () => window.clearInterval(timer);
   }, [tableId, refreshTable]);
 
