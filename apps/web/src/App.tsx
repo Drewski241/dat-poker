@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, computePotLimitBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type ActionResponse, type BlackjackTableView, type BuyInProof, type CardFace, type DatTokenInfo, type HandResult, type HandState, type HouseAction, type PlayerAction, type TableSeat, type TableSummary, type TournamentInfo, type WithdrawResult } from "./api.js";
+import { api, type ActionResponse, type BlackjackTableView, type BuyInProof, type CardFace, type DatTokenInfo, type HandResult, type HandState, type HouseAction, type PlayerAction, type TableSeat, type TableSummary, type TournamentInfo, type VideoPokerTableView, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { BlackjackTable } from "./components/BlackjackTable.js";
+import { VideoPokerTable } from "./components/VideoPokerTable.js";
 import { FeltTable, type FeltSeat } from "./components/FeltTable.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import { subscribeTable, type LiveTable } from "./table-live.js";
@@ -117,6 +118,7 @@ export function App() {
   const [tournament, setTournament] = useState<TournamentInfo | null>(null);
   const [variant, setVariant] = useState<"nlhe" | "plhe" | "plo4">("nlhe");
   const [blackjack, setBlackjack] = useState<BlackjackTableView | null>(null);
+  const [videoPoker, setVideoPoker] = useState<VideoPokerTableView | null>(null);
   const handRef = useRef<HandState | null>(null);
   const playerIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
@@ -146,6 +148,13 @@ export function App() {
 
   useEffect(() => {
     if (!apiOk) return;
+    const poker = window.sessionStorage.getItem("dat-poker-video-poker");
+    if (poker) {
+      void api.getVideoPoker(poker).then(setVideoPoker).catch(() => {
+        window.sessionStorage.removeItem("dat-poker-video-poker");
+      });
+      return;
+    }
     const saved = window.sessionStorage.getItem("dat-poker-blackjack");
     if (!saved) return;
     void api.getBlackjack(saved).then(setBlackjack).catch(() => {
@@ -384,6 +393,8 @@ export function App() {
       setPlayerId(seatedId);
       playerIdRef.current = seatedId;
       setTableId(null);
+      setVideoPoker(null);
+      window.sessionStorage.removeItem("dat-poker-video-poker");
       setStatus("Opening a blackjack table…");
       const table = await api.openBlackjack(
         seatedId,
@@ -397,6 +408,46 @@ export function App() {
     } finally {
       setBusy(false);
       setStatus("");
+    }
+  };
+
+  const openVideoPoker = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const seatedId = resolvedPlayerId();
+      setPlayerId(seatedId);
+      playerIdRef.current = seatedId;
+      setTableId(null);
+      setBlackjack(null);
+      window.sessionStorage.removeItem("dat-poker-blackjack");
+      setStatus("Opening a video poker machine…");
+      const table = await api.openVideoPoker(
+        seatedId,
+        datToken?.minBuyInMojos ?? "1000000",
+        displayName.trim() || "Player",
+      );
+      window.sessionStorage.setItem("dat-poker-video-poker", table.tableId);
+      setVideoPoker(table);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const playVideoPoker = async (fn: () => Promise<VideoPokerTableView>) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setVideoPoker(await fn());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -736,10 +787,10 @@ export function App() {
         : null;
 
   return (
-    <div className={`app ${tableId || blackjack ? "at-table" : ""}`}>
+    <div className={`app ${tableId || blackjack || videoPoker ? "at-table" : ""}`}>
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Hold'em · pot-limit · Omaha · blackjack · sit-and-go</p>
+        <p className="tagline">Hold'em · pot-limit · Omaha · blackjack · video poker</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -791,7 +842,11 @@ export function App() {
 
       <section className="panel">
         <h2>Table</h2>
-        {blackjack ? (
+        {videoPoker ? (
+          <p className="muted small">
+            Practice stack. Jacks or better pays your bet back. A five-coin royal pays 800 for 1.
+          </p>
+        ) : blackjack ? (
           <p className="muted small">
             Practice stack. Blackjack pays 3 to 2, and the dealer stands on every 17.
           </p>
@@ -836,6 +891,14 @@ export function App() {
                 onClick={() => void openBlackjack()}
               >
                 Play blackjack ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !datToken?.devBuyInEnabled}
+                onClick={() => void openVideoPoker()}
+              >
+                Play video poker ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
               </button>
               <button
                 type="button"
@@ -959,7 +1022,22 @@ export function App() {
         )}
       </section>
 
-      {blackjack && (
+      {videoPoker && (
+        <VideoPokerTable
+          view={videoPoker}
+          busy={busy}
+          ticker={datToken?.ticker}
+          onDeal={(coins) => void playVideoPoker(() => api.videoPokerDeal(videoPoker.tableId, coins))}
+          onHold={(index) => void playVideoPoker(() => api.videoPokerHold(videoPoker.tableId, index))}
+          onDraw={() => void playVideoPoker(() => api.videoPokerDraw(videoPoker.tableId))}
+          onLeave={() => {
+            window.sessionStorage.removeItem("dat-poker-video-poker");
+            setVideoPoker(null);
+          }}
+        />
+      )}
+
+      {blackjack && !videoPoker && (
         <BlackjackTable
           view={blackjack}
           busy={busy}
@@ -973,7 +1051,7 @@ export function App() {
         />
       )}
 
-      {tableId && !blackjack && (
+      {tableId && !blackjack && !videoPoker && (
         <FeltTable
           seats={feltSeats}
           heroSeat={tableSeats.find((seat) => seat.playerId === playerId)?.seatIndex ?? 0}

@@ -626,6 +626,86 @@ button.secondary {
   font-size: 1.05rem;
 }
 
+.vp-layout {
+  width: min(100%, 42rem);
+  display: grid;
+  grid-template-columns: 15rem 1fr;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.vp-pay {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.vp-pay th,
+.vp-pay td {
+  padding: 0.2rem 0.35rem;
+  text-align: left;
+  font-weight: 500;
+  color: #d7ebe1;
+}
+
+.vp-pay td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vp-pay tr.hit th,
+.vp-pay tr.hit td {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.vp-hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 8rem;
+}
+
+.vp-cards {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-end;
+}
+
+.vp-card {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.vp-card:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.vp-card.held {
+  transform: translateY(-8px);
+}
+
+.vp-card.held .pcard {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.vp-held-label {
+  min-height: 1rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 @keyframes card-in {
   from {
     transform: translateY(-10px);
@@ -652,6 +732,15 @@ button.secondary {
 }
 
 @media (max-width: 640px) {
+  .vp-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .vp-cards .pcard {
+    width: 2.45rem;
+    height: 3.5rem;
+  }
+
   .felt-shell {
     border-radius: 1.5rem;
     min-height: 34rem;
