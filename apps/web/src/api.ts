@@ -135,6 +135,45 @@ export interface BlackjackTableView {
   serverSeed: string | null;
 }
 
+export type VideoPokerResult =
+  | "royal_flush"
+  | "straight_flush"
+  | "four_kind"
+  | "full_house"
+  | "flush"
+  | "straight"
+  | "three_kind"
+  | "two_pair"
+  | "jacks_or_better"
+  | "nothing";
+
+export interface VideoPokerPayRow {
+  id: Exclude<VideoPokerResult, "nothing">;
+  label: string;
+  perCoin: number;
+}
+
+export interface VideoPokerTableView {
+  tableId: string;
+  displayName: string;
+  stackMojos: string;
+  coinMojos: string;
+  maxCoins: number;
+  phase: "betting" | "holding" | "done";
+  cards: CardFace[];
+  held: boolean[];
+  coins: number;
+  betMojos: string;
+  result: VideoPokerResult | null;
+  handName: string | null;
+  payoutMojos: string | null;
+  profitMojos: string | null;
+  paytable: VideoPokerPayRow[];
+  royalMaxPerCoin: number;
+  commitHash: string | null;
+  serverSeed: string | null;
+}
+
 export interface TableSeat {
   playerId: string;
   seatIndex: number;
@@ -326,6 +365,32 @@ export const api = {
 
   blackjackAction: (tableId: string, action: "hit" | "stand" | "double" | "split") =>
     request<BlackjackTableView>(`/v1/blackjack/${tableId}/${action}`, {
+      method: "POST",
+      body: "{}",
+    }),
+
+  openVideoPoker: (playerId: string, buyInMojos: string, displayName: string) =>
+    request<VideoPokerTableView>("/v1/video-poker", {
+      method: "POST",
+      body: JSON.stringify({ playerId, buyInMojos, displayName }),
+    }),
+
+  getVideoPoker: (tableId: string) => request<VideoPokerTableView>(`/v1/video-poker/${tableId}`),
+
+  videoPokerDeal: (tableId: string, coins: number) =>
+    request<VideoPokerTableView>(`/v1/video-poker/${tableId}/deal`, {
+      method: "POST",
+      body: JSON.stringify({ coins }),
+    }),
+
+  videoPokerHold: (tableId: string, index: number) =>
+    request<VideoPokerTableView>(`/v1/video-poker/${tableId}/hold`, {
+      method: "POST",
+      body: JSON.stringify({ index }),
+    }),
+
+  videoPokerDraw: (tableId: string) =>
+    request<VideoPokerTableView>(`/v1/video-poker/${tableId}/draw`, {
       method: "POST",
       body: "{}",
     }),
