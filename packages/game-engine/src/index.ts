@@ -7,4 +7,5 @@ export * from "./pot-settle.js";
 export * from "./sng.js";
 export * from "./session-limit.js";
 export * from "./blackjack.js";
+export * from "./calpoker.js";
 export * from "./video-poker.js";

@@ -11,6 +11,7 @@ import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerBlackjackRoutes } from "./routes/blackjack.js";
 import { registerVideoPokerRoutes } from "./routes/video-poker.js";
+import { registerCalpokerRoutes } from "./routes/calpoker.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
 import { attachTableSocket, publishTable } from "./table-events.js";
 import { setTableCommitListener } from "./routes/tables.js";
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
   registerHandRoutes(app);
   registerBlackjackRoutes(app);
   registerVideoPokerRoutes(app);
+  registerCalpokerRoutes(app);
   setTableCommitListener(publishTable);
   attachTableSocket(app.server);
 

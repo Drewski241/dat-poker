@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeNlheBetRange, computePotLimitBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type ActionResponse, type BlackjackTableView, type BuyInProof, type CardFace, type DatTokenInfo, type HandResult, type HandState, type HouseAction, type PlayerAction, type TableSeat, type TableSummary, type TournamentInfo, type VideoPokerTableView, type WithdrawResult } from "./api.js";
+import { api, type ActionResponse, type BlackjackTableView, type BuyInProof, type CalpokerTableView, type CardFace, type DatTokenInfo, type HandResult, type HandState, type HouseAction, type PlayerAction, type TableSeat, type TableSummary, type TournamentInfo, type VideoPokerTableView, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { BlackjackTable } from "./components/BlackjackTable.js";
+import { CalpokerTable } from "./components/CalpokerTable.js";
 import { VideoPokerTable } from "./components/VideoPokerTable.js";
 import { FeltTable, type FeltSeat } from "./components/FeltTable.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
@@ -119,6 +120,7 @@ export function App() {
   const [variant, setVariant] = useState<"nlhe" | "plhe" | "plo4">("nlhe");
   const [blackjack, setBlackjack] = useState<BlackjackTableView | null>(null);
   const [videoPoker, setVideoPoker] = useState<VideoPokerTableView | null>(null);
+  const [calpoker, setCalpoker] = useState<CalpokerTableView | null>(null);
   const handRef = useRef<HandState | null>(null);
   const playerIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
@@ -148,6 +150,13 @@ export function App() {
 
   useEffect(() => {
     if (!apiOk) return;
+    const duel = window.sessionStorage.getItem("dat-poker-calpoker");
+    if (duel) {
+      void api.getCalpoker(duel).then(setCalpoker).catch(() => {
+        window.sessionStorage.removeItem("dat-poker-calpoker");
+      });
+      return;
+    }
     const poker = window.sessionStorage.getItem("dat-poker-video-poker");
     if (poker) {
       void api.getVideoPoker(poker).then(setVideoPoker).catch(() => {
@@ -394,7 +403,9 @@ export function App() {
       playerIdRef.current = seatedId;
       setTableId(null);
       setVideoPoker(null);
+      setCalpoker(null);
       window.sessionStorage.removeItem("dat-poker-video-poker");
+      window.sessionStorage.removeItem("dat-poker-calpoker");
       setStatus("Opening a blackjack table…");
       const table = await api.openBlackjack(
         seatedId,
@@ -421,7 +432,9 @@ export function App() {
       playerIdRef.current = seatedId;
       setTableId(null);
       setBlackjack(null);
+      setCalpoker(null);
       window.sessionStorage.removeItem("dat-poker-blackjack");
+      window.sessionStorage.removeItem("dat-poker-calpoker");
       setStatus("Opening a video poker machine…");
       const table = await api.openVideoPoker(
         seatedId,
@@ -435,6 +448,48 @@ export function App() {
     } finally {
       setBusy(false);
       setStatus("");
+    }
+  };
+
+  const openCalpoker = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const seatedId = resolvedPlayerId();
+      setPlayerId(seatedId);
+      playerIdRef.current = seatedId;
+      setTableId(null);
+      setBlackjack(null);
+      setVideoPoker(null);
+      window.sessionStorage.removeItem("dat-poker-blackjack");
+      window.sessionStorage.removeItem("dat-poker-video-poker");
+      setStatus("Opening a California poker duel…");
+      const table = await api.openCalpoker(
+        seatedId,
+        datToken?.minBuyInMojos ?? "1000000",
+        displayName.trim() || "Player",
+      );
+      window.sessionStorage.setItem("dat-poker-calpoker", table.tableId);
+      setCalpoker(table);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus("");
+    }
+  };
+
+  const playCalpoker = async (fn: () => Promise<CalpokerTableView>) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setCalpoker(await fn());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -787,10 +842,10 @@ export function App() {
         : null;
 
   return (
-    <div className={`app ${tableId || blackjack || videoPoker ? "at-table" : ""}`}>
+    <div className={`app ${tableId || blackjack || videoPoker || calpoker ? "at-table" : ""}`}>
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Hold'em · pot-limit · Omaha · blackjack · video poker</p>
+        <p className="tagline">Hold'em · Omaha · blackjack · video poker · duel</p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -842,7 +897,11 @@ export function App() {
 
       <section className="panel">
         <h2>Table</h2>
-        {videoPoker ? (
+        {calpoker ? (
+          <p className="muted small">
+            Practice duel versus the house. Each side gets eight cards. Give four away. The best five win.
+          </p>
+        ) : videoPoker ? (
           <p className="muted small">
             Practice stack. Jacks or better pays your bet back. The loss limit stops the next bet.
           </p>
@@ -899,6 +958,14 @@ export function App() {
                 onClick={() => void openVideoPoker()}
               >
                 Play video poker ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy || !apiOk || !datToken?.devBuyInEnabled}
+                onClick={() => void openCalpoker()}
+              >
+                Play California poker ({formatDatMojos(datToken?.minBuyInMojos ?? "1000000", datToken?.ticker)})
               </button>
               <button
                 type="button"
@@ -1022,7 +1089,22 @@ export function App() {
         )}
       </section>
 
-      {videoPoker && (
+      {calpoker && (
+        <CalpokerTable
+          view={calpoker}
+          busy={busy}
+          ticker={datToken?.ticker}
+          onDeal={(amount) => void playCalpoker(() => api.calpokerDeal(calpoker.tableId, amount))}
+          onSwap={(indexes) => void playCalpoker(() => api.calpokerSwap(calpoker.tableId, indexes))}
+          onSetLimit={(limit) => void playCalpoker(() => api.calpokerLimit(calpoker.tableId, limit))}
+          onLeave={() => {
+            window.sessionStorage.removeItem("dat-poker-calpoker");
+            setCalpoker(null);
+          }}
+        />
+      )}
+
+      {videoPoker && !calpoker && (
         <VideoPokerTable
           view={videoPoker}
           busy={busy}
@@ -1038,7 +1120,7 @@ export function App() {
         />
       )}
 
-      {blackjack && !videoPoker && (
+      {blackjack && !videoPoker && !calpoker && (
         <BlackjackTable
           view={blackjack}
           busy={busy}
@@ -1053,7 +1135,7 @@ export function App() {
         />
       )}
 
-      {tableId && !blackjack && !videoPoker && (
+      {tableId && !blackjack && !videoPoker && !calpoker && (
         <FeltTable
           seats={feltSeats}
           heroSeat={tableSeats.find((seat) => seat.playerId === playerId)?.seatIndex ?? 0}
