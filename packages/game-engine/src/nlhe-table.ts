@@ -1,6 +1,6 @@
-import type { HandId, PlayerId, Street, TableConfig } from "@dat-poker/shared";
+import { computePotLimitBetRange, type HandId, type PlayerId, type Street, type TableConfig } from "@dat-poker/shared";
 import { standardDeck, type Card } from "./card.js";
-import { compareHands, describeEvaluatedHand, evaluateBestHand } from "./hand-evaluator.js";
+import { compareHands, describeEvaluatedHand, evaluateBestHand, evaluateOmahaHand, type EvaluatedHand } from "./hand-evaluator.js";
 import { nextClockwise, settlePots } from "./pot-settle.js";
 import {
   buildShuffleEntropy,
@@ -54,6 +54,7 @@ export interface PublicHandState {
   dealerSeat: number;
   actionSeat: number | null;
   commitHash: string;
+  raiseIncrementMojos: bigint;
   players: Array<{
     playerId: PlayerId;
     seatIndex: number;
@@ -94,6 +95,8 @@ export interface TableHandState {
   deck: Card[];
   deckIndex: number;
   seq: number;
+  /** Size of the last full bet or raise. The next raise must grow by at least this much. */
+  raiseIncrementMojos: bigint;
 }
 
 export interface EngineSnapshot {
@@ -233,6 +236,7 @@ export class NlheTableEngine {
       deck: standardDeck(),
       deckIndex: 0,
       seq: 0,
+      raiseIncrementMojos: this.config.bigBlindMojos,
     };
 
     return { commitHash };
@@ -264,8 +268,9 @@ export class NlheTableEngine {
     const entropy = buildShuffleEntropy(h.serverSeed, h.playerSeeds);
     h.deck = shuffleDeck(h.deck, entropy);
 
+    const holeCount = this.holeCardCount();
     for (const p of h.players) {
-      p.holeCards = [this.draw(h), this.draw(h)];
+      p.holeCards = Array.from({ length: holeCount }, () => this.draw(h));
     }
 
     this.postBlinds(h);
@@ -301,17 +306,26 @@ export class NlheTableEngine {
         if (amountMojos <= h.currentBetMojos) {
           throw new Error("Raise must exceed current bet");
         }
+        this.assertPotLimit(h, player, amountMojos);
+        const previous = h.currentBetMojos;
         const add = amountMojos - player.betThisStreetMojos;
         this.charge(player, h, add);
         h.currentBetMojos = player.betThisStreetMojos;
+        this.noteRaise(h, previous, h.currentBetMojos);
         break;
       }
       case "all-in": {
+        const previous = h.currentBetMojos;
+        const stackTo = player.betThisStreetMojos + player.stackMojos;
+        if (this.isOmaha() && stackTo > h.currentBetMojos) {
+          this.assertPotLimit(h, player, stackTo);
+        }
         const add = player.stackMojos;
         this.charge(player, h, add);
         player.allIn = true;
         if (player.betThisStreetMojos > h.currentBetMojos) {
           h.currentBetMojos = player.betThisStreetMojos;
+          this.noteRaise(h, previous, h.currentBetMojos);
         }
         break;
       }
@@ -350,6 +364,10 @@ export class NlheTableEngine {
     return this.buttonSeat;
   }
 
+  getVariant(): TableConfig["variant"] {
+    return this.config.variant;
+  }
+
   /** Change the blinds between hands. A sit-and-go calls this as the level rises. */
   setLimits(smallBlindMojos: bigint, bigBlindMojos: bigint): void {
     if (this.hand) throw new Error("Cannot change blinds during a hand");
@@ -384,6 +402,9 @@ export class NlheTableEngine {
     for (const stack of snapshot.stacks) engine.stacks.set(stack.playerId, stack.stackMojos);
     engine.buttonSeat = snapshot.buttonSeat;
     engine.hand = snapshot.hand ? structuredClone(snapshot.hand) : null;
+    if (engine.hand && engine.hand.raiseIncrementMojos == null) {
+      engine.hand.raiseIncrementMojos = engine.config.bigBlindMojos;
+    }
     engine.lastHandResult = snapshot.lastHandResult ? structuredClone(snapshot.lastHandResult) : null;
     return engine;
   }
@@ -405,6 +426,7 @@ export class NlheTableEngine {
       dealerSeat: h.dealerSeat,
       actionSeat: h.actionSeat,
       commitHash: h.commitHash,
+      raiseIncrementMojos: h.raiseIncrementMojos,
       players: h.players.map((p) => ({
         playerId: p.playerId,
         seatIndex: p.seatIndex,
@@ -424,6 +446,45 @@ export class NlheTableEngine {
   private requireHand(): TableHandState {
     if (!this.hand) throw new Error("No active hand");
     return this.hand;
+  }
+
+  private isOmaha(): boolean {
+    return this.config.variant === "plo4";
+  }
+
+  private holeCardCount(): number {
+    return this.isOmaha() ? 4 : 2;
+  }
+
+  private evaluateShowdown(holeCards: Card[], board: Card[]): EvaluatedHand {
+    if (this.isOmaha()) return evaluateOmahaHand(holeCards, board);
+    return evaluateBestHand([...holeCards, ...board]);
+  }
+
+  private assertPotLimit(h: TableHandState, player: PlayerHandState, raiseTo: bigint): void {
+    if (!this.isOmaha()) return;
+    const range = computePotLimitBetRange({
+      bigBlindMojos: this.config.bigBlindMojos,
+      potMojos: h.potMojos,
+      currentBetMojos: h.currentBetMojos,
+      myBetThisStreetMojos: player.betThisStreetMojos,
+      myStackMojos: player.stackMojos,
+      raiseIncrementMojos: h.raiseIncrementMojos,
+    });
+    if (raiseTo > range.maxRaiseTo) {
+      throw new Error("That raise is bigger than the pot");
+    }
+    const stackTo = player.betThisStreetMojos + player.stackMojos;
+    if (raiseTo < range.fullMinRaiseTo && raiseTo < stackTo) {
+      throw new Error("That raise is too small");
+    }
+  }
+
+  private noteRaise(h: TableHandState, previousBet: bigint, newBet: bigint): void {
+    const size = newBet - previousBet;
+    if (size <= 0n) return;
+    const full = h.raiseIncrementMojos > 0n ? h.raiseIncrementMojos : this.config.bigBlindMojos;
+    if (previousBet === 0n || size >= full) h.raiseIncrementMojos = size;
   }
 
   private draw(h: TableHandState): Card {
@@ -532,6 +593,7 @@ export class NlheTableEngine {
       p.actedThisStreet = false;
     }
     h.currentBetMojos = 0n;
+    h.raiseIncrementMojos = this.config.bigBlindMojos;
 
     const next: Record<Street, Street | "showdown"> = {
       preflop: "flop",
@@ -580,14 +642,14 @@ export class NlheTableEngine {
     const shown: ShownHand[] = live.map((p) => ({
       playerId: p.playerId,
       holeCards: p.holeCards.map((c) => ({ ...c })),
-      handLabel: describeEvaluatedHand(evaluateBestHand([...p.holeCards, ...h.board])),
+      handLabel: describeEvaluatedHand(this.evaluateShowdown(p.holeCards, h.board)),
     }));
 
     let best = live[0];
-    let bestEval = evaluateBestHand([...best.holeCards, ...h.board]);
+    let bestEval = this.evaluateShowdown(best.holeCards, h.board);
 
     for (const p of live.slice(1)) {
-      const ev = evaluateBestHand([...p.holeCards, ...h.board]);
+      const ev = this.evaluateShowdown(p.holeCards, h.board);
       if (compareHands(ev, bestEval) > 0) {
         best = p;
         bestEval = ev;
@@ -618,9 +680,7 @@ export class NlheTableEngine {
     const scores = new Map(
       shownHands.map((shown) => {
         const player = h.players.find((candidate) => candidate.playerId === shown.playerId);
-        const score = player
-          ? evaluateBestHand([...player.holeCards, ...h.board]).score
-          : 0;
+        const score = player ? this.evaluateShowdown(player.holeCards, h.board).score : 0;
         return [shown.playerId, score] as const;
       }),
     );

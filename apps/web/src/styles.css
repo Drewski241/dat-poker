@@ -352,6 +352,28 @@ button.secondary {
   height: 2.8rem;
 }
 
+.hole-cards.omaha {
+  gap: 0;
+}
+
+.hole-cards.omaha .pcard {
+  width: 2.25rem;
+  height: 3.15rem;
+}
+
+.hole-cards.omaha .pcard + .pcard {
+  margin-left: -0.65rem;
+}
+
+.seat.remote .hole-cards.omaha .pcard {
+  width: 1.45rem;
+  height: 2.05rem;
+}
+
+.seat.remote .hole-cards.omaha .pcard + .pcard {
+  margin-left: -0.42rem;
+}
+
 .seat.remote .pcard-rank,
 .seat.remote .pcard-suit {
   font-size: 0.75rem;

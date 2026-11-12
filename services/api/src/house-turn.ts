@@ -1,3 +1,4 @@
+import { computePotLimitBetRange } from "@dat-poker/shared";
 import {
   chooseHouseAction,
   isHousePlayer,
@@ -20,6 +21,18 @@ export function runHouseTurn(table: NlheTableEngine): TakenHouseAction[] {
       (player) => player.seatIndex === hand.actionSeat && !player.folded && !player.allIn,
     );
     if (!actor || !isHousePlayer(actor.playerId)) break;
+    const variant = table.getVariant() === "plo4" ? "plo4" : "nlhe";
+    const potRange =
+      variant === "plo4"
+        ? computePotLimitBetRange({
+            bigBlindMojos: table.getBigBlindMojos(),
+            potMojos: hand.potMojos,
+            currentBetMojos: hand.currentBetMojos,
+            myBetThisStreetMojos: actor.betThisStreetMojos,
+            myStackMojos: actor.stackMojos,
+            raiseIncrementMojos: hand.raiseIncrementMojos,
+          })
+        : null;
     const decision = chooseHouseAction({
       street: hand.street,
       board: hand.board,
@@ -29,6 +42,9 @@ export function runHouseTurn(table: NlheTableEngine): TakenHouseAction[] {
       betThisStreetMojos: actor.betThisStreetMojos,
       stackMojos: actor.stackMojos,
       bigBlindMojos: table.getBigBlindMojos(),
+      variant,
+      minRaiseTo: potRange?.canBetOrRaise ? potRange.minRaiseTo : undefined,
+      maxRaiseTo: potRange?.canBetOrRaise ? potRange.maxRaiseTo : undefined,
     });
     const applied = applyOrFallback(table, actor.playerId, decision.action, decision.amountMojos, hand);
     taken.push({ playerId: actor.playerId, ...applied });

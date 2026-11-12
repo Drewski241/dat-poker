@@ -105,7 +105,7 @@ function seatView(record: TableRecord) {
 export function registerTableRoutes(app: FastifyInstance): void {
   app.post<{
     Body: {
-      variant?: string;
+      variant?: "nlhe" | "plo4";
       smallBlindMojos?: string;
       bigBlindMojos?: string;
       maxSeats?: number;
@@ -116,6 +116,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const dat = readDatTokenConfig();
     const useDatStakes = Boolean(dat.assetId) || dat.devBuyInEnabled;
     const sitAndGo = req.body.format === "sng";
+    const variant = req.body.variant === "plo4" && !sitAndGo ? "plo4" : "nlhe";
     const sng = sitAndGo ? freshSitAndGo() : undefined;
     const openingBlinds = sngBlinds(0);
     const minBuyIn = useDatStakes
@@ -123,7 +124,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       : DAT_TABLE_DEFAULTS.minBuyInMojos;
     const config: TableConfig = {
       id,
-      variant: "nlhe",
+      variant,
       format: sitAndGo ? "sng" : "cash",
       maxSeats: req.body.maxSeats ?? 6,
       smallBlindMojos: sitAndGo
@@ -166,6 +167,7 @@ export function registerTableRoutes(app: FastifyInstance): void {
       smallBlindMojos: record.engine.getSmallBlindMojos(),
       bigBlindMojos: record.engine.getBigBlindMojos(),
       buttonSeat: record.engine.getButtonSeat(),
+      variant: record.engine.getVariant(),
       format: record.sng ? "sng" : "cash",
       tournamentStatus: record.sng?.status ?? null,
     })),
@@ -325,6 +327,7 @@ export function tableView(tableId: string, playerId: string | null) {
   return {
     tableId,
     maxSeats: table.getMaxSeats(),
+    variant: table.getVariant(),
     buttonSeat: table.getButtonSeat(),
     players: table.getActivePlayerCount(),
     handInProgress: table.isHandInProgress(),

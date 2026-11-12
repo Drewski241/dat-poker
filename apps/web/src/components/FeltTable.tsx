@@ -18,6 +18,7 @@ export interface FeltSeat {
   isHero: boolean;
   empty: boolean;
   eliminated: boolean;
+  holeCount: number;
 }
 
 const TURN_SECONDS = 45;
@@ -182,13 +183,11 @@ function Seat({
           </span>
         )}
       </div>
-      <div className="hole-cards">
-        {showBacks && (
-          <>
-            <PlayingCard faceDown delayMs={0} />
-            <PlayingCard faceDown delayMs={80} />
-          </>
-        )}
+      <div className={`hole-cards ${seat.holeCount > 2 ? "omaha" : ""}`}>
+        {showBacks &&
+          Array.from({ length: seat.holeCount }, (_, index) => (
+            <PlayingCard key={index} faceDown delayMs={index * 60} />
+          ))}
         {!seat.faceDown &&
           seat.holeCards.map((card, index) => (
             <PlayingCard key={`${card.rank}${card.suit}${index}`} card={card} delayMs={index * 80} />
