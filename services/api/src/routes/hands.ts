@@ -2,15 +2,18 @@ import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { generateServerSeed, type PlayerAction } from "@dat-poker/game-engine";
 import { runHouseTurn } from "../house-turn.js";
-import { getTableEngine } from "./tables.js";
+import { accountSitAndGoHand, prepareSitAndGoHand } from "../sit-and-go.js";
+import { getTableEngine, getTableRecord } from "./tables.js";
 
 export function registerHandRoutes(app: FastifyInstance): void {
   app.post<{ Params: { tableId: string }; Body: { handId?: string } }>(
     "/v1/tables/:tableId/hands/start",
     async (req, reply) => {
-      const table = getTableEngine(req.params.tableId);
-      if (!table) return reply.status(404).send({ error: "Table not found" });
+      const record = getTableRecord(req.params.tableId);
+      const table = record?.engine;
+      if (!record || !table) return reply.status(404).send({ error: "Table not found" });
       try {
+        prepareSitAndGoHand(record);
         const handId = req.body.handId ?? randomUUID();
         const { commitHash } = table.startHand(handId);
         return { handId, commitHash, phase: "awaiting_seeds" };
@@ -50,6 +53,8 @@ export function registerHandRoutes(app: FastifyInstance): void {
         }
         table.revealAndDeal();
         const houseActions = runHouseTurn(table);
+        const record = getTableRecord(req.params.tableId);
+        if (record) accountSitAndGoHand(record);
         return {
           ok: true,
           hand: table.getPublicHandState(req.body?.playerId ?? null),
@@ -73,6 +78,8 @@ export function registerHandRoutes(app: FastifyInstance): void {
       const amount = req.body.amountMojos ? BigInt(req.body.amountMojos) : 0n;
       table.applyAction(req.body.playerId, req.body.action, amount);
       const houseActions = runHouseTurn(table);
+      const record = getTableRecord(req.params.tableId);
+      if (record) accountSitAndGoHand(record);
       return {
         ok: true,
         hand: table.getPublicHandState(req.body.playerId),

@@ -7,7 +7,8 @@ import {
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
 } from "../treasury-payout.js";
-import { getTableEngine } from "./tables.js";
+import { collectableMojos } from "../sit-and-go.js";
+import { getTableEngine, getTableRecord } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import {
   buildBuyInMessage,
@@ -91,18 +92,23 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       return reply.status(400).send({ error: "Finish the current hand before withdrawing" });
     }
 
-    const stack = table.getPlayerStack(address);
-    if (stack === null) {
-      return reply.status(400).send({ error: "Player not seated at table" });
-    }
-    if (stack.toString() !== stackMojos) {
+    const record = getTableRecord(tableId);
+    const payable = record ? collectableMojos(record, address) : table.getPlayerStack(address);
+    if (payable === null) {
       return reply.status(400).send({
-        error: `Stack mismatch — refresh table (expected ${stack.toString()} mojos)`,
+        error: record?.sng
+          ? "Only the sit-and-go winner collects the prize, after the tournament ends"
+          : "Player not seated at table",
+      });
+    }
+    if (payable.toString() !== stackMojos) {
+      return reply.status(400).send({
+        error: `Stack mismatch — refresh table (expected ${payable.toString()} mojos)`,
       });
     }
 
     const message = buildWithdrawMessage({ tableId, stackMojos, address });
-    return { message, stackMojos: stack.toString() };
+    return { message, stackMojos: payable.toString() };
   });
 
   app.post<{
@@ -129,10 +135,16 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       return reply.status(400).send({ error: "Withdrawal already completed for this table session" });
     }
 
-    const stack = table.getPlayerStack(playerId);
-    if (stack === null) {
-      return reply.status(400).send({ error: "Player not seated at table" });
+    const record = getTableRecord(tableId);
+    const payable = record ? collectableMojos(record, playerId) : table.getPlayerStack(playerId);
+    if (payable === null) {
+      return reply.status(400).send({
+        error: record?.sng
+          ? "Only the sit-and-go winner collects the prize, after the tournament ends"
+          : "Player not seated at table",
+      });
     }
+    const stack = payable;
 
     const dat = readDatTokenConfig();
     const payoutConfig = readTreasuryPayoutConfig();
