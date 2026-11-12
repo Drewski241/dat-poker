@@ -8,6 +8,8 @@ const BIGINT_KEYS = new Set([
   "maxBetMojos",
   "betMojos",
   "profitMojos",
+  "sessionStartMojos",
+  "lossLimitMojos",
 ]);
 
 function revive(value: unknown): unknown {
@@ -15,8 +17,8 @@ function revive(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
   for (const [key, inner] of Object.entries(value)) {
-    if (BIGINT_KEYS.has(key) && (typeof inner === "string" || typeof inner === "bigint")) {
-      out[key] = BigInt(inner);
+    if (BIGINT_KEYS.has(key)) {
+      out[key] = inner === null || inner === undefined ? null : BigInt(inner as string | bigint);
     } else {
       out[key] = revive(inner);
     }

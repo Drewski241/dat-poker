@@ -844,11 +844,11 @@ export function App() {
         <h2>Table</h2>
         {videoPoker ? (
           <p className="muted small">
-            Practice stack. Jacks or better pays your bet back. A five-coin royal pays 800 for 1.
+            Practice stack. Jacks or better pays your bet back. The loss limit stops the next bet.
           </p>
         ) : blackjack ? (
           <p className="muted small">
-            Practice stack. Blackjack pays 3 to 2, and the dealer stands on every 17.
+            Practice stack. Blackjack pays 3 to 2. The loss limit stops the next bet.
           </p>
         ) : !tableId ? (
           <>
@@ -1030,6 +1030,7 @@ export function App() {
           onDeal={(coins) => void playVideoPoker(() => api.videoPokerDeal(videoPoker.tableId, coins))}
           onHold={(index) => void playVideoPoker(() => api.videoPokerHold(videoPoker.tableId, index))}
           onDraw={() => void playVideoPoker(() => api.videoPokerDraw(videoPoker.tableId))}
+          onSetLimit={(limit) => void playVideoPoker(() => api.videoPokerLimit(videoPoker.tableId, limit))}
           onLeave={() => {
             window.sessionStorage.removeItem("dat-poker-video-poker");
             setVideoPoker(null);
@@ -1044,6 +1045,7 @@ export function App() {
           ticker={datToken?.ticker}
           onBet={(amount) => void playBlackjack(() => api.blackjackBet(blackjack.tableId, amount))}
           onAction={(action) => void playBlackjack(() => api.blackjackAction(blackjack.tableId, action))}
+          onSetLimit={(limit) => void playBlackjack(() => api.blackjackLimit(blackjack.tableId, limit))}
           onLeave={() => {
             window.sessionStorage.removeItem("dat-poker-blackjack");
             setBlackjack(null);

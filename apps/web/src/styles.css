@@ -577,6 +577,24 @@ button.secondary {
   padding: 0.75rem 0 0.25rem;
 }
 
+.session-block {
+  margin-bottom: 0.75rem;
+}
+
+.session-reminder {
+  margin: 0 0 0.45rem;
+  color: var(--muted);
+}
+
+.session-reminder.down,
+.session-reminder.limit {
+  color: var(--error);
+}
+
+.session-reminder.up {
+  color: var(--accent);
+}
+
 .bj-felt {
   margin-top: 1.25rem;
   background: #14382e;

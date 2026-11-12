@@ -2,17 +2,23 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { VideoPokerTable, type VideoPokerSnapshot } from "@dat-poker/game-engine";
 
-const BIGINT_KEYS = new Set(["stackMojos", "coinMojos", "betMojos", "payoutMojos", "profitMojos"]);
+const BIGINT_KEYS = new Set([
+  "stackMojos",
+  "coinMojos",
+  "betMojos",
+  "payoutMojos",
+  "profitMojos",
+  "sessionStartMojos",
+  "lossLimitMojos",
+]);
 
 function revive(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(revive);
   if (!value || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
   for (const [key, inner] of Object.entries(value)) {
-    if (BIGINT_KEYS.has(key) && (typeof inner === "string" || typeof inner === "bigint")) {
-      out[key] = BigInt(inner);
-    } else if (BIGINT_KEYS.has(key) && inner === null) {
-      out[key] = null;
+    if (BIGINT_KEYS.has(key)) {
+      out[key] = inner === null || inner === undefined ? null : BigInt(inner as string | bigint);
     } else {
       out[key] = revive(inner);
     }

@@ -133,6 +133,11 @@ export interface BlackjackTableView {
   actions: { hit: boolean; stand: boolean; double: boolean; split: boolean };
   commitHash: string | null;
   serverSeed: string | null;
+  sessionStartMojos: string;
+  sessionResultMojos: string;
+  lossLimitMojos: string | null;
+  lossRoomMojos: string | null;
+  limitReached: boolean;
 }
 
 export type VideoPokerResult =
@@ -172,6 +177,11 @@ export interface VideoPokerTableView {
   royalMaxPerCoin: number;
   commitHash: string | null;
   serverSeed: string | null;
+  sessionStartMojos: string;
+  sessionResultMojos: string;
+  lossLimitMojos: string | null;
+  lossRoomMojos: string | null;
+  limitReached: boolean;
 }
 
 export interface TableSeat {
@@ -369,6 +379,12 @@ export const api = {
       body: "{}",
     }),
 
+  blackjackLimit: (tableId: string, lossLimitMojos: string | null) =>
+    request<BlackjackTableView>(`/v1/blackjack/${tableId}/limit`, {
+      method: "POST",
+      body: JSON.stringify({ lossLimitMojos }),
+    }),
+
   openVideoPoker: (playerId: string, buyInMojos: string, displayName: string) =>
     request<VideoPokerTableView>("/v1/video-poker", {
       method: "POST",
@@ -393,5 +409,11 @@ export const api = {
     request<VideoPokerTableView>(`/v1/video-poker/${tableId}/draw`, {
       method: "POST",
       body: "{}",
+    }),
+
+  videoPokerLimit: (tableId: string, lossLimitMojos: string | null) =>
+    request<VideoPokerTableView>(`/v1/video-poker/${tableId}/limit`, {
+      method: "POST",
+      body: JSON.stringify({ lossLimitMojos }),
     }),
 };

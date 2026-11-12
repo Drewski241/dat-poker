@@ -85,6 +85,27 @@ describe("BlackjackTable", () => {
     expect(view.stackMojos).toBe(120_000n);
   });
 
+  it("stops the next bet when the session is down to the limit", () => {
+    const game = table();
+    game.setLossLimit(10_000n);
+    game.placeBet(10_000n, cards("Th", "9c", "6d", "7s", "Kh"));
+    expect(game.view().sessionResultMojos).toBe(0n);
+    game.hit();
+    expect(game.view().sessionResultMojos).toBe(-10_000n);
+    expect(game.view().limitReached).toBe(true);
+    expect(() => game.placeBet(10_000n)).toThrow(/session limit reached/i);
+    game.setLossLimit(15_000n);
+    expect(() => game.placeBet(10_000n)).toThrow(/pass your session limit/i);
+  });
+
+  it("refuses a double that would pass the session limit", () => {
+    const game = table();
+    game.setLossLimit(10_000n);
+    game.placeBet(10_000n, cards("5h", "Tc", "6d", "6s", "Qh", "2c"));
+    expect(() => game.double()).toThrow(/pass your session limit/i);
+    expect(game.view().phase).toBe("acting");
+  });
+
   it("refuses a raise bigger than the stack and continues a saved hand", () => {
     const game = table();
     expect(() => game.placeBet(200_000n, cards("9h", "8d", "2c", "3d"))).toThrow(/stack/i);
