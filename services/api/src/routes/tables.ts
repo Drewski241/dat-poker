@@ -105,7 +105,7 @@ function seatView(record: TableRecord) {
 export function registerTableRoutes(app: FastifyInstance): void {
   app.post<{
     Body: {
-      variant?: "nlhe" | "plo4";
+      variant?: "nlhe" | "plhe" | "plo4";
       smallBlindMojos?: string;
       bigBlindMojos?: string;
       maxSeats?: number;
@@ -116,7 +116,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const dat = readDatTokenConfig();
     const useDatStakes = Boolean(dat.assetId) || dat.devBuyInEnabled;
     const sitAndGo = req.body.format === "sng";
-    const variant = req.body.variant === "plo4" && !sitAndGo ? "plo4" : "nlhe";
+    const requested = req.body.variant;
+    const variant = !sitAndGo && (requested === "plo4" || requested === "plhe") ? requested : "nlhe";
     const sng = sitAndGo ? freshSitAndGo() : undefined;
     const openingBlinds = sngBlinds(0);
     const minBuyIn = useDatStakes

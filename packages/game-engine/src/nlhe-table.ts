@@ -317,7 +317,7 @@ export class NlheTableEngine {
       case "all-in": {
         const previous = h.currentBetMojos;
         const stackTo = player.betThisStreetMojos + player.stackMojos;
-        if (this.isOmaha() && stackTo > h.currentBetMojos) {
+        if (this.isPotLimit() && stackTo > h.currentBetMojos) {
           this.assertPotLimit(h, player, stackTo);
         }
         const add = player.stackMojos;
@@ -452,6 +452,10 @@ export class NlheTableEngine {
     return this.config.variant === "plo4";
   }
 
+  private isPotLimit(): boolean {
+    return this.config.variant === "plo4" || this.config.variant === "plhe";
+  }
+
   private holeCardCount(): number {
     return this.isOmaha() ? 4 : 2;
   }
@@ -462,7 +466,7 @@ export class NlheTableEngine {
   }
 
   private assertPotLimit(h: TableHandState, player: PlayerHandState, raiseTo: bigint): void {
-    if (!this.isOmaha()) return;
+    if (!this.isPotLimit()) return;
     const range = computePotLimitBetRange({
       bigBlindMojos: this.config.bigBlindMojos,
       potMojos: h.potMojos,
