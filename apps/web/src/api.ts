@@ -1383,7 +1383,164 @@ export const api = {
       method: "POST",
       body: "{}",
     }),
+
+  openBlackjack: (buyInMojos: string) =>
+    request<BlackjackTableView & { accountBalanceMojos: string }>("/v1/blackjack", {
+      method: "POST",
+      body: JSON.stringify({ buyInMojos }),
+    }),
+  getBlackjack: (tableId: string) => request<BlackjackTableView>(`/v1/blackjack/${tableId}`),
+  betBlackjack: (tableId: string, amountMojos: string) =>
+    request<BlackjackTableView>(`/v1/blackjack/${tableId}/bet`, {
+      method: "POST",
+      body: JSON.stringify({ amountMojos }),
+    }),
+  actBlackjack: (tableId: string, action: "hit" | "stand" | "double" | "split") =>
+    request<BlackjackTableView>(`/v1/blackjack/${tableId}/action`, {
+      method: "POST",
+      body: JSON.stringify({ action }),
+    }),
+  limitBlackjack: (tableId: string, lossLimitMojos: string | null) =>
+    request<BlackjackTableView>(`/v1/blackjack/${tableId}/limit`, {
+      method: "POST",
+      body: JSON.stringify({ lossLimitMojos }),
+    }),
+  leaveBlackjack: (tableId: string) =>
+    request<CasinoLeaveResult>(`/v1/blackjack/${tableId}/leave`, { method: "POST", body: "{}" }),
+
+  openVideoPoker: (buyInMojos: string) =>
+    request<VideoPokerTableView & { accountBalanceMojos: string }>("/v1/video-poker", {
+      method: "POST",
+      body: JSON.stringify({ buyInMojos }),
+    }),
+  getVideoPoker: (tableId: string) => request<VideoPokerTableView>(`/v1/video-poker/${tableId}`),
+  dealVideoPoker: (tableId: string, coins: number) =>
+    request<VideoPokerTableView>(`/v1/video-poker/${tableId}/deal`, {
+      method: "POST",
+      body: JSON.stringify({ coins }),
+    }),
+  holdVideoPoker: (tableId: string, index: number) =>
+    request<VideoPokerTableView>(`/v1/video-poker/${tableId}/hold`, {
+      method: "POST",
+      body: JSON.stringify({ index }),
+    }),
+  drawVideoPoker: (tableId: string) =>
+    request<VideoPokerTableView>(`/v1/video-poker/${tableId}/draw`, { method: "POST", body: "{}" }),
+  limitVideoPoker: (tableId: string, lossLimitMojos: string | null) =>
+    request<VideoPokerTableView>(`/v1/video-poker/${tableId}/limit`, {
+      method: "POST",
+      body: JSON.stringify({ lossLimitMojos }),
+    }),
+  leaveVideoPoker: (tableId: string) =>
+    request<CasinoLeaveResult>(`/v1/video-poker/${tableId}/leave`, { method: "POST", body: "{}" }),
+
+  openCalpoker: (buyInMojos: string) =>
+    request<CalpokerTableView & { accountBalanceMojos: string }>("/v1/calpoker", {
+      method: "POST",
+      body: JSON.stringify({ buyInMojos }),
+    }),
+  getCalpoker: (tableId: string) => request<CalpokerTableView>(`/v1/calpoker/${tableId}`),
+  dealCalpoker: (tableId: string, amountMojos: string) =>
+    request<CalpokerTableView>(`/v1/calpoker/${tableId}/deal`, {
+      method: "POST",
+      body: JSON.stringify({ amountMojos }),
+    }),
+  swapCalpoker: (tableId: string, indexes: number[]) =>
+    request<CalpokerTableView>(`/v1/calpoker/${tableId}/swap`, {
+      method: "POST",
+      body: JSON.stringify({ indexes }),
+    }),
+  limitCalpoker: (tableId: string, lossLimitMojos: string | null) =>
+    request<CalpokerTableView>(`/v1/calpoker/${tableId}/limit`, {
+      method: "POST",
+      body: JSON.stringify({ lossLimitMojos }),
+    }),
+  leaveCalpoker: (tableId: string) =>
+    request<CasinoLeaveResult>(`/v1/calpoker/${tableId}/leave`, { method: "POST", body: "{}" }),
 };
+
+export interface CasinoCard {
+  rank: string;
+  suit: string;
+  played?: boolean;
+}
+
+export interface CasinoLeaveResult {
+  ok: boolean;
+  returnedMojos: string;
+  accountBalanceMojos: string;
+}
+
+export interface BlackjackTableView {
+  tableId: string;
+  displayName: string;
+  stackMojos: string;
+  minBetMojos: string;
+  maxBetMojos: string;
+  phase: "betting" | "acting" | "done";
+  dealerCards: CasinoCard[];
+  dealerTotal: string | null;
+  hands: Array<{
+    cards: CasinoCard[];
+    betMojos: string;
+    total: string;
+    outcome: "blackjack" | "win" | "push" | "lose" | "bust" | null;
+    profitMojos: string;
+    active: boolean;
+  }>;
+  actions: { hit: boolean; stand: boolean; double: boolean; split: boolean };
+  commitHash: string | null;
+  serverSeed: string | null;
+  sessionResultMojos: string;
+  lossLimitMojos: string | null;
+  lossRoomMojos: string | null;
+  limitReached: boolean;
+}
+
+export interface VideoPokerTableView {
+  tableId: string;
+  displayName: string;
+  stackMojos: string;
+  coinMojos: string;
+  maxCoins: number;
+  phase: "betting" | "holding" | "done";
+  cards: CasinoCard[];
+  held: boolean[];
+  coins: number;
+  betMojos: string;
+  result: string | null;
+  handName: string | null;
+  payoutMojos: string | null;
+  paytable: Array<{ id: string; label: string; perCoin: number }>;
+  royalMaxPerCoin: number;
+  commitHash: string | null;
+  serverSeed: string | null;
+  sessionResultMojos: string;
+  lossLimitMojos: string | null;
+  lossRoomMojos: string | null;
+  limitReached: boolean;
+}
+
+export interface CalpokerTableView {
+  tableId: string;
+  displayName: string;
+  stackMojos: string;
+  minAnteMojos: string;
+  maxAnteMojos: string;
+  phase: "betting" | "selecting" | "done";
+  playerCards: CasinoCard[];
+  houseCards: CasinoCard[];
+  playerHand: string | null;
+  houseHand: string | null;
+  winner: "player" | "house" | "tie" | null;
+  anteMojos: string;
+  commitHash: string | null;
+  serverSeed: string | null;
+  sessionResultMojos: string;
+  lossLimitMojos: string | null;
+  lossRoomMojos: string | null;
+  limitReached: boolean;
+}
 
 export type TournamentCustody = "pool_coin" | "site_ledger";
 

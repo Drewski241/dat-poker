@@ -3,7 +3,7 @@
 # Phone / Session Manager: run short commands in docs/BETA.md § "Update from your phone".
 set -euxo pipefail
 
-REF="${DAT_POKER_REPO_REF:-cursor/hybrid-dat-chia-gaming-3c03}"
+REF="${DAT_POKER_REPO_REF:-cursor/beta-casino-games-750d}"
 ROOT="${INSTALL_ROOT:-/opt/dat-poker}"
 GITHUB_RAW="https://raw.githubusercontent.com/Drewski241/dat-poker"
 
