@@ -111,6 +111,30 @@ export interface WithdrawResult {
   note: string;
 }
 
+export interface BlackjackHandView {
+  cards: CardFace[];
+  betMojos: string;
+  total: string;
+  outcome: "blackjack" | "win" | "push" | "lose" | "bust" | null;
+  profitMojos: string;
+  active: boolean;
+}
+
+export interface BlackjackTableView {
+  tableId: string;
+  displayName: string;
+  stackMojos: string;
+  minBetMojos: string;
+  maxBetMojos: string;
+  phase: "betting" | "acting" | "done";
+  dealerCards: CardFace[];
+  dealerTotal: string | null;
+  hands: BlackjackHandView[];
+  actions: { hit: boolean; stand: boolean; double: boolean; split: boolean };
+  commitHash: string | null;
+  serverSeed: string | null;
+}
+
 export interface TableSeat {
   playerId: string;
   seatIndex: number;
@@ -284,5 +308,25 @@ export const api = {
     request<ActionResponse>(`/v1/tables/${tableId}/hands/action`, {
       method: "POST",
       body: JSON.stringify({ playerId, action, amountMojos }),
+    }),
+
+  openBlackjack: (playerId: string, buyInMojos: string, displayName: string) =>
+    request<BlackjackTableView>("/v1/blackjack", {
+      method: "POST",
+      body: JSON.stringify({ playerId, buyInMojos, displayName }),
+    }),
+
+  getBlackjack: (tableId: string) => request<BlackjackTableView>(`/v1/blackjack/${tableId}`),
+
+  blackjackBet: (tableId: string, amountMojos: string) =>
+    request<BlackjackTableView>(`/v1/blackjack/${tableId}/bet`, {
+      method: "POST",
+      body: JSON.stringify({ amountMojos }),
+    }),
+
+  blackjackAction: (tableId: string, action: "hit" | "stand" | "double" | "split") =>
+    request<BlackjackTableView>(`/v1/blackjack/${tableId}/${action}`, {
+      method: "POST",
+      body: "{}",
     }),
 };
