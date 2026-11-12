@@ -96,6 +96,15 @@ export interface TableHandState {
   seq: number;
 }
 
+export interface EngineSnapshot {
+  config: TableConfig;
+  seats: { seatIndex: number; playerId: PlayerId }[];
+  stacks: { playerId: PlayerId; stackMojos: bigint }[];
+  buttonSeat: number | null;
+  hand: TableHandState | null;
+  lastHandResult: HandResult | null;
+}
+
 export class NlheTableEngine {
   private config: TableConfig;
   private seats: Map<number, PlayerId> = new Map();
@@ -356,6 +365,27 @@ export class NlheTableEngine {
     if (!this.stacks.has(playerId)) throw new Error("Player not seated");
     if (stackMojos < 0n) throw new Error("Invalid stack");
     this.stacks.set(playerId, stackMojos);
+  }
+
+  toSnapshot(): EngineSnapshot {
+    return {
+      config: structuredClone(this.config),
+      seats: [...this.seats.entries()].map(([seatIndex, playerId]) => ({ seatIndex, playerId })),
+      stacks: [...this.stacks.entries()].map(([playerId, stackMojos]) => ({ playerId, stackMojos })),
+      buttonSeat: this.buttonSeat,
+      hand: this.hand ? structuredClone(this.hand) : null,
+      lastHandResult: this.lastHandResult ? structuredClone(this.lastHandResult) : null,
+    };
+  }
+
+  static fromSnapshot(snapshot: EngineSnapshot): NlheTableEngine {
+    const engine = new NlheTableEngine(structuredClone(snapshot.config));
+    for (const seat of snapshot.seats) engine.seats.set(seat.seatIndex, seat.playerId);
+    for (const stack of snapshot.stacks) engine.stacks.set(stack.playerId, stack.stackMojos);
+    engine.buttonSeat = snapshot.buttonSeat;
+    engine.hand = snapshot.hand ? structuredClone(snapshot.hand) : null;
+    engine.lastHandResult = snapshot.lastHandResult ? structuredClone(snapshot.lastHandResult) : null;
+    return engine;
   }
 
   getHandState(): TableHandState | null {

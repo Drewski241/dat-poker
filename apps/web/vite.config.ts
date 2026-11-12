@@ -8,6 +8,7 @@ export default defineConfig({
     proxy: {
       "/v1": "http://localhost:4000",
       "/health": "http://localhost:4000",
+      "/ws": { target: "http://localhost:4000", ws: true },
     },
   },
 });

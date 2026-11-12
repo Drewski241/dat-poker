@@ -26,3 +26,14 @@ export function recordWithdrawal(record: WithdrawalRecord): void {
 export function getWithdrawal(tableId: string, playerId: string): WithdrawalRecord | undefined {
   return withdrawals.get(withdrawalKey(tableId, playerId));
 }
+
+export function exportWithdrawals(): WithdrawalRecord[] {
+  return [...withdrawals.values()];
+}
+
+export function replaceWithdrawals(records: WithdrawalRecord[]): void {
+  withdrawals.clear();
+  for (const record of records) {
+    withdrawals.set(withdrawalKey(record.tableId, record.playerId), record);
+  }
+}

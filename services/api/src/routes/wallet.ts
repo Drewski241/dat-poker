@@ -8,7 +8,7 @@ import {
   requestTreasuryOffer,
 } from "../treasury-payout.js";
 import { collectableMojos } from "../sit-and-go.js";
-import { getTableEngine, getTableRecord } from "./tables.js";
+import { commitTable, getTableEngine, getTableRecord } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import {
   buildBuyInMessage,
@@ -211,6 +211,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         }
       } catch (e) {
         table.seatPlayer(playerId, cashOut.seatIndex, cashOut.stackMojos);
+        commitTable(tableId);
         return reply.status(502).send({ error: (e as Error).message });
       }
     }
@@ -227,6 +228,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       createdAt: new Date().toISOString(),
     });
     clearBuyIn(tableId, playerId);
+    commitTable(tableId);
 
     return {
       ok: true,

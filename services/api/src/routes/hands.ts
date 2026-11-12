@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { generateServerSeed, type PlayerAction } from "@dat-poker/game-engine";
 import { runHouseTurn } from "../house-turn.js";
 import { accountSitAndGoHand, prepareSitAndGoHand } from "../sit-and-go.js";
-import { getTableEngine, getTableRecord } from "./tables.js";
+import { commitTable, getTableEngine, getTableRecord } from "./tables.js";
 
 export function registerHandRoutes(app: FastifyInstance): void {
   app.post<{ Params: { tableId: string }; Body: { handId?: string } }>(
@@ -16,6 +16,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         prepareSitAndGoHand(record);
         const handId = req.body.handId ?? randomUUID();
         const { commitHash } = table.startHand(handId);
+        commitTable(req.params.tableId);
         return { handId, commitHash, phase: "awaiting_seeds" };
       } catch (e) {
         return reply.status(400).send({ error: (e as Error).message });
@@ -31,6 +32,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
     if (!table) return reply.status(404).send({ error: "Table not found" });
     try {
       table.submitPlayerSeed(req.body.playerId, req.body.seed ?? generateServerSeed());
+      commitTable(req.params.tableId);
       return { ok: true };
     } catch (e) {
       return reply.status(400).send({ error: (e as Error).message });
@@ -55,6 +57,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
         const houseActions = runHouseTurn(table);
         const record = getTableRecord(req.params.tableId);
         if (record) accountSitAndGoHand(record);
+        commitTable(req.params.tableId);
         return {
           ok: true,
           hand: table.getPublicHandState(req.body?.playerId ?? null),
@@ -80,6 +83,7 @@ export function registerHandRoutes(app: FastifyInstance): void {
       const houseActions = runHouseTurn(table);
       const record = getTableRecord(req.params.tableId);
       if (record) accountSitAndGoHand(record);
+      commitTable(req.params.tableId);
       return {
         ok: true,
         hand: table.getPublicHandState(req.body.playerId),
