@@ -595,6 +595,56 @@ button.secondary {
   color: var(--accent);
 }
 
+.cp-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: min(100%, 42rem);
+}
+
+.cp-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.28rem;
+}
+
+.cp-cards .pcard,
+.cp-card .pcard {
+  width: 2.15rem;
+  height: 3.05rem;
+}
+
+.cp-card {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.cp-card:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.cp-card.selected {
+  transform: translateY(-8px);
+}
+
+.cp-card.selected .pcard {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.cp-idle {
+  opacity: 0.45;
+}
+
 .bj-felt {
   margin-top: 1.25rem;
   background: #14382e;

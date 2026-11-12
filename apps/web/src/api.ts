@@ -184,6 +184,34 @@ export interface VideoPokerTableView {
   limitReached: boolean;
 }
 
+export interface CalpokerCardFace extends CardFace {
+  played: boolean;
+}
+
+export interface CalpokerTableView {
+  tableId: string;
+  displayName: string;
+  stackMojos: string;
+  minAnteMojos: string;
+  maxAnteMojos: string;
+  phase: "betting" | "selecting" | "done";
+  playerCards: CalpokerCardFace[];
+  houseCards: CalpokerCardFace[];
+  anteMojos: string;
+  winner: "player" | "house" | "tie" | null;
+  playerHand: string | null;
+  houseHand: string | null;
+  payoutMojos: string | null;
+  profitMojos: string | null;
+  sessionStartMojos: string;
+  sessionResultMojos: string;
+  lossLimitMojos: string | null;
+  lossRoomMojos: string | null;
+  limitReached: boolean;
+  commitHash: string | null;
+  serverSeed: string | null;
+}
+
 export interface TableSeat {
   playerId: string;
   seatIndex: number;
@@ -413,6 +441,32 @@ export const api = {
 
   videoPokerLimit: (tableId: string, lossLimitMojos: string | null) =>
     request<VideoPokerTableView>(`/v1/video-poker/${tableId}/limit`, {
+      method: "POST",
+      body: JSON.stringify({ lossLimitMojos }),
+    }),
+
+  openCalpoker: (playerId: string, buyInMojos: string, displayName: string) =>
+    request<CalpokerTableView>("/v1/calpoker", {
+      method: "POST",
+      body: JSON.stringify({ playerId, buyInMojos, displayName }),
+    }),
+
+  getCalpoker: (tableId: string) => request<CalpokerTableView>(`/v1/calpoker/${tableId}`),
+
+  calpokerDeal: (tableId: string, amountMojos: string) =>
+    request<CalpokerTableView>(`/v1/calpoker/${tableId}/deal`, {
+      method: "POST",
+      body: JSON.stringify({ amountMojos }),
+    }),
+
+  calpokerSwap: (tableId: string, indexes: number[]) =>
+    request<CalpokerTableView>(`/v1/calpoker/${tableId}/swap`, {
+      method: "POST",
+      body: JSON.stringify({ indexes }),
+    }),
+
+  calpokerLimit: (tableId: string, lossLimitMojos: string | null) =>
+    request<CalpokerTableView>(`/v1/calpoker/${tableId}/limit`, {
       method: "POST",
       body: JSON.stringify({ lossLimitMojos }),
     }),
