@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import { api, type BuyInProof, type CloudWalletStatus, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
@@ -38,6 +38,7 @@ export function App() {
   const [datToken, setDatToken] = useState<DatTokenInfo | null>(null);
   const [wcConfig, setWcConfig] = useState<{ projectId: string; chainId: string } | null>(null);
 
+  const [cloud, setCloud] = useState<CloudWalletStatus | null>(null);
   const [session, setSession] = useState<WcSession | null>(null);
   const [wcUri, setWcUri] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -60,8 +61,18 @@ export function App() {
       try {
         await api.health();
         setApiOk(true);
-        const [config, dat] = await Promise.all([api.walletConfig(), api.datToken()]);
+        const [config, dat, cloudStatus] = await Promise.all([
+          api.walletConfig(),
+          api.datToken(),
+          api.cloudWallet().catch(() => ({
+            enabled: false,
+            connected: false,
+            address: null,
+            datSpendableMojos: null,
+          })),
+        ]);
         setDatToken(dat);
+        setCloud(cloudStatus);
         if (config.walletConnect) {
           setWcConfig(config.walletConnect);
           const existing = await restoreSession(config.walletConnect.projectId);
@@ -73,6 +84,15 @@ export function App() {
         setApiOk(false);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("cloudWallet") !== "denied") return;
+    setError("Could not connect Cloud Wallet.");
+    params.delete("cloudWallet");
+    const query = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, []);
 
   const run = useCallback(async (label: string, fn: () => Promise<void>) => {
@@ -143,6 +163,35 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [tableId, hand, playerId, busy, refreshTable, applyActionResponse]);
 
+  const cloudPlayer = Boolean(cloud?.connected && cloud.address && cloud.address === playerId);
+
+  useEffect(() => {
+    if (!cloud?.connected || !cloud.address || tableId) return;
+    setWalletAddress(cloud.address);
+    setPlayerId(cloud.address);
+    if (cloud.datSpendableMojos != null) setDatBalance(cloud.datSpendableMojos);
+  }, [cloud, tableId]);
+
+  const connectCloud = () =>
+    run("Connecting Cloud Wallet…", async () => {
+      const { url } = await api.cloudConnect();
+      window.location.assign(url);
+    });
+
+  const disconnectCloud = () =>
+    run("Disconnecting…", async () => {
+      const address = cloud?.address ?? null;
+      await api.cloudDisconnect();
+      setCloud((prev) =>
+        prev ? { ...prev, connected: false, address: null, datSpendableMojos: null } : prev,
+      );
+      if (address && playerId === address) {
+        setWalletAddress(null);
+        setPlayerId(null);
+        setDatBalance(null);
+      }
+    });
+
   const connectSage = () =>
     run("Opening WalletConnect…", async () => {
       if (!wcConfig) throw new Error("WalletConnect not configured on API (.env WALLETCONNECT_PROJECT_ID)");
@@ -201,7 +250,7 @@ export function App() {
 
       let buyInProof: BuyInProof | undefined;
 
-      if (!datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
+      if (!cloudPlayer && !datToken?.devBuyInEnabled && session && wcConfig && walletAddress) {
         const { message } = await api.buyInMessage({
           tableId: id,
           seatIndex: 0,
@@ -285,7 +334,7 @@ export function App() {
       const stackMojos = seat.stackMojos;
 
       let withdrawProof: BuyInProof | undefined;
-      if (!datToken?.devBuyInEnabled && session && wcConfig) {
+      if (!cloudPlayer && !datToken?.devBuyInEnabled && session && wcConfig) {
         const { message } = await api.withdrawMessage({
           tableId,
           address: walletAddress,
@@ -307,13 +356,13 @@ export function App() {
         };
       }
 
-      setStatus("Cashing out table stack…");
+      setStatus(cloudPlayer ? "Sending DAT to your Cloud Wallet…" : "Cashing out table stack…");
       const result = await api.withdraw(tableId, playerId, {
         withdrawProof,
         devAck: datToken?.devBuyInEnabled,
       });
 
-      if (result.mode === "offer" && result.offer && session && wcConfig) {
+      if (!cloudPlayer && result.mode === "offer" && result.offer && result.deliveredTo !== "cloud" && session && wcConfig) {
         if (result.offer.startsWith("mock-offer:")) {
           setStatus("Mock treasury offer (dev) — skipping Sage takeOffer");
         } else {
@@ -395,6 +444,33 @@ export function App() {
 
       <section className="panel">
         <h2>Wallet</h2>
+        {cloud?.enabled &&
+          (cloud.connected ? (
+            <>
+              <p className="ok-text">Cloud Wallet connected</p>
+              {cloud.address && (
+                <p className="mono">
+                  Address: {shortAddress(cloud.address)}
+                  {cloud.datSpendableMojos != null && (
+                    <>
+                      {" "}
+                      · {datToken?.ticker ?? "DAT"}:{" "}
+                      {formatDatMojos(cloud.datSpendableMojos, datToken?.ticker)}
+                    </>
+                  )}
+                </p>
+              )}
+              <div className="row">
+                <button type="button" disabled={busy} className="secondary" onClick={disconnectCloud}>
+                  Disconnect
+                </button>
+              </div>
+            </>
+          ) : (
+            <button type="button" disabled={busy || !apiOk} onClick={connectCloud}>
+              Connect Cloud Wallet
+            </button>
+          ))}
         {!wcConfig ? (
           <p className="muted">Set WALLETCONNECT_PROJECT_ID in API .env to enable Sage.</p>
         ) : !session ? (
@@ -456,7 +532,8 @@ export function App() {
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawToSage}>
-                  Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
+                  Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)}
+                  {cloudPlayer ? "" : " to Sage"}
                 </button>
               </div>
             )}
@@ -469,7 +546,11 @@ export function App() {
               <>
                 {" "}
                 · payout {formatDatMojos(withdrawResult.payoutMojos, datToken?.ticker)}
-                {withdrawResult.mode === "offer" ? " (on-chain via offer)" : " (ledger)"}
+                {withdrawResult.deliveredTo === "cloud"
+                  ? ""
+                  : withdrawResult.mode === "offer"
+                    ? " (on-chain via offer)"
+                    : " (ledger)"}
               </>
             )}
             . {withdrawResult.note}

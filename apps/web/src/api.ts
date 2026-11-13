@@ -3,6 +3,7 @@ const apiBase = import.meta.env.VITE_API_URL ?? "";
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${apiBase}${path}`, {
     ...init,
+    credentials: "include",
     headers: { "content-type": "application/json", ...init?.headers },
   });
   const body = (await res.json()) as T & { error?: string };
@@ -72,8 +73,16 @@ export interface WithdrawResult {
   payoutMode: "net" | "full";
   mode: "ledger" | "offer";
   offer?: string;
+  deliveredTo?: "cloud";
   feeMojos: string;
   note: string;
+}
+
+export interface CloudWalletStatus {
+  enabled: boolean;
+  connected: boolean;
+  address: string | null;
+  datSpendableMojos: string | null;
 }
 
 export interface TableSeat {
@@ -106,6 +115,14 @@ export const api = {
     }>("/v1/wallet/config"),
 
   datToken: () => request<DatTokenInfo>("/v1/wallet/dat-token"),
+
+  cloudWallet: () => request<CloudWalletStatus>("/v1/wallet/cloud"),
+
+  cloudConnect: () =>
+    request<{ url: string }>("/v1/wallet/cloud/connect", { method: "POST", body: "{}" }),
+
+  cloudDisconnect: () =>
+    request<{ ok: boolean }>("/v1/wallet/cloud/disconnect", { method: "POST", body: "{}" }),
 
   buyInMessage: (params: {
     tableId: string;

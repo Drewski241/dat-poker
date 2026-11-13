@@ -300,6 +300,20 @@ sage rpc get_keys '{}'
 
 Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (`50000` mojos).
 
+Treasury Sage still builds that offer. Chia Cloud Wallet, once a player is connected, is only where the offer is delivered (`addOffer`, then `takeOffer`). The site does not show registration steps.
+
+Cloud Wallet connect stays **off** until Chia has approved this site's OAuth app and `CHIA_CLOUD_WALLET_CLIENT_ID` is set on the API host. As of now that app is not available from Chia, so leave the client id empty. Players keep withdrawing through Sage, and the website shows no Cloud Wallet connect control.
+
+When Chia approves the app:
+
+1. Register it under Cloud Wallet **Settings → OAuth Apps**.
+2. Redirect URI, exactly: `https://datspiritpoker.com/v1/wallet/cloud/callback`
+3. Scopes: `wallet.read`, `offer.read`, `offer.accept`, `offline_access`
+4. Set `CHIA_CLOUD_WALLET_CLIENT_ID` on the API host.
+5. Set `CHIA_CLOUD_WALLET_CLIENT_SECRET` only if the portal issued one. The secret stays on the server and is never sent to the browser.
+
+Until that client id is present, `POST /v1/wallet/cloud/connect` is unavailable and the web app renders no connect button.
+
 ---
 
 ## Troubleshooting
@@ -319,7 +333,7 @@ Net payout example: 1000 DAT buy-in, 1050 stack → treasury offers **50 DAT** (
 
 - **Never expose Sage RPC port 9257** to the network — treasury service talks to `127.0.0.1` on the treasury host only.
 - Restrict treasury service port **4200** to the game API server IP (VPN or private subnet).
-- Players never touch the treasury host; offers are delivered through the API → web → WalletConnect.
+- Players never touch the treasury host. Sage players receive offers through the API → web → WalletConnect. A connected Cloud Wallet receives the same treasury offer from the API. The Cloud Wallet client secret never leaves the API host.
 - Use a dedicated treasury fingerprint with limited DAT balance.
 
 ## Related

@@ -7,6 +7,7 @@ import {
   readTreasuryPayoutConfig,
   requestTreasuryOffer,
 } from "../treasury-payout.js";
+import { cloudPlayerFromRequest, cloudWalletEnabled, deliverTreasuryOffer } from "../cloud-wallet.js";
 import { getTableEngine } from "./tables.js";
 import { hasWithdrawal, recordWithdrawal } from "../withdraw-store.js";
 import {
@@ -54,6 +55,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     return {
       dat,
       walletConnectConfigured: Boolean(process.env.WALLETCONNECT_PROJECT_ID?.trim()),
+      cloudWalletEnabled: cloudWalletEnabled(),
       withdrawTreasuryConfigured: Boolean(payout.treasuryPayoutUrl),
       chiaGamingLobby: lobbyOk ? "up" : "down",
     };
@@ -136,26 +138,30 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
 
     const dat = readDatTokenConfig();
     const payoutConfig = readTreasuryPayoutConfig();
+    const cloudPlayer = await cloudPlayerFromRequest(req);
+    const cloudOwnsSeat = cloudPlayer?.address === playerId;
 
     if (!dat.devBuyInEnabled) {
       if (!dat.assetId) {
         return reply.status(503).send({ error: "DAT token not configured" });
       }
-      if (!withdrawProof) {
-        return reply.status(400).send({ error: "Wallet withdraw proof required" });
-      }
-      const proofError = validateWithdrawProof(withdrawProof, {
-        tableId,
-        stackMojos: stack.toString(),
-        playerId,
-      });
-      if (proofError) {
-        return reply.status(400).send({ error: proofError });
+      if (!cloudOwnsSeat) {
+        if (!withdrawProof) {
+          return reply.status(400).send({ error: "Wallet withdraw proof required" });
+        }
+        const proofError = validateWithdrawProof(withdrawProof, {
+          tableId,
+          stackMojos: stack.toString(),
+          playerId,
+        });
+        if (proofError) {
+          return reply.status(400).send({ error: proofError });
+        }
       }
       if (!hasBuyIn(tableId, playerId)) {
         return reply.status(400).send({ error: "No verified buy-in found for this player" });
       }
-    } else if (!devAck) {
+    } else if (!devAck && !cloudOwnsSeat) {
       if (dat.assetId && withdrawProof) {
         const proofError = validateWithdrawProof(withdrawProof, {
           tableId,
@@ -183,7 +189,9 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
 
     let mode: "ledger" | "offer" = "ledger";
     let offer: string | undefined;
+    let deliveredTo: "cloud" | undefined;
     let feeMojos = payoutConfig.withdrawFeeMojos;
+    let note: string;
 
     if (payoutMojos > 0n && payoutConfig.treasuryPayoutUrl && dat.assetId) {
       try {
@@ -201,6 +209,31 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         table.seatPlayer(playerId, cashOut.seatIndex, cashOut.stackMojos);
         return reply.status(502).send({ error: (e as Error).message });
       }
+    }
+
+    if (cloudOwnsSeat && cloudPlayer && offer) {
+      if (!offer.startsWith("offer1")) {
+        mode = "ledger";
+        offer = undefined;
+        note = "Table stack cleared. Treasury did not return a DAT offer.";
+      } else {
+        try {
+          await deliverTreasuryOffer(cloudPlayer.sessionId, offer, feeMojos);
+          deliveredTo = "cloud";
+          offer = undefined;
+          note = "DAT offer sent to your Cloud Wallet.";
+        } catch {
+          table.seatPlayer(playerId, cashOut.seatIndex, cashOut.stackMojos);
+          return reply.status(502).send({ error: "Could not send the DAT offer to your Cloud Wallet." });
+        }
+      }
+    } else {
+      note =
+        mode === "ledger"
+          ? payoutMojos > 0n
+            ? "Virtual buy-in: table stack cleared. Configure DAT_TREASURY_PAYOUT_URL for on-chain winnings."
+            : "Table stack cleared. No net winnings to pay out."
+          : "Approve the treasury offer in Sage to receive DAT.";
     }
 
     const withdrawalId = randomUUID();
@@ -225,13 +258,9 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
       payoutMode: payoutConfig.payoutMode,
       mode,
       offer,
+      deliveredTo,
       feeMojos: feeMojos.toString(),
-      note:
-        mode === "ledger"
-          ? payoutMojos > 0n
-            ? "Virtual buy-in: table stack cleared. Configure DAT_TREASURY_PAYOUT_URL for on-chain winnings."
-            : "Table stack cleared. No net winnings to pay out."
-          : "Approve the treasury offer in Sage to receive DAT.",
+      note,
     };
   });
 }
