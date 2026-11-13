@@ -199,7 +199,7 @@ export function CasinoApp({ onNavigate }: { onNavigate: (next: SitePage) => void
           <section className="panel">
             <h2>Choose a table</h2>
             <p className="muted small">Buy-in moves DAT from your account onto the table. Leave credits the stack back.</p>
-            <div className="row">
+            <div className="row casino-buyins">
               {BUY_INS.map((amount) => (
                 <button
                   key={amount.toString()}
@@ -212,15 +212,66 @@ export function CasinoApp({ onNavigate }: { onNavigate: (next: SitePage) => void
                 </button>
               ))}
             </div>
-            <div className="row">
-              <button type="button" disabled={busy} onClick={() => open("blackjack")}>
-                {blackjack ? "Back to blackjack" : "Play blackjack"}
+            <div className="casino-shelf">
+              <button type="button" className="game-poster poster-bj" disabled={busy} onClick={() => open("blackjack")}>
+                <span className="poster-art" aria-hidden="true">
+                  <span className="mini-card">
+                    A<span>♠</span>
+                  </span>
+                  <span className="mini-card red">
+                    K<span>♥</span>
+                  </span>
+                </span>
+                <span className="poster-copy">
+                  <strong>Blackjack</strong>
+                  <em>Pays 3 to 2</em>
+                  <span>{blackjack ? "Back to the table" : "Take a seat"}</span>
+                </span>
               </button>
-              <button type="button" className="secondary" disabled={busy} onClick={() => open("video")}>
-                {video ? "Back to video poker" : "Play video poker"}
+              <button type="button" className="game-poster poster-vp" disabled={busy} onClick={() => open("video")}>
+                <span className="poster-art poster-fan" aria-hidden="true">
+                  <span className="mini-card">
+                    10<span>♠</span>
+                  </span>
+                  <span className="mini-card red">
+                    J<span>♥</span>
+                  </span>
+                  <span className="mini-card red">
+                    Q<span>♦</span>
+                  </span>
+                  <span className="mini-card">
+                    K<span>♣</span>
+                  </span>
+                  <span className="mini-card red">
+                    A<span>♥</span>
+                  </span>
+                </span>
+                <span className="poster-copy">
+                  <strong>Video poker</strong>
+                  <em>Jacks or better</em>
+                  <span>{video ? "Back to the machine" : "Take a seat"}</span>
+                </span>
               </button>
-              <button type="button" className="secondary" disabled={busy} onClick={() => open("calpoker")}>
-                {calpoker ? "Back to California poker" : "Play California poker"}
+              <button type="button" className="game-poster poster-cp" disabled={busy} onClick={() => open("calpoker")}>
+                <span className="poster-art" aria-hidden="true">
+                  <span className="mini-card red">
+                    A<span>♦</span>
+                  </span>
+                  <span className="mini-card">
+                    K<span>♠</span>
+                  </span>
+                  <span className="mini-card red">
+                    Q<span>♥</span>
+                  </span>
+                  <span className="mini-card">
+                    J<span>♣</span>
+                  </span>
+                </span>
+                <span className="poster-copy">
+                  <strong>California poker</strong>
+                  <em>Give four, keep the best five</em>
+                  <span>{calpoker ? "Back to the duel" : "Take a seat"}</span>
+                </span>
               </button>
             </div>
           </section>

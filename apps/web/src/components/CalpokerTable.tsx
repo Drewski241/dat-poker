@@ -30,6 +30,7 @@ export function CalpokerTable({
   const stack = BigInt(view.stackMojos);
   const room = view.lossRoomMojos === null ? null : BigInt(view.lossRoomMojos);
   const maxAnte = BigInt(view.maxAnteMojos);
+  const tone = view.winner === "player" ? "win" : view.winner === "tie" ? "push" : view.winner === "house" ? "lose" : null;
 
   useEffect(() => {
     if (!selecting) setSelected([]);
@@ -45,50 +46,60 @@ export function CalpokerTable({
 
   return (
     <div className="bj-wrap">
-      <section className="bj-felt" aria-label="California poker">
-        <p className="bj-rule">Eight cards each · give four away · best five win</p>
-        <div className="cp-side">
-          <p className="bj-label">House{view.houseHand ? ` · ${view.houseHand}` : ""}</p>
-          <div className="cp-cards">
-            {view.houseCards.map((card, index) => (
-              <div key={`h${card.rank}${card.suit}${index}`} className={view.phase === "done" && !card.played ? "cp-idle" : ""}>
-                <PlayingCard card={card} size="sm" />
+      <section className="cp-table" aria-label="California poker">
+        <div className="table-wood cp-wood">
+          <div className="cp-felt">
+            <p className="bj-rule">Eight cards each · give four away · best five win</p>
+            <div className={`cp-side house ${view.winner === "house" ? "winner" : ""}`}>
+              <p className="bj-label">House{view.houseHand ? ` · ${view.houseHand}` : ""}</p>
+              <div className="cp-cards">
+                {view.houseCards.map((card, index) => (
+                  <div key={`h${card.rank}${card.suit}${index}`} className={view.phase === "done" && !card.played ? "cp-idle" : ""}>
+                    <PlayingCard card={card} size="sm" />
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+            <div className="cp-lane">
+              <span className="cp-lane-mark" aria-hidden="true" />
+              <p>{selecting ? `Give the house four cards · ${selected.length} of 4` : "Best five cards play"}</p>
+            </div>
+            {view.phase === "done" && tone && <p className={`felt-banner ${tone}`}>{resultLine(view)}</p>}
+            <div className={`cp-side player ${view.winner === "player" ? "winner" : ""}`}>
+              <p className="bj-label">
+                {view.displayName}
+                {view.playerHand ? ` · ${view.playerHand}` : ""}
+              </p>
+              <div className="cp-cards">
+                {view.playerCards.map((card, index) => {
+                  const on = selected.includes(index);
+                  return (
+                    <button
+                      key={`p${card.rank}${card.suit}${index}`}
+                      type="button"
+                      className={`cp-card ${on ? "selected" : ""} ${view.phase === "done" && !card.played ? "cp-idle" : ""}`}
+                      disabled={busy || !selecting}
+                      aria-pressed={on}
+                      onClick={() => toggle(index)}
+                    >
+                      <PlayingCard card={card} size="sm" />
+                      <span className="vp-held-label">{on ? "Give" : ""}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {view.playerCards.length === 0 && <p className="felt-wait">Place an ante</p>}
+            </div>
+            {view.anteMojos !== "0" && <ChipStack mojos={view.anteMojos} ticker={ticker} />}
+            {view.commitHash && (
+              <p className="deck-plaque">
+                {view.serverSeed
+                  ? `Deck revealed · ${view.serverSeed.slice(0, 8)}…`
+                  : `Deck locked · ${view.commitHash.slice(0, 8)}…`}
+              </p>
+            )}
           </div>
         </div>
-        {view.phase === "done" && <p className="bj-result">{resultLine(view)}</p>}
-        {selecting && <p className="bj-label">Choose four cards to give the house · {selected.length} of 4</p>}
-        <div className="cp-side">
-          <p className="bj-label">{view.displayName}{view.playerHand ? ` · ${view.playerHand}` : ""}</p>
-          <div className="cp-cards">
-            {view.playerCards.map((card, index) => {
-              const on = selected.includes(index);
-              return (
-                <button
-                  key={`p${card.rank}${card.suit}${index}`}
-                  type="button"
-                  className={`cp-card ${on ? "selected" : ""} ${view.phase === "done" && !card.played ? "cp-idle" : ""}`}
-                  disabled={busy || !selecting}
-                  aria-pressed={on}
-                  onClick={() => toggle(index)}
-                >
-                  <PlayingCard card={card} size="sm" />
-                  <span className="vp-held-label">{on ? "Swap" : ""}</span>
-                </button>
-              );
-            })}
-          </div>
-          {view.playerCards.length === 0 && <p className="felt-wait">Place an ante</p>}
-        </div>
-        {view.anteMojos !== "0" && <ChipStack mojos={view.anteMojos} ticker={ticker} />}
-        {view.commitHash && (
-          <p className="deck-lock">
-            {view.serverSeed
-              ? `Deck revealed · ${view.serverSeed.slice(0, 8)}…`
-              : `Deck locked · ${view.commitHash.slice(0, 8)}…`}
-          </p>
-        )}
       </section>
       <div className="actions-dock">
         <SessionReminder
@@ -105,8 +116,8 @@ export function CalpokerTable({
         </p>
         {selecting ? (
           <div className="actions">
-            <button type="button" disabled={busy || selected.length !== 4} onClick={() => onSwap(selected)}>
-              swap
+            <button type="button" className="action-draw" disabled={busy || selected.length !== 4} onClick={() => onSwap(selected)}>
+              Swap
             </button>
           </div>
         ) : (
@@ -124,6 +135,7 @@ export function CalpokerTable({
             ))}
             <button
               type="button"
+              className="action-deal"
               disabled={busy || view.limitReached || ante > stack || (room !== null && ante > room)}
               onClick={() => onDeal(ante.toString())}
             >

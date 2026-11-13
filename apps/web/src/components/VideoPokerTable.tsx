@@ -32,12 +32,23 @@ export function VideoPokerTable({
   const coinsShown = holding || view.phase === "done" ? view.coins : selected;
   const dealBet = coin * BigInt(selected);
   const canDeal = !holding && !view.limitReached && dealBet > 0n && dealBet <= stack && (room === null || dealBet <= room);
+  const tone = view.phase === "done" ? resultTone(view) : null;
 
   return (
     <div className="bj-wrap">
-      <section className="bj-felt" aria-label="Video poker">
-        <p className="bj-rule">Jacks or better · a five-coin royal pays 800 for 1</p>
-        <div className="vp-layout">
+      <section className="vp-machine" aria-label="Video poker">
+        <div className="vp-marquee">
+          <span className="vp-bulbs" aria-hidden="true">
+            {Array.from({ length: 18 }, (_, index) => (
+              <i key={index} />
+            ))}
+          </span>
+          <div className="vp-marquee-title">
+            <strong>Jacks or Better</strong>
+            <span>Five-coin royal pays 800 for 1</span>
+          </div>
+        </div>
+        <div className="vp-cabinet">
           <table className="vp-pay">
             <tbody>
               {view.paytable.map((row) => {
@@ -52,7 +63,7 @@ export function VideoPokerTable({
               })}
             </tbody>
           </table>
-          <div className="vp-hand">
+          <div className="vp-screen">
             {view.cards.length === 0 ? (
               <p className="felt-wait">Place a bet</p>
             ) : (
@@ -75,16 +86,19 @@ export function VideoPokerTable({
                 })}
               </div>
             )}
+            <div className="vp-lamps" aria-hidden="true">
+              {Array.from({ length: view.maxCoins }, (_, index) => (
+                <span key={index} className={index < coinsShown ? "vp-lamp on" : "vp-lamp"} />
+              ))}
+            </div>
             {view.betMojos !== "0" && <ChipStack mojos={view.betMojos} ticker={ticker} />}
-            {view.phase === "done" && <p className="bj-result">{resultLine(view, ticker)}</p>}
+            {view.phase === "done" && <p className={`felt-banner ${tone}`}>{resultLine(view, ticker)}</p>}
             {holding && <p className="bj-label">{view.handName}. Hold cards, then draw.</p>}
           </div>
         </div>
         {view.commitHash && (
-          <p className="deck-lock">
-            {view.serverSeed
-              ? `Deck revealed · ${view.serverSeed.slice(0, 8)}…`
-              : `Deck locked · ${view.commitHash.slice(0, 8)}…`}
+          <p className="deck-plaque">
+            {view.serverSeed ? `Deck revealed · ${view.serverSeed.slice(0, 8)}…` : `Deck locked · ${view.commitHash.slice(0, 8)}…`}
           </p>
         )}
       </section>
@@ -103,8 +117,8 @@ export function VideoPokerTable({
         </p>
         {holding ? (
           <div className="actions">
-            <button type="button" disabled={busy} onClick={onDraw}>
-              draw
+            <button type="button" className="action-draw" disabled={busy} onClick={onDraw}>
+              Draw
             </button>
           </div>
         ) : (
@@ -120,7 +134,7 @@ export function VideoPokerTable({
                 {coins} {coins === 1 ? "coin" : "coins"}
               </button>
             ))}
-            <button type="button" disabled={busy || !canDeal} onClick={() => onDeal(selected)}>
+            <button type="button" className="action-deal" disabled={busy || !canDeal} onClick={() => onDeal(selected)}>
               {view.phase === "done" ? "Deal again" : "Deal"}
             </button>
             <button type="button" className="secondary" disabled={busy} onClick={onLeave}>
@@ -131,6 +145,12 @@ export function VideoPokerTable({
       </div>
     </div>
   );
+}
+
+function resultTone(view: VideoPokerTableView): string {
+  if (!view.result || view.result === "nothing") return "lose";
+  if (view.result === "jacks_or_better") return "push";
+  return "win";
 }
 
 function resultLine(view: VideoPokerTableView, ticker?: string): string {

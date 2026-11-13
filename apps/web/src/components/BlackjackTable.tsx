@@ -31,44 +31,65 @@ export function BlackjackTable({
   const betting = view.phase !== "acting";
   const blocked = view.limitReached;
   const result = view.phase === "done" ? resultLine(view, ticker) : null;
+  const tone = resultTone(view);
 
   return (
     <div className="bj-wrap">
-      <section className="bj-felt" aria-label="Blackjack table">
-        <p className="bj-rule">Blackjack pays 3 to 2 · dealer stands on 17</p>
-        <div className="bj-spot">
-          <p className="bj-label">Dealer{view.dealerTotal ? ` · ${view.dealerTotal}` : ""}</p>
-          <div className="hole-cards">
-            {view.dealerCards.map((card, index) => (
-              <PlayingCard key={`${card.rank}${card.suit}${index}`} card={card} />
-            ))}
-            {view.phase === "acting" && <span className="playing-card playing-card-md playing-card-back" aria-label="Hole card" />}
+      <section className="bj-table" aria-label="Blackjack table">
+        <div className="table-wood">
+          <div className="bj-felt-oval">
+            <p className="bj-rule">Blackjack pays 3 to 2 · dealer stands on 17</p>
+            <div className="bj-dealer-row">
+              <div className="card-shoe" aria-hidden="true">
+                <span className="playing-card playing-card-sm playing-card-back" />
+                <span className="playing-card playing-card-sm playing-card-back" />
+                <span className="playing-card playing-card-sm playing-card-back" />
+              </div>
+              <div className="bj-spot">
+                <p className="bj-label">Dealer{view.dealerTotal ? ` · ${view.dealerTotal}` : ""}</p>
+                <div className="hole-cards">
+                  {view.dealerCards.map((card, index) => (
+                    <PlayingCard key={`${card.rank}${card.suit}${index}`} card={card} />
+                  ))}
+                  {view.phase === "acting" && (
+                    <span className="playing-card playing-card-md playing-card-back" aria-label="Hole card" />
+                  )}
+                </div>
+              </div>
+              <div className="discard-tray" aria-hidden="true" />
+            </div>
+            <div className="bj-hands">
+              {view.hands.map((hand, index) => (
+                <div key={index} className={`bj-spot ${hand.active ? "acting" : ""}`}>
+                  <p className="bj-label">
+                    {view.hands.length > 1 ? `Hand ${index + 1}` : view.displayName} · {hand.total}
+                  </p>
+                  <div className="hole-cards">
+                    {hand.cards.map((card, cardIndex) => (
+                      <PlayingCard key={`${card.rank}${card.suit}${cardIndex}`} card={card} />
+                    ))}
+                  </div>
+                  <div className="bet-circle">
+                    <ChipStack mojos={hand.betMojos} ticker={ticker} />
+                  </div>
+                </div>
+              ))}
+              {view.hands.length === 0 && (
+                <div className="bet-circle empty">
+                  <span>Place a bet</span>
+                </div>
+              )}
+            </div>
+            {result && <p className={`felt-banner ${tone}`}>{result}</p>}
+            {view.commitHash && (
+              <p className="deck-plaque">
+                {view.serverSeed
+                  ? `Deck revealed · ${view.serverSeed.slice(0, 8)}…`
+                  : `Deck locked · ${view.commitHash.slice(0, 8)}…`}
+              </p>
+            )}
           </div>
         </div>
-        <div className="bj-hands">
-          {view.hands.map((hand, index) => (
-            <div key={index} className={`bj-spot ${hand.active ? "acting" : ""}`}>
-              <p className="bj-label">
-                {view.hands.length > 1 ? `Hand ${index + 1}` : view.displayName} · {hand.total}
-              </p>
-              <div className="hole-cards">
-                {hand.cards.map((card, cardIndex) => (
-                  <PlayingCard key={`${card.rank}${card.suit}${cardIndex}`} card={card} />
-                ))}
-              </div>
-              <ChipStack mojos={hand.betMojos} ticker={ticker} />
-            </div>
-          ))}
-          {view.hands.length === 0 && <p className="felt-wait">Place a bet</p>}
-        </div>
-        {result && <p className="bj-result">{result}</p>}
-        {view.commitHash && (
-          <p className="deck-lock">
-            {view.serverSeed
-              ? `Deck revealed · ${view.serverSeed.slice(0, 8)}…`
-              : `Deck locked · ${view.commitHash.slice(0, 8)}…`}
-          </p>
-        )}
       </section>
       <div className="actions-dock">
         <SessionReminder
@@ -98,6 +119,7 @@ export function BlackjackTable({
             ))}
             <button
               type="button"
+              className="action-deal"
               disabled={busy || blocked || selected > stack || (room !== null && selected > room)}
               onClick={() => onBet(selected.toString())}
             >
@@ -110,23 +132,23 @@ export function BlackjackTable({
         ) : (
           <div className="actions">
             {view.actions.hit && (
-              <button type="button" disabled={busy} onClick={() => onAction("hit")}>
-                hit
+              <button type="button" className="action-hit" disabled={busy} onClick={() => onAction("hit")}>
+                Hit
               </button>
             )}
             {view.actions.stand && (
-              <button type="button" disabled={busy} onClick={() => onAction("stand")}>
-                stand
+              <button type="button" className="action-stand" disabled={busy} onClick={() => onAction("stand")}>
+                Stand
               </button>
             )}
             {view.actions.double && (
-              <button type="button" className="primary-bet" disabled={busy} onClick={() => onAction("double")}>
-                double
+              <button type="button" className="action-double" disabled={busy} onClick={() => onAction("double")}>
+                Double
               </button>
             )}
             {view.actions.split && (
-              <button type="button" disabled={busy} onClick={() => onAction("split")}>
-                split
+              <button type="button" className="action-split" disabled={busy} onClick={() => onAction("split")}>
+                Split
               </button>
             )}
           </div>
@@ -134,6 +156,13 @@ export function BlackjackTable({
       </div>
     </div>
   );
+}
+
+function resultTone(view: BlackjackTableView): string {
+  const outcomes = view.hands.map((hand) => hand.outcome);
+  if (outcomes.some((outcome) => outcome === "blackjack" || outcome === "win")) return "win";
+  if (outcomes.length > 0 && outcomes.every((outcome) => outcome === "push")) return "push";
+  return "lose";
 }
 
 function resultLine(view: BlackjackTableView, ticker?: string): string {
