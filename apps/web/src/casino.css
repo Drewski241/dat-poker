@@ -1,0 +1,201 @@
+.casino-head h1 {
+  margin-bottom: 0.25rem;
+}
+
+.playing-card-back {
+  background: #1b4d3e;
+  border: 2px solid #d7ebe1;
+  border-radius: 0.35rem;
+  display: inline-block;
+  box-sizing: border-box;
+}
+
+.hole-cards,
+.vp-cards,
+.cp-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+  align-items: flex-end;
+}
+
+.felt-wait,
+.deck-lock {
+  margin: 0;
+  color: #d7ebe1;
+  text-align: center;
+}
+
+.session-block {
+  margin-bottom: 0.75rem;
+}
+
+.session-reminder {
+  margin: 0 0 0.45rem;
+  color: var(--muted);
+}
+
+.session-reminder.down,
+.session-reminder.limit {
+  color: var(--error);
+}
+
+.session-reminder.up {
+  color: var(--accent);
+}
+
+.cp-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: min(100%, 42rem);
+}
+
+.cp-cards .playing-card {
+  width: 2.15rem;
+  height: 3.05rem;
+  font-size: 0.72rem;
+}
+
+.cp-card,
+.vp-card {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.cp-card:disabled,
+.vp-card:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.cp-card.selected,
+.vp-card.held {
+  transform: translateY(-8px);
+}
+
+.cp-card.selected .playing-card,
+.vp-card.held .playing-card {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.cp-idle {
+  opacity: 0.45;
+}
+
+.bj-felt {
+  margin-top: 1.25rem;
+  background: #14382e;
+  border: 10px solid #3a2418;
+  border-radius: 28px;
+  min-height: 28rem;
+  padding: 1.25rem 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.bj-rule,
+.bj-label,
+.bj-result {
+  margin: 0;
+  text-align: center;
+}
+
+.bj-rule {
+  color: #d7ebe1;
+  letter-spacing: 0.04em;
+  font-size: 0.85rem;
+}
+
+.bj-spot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.bj-spot.acting .bj-label {
+  color: var(--accent);
+}
+
+.bj-hands {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  min-height: 8rem;
+}
+
+.bj-result {
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+
+.vp-layout {
+  width: min(100%, 42rem);
+  display: grid;
+  grid-template-columns: 15rem 1fr;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.vp-pay {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.vp-pay th,
+.vp-pay td {
+  padding: 0.2rem 0.35rem;
+  text-align: left;
+  font-weight: 500;
+  color: #d7ebe1;
+}
+
+.vp-pay td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vp-pay tr.hit th,
+.vp-pay tr.hit td {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.vp-hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 8rem;
+}
+
+.vp-held-label {
+  min-height: 1rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.actions-dock {
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .vp-layout {
+    grid-template-columns: 1fr;
+  }
+}

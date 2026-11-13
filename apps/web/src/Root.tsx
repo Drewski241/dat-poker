@@ -3,6 +3,7 @@ import { App } from "./App.js";
 import { Feedback } from "./Feedback.js";
 import { Landing } from "./Landing.js";
 import { Privacy } from "./Privacy.js";
+import { CasinoApp } from "./CasinoApp.js";
 import { SlotsApp } from "./SlotsApp.js";
 import { pageToPath, pathToPage, type SitePage } from "./site-route.js";
 
@@ -33,6 +34,9 @@ export function Root() {
   }
   if (page === "slots") {
     return <SlotsApp onNavigate={onNavigate} pathname={pathname} />;
+  }
+  if (page === "casino") {
+    return <CasinoApp onNavigate={onNavigate} />;
   }
   if (page === "feedback") {
     return <Feedback onNavigate={onNavigate} />;

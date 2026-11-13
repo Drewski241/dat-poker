@@ -25,6 +25,9 @@ export function SiteNav({
       <a href={pageToPath("slots")} className={page === "slots" ? "active" : ""} onClick={go("slots")}>
         DAT Slots
       </a>
+      <a href={pageToPath("casino")} className={page === "casino" ? "active" : ""} onClick={go("casino")}>
+        Casino
+      </a>
       <a href={pageToPath("feedback")} className={page === "feedback" ? "active" : ""} onClick={go("feedback")}>
         Feedback
       </a>

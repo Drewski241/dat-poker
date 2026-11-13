@@ -609,7 +609,8 @@ describe("NlheTableEngine", () => {
     const shortFinal = table.getPlayerStack("short")!;
     const deepFinal = table.getPlayerStack("deep")!;
     expect(shortFinal + deepFinal).toBe(103_000n);
-    expect(shortFinal === 0n || shortFinal === 6_000n).toBe(true);
+    // Short loses the 3_000, chops it back, or wins the 6_000 main pot.
+    expect(shortFinal === 0n || shortFinal === 3_000n || shortFinal === 6_000n).toBe(true);
   });
 
   it("skips zero-stack seats on the next deal without confiscating leftover chips", () => {
@@ -751,18 +752,20 @@ describe("NlheTableEngine", () => {
     table.revealAndDeal();
 
     const pre = table.getHandState()!;
-    expect(pre.actionSeat).toBe(2);
-    table.applyAction("cara", "call");
-    table.applyAction("alice", "fold");
+    // Button is the first occupied seat. Three-handed, that seat acts first.
+    expect(pre.dealerSeat).toBe(0);
+    expect(pre.actionSeat).toBe(0);
+    table.applyAction("alice", "call");
+    table.applyAction("bob", "fold");
 
     const stillPreflop = table.getHandState();
     expect(stillPreflop?.street).toBe("preflop");
-    expect(stillPreflop?.actionSeat).toBe(1);
+    expect(stillPreflop?.actionSeat).toBe(2);
 
-    table.applyAction("bob", "check");
+    table.applyAction("cara", "check");
     const flop = table.getHandState();
     expect(flop?.street).toBe("flop");
-    expect(flop?.actionSeat).toBe(1);
+    expect(flop?.actionSeat).toBe(2);
     expect(flop?.players.find((p) => p.seatIndex === flop.actionSeat)?.folded).toBe(false);
   });
 

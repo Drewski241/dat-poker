@@ -2422,12 +2422,20 @@ export function App({ onNavigate }: { onNavigate?: (next: SitePage) => void } = 
         <section className="panel game-mode-chooser">
           <h2>Choose your game</h2>
           <p className="muted small">
-            Redeem daily DAT above, then pick poker tables or the slot floor (five games, same account
-            seated).
+            Redeem daily DAT above, then pick poker tables, the casino, or the slot floor (five games, same
+            account).
           </p>
           <div className="row">
             <button type="button" className="primary-bet" disabled={busy}>
               Poker lobby (this page)
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => onNavigate("casino")}
+            >
+              Blackjack, video poker, California poker
             </button>
             <button
               type="button"

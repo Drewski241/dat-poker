@@ -42,6 +42,16 @@ export function parseDatTokensToMojos(raw: string): bigint | null {
 }
 
 /** Default NLHE table stakes when buy-ins are DAT CAT mojos. */
+/** Session loss-limit choices for blackjack, video poker, and California poker. */
+export const CASINO_LOSS_LIMIT_CHOICES_MOJOS = [100_000n, 250_000n, 500_000n] as const;
+
+/** Applied when a casino table is opened. The player can raise or clear it between hands. */
+export const DEFAULT_CASINO_LOSS_LIMIT_MOJOS = 250_000n;
+
+/** Account chips moved onto a casino table. 100 DAT is one minimum bet; 5,000 DAT is one daily redeem. */
+export const CASINO_MIN_BUY_IN_MOJOS = 100_000n;
+export const CASINO_MAX_BUY_IN_MOJOS = 5_000_000n;
+
 export const DAT_TABLE_DEFAULTS = {
   minBuyInMojos: 1_000_000n, // 1,000 DAT
   maxBuyInMojos: 50_000_000n, // 50,000 DAT

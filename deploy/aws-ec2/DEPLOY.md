@@ -4,8 +4,16 @@ This kit deploys the **web client + REST API** on one Amazon Linux 2023 EC2
 instance (nginx on `:80`, API on `:4000`). Treasury Sage and
 `pnpm dev:treasury` stay on a **separate** machine ([docs/TREASURY.md](../../docs/TREASURY.md)).
 
-**Current beta branch (16-player SNG + 500-player MTT, chop pots, SNG sit-out pace, cash auto-deal):**
-`cursor/fix-final-table-deal-stuck-7c36` (or set `DAT_POKER_REPO_REF` on redeploy).
+**Current beta branch** (poker, Spirit Slots, accounts, and the casino floor):
+`cursor/beta-casino-games-750d`.
+
+Paste this in Session Manager. It checks out that branch and keeps `.env`, `data/accounts.json`, and `data/ledger.json`:
+
+```bash
+sudo bash -c 'export DAT_POKER_REPO_REF=cursor/beta-casino-games-750d; curl -fsSL "https://raw.githubusercontent.com/Drewski241/dat-poker/cursor/beta-casino-games-750d/deploy/aws-ec2/up.sh" | bash'
+```
+
+Do not point `DAT_POKER_REPO_REF` at `cursor/california-poker-750d` or an older poker-only branch. Those trees do not contain Spirit Slots, accounts, or the treasury client, and `redeploy.sh` will refuse the build. Wait for **`beta redeploy ok`**.
 
 ## Option A — EC2 console (recommended)
 

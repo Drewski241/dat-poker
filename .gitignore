@@ -9,3 +9,8 @@ coverage
 *.log
 .DS_Store
 data/ledger.json
+services/api/data/blackjack.json
+services/api/data/video-poker.json
+services/api/data/calpoker.json
+services/api/data/tables.json
+services/api/data/terms-acceptances.json

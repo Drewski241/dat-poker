@@ -7,6 +7,11 @@ describe("pathToPage", () => {
     expect(pathToPage("")).toBe("landing");
   });
 
+  it("maps /casino to the casino floor", () => {
+    expect(pathToPage("/casino")).toBe("casino");
+    expect(pathToPage("/casino/")).toBe("casino");
+  });
+
   it("maps /play to the table UI", () => {
     expect(pathToPage("/play")).toBe("play");
     expect(pathToPage("/play/")).toBe("play");
@@ -31,6 +36,8 @@ describe("pageToPath", () => {
   it("round-trips landing, play, and feedback", () => {
     expect(pageToPath("landing")).toBe("/");
     expect(pageToPath("play")).toBe("/play");
+    expect(pageToPath("casino")).toBe("/casino");
+    expect(pathToPage(pageToPath("casino"))).toBe("casino");
     expect(pageToPath("feedback")).toBe("/feedback");
     expect(pageToPath("privacy")).toBe("/privacy");
     expect(pathToPage(pageToPath("feedback"))).toBe("feedback");
@@ -44,6 +51,7 @@ describe("testerSiteUrls", () => {
       home: "https://54-12-34-56.sslip.io/",
       play: "https://54-12-34-56.sslip.io/play",
       slots: "https://54-12-34-56.sslip.io/slots",
+      casino: "https://54-12-34-56.sslip.io/casino",
       feedback: "https://54-12-34-56.sslip.io/feedback",
     });
   });

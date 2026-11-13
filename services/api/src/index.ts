@@ -18,6 +18,7 @@ import { registerSessionRoutes } from "./routes/session.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerPlayRoutes } from "./routes/play.js";
 import { registerSlotsRoutes } from "./routes/slots.js";
+import { registerCasinoRoutes } from "./routes/casino.js";
 import { registerSiteDatRoutes } from "./routes/site-dat.js";
 import { registerTournamentRoutes } from "./routes/tournaments.js";
 
@@ -64,6 +65,7 @@ async function main(): Promise<void> {
   registerHandRoutes(app);
   registerPlayRoutes(app);
   registerSlotsRoutes(app);
+  registerCasinoRoutes(app);
 
   app.get("/v1/variants", async () => ({
     variants: POKER_VARIANTS,
