@@ -4,6 +4,7 @@ import type { TableConfig } from "@dat-poker/shared";
 import { DAT_TABLE_DEFAULTS, resolveDatMinBuyInMojos } from "@dat-poker/shared";
 import { NlheTableEngine } from "@dat-poker/game-engine";
 import { recordBuyIn } from "../buy-in-store.js";
+import { cloudPlayerFromRequest } from "../cloud-wallet.js";
 import {
   type BuyInProof,
   readDatTokenConfig,
@@ -82,6 +83,8 @@ export function registerTableRoutes(app: FastifyInstance): void {
     const dat = readDatTokenConfig();
     const buyInMojos = BigInt(req.body.buyInMojos);
     const minBuyIn = resolveDatMinBuyInMojos(dat.minBuyInMojos);
+    const cloudPlayer = await cloudPlayerFromRequest(req);
+    const cloudOwnsSeat = cloudPlayer?.address === req.body.playerId;
 
     if (buyInMojos < minBuyIn) {
       return reply.status(400).send({
@@ -89,7 +92,14 @@ export function registerTableRoutes(app: FastifyInstance): void {
       });
     }
 
-    if (!dat.devBuyInEnabled) {
+    if (cloudOwnsSeat && cloudPlayer) {
+      if (!cloudPlayer.datSpendableMojos) {
+        return reply.status(400).send({ error: "DAT balance unavailable" });
+      }
+      if (BigInt(cloudPlayer.datSpendableMojos) < buyInMojos) {
+        return reply.status(400).send({ error: "Insufficient DAT balance for buy-in" });
+      }
+    } else if (!dat.devBuyInEnabled) {
       if (!dat.assetId) {
         return reply.status(503).send({ error: "DAT token not configured" });
       }
@@ -123,12 +133,21 @@ export function registerTableRoutes(app: FastifyInstance): void {
       }
     }
 
-    const buyInProof = req.body.buyInProof ?? {
-      address: req.body.playerId,
-      message: "",
-      signature: "",
-      pubkey: "",
-    };
+    const buyInProof =
+      cloudOwnsSeat && cloudPlayer
+        ? {
+            address: req.body.playerId,
+            message: "dat-poker:cloud-wallet",
+            signature: "",
+            pubkey: "",
+            datBalanceMojos: cloudPlayer.datSpendableMojos ?? undefined,
+          }
+        : (req.body.buyInProof ?? {
+            address: req.body.playerId,
+            message: "",
+            signature: "",
+            pubkey: "",
+          });
     recordBuyIn(req.params.tableId, req.body.playerId, buyInProof, req.body.buyInMojos);
 
     try {
