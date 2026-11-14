@@ -1,4 +1,4 @@
-import { isRedSuit, playingCardLabel, rankFace, suitGlyph, type PlayingCardData } from "../playing-card.js";
+import { cardFace, isRedSuit, playingCardLabel, rankFace, suitMark, type PlayingCardData } from "../playing-card.js";
 
 export function PlayingCard({
   card,
@@ -8,18 +8,45 @@ export function PlayingCard({
   size?: "sm" | "md" | "lg";
 }) {
   const red = isRedSuit(card.suit);
+  const face = cardFace(card.rank);
+  const mark = suitMark(card.suit);
+  const rank = rankFace(card.rank);
   return (
     <span
-      className={`playing-card playing-card-${size} ${red ? "playing-card-red" : "playing-card-black"}`}
+      className={`playing-card playing-card-${size} ${red ? "playing-card-red" : "playing-card-black"} ${face.kind === "court" ? "playing-card-court" : ""}`}
       aria-label={playingCardLabel(card)}
     >
       <span className="playing-card-corner" aria-hidden="true">
-        <span className="playing-card-rank">{rankFace(card.rank)}</span>
-        <span className="playing-card-mini-suit">{suitGlyph(card.suit)}</span>
+        <span className={rank === "10" ? "playing-card-rank playing-card-rank-ten" : "playing-card-rank"}>{rank}</span>
+        <span className="playing-card-mini-suit">{mark}</span>
       </span>
-      <span className="playing-card-center" aria-hidden="true">
-        {suitGlyph(card.suit)}
+      <span className="playing-card-corner playing-card-corner-br" aria-hidden="true">
+        <span className={rank === "10" ? "playing-card-rank playing-card-rank-ten" : "playing-card-rank"}>{rank}</span>
+        <span className="playing-card-mini-suit">{mark}</span>
       </span>
+      {face.kind === "ace" ? (
+        <span className="ace-pip" aria-hidden="true">
+          {mark}
+        </span>
+      ) : face.kind === "court" ? (
+        <span className="court" aria-hidden="true">
+          <span className="court-letter">{rank}</span>
+          <span className="court-suit">{mark}</span>
+          <span className="court-letter court-flip">{rank}</span>
+        </span>
+      ) : (
+        <span className={`playing-card-pips pips-n${face.pips.length}`} aria-hidden="true">
+          {face.pips.map((spot, index) => (
+            <span
+              key={index}
+              className={spot.flip ? "pip flip" : "pip"}
+              style={{ ["--x" as string]: `${spot.x}%`, ["--y" as string]: `${spot.y}%` }}
+            >
+              {mark}
+            </span>
+          ))}
+        </span>
+      )}
     </span>
   );
 }
