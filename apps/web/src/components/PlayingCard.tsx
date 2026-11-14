@@ -17,11 +17,11 @@ export function PlayingCard({
       aria-label={playingCardLabel(card)}
     >
       <span className="playing-card-corner" aria-hidden="true">
-        <span className="playing-card-rank">{rank}</span>
+        <span className={rank === "10" ? "playing-card-rank playing-card-rank-ten" : "playing-card-rank"}>{rank}</span>
         <span className="playing-card-mini-suit">{mark}</span>
       </span>
       <span className="playing-card-corner playing-card-corner-br" aria-hidden="true">
-        <span className="playing-card-rank">{rank}</span>
+        <span className={rank === "10" ? "playing-card-rank playing-card-rank-ten" : "playing-card-rank"}>{rank}</span>
         <span className="playing-card-mini-suit">{mark}</span>
       </span>
       {face.kind === "ace" ? (

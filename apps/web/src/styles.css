@@ -439,29 +439,40 @@ button:disabled {
 
 .playing-card-corner {
   position: absolute;
-  top: 0.22rem;
-  left: 0.26rem;
-  z-index: 1;
+  top: 0.12rem;
+  left: 0.16rem;
+  z-index: 3;
   display: flex;
   flex-direction: column;
   align-items: center;
-  line-height: 0.9;
+  line-height: 0.85;
+  padding: 0 0.04rem;
+  border-radius: 0.2rem;
+  background: radial-gradient(circle at 45% 40%, rgba(255, 253, 248, 0.96), rgba(255, 253, 248, 0.9) 68%, transparent 72%);
 }
 
 .playing-card-corner-br {
   top: auto;
   left: auto;
-  right: 0.26rem;
-  bottom: 0.22rem;
+  right: 0.16rem;
+  bottom: 0.12rem;
   transform: rotate(180deg);
 }
 
 .playing-card-rank {
-  font-size: 18cqi;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: clamp(1.05rem, 34cqi, 1.6rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.playing-card-rank-ten {
+  font-size: clamp(0.92rem, 29cqi, 1.3rem);
+  letter-spacing: -0.07em;
 }
 
 .playing-card-mini-suit {
-  font-size: 13cqi;
+  font-size: clamp(0.78rem, 24cqi, 1.1rem);
 }
 
 .playing-card-pips,
@@ -2607,10 +2618,10 @@ html.play-table-screen body {
 }
 
 .app--table-room {
-  --tr-card-board: clamp(2.35rem, 9vmin, 3.7rem);
-  --tr-card-board-h: clamp(3.3rem, 13vmin, 5.2rem);
-  --tr-card-hero: clamp(2.75rem, 11vmin, 4.6rem);
-  --tr-card-hero-h: clamp(3.9rem, 15vmin, 6.5rem);
+  --tr-card-board: clamp(2.7rem, 15vw, 3.7rem);
+  --tr-card-board-h: clamp(3.85rem, 21vw, 5.2rem);
+  --tr-card-hero: clamp(3.35rem, 18vw, 4.6rem);
+  --tr-card-hero-h: clamp(4.75rem, 25vw, 6.5rem);
   max-width: none;
   width: 100%;
   height: 100dvh;
@@ -3561,10 +3572,10 @@ html.play-table-screen body {
 
 @media (max-height: 640px) {
   .app--table-room {
-    --tr-card-board: clamp(2rem, 8vmin, 2.75rem);
-    --tr-card-board-h: clamp(2.85rem, 11vmin, 3.9rem);
-    --tr-card-hero: clamp(2.35rem, 9vmin, 3.5rem);
-    --tr-card-hero-h: clamp(3.3rem, 12vmin, 5rem);
+    --tr-card-board: clamp(2.45rem, 13vw, 2.9rem);
+    --tr-card-board-h: clamp(3.5rem, 18vw, 4.1rem);
+    --tr-card-hero: clamp(3rem, 16vw, 3.6rem);
+    --tr-card-hero-h: clamp(4.25rem, 22vw, 5.1rem);
     padding: 0.3rem 0.4rem 0.25rem;
   }
 
