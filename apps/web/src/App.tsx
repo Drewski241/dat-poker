@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { computeNlheBetRange, DAT_TABLE_DEFAULTS, formatDatMojos } from "@dat-poker/shared";
-import { api, type BuyInProof, type DatTokenInfo, type HandResult, type HandState, type PlayerAction, type TableSeat, type WithdrawResult } from "./api.js";
+import {
+  api,
+  type BuyInProof,
+  type CloudWalletConfig,
+  type CloudWalletSession,
+  type DatTokenInfo,
+  type HandResult,
+  type HandState,
+  type PlayerAction,
+  type TableSeat,
+  type WithdrawResult,
+} from "./api.js";
 import { BetSlider } from "./components/BetSlider.js";
 import { QrConnectModal } from "./components/QrConnectModal.js";
 import {
@@ -37,6 +48,9 @@ export function App() {
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [datToken, setDatToken] = useState<DatTokenInfo | null>(null);
   const [wcConfig, setWcConfig] = useState<{ projectId: string; chainId: string } | null>(null);
+  const [cloudWalletConfig, setCloudWalletConfig] = useState<CloudWalletConfig | null>(null);
+  const [cloudWalletSession, setCloudWalletSession] = useState<CloudWalletSession | null>(null);
+  const [cloudVaultId, setCloudVaultId] = useState<string | null>(null);
 
   const [session, setSession] = useState<WcSession | null>(null);
   const [wcUri, setWcUri] = useState<string | null>(null);
@@ -67,6 +81,17 @@ export function App() {
           const existing = await restoreSession(config.walletConnect.projectId);
           if (existing) {
             setSession(existing);
+          }
+        }
+        setCloudWalletConfig(config.cloudWallet);
+        if (config.cloudWallet) {
+          const cloud = await api.cloudWalletSession();
+          setCloudWalletSession(cloud);
+          if (cloud.connected && cloud.walletId) {
+            setCloudVaultId(cloud.walletId);
+          } else if (cloud.connected && cloud.vaults?.length === 1) {
+            setCloudVaultId(cloud.vaults[0].id);
+            await api.cloudWalletSelectVault(cloud.vaults[0].id);
           }
         }
       } catch {
@@ -154,6 +179,25 @@ export function App() {
       } finally {
         setWcUri(null);
       }
+    });
+
+  const connectCloudWallet = () => {
+    if (!cloudWalletConfig) return;
+    window.location.href = api.cloudWalletConnectUrl();
+  };
+
+  const refreshCloudWalletSession = () =>
+    run("Refreshing Cloud Wallet…", async () => {
+      const cloud = await api.cloudWalletSession();
+      setCloudWalletSession(cloud);
+      if (cloud.walletId) setCloudVaultId(cloud.walletId);
+    });
+
+  const disconnectCloudWallet = () =>
+    run("Disconnecting Cloud Wallet…", async () => {
+      await api.cloudWalletDisconnect();
+      setCloudWalletSession({ connected: false, enabled: Boolean(cloudWalletConfig) });
+      setCloudVaultId(null);
     });
 
   const disconnectSage = () =>
@@ -313,13 +357,16 @@ export function App() {
         devAck: datToken?.devBuyInEnabled,
       });
 
-      if (result.mode === "offer" && result.offer && session && wcConfig) {
-        if (result.offer.startsWith("mock-offer:")) {
-          setStatus("Mock treasury offer (dev) — skipping Sage takeOffer");
-        } else {
+      if (result.mode === "offer" && result.offer && !result.offer.startsWith("mock-offer:")) {
+        if (cloudWalletSession?.connected && cloudVaultId) {
+          setStatus("Submitting treasury payout via Chia Cloud Wallet…");
+          await api.cloudWalletTakeOffer(result.offer, result.feeMojos, cloudVaultId);
+        } else if (session && wcConfig) {
           setStatus("Accept treasury payout in Sage…");
           await takeOffer(session, wcConfig.projectId, wcConfig.chainId, result.offer, BigInt(result.feeMojos));
         }
+      } else if (result.mode === "offer" && result.offer?.startsWith("mock-offer:")) {
+        setStatus("Mock treasury offer (dev) — skipping on-chain takeOffer");
       }
 
       setWithdrawResult(result);
@@ -384,7 +431,9 @@ export function App() {
     <div className="app">
       <header>
         <h1>DAT Poker</h1>
-        <p className="tagline">Sage WalletConnect · DAT buy-in · NLHE vs house · withdraw winnings</p>
+        <p className="tagline">
+          Sage WalletConnect · Chia Cloud Wallet withdraw · DAT buy-in · NLHE vs house
+        </p>
         <p className={`api-status ${apiOk ? "ok" : apiOk === false ? "err" : ""}`}>
           API: {apiOk === null ? "checking…" : apiOk ? "connected" : "offline (run pnpm dev:api)"}
         </p>
@@ -434,6 +483,57 @@ export function App() {
         )}
       </section>
 
+      {cloudWalletConfig && (
+        <section className="panel">
+          <h2>Chia Cloud Wallet (withdraw payout)</h2>
+          {!cloudWalletSession?.connected ? (
+            <>
+              <p className="muted small">Accept treasury payout offers in Chia Cloud Wallet after withdraw.</p>
+              <button type="button" disabled={busy || !apiOk} onClick={connectCloudWallet}>
+                Connect Chia Cloud Wallet
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="ok-text">Cloud Wallet connected</p>
+              {cloudWalletSession.vaults && cloudWalletSession.vaults.length > 1 && (
+                <label className="row">
+                  Vault for offers:{" "}
+                  <select
+                    value={cloudVaultId ?? ""}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setCloudVaultId(id);
+                      void api.cloudWalletSelectVault(id);
+                    }}
+                  >
+                    <option value="" disabled>
+                      Select vault…
+                    </option>
+                    {cloudWalletSession.vaults.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {cloudWalletSession.vaults?.length === 1 && cloudVaultId && (
+                <p className="mono">Vault: {cloudWalletSession.vaults[0].name}</p>
+              )}
+              <div className="row">
+                <button type="button" disabled={busy} className="secondary" onClick={refreshCloudWalletSession}>
+                  Refresh
+                </button>
+                <button type="button" disabled={busy} className="secondary" onClick={disconnectCloudWallet}>
+                  Disconnect
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
       <section className="panel">
         <h2>Table</h2>
         {!tableId ? (
@@ -456,7 +556,8 @@ export function App() {
             {tableId && !hand && !handInProgress && tableStackMojos && (
               <div className="row">
                 <button type="button" disabled={busy} onClick={withdrawToSage}>
-                  Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)} to Sage
+                  Withdraw {formatDatMojos(tableStackMojos, datToken?.ticker)}
+                  {cloudWalletSession?.connected ? " (Cloud Wallet payout)" : " to Sage"}
                 </button>
               </div>
             )}

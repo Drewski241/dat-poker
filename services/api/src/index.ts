@@ -3,6 +3,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
 import { ChiaGamingClient } from "@dat-poker/chia-bridge";
 import { POKER_VARIANTS } from "@dat-poker/shared";
 import { registerTableRoutes } from "./routes/tables.js";
@@ -10,6 +11,7 @@ import { registerHealthRoutes } from "./routes/health.js";
 import { serializeForJson } from "./serialize.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerWalletRoutes } from "./routes/wallet.js";
+import { registerCloudWalletRoutes } from "./routes/wallet-cloud.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../../../.env") });
@@ -32,7 +34,8 @@ const chiaClient = new ChiaGamingClient({
 
 async function main(): Promise<void> {
   const app = Fastify({ logger: true });
-  await app.register(cors, { origin: true });
+  await app.register(cors, { origin: true, credentials: true });
+  await app.register(cookie);
 
   app.addHook("preSerialization", async (_request, _reply, payload) => {
     if (payload === undefined || payload === null) return payload;
@@ -41,6 +44,7 @@ async function main(): Promise<void> {
 
   registerHealthRoutes(app, chiaClient);
   registerWalletRoutes(app, chiaClient);
+  registerCloudWalletRoutes(app);
   registerTableRoutes(app);
   registerHandRoutes(app);
 

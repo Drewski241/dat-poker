@@ -16,12 +16,14 @@ import {
   type WithdrawProof,
   validateWithdrawProof,
 } from "../wallet-config.js";
+import { CHIA_CLOUD_WALLET_SCOPES, readChiaCloudWalletConfig } from "../chia-cloud-wallet.js";
 
 export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClient): void {
   app.get("/v1/wallet/config", async () => {
     const projectId = process.env.WALLETCONNECT_PROJECT_ID?.trim();
     const chainId = process.env.CHIA_CHAIN_ID ?? "chia:mainnet";
     const payout = readTreasuryPayoutConfig();
+    const cloudWallet = readChiaCloudWalletConfig();
 
     return {
       chiaNetwork: process.env.CHIA_NETWORK ?? "mainnet",
@@ -31,6 +33,14 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
         ? {
             projectId,
             chainId,
+          }
+        : null,
+      cloudWallet: cloudWallet.enabled
+        ? {
+            connectPath: "/v1/wallet/cloud/connect",
+            callbackPath: "/v1/wallet/cloud/callback",
+            redirectUri: cloudWallet.redirectUri,
+            scopes: CHIA_CLOUD_WALLET_SCOPES,
           }
         : null,
       withdraw: {
@@ -54,6 +64,7 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     return {
       dat,
       walletConnectConfigured: Boolean(process.env.WALLETCONNECT_PROJECT_ID?.trim()),
+      cloudWalletConfigured: readChiaCloudWalletConfig().enabled,
       withdrawTreasuryConfigured: Boolean(payout.treasuryPayoutUrl),
       chiaGamingLobby: lobbyOk ? "up" : "down",
     };
@@ -216,6 +227,8 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
     });
     clearBuyIn(tableId, playerId);
 
+    const cloudWallet = readChiaCloudWalletConfig();
+
     return {
       ok: true,
       withdrawalId,
@@ -231,7 +244,9 @@ export function registerWalletRoutes(app: FastifyInstance, chia: ChiaGamingClien
           ? payoutMojos > 0n
             ? "Virtual buy-in: table stack cleared. Configure DAT_TREASURY_PAYOUT_URL for on-chain winnings."
             : "Table stack cleared. No net winnings to pay out."
-          : "Approve the treasury offer in Sage to receive DAT.",
+          : cloudWallet.enabled
+            ? "Accept the treasury offer in Chia Cloud Wallet (or Sage) to receive DAT."
+            : "Approve the treasury offer in Sage to receive DAT.",
     };
   });
 }
