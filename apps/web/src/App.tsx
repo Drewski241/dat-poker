@@ -488,10 +488,7 @@ export function App() {
           <h2>Chia Cloud Wallet (withdraw payout)</h2>
           {!cloudWalletSession?.connected ? (
             <>
-              <p className="muted small">
-                Accept treasury DAT offers in Cloud Wallet. OAuth app must be approved and{" "}
-                <code>CHIA_CLOUD_WALLET_CLIENT_ID</code> set on the API host.
-              </p>
+              <p className="muted small">Accept treasury payout offers in Chia Cloud Wallet after withdraw.</p>
               <button type="button" disabled={busy || !apiOk} onClick={connectCloudWallet}>
                 Connect Chia Cloud Wallet
               </button>
