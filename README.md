@@ -32,6 +32,8 @@ Configure `.env` from `.env.example`:
 
 See [docs/WALLETCONNECT.md](./docs/WALLETCONNECT.md) for the Sage + DAT flow (connect → buy in → play vs house → withdraw).
 
+For **withdraw payout delivery** via [Chia Cloud Wallet](https://vault.chia.net/) OAuth, see [docs/CHIA_CLOUD_WALLET.md](./docs/CHIA_CLOUD_WALLET.md) (treasury Sage still builds the offer).
+
 For **on-chain withdraw payouts**, run treasury Sage + `pnpm dev:treasury` on a **separate treasury host**; copy `.env.treasury.example` → `.env`, run `pnpm treasury:check`, then point the game API at it with `DAT_TREASURY_PAYOUT_URL`. See [docs/TREASURY.md](./docs/TREASURY.md).
 
 ## Monorepo layout

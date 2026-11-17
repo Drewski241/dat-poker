@@ -45,6 +45,26 @@ export interface WalletConnectConfig {
   chainId: string;
 }
 
+export interface CloudWalletConfig {
+  connectPath: string;
+  callbackPath: string;
+  redirectUri: string;
+  scopes: string;
+}
+
+export interface CloudWalletVault {
+  id: string;
+  name: string;
+  state: string;
+}
+
+export interface CloudWalletSession {
+  connected: boolean;
+  enabled: boolean;
+  walletId?: string | null;
+  vaults?: CloudWalletVault[];
+}
+
 export interface DatTokenInfo {
   assetId: string | null;
   ticker: string;
@@ -98,12 +118,43 @@ export const api = {
       chiaNetwork: string;
       chainId: string;
       walletConnect: WalletConnectConfig | null;
+      cloudWallet: CloudWalletConfig | null;
       withdraw?: {
         payoutMode: "net" | "full";
         treasuryConfigured: boolean;
         feeMojos: string;
       };
     }>("/v1/wallet/config"),
+
+  cloudWalletSession: () =>
+    request<CloudWalletSession>("/v1/wallet/cloud/session", { credentials: "include" }),
+
+  cloudWalletConnectUrl: () => {
+    const returnTo = typeof window !== "undefined" ? window.location.href : "/";
+    const q = new URLSearchParams({ returnTo });
+    return `${apiBase}/v1/wallet/cloud/connect?${q}`;
+  },
+
+  cloudWalletSelectVault: (walletId: string) =>
+    request<{ ok: boolean; walletId: string }>("/v1/wallet/cloud/wallet", {
+      method: "POST",
+      credentials: "include",
+      body: JSON.stringify({ walletId }),
+    }),
+
+  cloudWalletTakeOffer: (offer: string, feeMojos: string, walletId?: string) =>
+    request<{ ok: boolean; note: string; signatureRequestStatus: string }>("/v1/wallet/cloud/take-offer", {
+      method: "POST",
+      credentials: "include",
+      body: JSON.stringify({ offer, feeMojos, walletId }),
+    }),
+
+  cloudWalletDisconnect: () =>
+    request<{ ok: boolean }>("/v1/wallet/cloud/disconnect", {
+      method: "POST",
+      credentials: "include",
+      body: "{}",
+    }),
 
   datToken: () => request<DatTokenInfo>("/v1/wallet/dat-token"),
 
